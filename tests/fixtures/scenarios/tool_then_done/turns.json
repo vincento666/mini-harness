@@ -1,0 +1,8 @@
+[
+  {
+    "content": "先读一下文件",
+    "finish_reason": "tool_calls",
+    "tool_calls": [{ "id": "c1", "name": "read", "arguments": { "file_path": "a.md" } }]
+  },
+  { "content": "不用读了，直接答", "finish_reason": "stop" }
+]
