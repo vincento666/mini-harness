@@ -43,6 +43,13 @@ STOP_REASONS_TO_EXIT_CODES: dict[str, int] = {
 }
 
 
+def exit_code_for(outcome: RunOutcome) -> int:
+    """内核结果到退出码：词表外的 `stop_reason` 是日志层失败，一律 1。"""
+    if outcome.stop_reason not in STOP_REASONS:
+        return EXIT_INTERNAL_ERROR
+    return STOP_REASONS_TO_EXIT_CODES[outcome.stop_reason]
+
+
 class _ArgumentParser(argparse.ArgumentParser):
     """参数错误统一成 `INVALID_ARGUMENT` + 退出码 2。"""
 
@@ -168,9 +175,10 @@ def _run(args: argparse.Namespace) -> int:
         )
     )
 
+    exit_code = exit_code_for(outcome)
     if outcome.stop_reason not in STOP_REASONS:
         return _report_failure(
-            outcome.failure_code or outcome.stop_reason, outcome.detail, EXIT_INTERNAL_ERROR
+            outcome.failure_code or outcome.stop_reason, outcome.detail, exit_code
         )
 
     if args.events == "jsonl":
@@ -179,7 +187,7 @@ def _run(args: argparse.Namespace) -> int:
                 print(line)
     else:
         print(outcome.session_id)
-    return STOP_REASONS_TO_EXIT_CODES[outcome.stop_reason]
+    return exit_code
 
 
 def _replay(args: argparse.Namespace) -> int:
