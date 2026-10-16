@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from mini_harness.events.record import SCHEMA_VERSION, EventRecord
+from mini_harness.events.vocabulary import is_known_type
 
 
 class EventLog:
@@ -19,11 +21,21 @@ class EventLog:
         self._next_seq = 0
 
     @classmethod
+    def start(cls, session_dir: Path) -> EventLog:
+        """为新 session 生成唯一 session id 并打开它的日志。"""
+        return cls.create(session_dir=session_dir, session_id=uuid.uuid4().hex)
+
+    @classmethod
     def create(cls, session_dir: Path, session_id: str) -> EventLog:
         session_dir.mkdir(parents=True, exist_ok=True)
-        return cls(session_dir / f"{session_id}.jsonl", session_id)
+        path = session_dir / f"{session_id}.jsonl"
+        path.touch()
+        return cls(path, session_id)
 
     def append(self, event_type: str, payload: dict[str, Any]) -> EventRecord:
+        if not is_known_type(event_type):
+            payload = {"unrecognized_type": event_type, **payload}
+            event_type = "error/internal"
         record = EventRecord(
             schema_version=SCHEMA_VERSION,
             type=event_type,
