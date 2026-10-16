@@ -27,47 +27,47 @@
 
 ## 4. Provider 契约与 mock（seam ⑤）
 
-- [ ] 4.1 红：断言 mock Provider 只暴露 `generate(messages, tools, signal)` 并返回 `AssistantTurn{content, tool_calls, usage, finish_reason}`；绿后验证（seam ⑤）
-- [ ] 4.2 红：断言 fixture 序列被逐条回放（第 i 次调用返回第 i 条）；绿后验证（seam ⑤）
-- [ ] 4.3 红：断言 fixture 条目耗尽时产出 `PROVIDER_EXHAUSTED` 结果而不是异常；绿后验证（seam ⑤）
-- [ ] 4.4 红：断言 Provider 返回缺字段时产出 `PROVIDER_SCHEMA_INVALID` 结果而不是异常；绿后验证（seam ⑤）
+- [x] 4.1 红：断言 mock Provider 只暴露 `generate(messages, tools, signal)` 并返回 `AssistantTurn{content, tool_calls, usage, finish_reason}`；绿后验证（seam ⑤）
+- [x] 4.2 红：断言 fixture 序列被逐条回放（第 i 次调用返回第 i 条）；绿后验证（seam ⑤）
+- [x] 4.3 红：断言 fixture 条目耗尽时产出 `PROVIDER_EXHAUSTED` 结果而不是异常；绿后验证（seam ⑤）
+- [x] 4.4 红：断言 Provider 返回缺字段时产出 `PROVIDER_SCHEMA_INVALID` 结果而不是异常；绿后验证（seam ⑤）
 
 ## 5. 回合主循环（seam ①）
 
-- [ ] 5.1 红：单回合 happy path，断言事件类型序列恰为 `session/start`、`turn/start`、`context/assembled`、`model/request`、`model/response`、`turn/end`、`session/end`；绿后验证（seam ①）
-- [ ] 5.2 红：两回合场景，断言每个 `turn/end` 都在下一个 `turn/start` 之前、3 个回合对应 3 个不同 `turn_id` 且每回合恰一条 `turn/start`/`turn/end`；绿后验证（seam ①）
-- [ ] 5.3 红：断言 `tool_calls` 为空时 `stop_reason == MODEL_COMPLETED` 且不再有下一回合；绿后验证（seam ①）
-- [ ] 5.4 红：断言回合数达到 `--max-turns`（默认 8）时最后回合 `stop_reason == MAX_TURNS` 且 run 结果为成功；绿后验证（seam ①）
-- [ ] 5.5 红：断言注入取消信号后 `turn/end` 的 `stop_reason == ABORTED`、日志以 `session/end` 收尾、结果为取消（退出码 5 的映射输入）；绿后验证（seam ①）
-- [ ] 5.6 红：断言 Provider 失败时 `stop_reason == PROVIDER_ERROR`、写 `error/model`、结果为失败（退出码 1 的映射输入）；绿后验证（seam ①⑤）
-- [ ] 5.7 红：断言循环对 Provider 的全部调用都是 `generate` 且参数只有 messages/tools/signal；绿后验证（seam ①⑤）
+- [x] 5.1 红：单回合 happy path，断言事件类型序列恰为 `session/start`、`turn/start`、`context/assembled`、`model/request`、`model/response`、`turn/end`、`session/end`；绿后验证（seam ①）
+- [x] 5.2 红：两回合场景，断言每个 `turn/end` 都在下一个 `turn/start` 之前、3 个回合对应 3 个不同 `turn_id` 且每回合恰一条 `turn/start`/`turn/end`；绿后验证（seam ①）
+- [x] 5.3 红：断言 `tool_calls` 为空时 `stop_reason == MODEL_COMPLETED` 且不再有下一回合；绿后验证（seam ①）
+- [x] 5.4 红：断言回合数达到 `--max-turns`（默认 8）时最后回合 `stop_reason == MAX_TURNS` 且 run 结果为成功；绿后验证（seam ①）
+- [x] 5.5 红：断言注入取消信号后 `turn/end` 的 `stop_reason == ABORTED`、日志以 `session/end` 收尾、结果为取消（退出码 5 的映射输入）；绿后验证（seam ①）
+- [x] 5.6 红：断言 Provider 失败时 `stop_reason == PROVIDER_ERROR`、写 `error/model`、结果为失败（退出码 1 的映射输入）；绿后验证（seam ①⑤）
+- [x] 5.7 红：断言循环对 Provider 的全部调用都是 `generate` 且参数只有 messages/tools/signal；绿后验证（seam ①⑤）
 
 ## 6. 工具派发与空注册表（seam ②）
 
-- [ ] 6.1 红：断言 fixture 声明的每个工具调用都产出配对的 `tool/call` 与 `tool/result`，`outcome == UNKNOWN_TOOL`，且该回合正常写 `turn/end`；绿后验证（seam ②①）
-- [ ] 6.2 红：断言上一回合的 `tool/result` 出现在下一回合的 `context/assembled` 里；绿后验证（seam ②④）
-- [ ] 6.3 红：断言 `session/start` payload 记录 `workspace`（绝对路径）、`provider`、`max_turns`、`append_system_prompt`、`schema_version`；绿后验证（seam ④⑥）
+- [x] 6.1 红：断言 fixture 声明的每个工具调用都产出配对的 `tool/call` 与 `tool/result`，`outcome == UNKNOWN_TOOL`，且该回合正常写 `turn/end`；绿后验证（seam ②①）
+- [x] 6.2 红：断言上一回合的 `tool/result` 出现在下一回合的 `context/assembled` 里；绿后验证（seam ②④）
+- [x] 6.3 红：断言 `session/start` payload 记录 `workspace`（绝对路径）、`provider`、`max_turns`、`append_system_prompt`、`schema_version`；绿后验证（seam ④⑥）
 
 ## 7. CLI：run（seam ⑥）
 
-- [ ] 7.1 红：`minihns run` 缺 `-p` 与 `-p ""` 都退出码 2、stderr 含 `INVALID_ARGUMENT`、没有 session 日志；绿后验证（seam ⑥）
-- [ ] 7.2 红：`--max-turns 0` 与 `--provider deepseek` 分别退出码 2 且 stderr 含 `INVALID_ARGUMENT` / `UNKNOWN_PROVIDER`；`--fixture` 指向非法 JSON 时退出码 2 且含 `FIXTURE_INVALID`；绿后验证（seam ⑥⑤）
-- [ ] 7.3 红：happy path `minihns run -p "任务" --provider mock --fixture <f>` 退出码 0、stdout 含 session id、`sessions/<id>.jsonl` 存在；绿后验证（seam ⑥）
-- [ ] 7.4 红：断言带 `--events jsonl` 时 stdout 的事件行数与日志行数相同且逐行解析后对象相等；绿后验证（seam ⑥④）
-- [ ] 7.5 红：断言环境里存在 `DEEPSEEK_API_KEY` 时日志全文与 stdout 都不含其值；绿后验证（seam ⑥④）
+- [x] 7.1 红：`minihns run` 缺 `-p` 与 `-p ""` 都退出码 2、stderr 含 `INVALID_ARGUMENT`、没有 session 日志；绿后验证（seam ⑥）
+- [x] 7.2 红：`--max-turns 0` 与 `--provider deepseek` 分别退出码 2 且 stderr 含 `INVALID_ARGUMENT` / `UNKNOWN_PROVIDER`；`--fixture` 指向非法 JSON 时退出码 2 且含 `FIXTURE_INVALID`；绿后验证（seam ⑥⑤）
+- [x] 7.3 红：happy path `minihns run -p "任务" --provider mock --fixture <f>` 退出码 0、stdout 含 session id、`sessions/<id>.jsonl` 存在；绿后验证（seam ⑥）
+- [x] 7.4 红：断言带 `--events jsonl` 时 stdout 的事件行数与日志行数相同且逐行解析后对象相等；绿后验证（seam ⑥④）
+- [x] 7.5 红：断言环境里存在 `DEEPSEEK_API_KEY` 时日志全文与 stdout 都不含其值；绿后验证（seam ⑥④）
 
 ## 8. CLI：replay（seam ⑥）
 
-- [ ] 8.1 红：断言 `minihns replay <session-id>` 打印的最终上下文与日志里最后一条 `context/assembled` 一致，且过程中没有 Provider 调用；绿后验证（seam ⑥④⑤）
-- [ ] 8.2 红：断言 replay 未知 session id 时退出码 2、stderr 含 `SESSION_NOT_FOUND` 与查找路径；绿后验证（seam ⑥）
-- [ ] 8.3 红：断言连续两次 replay 后被重放日志的字节数与内容都不变；绿后验证（seam ⑥④）
+- [x] 8.1 红：断言 `minihns replay <session-id>` 打印的最终上下文与日志里最后一条 `context/assembled` 一致，且过程中没有 Provider 调用；绿后验证（seam ⑥④⑤）
+- [x] 8.2 红：断言 replay 未知 session id 时退出码 2、stderr 含 `SESSION_NOT_FOUND` 与查找路径；绿后验证（seam ⑥）
+- [x] 8.3 红：断言连续两次 replay 后被重放日志的字节数与内容都不变；绿后验证（seam ⑥④）
 
 ## 9. 集成与退出码表（seam ⑥，跨多任务）
 
-- [ ] 9.1 红：多回合 mock 场景（含一次工具调用与一次 fixture 耗尽）跑通，断言退出码分别为 0 与 1、日志含对应 `error/*`；绿后验证（seam ⑥①②⑤）
-- [ ] 9.2 红：断言 M1 全部场景（成功与失败）没有任何 run 以 3 或 4 退出；绿后验证（seam ⑥）
-- [ ] 9.3 跑 `uv run mypy --strict src` 与 `uv run pytest` 全绿，验证 M1 完成判据：mock 场景跑通、`replay` 输出与实时折叠一致
-- [ ] 9.4 把「明文 JSONL、`schema_version` 从 1 起、M1 不施加窗口预算、退出码 3/4 保留」四条简化写进 `docs/adr/`，验证 ADR 文件存在且引用本 change
+- [x] 9.1 红：多回合 mock 场景（含一次工具调用与一次 fixture 耗尽）跑通，断言退出码分别为 0 与 1、日志含对应 `error/*`；绿后验证（seam ⑥①②⑤）
+- [x] 9.2 红：断言 M1 全部场景（成功与失败）没有任何 run 以 3 或 4 退出；绿后验证（seam ⑥）
+- [x] 9.3 跑 `uv run mypy --strict src` 与 `uv run pytest` 全绿，验证 M1 完成判据：mock 场景跑通、`replay` 输出与实时折叠一致
+- [x] 9.4 把「明文 JSONL、`schema_version` 从 1 起、M1 不施加窗口预算、退出码 3/4 保留」四条简化写进 `docs/adr/`，验证 ADR 文件存在且引用本 change
 
 ## Workflow follow-up
 

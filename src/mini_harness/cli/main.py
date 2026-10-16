@@ -1,25 +1,168 @@
-"""`minihns` 入口。"""
+"""`minihns` 入口：解析参数、跑内核、把结果映射成退出码。"""
 
 from __future__ import annotations
 
 import argparse
+import asyncio
+import io
+import json
 import sys
 from collections.abc import Sequence
+from pathlib import Path
+from typing import NoReturn
+
+from mini_harness.events import EventLog, LogWriteFailure, read_events
+from mini_harness.events.fold import fold
+from mini_harness.loop import run_session
+from mini_harness.provider import FixtureLoadFailure, load_fixture_provider
+from mini_harness.tools import ToolRegistry
+
+EXIT_OK = 0
+EXIT_INTERNAL_ERROR = 1
+EXIT_INVALID_ARGUMENT = 2
+EXIT_ABORTED = 5
+
+_STOP_REASONS_TO_EXIT_CODES: dict[str, int] = {
+    "MODEL_COMPLETED": EXIT_OK,
+    "MAX_TURNS": EXIT_OK,
+    "PROVIDER_ERROR": EXIT_INTERNAL_ERROR,
+    "ABORTED": EXIT_ABORTED,
+}
+
+
+class _ArgumentParser(argparse.ArgumentParser):
+    """参数错误统一成 `INVALID_ARGUMENT` + 退出码 2。"""
+
+    def error(self, message: str) -> NoReturn:
+        self.print_usage(sys.stderr)
+        sys.stderr.write(f"INVALID_ARGUMENT: {message}\n")
+        raise SystemExit(EXIT_INVALID_ARGUMENT)
 
 
 def build_parser() -> argparse.ArgumentParser:
     """构造顶层解析器。"""
-    return argparse.ArgumentParser(
-        prog="minihns",
-        description="mini-harness：headless agent harness",
+    parser = _ArgumentParser(prog="minihns", description="mini-harness：headless agent harness")
+    subcommands = parser.add_subparsers(dest="command", required=True)
+
+    run = subcommands.add_parser("run", help="跑完一个 session")
+    run.add_argument("-p", "--prompt", default=None)
+    run.add_argument("--workspace", default=None)
+    run.add_argument("--session-dir", default=None)
+    run.add_argument("--provider", default="mock")
+    run.add_argument("--fixture", default=None)
+    run.add_argument("--max-turns", type=int, default=8)
+    run.add_argument("--append-system-prompt", default="")
+    run.add_argument("--events", choices=("jsonl",), default=None)
+
+    replay = subcommands.add_parser("replay", help="重放一个 session 的日志")
+    replay.add_argument("session_id")
+    replay.add_argument("--session-dir", default=None)
+    return parser
+
+
+def _report_failure(code: str, detail: str, exit_code: int) -> int:
+    sys.stderr.write(f"{code}: {detail}\n")
+    return exit_code
+
+
+def _session_dir(value: str | None) -> Path:
+    if value is not None:
+        return Path(value)
+    return Path.cwd() / "sessions"
+
+
+def _run(args: argparse.Namespace) -> int:
+    prompt: str | None = args.prompt
+    max_turns: int = args.max_turns
+    provider_name: str = args.provider
+    fixture: str | None = args.fixture
+
+    if prompt is None or prompt == "":
+        return _report_failure(
+            "INVALID_ARGUMENT", "-p/--prompt 必填且非空", EXIT_INVALID_ARGUMENT
+        )
+    if max_turns < 1:
+        return _report_failure(
+            "INVALID_ARGUMENT", f"--max-turns 至少为 1，收到 {max_turns}", EXIT_INVALID_ARGUMENT
+        )
+    if provider_name != "mock":
+        return _report_failure(
+            "UNKNOWN_PROVIDER", f"M1 只支持 --provider mock，收到 {provider_name}", EXIT_INVALID_ARGUMENT
+        )
+    if fixture is None:
+        return _report_failure(
+            "INVALID_ARGUMENT", "--provider mock 需要 --fixture 指向 JSON 数组", EXIT_INVALID_ARGUMENT
+        )
+
+    loaded = load_fixture_provider(Path(fixture))
+    if isinstance(loaded, FixtureLoadFailure):
+        return _report_failure(loaded.code, loaded.detail, EXIT_INVALID_ARGUMENT)
+
+    log = EventLog.start(_session_dir(args.session_dir))
+    if isinstance(log, LogWriteFailure):
+        return _report_failure(log.code, log.detail, EXIT_INTERNAL_ERROR)
+
+    workspace: str | None = args.workspace
+    outcome = asyncio.run(
+        run_session(
+            prompt=prompt,
+            provider=loaded,
+            provider_name=provider_name,
+            log=log,
+            registry=ToolRegistry(),
+            workspace=Path(workspace) if workspace is not None else Path.cwd(),
+            max_turns=max_turns,
+            cancel=asyncio.Event(),
+            append_system_prompt=args.append_system_prompt,
+        )
     )
+
+    if args.events == "jsonl":
+        for line in log.path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                print(line)
+    else:
+        print(outcome.session_id)
+    return _STOP_REASONS_TO_EXIT_CODES[outcome.stop_reason]
+
+
+def _replay(args: argparse.Namespace) -> int:
+    session_id: str = args.session_id
+    session_dir = _session_dir(args.session_dir)
+    path = session_dir / f"{session_id}.jsonl"
+    if not path.is_file():
+        return _report_failure(
+            "SESSION_NOT_FOUND", f"找不到 session 日志：{path}", EXIT_INVALID_ARGUMENT
+        )
+
+    records = read_events(path)
+    last_assembled = max(
+        (index for index, record in enumerate(records) if record.type == "context/assembled"),
+        default=-1,
+    )
+    context = fold(records[: last_assembled + 1])
+
+    for record in records:
+        if record.type == "turn/end":
+            print(f"turn {record.payload['turn_id']}: {record.payload['stop_reason']}")
+    print("final_context: " + json.dumps(context.model_dump(mode="json"), ensure_ascii=False))
+    return EXIT_OK
+
+
+def _reconfigure_streams() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        if isinstance(stream, io.TextIOWrapper):
+            stream.reconfigure(encoding="utf-8")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     """解析参数并返回退出码。"""
+    _reconfigure_streams()
     parser = build_parser()
-    parser.parse_args(argv)
-    return 0
+    args = parser.parse_args(argv)
+    if args.command == "run":
+        return _run(args)
+    return _replay(args)
 
 
 if __name__ == "__main__":

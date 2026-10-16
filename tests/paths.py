@@ -8,5 +8,14 @@ TESTS_DIR = Path(__file__).resolve().parent
 FIXTURES_DIR = TESTS_DIR / "fixtures"
 SCENARIOS_DIR = FIXTURES_DIR / "scenarios"
 HELLO_SCENARIO = SCENARIOS_DIR / "hello" / "turns.json"
+TOOL_THEN_DONE_SCENARIO = SCENARIOS_DIR / "tool_then_done" / "turns.json"
+TOOL_THEN_EXHAUST_SCENARIO = SCENARIOS_DIR / "tool_then_exhaust" / "turns.json"
 
-__all__ = ["FIXTURES_DIR", "HELLO_SCENARIO", "SCENARIOS_DIR", "TESTS_DIR"]
+__all__ = [
+    "FIXTURES_DIR",
+    "HELLO_SCENARIO",
+    "SCENARIOS_DIR",
+    "TESTS_DIR",
+    "TOOL_THEN_DONE_SCENARIO",
+    "TOOL_THEN_EXHAUST_SCENARIO",
+]

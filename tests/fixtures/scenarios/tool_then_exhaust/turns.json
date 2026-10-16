@@ -1,0 +1,7 @@
+[
+  {
+    "content": "还要再读一次",
+    "finish_reason": "tool_calls",
+    "tool_calls": [{ "id": "c1", "name": "read", "arguments": { "file_path": "a.md" } }]
+  }
+]
