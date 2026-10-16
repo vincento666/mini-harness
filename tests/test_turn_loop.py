@@ -225,6 +225,30 @@ async def test_cancel_signal_ends_the_turn_with_aborted(tmp_path: Path) -> None:
     assert outcome.stop_reason == "ABORTED"
 
 
+async def test_a_cancelled_turn_writes_an_error_abort_event(tmp_path: Path) -> None:
+    log = EventLog.create(session_dir=tmp_path, session_id="s-abort")
+    cancel = asyncio.Event()
+
+    outcome = await run_session(
+        prompt="任务",
+        provider=_CancelDuringGenerate(cancel),
+        provider_name="mock",
+        log=log,
+        registry=ToolRegistry(),
+        workspace=tmp_path,
+        max_turns=8,
+        cancel=cancel,
+    )
+
+    records = read_events(log.path)
+    aborts = [record for record in records if record.type == "error/abort"]
+    assert len(aborts) == 1
+    assert aborts[0].payload["turn_id"] == "t1"
+    assert aborts[0].payload["code"] == "ABORTED"
+    assert [record.type for record in records][-3:] == ["error/abort", "turn/end", "session/end"]
+    assert outcome.stop_reason == "ABORTED"
+
+
 async def test_provider_failure_is_recorded_as_error_model_and_provider_error(tmp_path: Path) -> None:
     log = EventLog.create(session_dir=tmp_path, session_id="s-fail")
 

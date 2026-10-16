@@ -207,7 +207,17 @@ async def run_session(
         else:
             stop_reason = STOP_TOOL_CALLS
 
-        failure = _append_all(log, [("turn/end", {"turn_id": turn_id, "stop_reason": stop_reason})])
+        closing_events: list[tuple[str, dict[str, Any]]] = []
+        if cancel.is_set():
+            closing_events.append(
+                (
+                    "error/abort",
+                    {"turn_id": turn_id, "code": STOP_ABORTED, "detail": "取消被置位"},
+                )
+            )
+        closing_events.append(("turn/end", {"turn_id": turn_id, "stop_reason": stop_reason}))
+
+        failure = _append_all(log, closing_events)
         if failure is not None:
             return _kernel_failure(log, failure, turns)
 

@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
 import codecs
 import json
 import os
+import signal
 import subprocess
 import sys
 from pathlib import Path
 
-from mini_harness.cli.main import STOP_REASONS_TO_EXIT_CODES
+from mini_harness.cli.main import STOP_REASONS_TO_EXIT_CODES, sigint_handler
 from mini_harness.loop import STOP_REASONS
 from paths import HELLO_SCENARIO
 
@@ -30,6 +32,15 @@ def _log_files(cwd: Path) -> list[Path]:
     if not session_dir.is_dir():
         return []
     return sorted(session_dir.glob("*.jsonl"))
+
+
+async def test_sigint_handler_sets_the_cancel_event() -> None:
+    cancel = asyncio.Event()
+
+    sigint_handler(cancel)(signal.SIGINT, None)
+    await asyncio.sleep(0)
+
+    assert cancel.is_set()
 
 
 def test_every_stop_reason_maps_to_an_exit_code() -> None:

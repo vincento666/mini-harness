@@ -6,9 +6,11 @@ import argparse
 import asyncio
 import io
 import json
+import signal
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
+from types import FrameType
 from typing import NoReturn
 
 from mini_harness.events import EventLog, LogReadFailure, LogWriteFailure, read_events
@@ -20,9 +22,11 @@ from mini_harness.loop import (
     STOP_PROVIDER_ERROR,
     STOP_REASONS,
     STOP_TOOL_CALLS,
+    RunOutcome,
     run_session,
 )
 from mini_harness.provider import FixtureLoadFailure, load_fixture_provider
+from mini_harness.provider.contract import Provider
 from mini_harness.tools import ToolRegistry
 
 EXIT_OK = 0
@@ -80,6 +84,46 @@ def _session_dir(value: str | None) -> Path:
     return Path.cwd() / "sessions"
 
 
+def sigint_handler(cancel: asyncio.Event) -> Callable[[int, FrameType | None], None]:
+    """Ctrl-C 的处理器：只调度，不直接动 asyncio 对象。"""
+    loop = asyncio.get_running_loop()
+
+    def handle(signum: int, frame: FrameType | None) -> None:
+        loop.call_soon_threadsafe(cancel.set)
+
+    return handle
+
+
+async def _await_session(
+    *,
+    prompt: str,
+    provider: Provider,
+    provider_name: str,
+    log: EventLog,
+    workspace: Path,
+    max_turns: int,
+    append_system_prompt: str,
+) -> RunOutcome:
+    """装好 Ctrl-C 处理器再跑内核：Ctrl-C 是取消，不是崩溃。"""
+    cancel = asyncio.Event()
+    previous = signal.getsignal(signal.SIGINT)
+    signal.signal(signal.SIGINT, sigint_handler(cancel))
+    try:
+        return await run_session(
+            prompt=prompt,
+            provider=provider,
+            provider_name=provider_name,
+            log=log,
+            registry=ToolRegistry(),
+            workspace=workspace,
+            max_turns=max_turns,
+            cancel=cancel,
+            append_system_prompt=append_system_prompt,
+        )
+    finally:
+        signal.signal(signal.SIGINT, previous)
+
+
 def _run(args: argparse.Namespace) -> int:
     prompt: str | None = args.prompt
     max_turns: int = args.max_turns
@@ -113,15 +157,13 @@ def _run(args: argparse.Namespace) -> int:
 
     workspace: str | None = args.workspace
     outcome = asyncio.run(
-        run_session(
+        _await_session(
             prompt=prompt,
             provider=loaded,
             provider_name=provider_name,
             log=log,
-            registry=ToolRegistry(),
             workspace=Path(workspace) if workspace is not None else Path.cwd(),
             max_turns=max_turns,
-            cancel=asyncio.Event(),
             append_system_prompt=args.append_system_prompt,
         )
     )
@@ -170,14 +212,13 @@ def _replay(args: argparse.Namespace) -> int:
             None,
         )
         turn_id = "" if preceding_turn is None else str(preceding_turn.payload.get("turn_id", ""))
-        following = records[index + 1] if index + 1 < len(records) else None
-        tools: list[str] = []
-        if following is not None and following.type == "model/request":
-            tools = list(following.payload.get("tools", []))
+        # 折叠入参只从该点之前的事实派生：`append_system_prompt` 来自 `session/start`，
+        # 工具描述取空——M1 的注册表为空，任何注册工具的名字都只出现在该点之后的 `model/request` 里。
+        # 注册表非空时这条必须改（见 docs/adr/0002-deferred-refactors.md）。
         recomputed = fold(
             records[:index],
             append_system_prompt=append_system_prompt,
-            tool_descriptions=tools,
+            tool_descriptions=(),
         )
         if assembled_payload(turn_id, recomputed) != record.payload:
             return _report_failure(
