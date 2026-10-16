@@ -2,7 +2,9 @@
 
 个人实验版 agent harness 的 MVP。headless CLI 优先，架构决策照抄 DeepSeek Harness（DSH）的核心思想，用 OpenSpec 做规格（SDD）、用 TDD 做实现。
 
-**当前状态**：M0 —— 仓库刚初始化，参考材料已就位，**M1 尚未开始，一行实现代码都没有**。
+**当前状态**：**M0 已完成** —— 工作区已建、DSH 参考材料已拷入、OpenSpec 1.14.2 已装并 `init --tools dsh`（技能在 `.dsh/skills/`）、首次提交 `0b27bdb`。**M1 尚未开始，一行实现代码都没有。**
+
+已装的 OpenSpec 工作流（core profile，delivery=skills）：`openspec-propose`、`openspec-explore`、`openspec-apply-change`、`openspec-update-change`、`openspec-sync-specs`、`openspec-archive-change`。`openspec-verify-change` **未装**——它要 `openspec config profile` 交互勾选；在它可用之前，规格与实现的一致性用 `code-review` 技能（Standards / Spec 两轴）代劳。
 
 ---
 
