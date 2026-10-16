@@ -176,3 +176,22 @@ def test_api_key_from_the_environment_never_reaches_log_or_stdout(tmp_path: Path
     assert secret not in result.stdout
     assert secret not in result.stderr
     assert secret not in log_text
+
+
+def test_the_repo_hello_fixture_is_one_plain_reply(tmp_path: Path) -> None:
+    assert HELLO_SCENARIO.is_file(), f"missing fixture: {HELLO_SCENARIO}"
+
+    result = _cli(
+        "run", "-p", "任务", "--provider", "mock", "--fixture", str(HELLO_SCENARIO), cwd=tmp_path
+    )
+
+    records = [
+        json.loads(line)
+        for line in _log_files(tmp_path)[0].read_text(encoding="utf-8").splitlines()
+    ]
+    responses = [record for record in records if record["type"] == "model/response"]
+
+    assert result.returncode == 0
+    assert len(responses) == 1
+    assert responses[0]["payload"]["content"] == "hello from fixture"
+    assert responses[0]["payload"]["finish_reason"] == "stop"

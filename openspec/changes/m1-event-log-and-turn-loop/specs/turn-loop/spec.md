@@ -46,6 +46,13 @@
 - **WHEN** 某回合产生了 `tool/result` 记录
 - **THEN** 下一回合的 `context/assembled` 里包含对应的工具结果消息
 
+### Requirement: 已注册工具在 M1 是 NOT_IMPLEMENTED 结果
+`tool/result` 的 `outcome` 词表是 `UNKNOWN_TOOL` 与 `NOT_IMPLEMENTED`：M1 只有工具定义没有执行实现，已注册工具被调用时 SHALL 产生 `outcome: NOT_IMPLEMENTED` 的 `tool/result`，MUST NOT 用 `OK` 假装派发成功。
+
+#### Scenario: 注册表里有定义也只产出 NOT_IMPLEMENTED
+- **WHEN** 派发一个注册表里有定义的工具调用
+- **THEN** 结果是 `outcome: NOT_IMPLEMENTED`，内容里带上该工具的名字与定义里的描述
+
 ### Requirement: Provider 失败是回合终止结果
 当 Provider 无法产出合法回复时，系统 SHALL 写一条 `error/model` 记录（含 `code`）、写 `turn/end`（`stop_reason: PROVIDER_ERROR`）、写 `session/end`，并以退出码 1 结束；MUST NOT 抛出未捕获异常打断进程。M1 的 `code` 取值：`PROVIDER_EXHAUSTED`、`PROVIDER_SCHEMA_INVALID`。
 
@@ -54,11 +61,11 @@
 - **THEN** 日志写 `error/model`（`code: PROVIDER_EXHAUSTED`）与 `session/end`，退出码为 1
 
 ### Requirement: 用户取消是 ABORTED 结果
-当运行期间收到取消信号时，系统 SHALL 写 `turn/end`（`stop_reason: ABORTED`）与 `session/end`，并以退出码 5 结束。M1 不派发真实工具，因此不写 `tool/cancelled`；该类型随工具里程碑进入词表。
+当运行期间收到取消信号时，系统 SHALL 写一条 `error/abort`（含 `turn_id` 与 `code: ABORTED`）、写 `turn/end`（`stop_reason: ABORTED`）与 `session/end`，并以退出码 5 结束。M1 不派发真实工具，因此不写 `tool/cancelled`；该类型随工具里程碑进入词表。
 
 #### Scenario: 回合进行中取消
 - **WHEN** 某回合尚未写 `turn/end` 时收到取消信号
-- **THEN** 日志以 `turn/end`（`stop_reason: ABORTED`）与 `session/end` 收尾，退出码为 5
+- **THEN** 日志以 `error/abort`、`turn/end`（`stop_reason: ABORTED`）与 `session/end` 收尾，退出码为 5
 
 ### Requirement: 回合数上限由 --max-turns 决定
 系统 SHALL 用 `--max-turns` 限制单次 run 的回合数，默认 8，取值 MUST 是 ≥ 1 的整数；非法取值 SHALL 以退出码 2 结束且在 session 开始之前失败。

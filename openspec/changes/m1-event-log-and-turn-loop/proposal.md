@@ -20,7 +20,7 @@ mini-harness 现在一行实现代码都没有，而 M2..M7（文件工具、围
 
 - `event-log`: 只追加 JSONL 事件日志的写入契约——`schema_version`、事件类型词表、session id 与日志文件定位、追加不改写。
 - `context-projection`: 从事件日志折叠出「当前算数的上下文」——受保护头部 + 保留尾部；冷启动全量重放。
-- `turn-loop`: 显式回合主循环——记账、装配、调模型、派发工具、判定停止，以及 `UNKNOWN_TOOL` 这类失败结果。
+- `turn-loop`: 显式回合主循环——记账、装配、调模型、派发工具、判定停止，以及 `UNKNOWN_TOOL`、`NOT_IMPLEMENTED` 这类失败结果。
 - `provider`: Provider 单方法接口契约与 mock Provider（JSON fixture 序列），mock 与真实实现共用同一接口。
 - `cli`: `minihns run` / `minihns replay` 的命令行外部行为与退出码表。
 
@@ -30,10 +30,10 @@ mini-harness 现在一行实现代码都没有，而 M2..M7（文件工具、围
 
 ## Impact
 
-- 新代码：`src/mini_harness/`（`events/`、`projection/`、`loop/`、`tools/`、`provider/`、`cli/`）——本 change 只规定边界，不写实现。
+- 新代码：`src/mini_harness/`（`events/`、`loop/`、`tools/`、`provider/`、`cli/`）——本 change 只规定边界，不写实现。折叠（`context-projection` 这条能力的实现）落在 `src/mini_harness/events/fold.py`，与日志同层（design D1），没有独立的 `src/mini_harness/projection/` 包。
 - 新测试：`tests/`，只写在六个预先约定的 seam 上（回合循环 / 工具注册与管线 / 文件工具契约 / 日志追加与折叠 / Provider 接口 / CLI 黑盒）。M1 覆盖 ①②④⑤⑥；seam ③（文件工具契约）在 M2 才出现。
 - 新依赖：`pydantic` v2（事件 payload 与 Provider 返回校验）、`pytest` + `pytest-asyncio`；`uv` 管理。
-- 「DSH 这么做」与「mini 版故意简化」的差别：DSH 是 `SESSION_FORMAT_VERSION = 4`、60 种已知事件类型、可选 zstd 压缩、带投影键注册表（见 `docs/dsh-reference/DSH逆向分析报告.md`）。mini 版取 `schema_version = 1`、16–20 种事件、明文 JSONL、无投影缓存。这些简化的代价记入 `docs/adr/`（ADR-0001 与新增的「明文日志与版本从 1 起」条目），不在本 change 内实现。
+- 「DSH 这么做」与「mini 版故意简化」的差别：DSH 是 `SESSION_FORMAT_VERSION = 4`、60 种已知事件类型、可选 zstd 压缩、带投影键注册表（见 `docs/dsh-reference/DSH逆向分析报告.md`）。mini 版取 `schema_version = 1`、16–20 种事件、明文 JSONL、无投影缓存。这些简化的代价记入 `docs/adr/`（ADR-0001「M1 的刻意简化」与 ADR-0002「记账：M1 留下的坏味道与设计缺口」），不在本 change 内实现。
 
 ## 明确不做（M1 范围外）
 

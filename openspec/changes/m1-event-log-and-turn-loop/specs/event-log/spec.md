@@ -29,7 +29,7 @@
 - **THEN** 后写入记录的 `seq` 比先写入记录的大 1
 
 ### Requirement: 事件类型只取自 M1 词表
-系统 SHALL 只发出 M1 词表中的事件类型：`session/start`、`turn/start`、`context/assembled`、`model/request`、`model/response`、`tool/call`、`tool/result`、`turn/end`、`session/end`、`error/*`。词表外的事实 MUST NOT 通过临时新造类型表达。
+系统 SHALL 只发出 M1 词表中的事件类型：`session/start`、`turn/start`、`context/assembled`、`model/request`、`model/response`、`tool/call`、`tool/result`、`turn/end`、`session/end`、`error/*`。`error/*` 在 M1 用到的具体类型是 `error/model`、`error/internal`、`error/abort`。词表外的事实 MUST NOT 通过临时新造类型表达。
 
 #### Scenario: 一轮纯文本回复的事件序列
 - **WHEN** mock Provider 在一个回合返回不含工具调用的回复，run 正常结束
@@ -63,3 +63,14 @@
 #### Scenario: session 目录不可写
 - **WHEN** `--session-dir` 指向一个不可写的路径
 - **THEN** `minihns run` 以退出码 1 结束，stderr 含 `LOG_WRITE_FAILED`
+
+#### Scenario: 回合中途日志变得不可写
+- **WHEN** 日志文件在 session 运行途中变得不可写
+- **THEN** 追加产出 `LOG_WRITE_FAILED` 失败结果而不是抛出异常，已写入的字节不变，`minihns run` 以退出码 1 结束
+
+### Requirement: 日志读不动或读到坏行是终止结果
+当 session 日志无法读取、或某一行不是合法的事件记录时，系统 SHALL 产出 `LOG_UNREADABLE` 失败结果（含路径与原因）而不是抛出未捕获异常；`minihns replay` SHALL 以退出码 1 结束并在 stderr 输出该失败码。
+
+#### Scenario: 日志里有一行不是合法的事件记录
+- **WHEN** 被重放的日志里某一行不是合法的事件记录
+- **THEN** `minihns replay` 以退出码 1 结束，stderr 含 `LOG_UNREADABLE`，且进程没有未捕获异常

@@ -49,7 +49,6 @@ def test_log_is_append_only(tmp_path: Path) -> None:
     final = log.path.read_bytes()
 
     assert final.startswith(written_so_far), "已写入的字节必须是最终文件的严格前缀"
-    assert final.startswith(written_so_far), "已写入的字节必须是最终文件的严格前缀"
     assert len(final) > len(written_so_far)
 
 
@@ -73,8 +72,6 @@ def test_types_outside_the_vocabulary_are_written_as_error_internal(tmp_path: Pa
     types = [json.loads(line)["type"] for line in lines]
     assert types == ["session/start", "error/internal"]
 
-    payload = json.loads(lines[1])["payload"]
-    assert payload["unrecognized_type"] == "widget/frobnicate"
     payload = json.loads(lines[1])["payload"]
     assert payload["unrecognized_type"] == "widget/frobnicate"
     assert payload["detail"] == "boom"

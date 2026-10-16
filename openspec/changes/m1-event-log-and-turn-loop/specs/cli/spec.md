@@ -44,7 +44,7 @@
 - **THEN** stdout 的行数与日志行数相同，且逐行解析后的对象相等
 
 ### Requirement: minihns replay 逐点重算折叠并断言相等
-系统 SHALL 提供 `minihns replay <session-id>`：定位该 session 的日志，对日志里每一条 `context/assembled` 用它之前的日志前缀重算折叠结果，并与该记录的 payload 逐字段比对；replay SHALL 打印逐回合序列与最后一次装配的上下文。replay MUST NOT 调用 Provider，MUST NOT 修改被重放的日志。
+系统 SHALL 提供 `minihns replay <session-id>`：定位该 session 的日志，对日志里每一条 `context/assembled` 用它之前的日志前缀重算折叠结果，并与该记录的 payload 逐字段比对；重算的入参 MUST NOT 取自该点之后的事件。replay SHALL 打印逐回合序列与最后一次装配的上下文。replay MUST NOT 调用 Provider，MUST NOT 修改被重放的日志。重放失败是「重放不追加事件」的例外：`error/replay` 只写到 stderr，MUST NOT 被追加进被重放的日志（理由见 `docs/adr/0001-m1-simplifications.md`）。
 
 #### Scenario: 每个装配点都重算相等
 - **WHEN** 先跑一次 run，再对同一 session id 执行 replay
@@ -75,6 +75,10 @@
 #### Scenario: 日志不可写时只有 stderr
 - **WHEN** session 目录不可写导致日志无法创建
 - **THEN** `minihns run` 以退出码 1 结束、stderr 含 `LOG_WRITE_FAILED` 与失败路径，且不要求存在 `error/*` 事件
+
+#### Scenario: Ctrl-C 是取消结果
+- **WHEN** `minihns run` 运行期间收到 Ctrl-C（SIGINT）
+- **THEN** 取消信号被置位，日志以 `error/abort`、`turn/end`（`stop_reason: ABORTED`）与 `session/end` 收尾，进程以退出码 5 结束且没有未捕获异常
 
 #### Scenario: M1 不产生保留码
 - **WHEN** 跑通 M1 的全部 mock 场景与失败场景
