@@ -7,29 +7,15 @@ import codecs
 import json
 import os
 import signal
-import subprocess
-import sys
 from pathlib import Path
 
+from cli_blackbox import _cli
 from mini_harness.cli import main as cli_main
 from mini_harness.cli.main import STOP_REASONS_TO_EXIT_CODES, exit_code_for, sigint_handler
 from mini_harness.events import EventLog
 from mini_harness.loop import STOP_REASONS, RunOutcome
 from mini_harness.provider import AssistantTurn
 from paths import HELLO_SCENARIO
-
-
-def _cli(
-    *args: str, cwd: Path, env: dict[str, str] | None = None
-) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [sys.executable, "-m", "mini_harness.cli.main", *args],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        env=env,
-    )
 
 
 def _log_files(cwd: Path) -> list[Path]:

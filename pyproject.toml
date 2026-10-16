@@ -19,10 +19,10 @@ packages = ["src/mini_harness"]
 
 [dependency-groups]
 dev = [
+    "coverage>=7.16",
     "mypy>=1.13",
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
-    "pytest-cov>=7.1.0",
     "ruff>=0.17.1",
 ]
 
@@ -46,10 +46,17 @@ allowed-confusables = ["：", "，", "；", "（", "）"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-addopts = "--cov=mini_harness --cov-report=term-missing"
+# 覆盖率不在这里出报告：pytest-cov 在 `coverage combine` 之前报告，看不见子进程的数据。
+# 门禁的三步是 `coverage run -m pytest` → `coverage combine` → `coverage report --fail-under`。
 
-# 覆盖率地板：实测 76%（457 条语句 / 108 条未覆盖），地板定在 75，略低于实测、当前可达。
-# 地板低的主要是 `cli/main.py`（36%）：seam ⑥ 的 CLI 测试是 subprocess 黑盒，跑在子进程里，
-# 不计进这次进程内的覆盖率。要抬地板先解决「子进程也记账」，不要靠补低价值测试凑数。
+# seam ⑥ 的 CLI 测试是真实子进程，每个子进程各写一份 partial 数据文件（见 tests/cli_blackbox.py），
+# 所以 source 明写包名、parallel 常开。
+[tool.coverage.run]
+source = ["mini_harness"]
+parallel = true
+
+# 覆盖率地板：combine 后实测 95.62%（457 条语句 / 20 条未覆盖），地板定在 95，略低于实测、当前可达。
+# 未覆盖集中在 `cli/main.py`（96%：57-59、182、214）、`events/reader.py`（85%）、`loop/turn_loop.py`（90%）。
+# 跑法三步：`coverage run -m pytest` → `coverage combine` → `coverage report --fail-under=95 --show-missing`。
 [tool.coverage.report]
-fail_under = 75
+fail_under = 95

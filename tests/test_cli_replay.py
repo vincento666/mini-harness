@@ -3,23 +3,12 @@
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
 from pathlib import Path
 
+from cli_blackbox import _cli
 from paths import HELLO_SCENARIO, TOOL_THEN_DONE_SCENARIO
 
 _PREFIX = "final_context: "
-
-
-def _cli(*args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [sys.executable, "-m", "mini_harness.cli.main", *args],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-    )
 
 
 def _run_once(tmp_path: Path, fixture: str = str(HELLO_SCENARIO)) -> tuple[str, Path]:

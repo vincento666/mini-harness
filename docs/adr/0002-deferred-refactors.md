@@ -29,6 +29,7 @@
 
 - 现在不动的理由：seam ⑥ 的测试要能单独读懂「这是一次真实子进程调用」，共享 helper 会让每个文件少一行但多一次跳转。
 - M2 的处理：若第四个 CLI 测试文件出现（三份变四份），把它们收进 `tests/cli_blackbox.py`，并把 `_run_once` 这类构造 helper 一起收进去。
+- **已处理（2026-10-16，chore(test) 覆盖率记账）**：不是等第四个文件，而是记账本身逼出了共享——子进程要计入覆盖率，`coverage run --rcfile=<仓库根>/pyproject.toml -p` 与 `COVERAGE_FILE` 这两个坑必须在三处同时改，三份副本就成了三处必须同步的正确性。三份 `_cli` 已收进 `tests/cli_blackbox.py::_cli`（签名 `(*args, cwd, env=None)`，与原 `test_cli_run.py` 那份一致），三个测试文件只留 `from cli_blackbox import _cli`。`_run_once` / `_run_scenario` / `_log_files` 仍留在各自文件里：它们是本文件的构造细节，与记账无关。
 
 ## 5. `stop_reason`、`outcome`、`role` 是裸 `str`
 

@@ -2,7 +2,7 @@
 
 个人实验版 agent harness 的 MVP。headless CLI 优先，架构决策照抄 DeepSeek Harness（DSH）的核心思想，用 OpenSpec 做规格（SDD）、用 TDD 做实现。
 
-**当前状态**：**M1 完成并已归档** —— 62 个测试全绿、`uv run mypy --strict src` 干净（17 个源文件）、`uv run ruff check src tests` 干净（覆盖率实测 76% / 地板 75），change `m1-event-log-and-turn-loop` 已合入 `main`（merge commit `141e28c`）并归档到 `openspec/changes/archive/2026-10-16-m1-event-log-and-turn-loop/`。五份主规格已同步进 `openspec/specs/`：`cli`、`context-projection`、`event-log`、`provider`、`turn-loop`，共 33 个 Requirement / 53 个 Scenario，`openspec validate --specs` 全过。延后的重构与已知缺口见 `docs/adr/0002-deferred-refactors.md` 和 `docs/verification/m1-mutation.md` 的「剩余已知缺口」。下一个里程碑是 **M2**，等用户发话再 `/openspec-propose m2-file-tools-and-fences`。
+**当前状态**：**M1 完成并已归档** —— 62 个测试全绿、`uv run mypy --strict src` 干净（17 个源文件）、`uv run ruff check src tests` 干净（覆盖率 combine 后实测 95.62% / 地板 95），change `m1-event-log-and-turn-loop` 已合入 `main`（merge commit `141e28c`）并归档到 `openspec/changes/archive/2026-10-16-m1-event-log-and-turn-loop/`。五份主规格已同步进 `openspec/specs/`：`cli`、`context-projection`、`event-log`、`provider`、`turn-loop`，共 33 个 Requirement / 53 个 Scenario，`openspec validate --specs` 全过。延后的重构与已知缺口见 `docs/adr/0002-deferred-refactors.md` 和 `docs/verification/m1-mutation.md` 的「剩余已知缺口」。下一个里程碑是 **M2**，等用户发话再 `/openspec-propose m2-file-tools-and-fences`。
 
 已装的 OpenSpec 工作流（core profile，delivery=skills）：`openspec-propose`、`openspec-explore`、`openspec-apply-change`、`openspec-update-change`、`openspec-sync-specs`、`openspec-archive-change`。`openspec-verify-change` **未装**——它要 `openspec config profile` 交互勾选；在它可用之前，规格与实现的一致性用 `code-review` 技能（Standards / Spec 两轴）代劳。
 
@@ -31,8 +31,10 @@
 
 ```bash
 uv sync                       # 装依赖（含 dev）
-uv run pytest                 # 全部测试（含覆盖率地板）
-uv run pytest -k <表达式>     # 单个红绿循环
+uv run coverage run -m pytest -q        # 跑测试并记账：主进程 + seam ⑥ 的每个子进程各写一份 partial
+uv run coverage combine                 # 把仓库根里的 partial 合并进 .coverage
+uv run coverage report --fail-under=95 --show-missing   # 覆盖率地板（实测 95.62%）
+uv run pytest -k <表达式>     # 单个红绿循环（不出覆盖率报告，覆盖率只走上面三步）
 uv run mypy --strict src      # 类型检查
 uv run ruff check src tests   # 风格门禁
 uv run ruff format --diff src tests   # 看还有没有没格式化的（空输出 = 干净）
@@ -50,15 +52,15 @@ uv run minihns serve --http   # M7 之后
 
 | 门禁 | 跑什么 | 规定它的东西 |
 |---|---|---|
-| 测试 | `uv run pytest` | pytest + pytest-asyncio；测试只写在六个 seam 上，当前 62 个 |
-| 覆盖率地板 | 同上（`addopts` 里 `--cov=mini_harness --cov-report=term-missing`） | `pyproject.toml` 的 `[tool.coverage.report] fail_under = 75`，实测 76% |
+| 测试 | `uv run coverage run -m pytest -q`（红绿循环中可只跑 `uv run pytest -k <表达式>`） | pytest + pytest-asyncio；测试只写在六个 seam 上，当前 62 个 |
+| 覆盖率地板 | `uv run coverage run -m pytest -q` → `uv run coverage combine` → `uv run coverage report --fail-under=95 --show-missing` | `pyproject.toml` 的 `[tool.coverage.report] fail_under = 95`，combine 后实测 95.62%（457 条语句 / 20 条未覆盖）；报告不在 pytest 的 `addopts` 里出 |
 | 类型 | `uv run mypy --strict src` | `[tool.mypy] strict = true`，17 个源文件 |
 | 风格 | `uv run ruff check src tests` | `[tool.ruff]` + `[tool.ruff.lint] select = ["E","F","I","UP","B","SIM","C4","RUF"]`，`line-length = 100` |
 | 规格结构 | `openspec validate --specs` | OpenSpec（主 specs 的 Requirement / Scenario 形状） |
 | 规格 ↔ 实现 | `code-review` 技能，Standards 与 Spec 两轴 | 本文件流程节（`openspec-verify-change` 未装，由它代劳） |
 | 变异测试 | 每个里程碑收尾一轮 | 本文件流程节；记录进 `docs/verification/<change-id>-mutation.md` |
 
-**覆盖率地板为什么只有 75**：seam ⑥ 的 CLI 测试是 subprocess 黑盒，跑在子进程里，不计进这次进程内的覆盖率，`cli/main.py` 因此只有 36%。要抬地板先解决「子进程也记账」，不要靠补低价值测试凑数。
+**覆盖率地板为什么是 95**：seam ⑥ 的 CLI 测试是真实子进程，记账因此分两段——主进程由 `coverage run -m pytest` 记，每个 CLI 子进程由 `tests/cli_blackbox.py::_cli` 套的一层 `coverage run --rcfile=<仓库根>/pyproject.toml -p` 记（`COVERAGE_FILE` 指回仓库根：测试的 `cwd` 是 tmp_path，配置文件与 partial 文件都在仓库外时 coverage 找不到 / `coverage combine` 扫不到）。合并后 TOTAL **95.62%**，地板定在 95，略低于实测。`cli/main.py` 从 36% 抬到 **96%**（未覆盖只剩 57-59、182、214），`provider/mock.py` 80% → 98%。现在真正低的是 `events/reader.py`（85%）与 `loop/turn_loop.py`（90%）——要再抬地板就补这两处的判据，不要靠凑低价值测试。`coverage combine` 报的「Combined 20 files, skipped 18」里 skipped 是**内容完全相同的 partial 被去重**，不是数据丢了。
 
 **ruff 唯一的例外**：`allowed-confusables = ["：", "，", "；", "（", "）"]`。本项目的 docstring / 注释 / 面向用户的字符串一律用中文全角标点，RUF001/RUF002/RUF003 把这几个字符当成「可疑的 ASCII 近似字符」报警，与这条成文规范冲突；其中 `SYSTEM_PROMPT` 与 `未注册的工具：read` 是规格里的字面量，改标点就是改行为。全仓没有一处 `# noqa`。
 
