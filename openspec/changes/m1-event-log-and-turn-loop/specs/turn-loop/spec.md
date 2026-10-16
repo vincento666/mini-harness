@@ -21,15 +21,19 @@
 - **THEN** 日志里恰有 3 个不同的 `turn_id`，每个 `turn_id` 恰对应一条 `turn/start` 与一条 `turn/end`
 
 ### Requirement: 停止判定写在 turn/end
-系统 SHALL 在每条 `turn/end` 的 payload 里写 `stop_reason`，取值只允许 `MODEL_COMPLETED`、`MAX_TURNS`、`PROVIDER_ERROR`、`ABORTED`。`session/end` SHALL 记录整个 session 的最终 `stop_reason` 与回合总数。
+系统 SHALL 在每条 `turn/end` 的 payload 里写 `stop_reason`，取值只允许 `MODEL_COMPLETED`、`TOOL_CALLS`、`MAX_TURNS`、`PROVIDER_ERROR`、`ABORTED`。`TOOL_CALLS` 只用于「模型要求调工具、还要继续」的回合；`MODEL_COMPLETED` 只用于「模型不再要求继续」。`session/end` SHALL 记录整个 session 的最终 `stop_reason` 与回合总数。
 
 #### Scenario: 模型不请求工具即停止
 - **WHEN** Provider 返回的 `tool_calls` 为空
 - **THEN** 该回合 `stop_reason` 为 `MODEL_COMPLETED`，且不再开始下一回合
 
+#### Scenario: 模型要求调工具时回合以 TOOL_CALLS 收尾
+- **WHEN** Provider 返回的 `tool_calls` 非空且回合数未达 `--max-turns`
+- **THEN** 该回合 `stop_reason` 为 `TOOL_CALLS`，且紧接着开始下一回合
+
 #### Scenario: 达到回合上限即停止
 - **WHEN** 已完成的回合数达到 `--max-turns`
-- **THEN** 最后一个回合的 `stop_reason` 为 `MAX_TURNS`，`session/end` 被写入，run 以退出码 0 结束
+- **THEN** 最后一个回合的 `stop_reason` 为 `MAX_TURNS`（即使该回合也要求调工具），`session/end` 被写入，run 以退出码 0 结束
 
 ### Requirement: 未注册工具是 UNKNOWN_TOOL 结果
 系统 SHALL 把模型请求的每个工具调用派发到工具注册表；M1 的注册表为空，未注册的工具 SHALL 产生一条 `tool/result` 且 `outcome` 为 `UNKNOWN_TOOL`，回合 MUST NOT 因此中断。

@@ -136,16 +136,39 @@ def _replay(args: argparse.Namespace) -> int:
         )
 
     records = read_events(path)
-    last_assembled = max(
-        (index for index, record in enumerate(records) if record.type == "context/assembled"),
-        default=-1,
-    )
-    context = fold(records[: last_assembled + 1])
+    assembled = [
+        (index, record)
+        for index, record in enumerate(records)
+        if record.type == "context/assembled"
+    ]
+    if not assembled:
+        return _report_failure(
+            "REPLAY_MISMATCH", f"error/replay 日志里没有任何 context/assembled：{path}", EXIT_INTERNAL_ERROR
+        )
+
+    append_system_prompt = str(records[0].payload.get("append_system_prompt", ""))
+    for index, record in assembled:
+        following = records[index + 1] if index + 1 < len(records) else None
+        tools: list[str] = []
+        if following is not None and following.type == "model/request":
+            tools = list(following.payload.get("tools", []))
+        recomputed = fold(
+            records[:index],
+            append_system_prompt=append_system_prompt,
+            tool_descriptions=tools,
+        )
+        if recomputed.model_dump(mode="json") != record.payload:
+            return _report_failure(
+                "REPLAY_MISMATCH",
+                f"error/replay seq={record.seq} 的 context/assembled 与其前缀的重算不一致",
+                EXIT_INTERNAL_ERROR,
+            )
+        print(f"verified seq={record.seq}: OK")
 
     for record in records:
         if record.type == "turn/end":
             print(f"turn {record.payload['turn_id']}: {record.payload['stop_reason']}")
-    print("final_context: " + json.dumps(context.model_dump(mode="json"), ensure_ascii=False))
+    print("final_context: " + json.dumps(assembled[-1][1].payload, ensure_ascii=False))
     return EXIT_OK
 
 

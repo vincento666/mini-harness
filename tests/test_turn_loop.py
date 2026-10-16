@@ -117,6 +117,28 @@ async def test_reaching_max_turns_stops_with_max_turns_and_no_failure(tmp_path: 
     assert outcome.turns == 2
 
 
+async def test_turn_that_requests_tool_calls_closes_with_tool_calls(tmp_path: Path) -> None:
+    log = EventLog.create(session_dir=tmp_path, session_id="s-toolcalls")
+
+    outcome = await run_session(
+        prompt="任务",
+        provider=FixtureProvider(
+            entries=[*_tool_call_entries(1), {"content": "done", "finish_reason": "stop"}]
+        ),
+        provider_name="mock",
+        log=log,
+        registry=ToolRegistry(),
+        workspace=tmp_path,
+        max_turns=8,
+        cancel=asyncio.Event(),
+    )
+
+    records = read_events(log.path)
+    turn_ends = [record.payload["stop_reason"] for record in records if record.type == "turn/end"]
+    assert turn_ends == ["TOOL_CALLS", "MODEL_COMPLETED"]
+    assert outcome.stop_reason == "MODEL_COMPLETED"
+
+
 class _CancelDuringGenerate:
     """模拟回合中途取消：`generate` 期间把取消信号置起。"""
 

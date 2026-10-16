@@ -5,7 +5,7 @@
 ## 1. 工程骨架（无测试）
 
 - [x] 1.1 建 `pyproject.toml`（`requires-python >= 3.12`、`src/mini_harness/` 布局、`minihns` console script、pydantic v2）与 `uv sync`，验证 `uv run minihns --help` 退出码 0 且打印 usage
-- [x] 1.2 配 mypy strict 与 pytest + pytest-asyncio，验证 `uv run mypy --strict src` 与 `uv run pytest`（此时 0 个测试）都退出码 0
+- [x] 1.2 配 mypy strict 与 pytest + pytest-asyncio，验证 `uv run mypy --strict src` 退出码 0；此时 `uv run pytest` 因没有任何测试返回 pytest 的 no-tests 码 5，退出码 0 从 2.1 起才成立
 - [x] 1.3 建 `tests/fixtures/scenarios/` 目录与一个最小 mock fixture（单条纯文本回复），验证该文件被 pytest 的 fixture 路径常量解析到
 
 ## 2. 事件日志追加（seam ④）
@@ -23,7 +23,7 @@
 - [x] 3.2 红：断言折叠结果第一条是内置系统提示、其后按事件顺序保留对话体（含 assistant 与工具结果消息）；绿后验证（seam ④）
 - [x] 3.3 红：断言 fixture 回复文本与内置系统提示相同时头部不被顶替；`--append-system-prompt` 的文本被追加且常量仍在最前；绿后验证（seam ④）
 - [x] 3.4 红：断言 50 条对话事件全部被折入、没有截断也没有 `CONTEXT_WINDOW_EXCEEDED`；绿后验证（seam ④）
-- [x] 3.5 红：冷启动（只给日志文件）折叠结果等于运行当时最后一条 `context/assembled` 的 payload；绿后验证（seam ④）
+- [x] 3.5 红：冷启动（只给日志文件）逐点重算——每条 `context/assembled` 都等于其之前前缀的折叠结果；绿后验证（seam ④）
 
 ## 4. Provider 契约与 mock（seam ⑤）
 
@@ -46,7 +46,7 @@
 
 - [x] 6.1 红：断言 fixture 声明的每个工具调用都产出配对的 `tool/call` 与 `tool/result`，`outcome == UNKNOWN_TOOL`，且该回合正常写 `turn/end`；绿后验证（seam ②①）
 - [x] 6.2 红：断言上一回合的 `tool/result` 出现在下一回合的 `context/assembled` 里；绿后验证（seam ②④）
-- [x] 6.3 红：断言 `session/start` payload 记录 `workspace`（绝对路径）、`provider`、`max_turns`、`append_system_prompt`、`schema_version`；绿后验证（seam ④⑥）
+- [x] 6.3 红：断言 `session/start` payload 记录 `workspace`（绝对路径）、`provider`、`max_turns`、`append_system_prompt`、`prompt`，且 payload 里没有 `schema_version`；绿后验证（seam ④⑥）
 
 ## 7. CLI：run（seam ⑥）
 
@@ -58,7 +58,7 @@
 
 ## 8. CLI：replay（seam ⑥）
 
-- [x] 8.1 红：断言 `minihns replay <session-id>` 打印的最终上下文与日志里最后一条 `context/assembled` 一致，且过程中没有 Provider 调用；绿后验证（seam ⑥④⑤）
+- [x] 8.1 红：断言 `minihns replay <session-id>` 对每条 `context/assembled` 逐点重算都相等、退出码 0，且过程中没有 Provider 调用；绿后验证（seam ⑥④⑤）
 - [x] 8.2 红：断言 replay 未知 session id 时退出码 2、stderr 含 `SESSION_NOT_FOUND` 与查找路径；绿后验证（seam ⑥）
 - [x] 8.3 红：断言连续两次 replay 后被重放日志的字节数与内容都不变；绿后验证（seam ⑥④）
 
@@ -68,6 +68,14 @@
 - [x] 9.2 红：断言 M1 全部场景（成功与失败）没有任何 run 以 3 或 4 退出；绿后验证（seam ⑥）
 - [x] 9.3 跑 `uv run mypy --strict src` 与 `uv run pytest` 全绿，验证 M1 完成判据：mock 场景跑通、`replay` 输出与实时折叠一致
 - [x] 9.4 把「明文 JSONL、`schema_version` 从 1 起、M1 不施加窗口预算、退出码 3/4 保留」四条简化写进 `docs/adr/`，验证 ADR 文件存在且引用本 change
+
+## 10. 规格修订轮（用户裁决后的新增可观察行为）
+
+- [ ] 10.1 红：断言 `tool_calls` 非空且未达回合上限的回合 `turn/end.stop_reason == TOOL_CALLS`，且 `MODEL_COMPLETED` 只出现在模型不再要求继续的回合；绿后验证（seam ①）
+- [ ] 10.2 红：断言 `minihns replay` 对每条 `context/assembled` 逐点重算相等；当某条被人为篡改时 replay 产出 `error/replay`（`code: REPLAY_MISMATCH`）且退出码 1、被重放的日志不被改写；绿后验证（seam ⑥④）
+- [ ] 10.3 红：断言 `session/start` payload 含 `prompt` 原文且不含 `schema_version`，且折叠里用户 prompt 是头部后第一条 `user` 消息；绿后验证（seam ④⑥）
+- [ ] 10.4 红：断言 `--provider mock` 缺 `--fixture` 时退出码 2、stderr 含 `INVALID_ARGUMENT`、没有 session 日志（覆盖性切片，行为在 7.x 已实现）；绿后验证（seam ⑥）
+- [ ] 10.5 变异测试收尾：跑一轮有效变异并记进 `docs/verification/m1-mutation.md`，`git checkout --` 还原后确认全绿与 `uv run mypy --strict src` 干净，并在 `AGENTS.md` 写下「每个里程碑收尾跑一轮变异测试并记录」
 
 ## Workflow follow-up
 

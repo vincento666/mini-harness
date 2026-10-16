@@ -47,6 +47,11 @@ def protected_header(
 
 
 def _body_message(event: EventRecord) -> Message | None:
+    if event.type == "session/start":
+        prompt = event.payload.get("prompt")
+        if isinstance(prompt, str) and prompt:
+            return Message(role="user", content=prompt)
+        return None
     if event.type == "model/response":
         return Message(
             role="assistant",

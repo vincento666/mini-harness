@@ -7,7 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from paths import HELLO_SCENARIO
+from paths import HELLO_SCENARIO, TOOL_THEN_DONE_SCENARIO
 
 _PREFIX = "final_context: "
 
@@ -22,9 +22,9 @@ def _cli(*args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _run_once(tmp_path: Path) -> tuple[str, Path]:
+def _run_once(tmp_path: Path, fixture: str = str(HELLO_SCENARIO)) -> tuple[str, Path]:
     result = _cli(
-        "run", "-p", "任务", "--provider", "mock", "--fixture", str(HELLO_SCENARIO), cwd=tmp_path
+        "run", "-p", "任务", "--provider", "mock", "--fixture", fixture, cwd=tmp_path
     )
     session_id = result.stdout.strip()
     return session_id, tmp_path / "sessions" / f"{session_id}.jsonl"
@@ -72,4 +72,47 @@ def test_replay_twice_leaves_the_log_bytes_untouched(tmp_path: Path) -> None:
     _cli("replay", session_id, cwd=tmp_path)
     _cli("replay", session_id, cwd=tmp_path)
 
+    assert log_path.read_bytes() == before
+
+
+def test_replay_recomputes_and_verifies_every_assembly_point(tmp_path: Path) -> None:
+    session_id, log_path = _run_once(tmp_path, str(TOOL_THEN_DONE_SCENARIO))
+    recorded_seqs = [
+        json.loads(line)["seq"]
+        for line in log_path.read_text(encoding="utf-8").splitlines()
+        if json.loads(line)["type"] == "context/assembled"
+    ]
+    assert len(recorded_seqs) == 2
+
+    replay = _cli("replay", session_id, cwd=tmp_path)
+
+    verified = [
+        int(line.split("seq=")[1].split(":")[0])
+        for line in replay.stdout.splitlines()
+        if line.startswith("verified seq=")
+    ]
+    assert replay.returncode == 0
+    assert verified == recorded_seqs
+
+
+def test_replay_reports_a_mismatched_assembly_point_and_leaves_the_log_alone(
+    tmp_path: Path,
+) -> None:
+    session_id, log_path = _run_once(tmp_path, str(TOOL_THEN_DONE_SCENARIO))
+    records = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+    target = next(record for record in records if record["type"] == "context/assembled")
+    tampered_seq = target["seq"]
+    target["payload"]["messages"] = [{"role": "user", "content": "被篡改"}]
+    log_path.write_text(
+        "\n".join(json.dumps(record, ensure_ascii=False) for record in records) + "\n",
+        encoding="utf-8",
+    )
+    before = log_path.read_bytes()
+
+    replay = _cli("replay", session_id, cwd=tmp_path)
+
+    assert replay.returncode == 1
+    assert "error/replay" in replay.stderr
+    assert "REPLAY_MISMATCH" in replay.stderr
+    assert str(tampered_seq) in replay.stderr
     assert log_path.read_bytes() == before

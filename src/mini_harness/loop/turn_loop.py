@@ -8,13 +8,13 @@ from pathlib import Path
 
 from mini_harness.events.fold import fold
 from mini_harness.events.reader import read_events
-from mini_harness.events.record import SCHEMA_VERSION
 from mini_harness.events.writer import EventLog
 from mini_harness.provider.contract import Provider, ProviderFailure
 from mini_harness.tools.dispatch import dispatch_tool_call
 from mini_harness.tools.registry import ToolRegistry
 
 STOP_MODEL_COMPLETED = "MODEL_COMPLETED"
+STOP_TOOL_CALLS = "TOOL_CALLS"
 STOP_MAX_TURNS = "MAX_TURNS"
 STOP_PROVIDER_ERROR = "PROVIDER_ERROR"
 STOP_ABORTED = "ABORTED"
@@ -47,7 +47,6 @@ async def run_session(
     log.append(
         "session/start",
         {
-            "schema_version": SCHEMA_VERSION,
             "workspace": str(Path(workspace).resolve()),
             "provider": provider_name,
             "max_turns": max_turns,
@@ -129,7 +128,7 @@ async def run_session(
         elif turn_index == max_turns:
             stop_reason = STOP_MAX_TURNS
         else:
-            stop_reason = STOP_MODEL_COMPLETED
+            stop_reason = STOP_TOOL_CALLS
         log.append("turn/end", {"turn_id": turn_id, "stop_reason": stop_reason})
         if (
             cancel.is_set()

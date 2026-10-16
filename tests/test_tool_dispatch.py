@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from mini_harness.events import SCHEMA_VERSION, EventLog, read_events
+from mini_harness.events import EventLog, read_events
 from mini_harness.loop import run_session
 from mini_harness.provider import FixtureProvider
 from mini_harness.tools import ToolRegistry
@@ -45,7 +45,7 @@ async def test_unregistered_tool_call_is_a_paired_unknown_tool_result(tmp_path: 
     assert results[0].payload["outcome"] == "UNKNOWN_TOOL"
     turn_end = [record for record in records if record.type == "turn/end"]
     assert len(turn_end) == 2
-    assert turn_end[0].payload["stop_reason"] == "MODEL_COMPLETED"
+    assert turn_end[0].payload["stop_reason"] == "TOOL_CALLS"
 
 
 async def test_previous_tool_result_is_folded_into_the_next_context(tmp_path: Path) -> None:
@@ -69,6 +69,7 @@ async def test_session_start_records_the_run_settings(tmp_path: Path) -> None:
     assert payload["provider"] == "mock"
     assert payload["max_turns"] == 8
     assert payload["append_system_prompt"] == ""
-    assert payload["schema_version"] == SCHEMA_VERSION
+    assert payload["prompt"] == "任务"
+    assert "schema_version" not in payload
     assert Path(payload["workspace"]).is_absolute()
     assert Path(payload["workspace"]) == Path(tmp_path).resolve()

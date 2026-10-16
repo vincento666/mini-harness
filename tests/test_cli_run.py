@@ -29,6 +29,14 @@ def _log_files(cwd: Path) -> list[Path]:
     return sorted(session_dir.glob("*.jsonl"))
 
 
+def test_mock_provider_without_fixture_is_an_invalid_argument(tmp_path: Path) -> None:
+    result = _cli("run", "-p", "任务", "--provider", "mock", cwd=tmp_path)
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert _log_files(tmp_path) == []
+
+
 def test_run_without_prompt_is_an_invalid_argument(tmp_path: Path) -> None:
     result = _cli("run", cwd=tmp_path)
 

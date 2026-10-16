@@ -37,6 +37,23 @@ def _one_turn_events() -> list[EventRecord]:
     ]
 
 
+def test_user_prompt_is_the_first_body_message_after_the_header() -> None:
+    events = [
+        _rec(
+            0,
+            "session/start",
+            {"prompt": "写一份报告", "provider": "mock", "max_turns": 8, "workspace": "C:/ws"},
+        ),
+        *_one_turn_events()[1:],
+    ]
+
+    context = fold(events)
+
+    assert context.messages[0].role == "system"
+    assert context.messages[1].role == "user"
+    assert context.messages[1].content == "写一份报告"
+
+
 def test_folding_the_same_events_twice_gives_identical_results() -> None:
     events = _one_turn_events()
 
