@@ -31,6 +31,7 @@
 
 ```bash
 uv sync                       # 装依赖（含 dev）
+uv run coverage erase         # 先清空旧 partial，再开始记账（见「覆盖率地板为什么是 95」）
 uv run coverage run -m pytest -q        # 跑测试并记账：主进程 + seam ⑥ 的每个子进程各写一份 partial
 uv run coverage combine                 # 把仓库根里的 partial 合并进 .coverage
 uv run coverage report --fail-under=95 --show-missing   # 覆盖率地板（实测 95.62%）
@@ -53,7 +54,7 @@ uv run minihns serve --http   # M7 之后
 | 门禁 | 跑什么 | 规定它的东西 |
 |---|---|---|
 | 测试 | `uv run coverage run -m pytest -q`（红绿循环中可只跑 `uv run pytest -k <表达式>`） | pytest + pytest-asyncio；测试只写在六个 seam 上，当前 62 个 |
-| 覆盖率地板 | `uv run coverage run -m pytest -q` → `uv run coverage combine` → `uv run coverage report --fail-under=95 --show-missing` | `pyproject.toml` 的 `[tool.coverage.report] fail_under = 95`，combine 后实测 95.62%（457 条语句 / 20 条未覆盖）；报告不在 pytest 的 `addopts` 里出 |
+| 覆盖率地板 | `uv run coverage erase` → `uv run coverage run -m pytest -q` → `uv run coverage combine` → `uv run coverage report --fail-under=95 --show-missing` | `pyproject.toml` 的 `[tool.coverage.report] fail_under = 95`，combine 后实测 95.62%（457 条语句 / 20 条未覆盖）；报告不在 pytest 的 `addopts` 里出 |
 | 类型 | `uv run mypy --strict src` | `[tool.mypy] strict = true`，17 个源文件 |
 | 风格 | `uv run ruff check src tests` | `[tool.ruff]` + `[tool.ruff.lint] select = ["E","F","I","UP","B","SIM","C4","RUF"]`，`line-length = 100` |
 | 规格结构 | `openspec validate --specs` | OpenSpec（主 specs 的 Requirement / Scenario 形状） |
@@ -61,6 +62,8 @@ uv run minihns serve --http   # M7 之后
 | 变异测试 | 每个里程碑收尾一轮 | 本文件流程节；记录进 `docs/verification/<change-id>-mutation.md` |
 
 **覆盖率地板为什么是 95**：seam ⑥ 的 CLI 测试是真实子进程，记账因此分两段——主进程由 `coverage run -m pytest` 记，每个 CLI 子进程由 `tests/cli_blackbox.py::_cli` 套的一层 `coverage run --rcfile=<仓库根>/pyproject.toml -p` 记（`COVERAGE_FILE` 指回仓库根：测试的 `cwd` 是 tmp_path，配置文件与 partial 文件都在仓库外时 coverage 找不到 / `coverage combine` 扫不到）。合并后 TOTAL **95.62%**，地板定在 95，略低于实测。`cli/main.py` 从 36% 抬到 **96%**（未覆盖只剩 57-59、182、214），`provider/mock.py` 80% → 98%。现在真正低的是 `events/reader.py`（85%）与 `loop/turn_loop.py`（90%）——要再抬地板就补这两处的判据，不要靠凑低价值测试。`coverage combine` 报的「Combined 20 files, skipped 18」里 skipped 是**内容完全相同的 partial 被去重**，不是数据丢了。
+
+**覆盖率记账的两条纪律**：① **先 `coverage erase` 再跑**。`coverage combine` 只认文件内容、不认新旧，上一轮残留的 partial 会被混进这一轮的报告；实测不 erase 连跑两轮，第二轮仍报 96%——也就是说旧数据污染是**看不见的**。② 记账是**无条件**的：`tests/cli_blackbox.py::_cli` 给每个 CLI 子进程都套一层 coverage，所以连 `uv run pytest`（不想要报告的那次）也会在仓库根留下 37 个 partial，全量测试也因此从 8.6 秒变成 **15.4 秒**。用这 7 秒换「记账不会因为忘了加开关而悄悄不发生」，M2 往 `cli/main.py` 加围栏判据时尤其要这样。
 
 **ruff 唯一的例外**：`allowed-confusables = ["：", "，", "；", "（", "）"]`。本项目的 docstring / 注释 / 面向用户的字符串一律用中文全角标点，RUF001/RUF002/RUF003 把这几个字符当成「可疑的 ASCII 近似字符」报警，与这条成文规范冲突；其中 `SYSTEM_PROMPT` 与 `未注册的工具：read` 是规格里的字面量，改标点就是改行为。全仓没有一处 `# noqa`。
 
@@ -91,7 +94,7 @@ uv run minihns serve --http   # M7 之后
 
 分支纪律：每个 change 一个分支 `change/<id>`，完成后合入 `main` 并做 archive 提交。
 
-**提交粒度**：一个红绿循环一次提交，提交信息带 task 编号，让 `git log` 能对上 `tasks.md` 的复选框。**一个提交最多覆盖同一 seam 上相邻的 3 个 task**；超过就在提交信息里写明为什么打包（例如同一个 seam 上的连续小步无法单独变红）。反例是 M1 的 `8320f1e`，它打包了 tasks 7.1–9.4 共 14 个任务，出问题不好二分。全量 `pytest` 只要 9 秒，没有理由为了省时间打包。
+**提交粒度**：一个红绿循环一次提交，提交信息带 task 编号，让 `git log` 能对上 `tasks.md` 的复选框。**一个提交最多覆盖同一 seam 上相邻的 3 个 task**；超过就在提交信息里写明为什么打包（例如同一个 seam 上的连续小步无法单独变红）。反例是 M1 的 `8320f1e`，它打包了 tasks 7.1–9.4 共 14 个任务，出问题不好二分。全量测试带覆盖率记账只要 15 秒，没有理由为了省时间打包。
 
 **测试只写在下面六个 seam 上**（tdd 技能要求先约定再写，不许水平切片）：
 ① 回合循环 ② 工具注册与管线 ③ 文件工具契约 ④ 日志追加与折叠 ⑤ Provider 接口 ⑥ CLI 黑盒（subprocess 跑真实命令）
