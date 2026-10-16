@@ -2,7 +2,7 @@
 
 个人实验版 agent harness 的 MVP。headless CLI 优先，架构决策照抄 DeepSeek Harness（DSH）的核心思想，用 OpenSpec 做规格（SDD）、用 TDD 做实现。
 
-**当前状态**：**M1 已实现完毕、停在裁决前** —— 47 个测试全绿、`uv run mypy --strict src` 干净，change `m1-event-log-and-turn-loop` 的任务全部勾选，分支 `change/m1-event-log-and-turn-loop` 未合 `main`、未 archive。M0 的三样东西（工作区、DSH 参考材料、OpenSpec 1.14.2 技能在 `.dsh/skills/`）仍在原位。
+**当前状态**：**M1 完成并已归档** —— 62 个测试全绿、`uv run mypy --strict src` 干净（17 个源文件），change `m1-event-log-and-turn-loop` 已合入 `main`（merge commit `141e28c`）并归档到 `openspec/changes/archive/2026-10-16-m1-event-log-and-turn-loop/`。五份主规格已同步进 `openspec/specs/`：`cli`、`context-projection`、`event-log`、`provider`、`turn-loop`，共 33 个 Requirement / 53 个 Scenario，`openspec validate --specs` 全过。延后的重构与已知缺口见 `docs/adr/0002-deferred-refactors.md` 和 `docs/verification/m1-mutation.md` 的「剩余已知缺口」。下一个里程碑是 **M2**，等用户发话再 `/openspec-propose m2-file-tools-and-fences`。
 
 已装的 OpenSpec 工作流（core profile，delivery=skills）：`openspec-propose`、`openspec-explore`、`openspec-apply-change`、`openspec-update-change`、`openspec-sync-specs`、`openspec-archive-change`。`openspec-verify-change` **未装**——它要 `openspec config profile` 交互勾选；在它可用之前，规格与实现的一致性用 `code-review` 技能（Standards / Spec 两轴）代劳。
 
