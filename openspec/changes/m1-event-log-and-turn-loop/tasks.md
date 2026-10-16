@@ -91,7 +91,7 @@
 - [x] 11.10 把「replay 的失败只走 stderr 与退出码 1」这条例外写进 cli spec 正文与 `docs/adr/0001`（规格内部矛盾消解，无红）
 - [x] 11.11 新开 `docs/adr/0002-deferred-refactors.md`：把审查记下的坏味道记账，写明 M2 一并处理；不动代码（无红）
 - [x] 11.12 一致性收尾：proposal 的 Impact 与实现落点一致（`events/fold.py`）；`tests/test_fixture_paths.py` 的断言并进 seam ⑥ 后删除该文件；10.4 标注为覆盖性切片
-- [ ] 11.13 变异测试一轮并追加进 `docs/verification/m1-mutation.md` 第 11 节：去掉 `append` 的 OSError 捕获、把 fixture 形状校验挪到 `EventLog.start` 之后、去掉 `context/assembled` 的 `turn_id`、`utf-8-sig` 改回 `utf-8`、replay 的入参派生改回读后一条事件；存活变异补测试杀死
+- [x] 11.13 变异测试一轮并追加进 `docs/verification/m1-mutation.md` 第 11 节：去掉 `append` 的 OSError 捕获、把 fixture 形状校验挪到 `EventLog.start` 之后、去掉 `context/assembled` 的 `turn_id`、`utf-8-sig` 改回 `utf-8`、replay 的入参派生改回读后一条事件；存活变异补测试杀死
 
 ## Workflow follow-up
 
