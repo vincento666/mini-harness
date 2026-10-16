@@ -1,0 +1,11 @@
+* text=auto eol=lf
+
+# 参考材料是生成的大文件，别让它们刷屏 diff
+docs/dsh-reference/*.html binary
+docs/dsh-reference/*.md text
+
+*.py text
+*.md text
+*.toml text
+*.json text
+*.jsonl text

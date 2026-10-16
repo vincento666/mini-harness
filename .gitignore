@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# 密钥与本地配置
+.env
+.env.*
+!.env.example
+mini.config.toml
+
+# 运行产物
+sessions/
+.tmp/
+*.jsonl.tmp

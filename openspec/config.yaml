@@ -1,0 +1,37 @@
+schema: spec-driven
+
+context: |
+  项目：mini-harness —— 个人实验版 agent harness 的 MVP，headless CLI 优先，之后才扩 web / Electron 外壳。
+  工具链：Python >= 3.12、uv、src/mini_harness 布局、mypy strict、pydantic v2、argparse、pytest + pytest-asyncio、asyncio 单事件循环。包名 mini_harness，命令名 minihns。
+  六条不可让步的不变量：
+    A 事件日志是唯一真源，只追加不改写；「当前上下文」由折叠派生。
+    B 工具是能力契约，定义与执行分离；失败也是结果（UNKNOWN_TOOL / TOOL_TIMEOUT / ABORTED），不抛异常打断回合。
+    C 回合主循环显式：记账 → 装配上下文 → 调模型 → 派发工具 → 判定停止。
+    D 上下文有窗口预算与显式溢出错误 CONTEXT_WINDOW_EXCEEDED。
+    E 围栏两条独立轴（sandbox 档位 / approval 是否问人）+ 工作区边界 + 写前必读 CAS。
+    F 全程可观测：CLI 输出可重放的 JSONL 事件流。
+  事件命名照抄 DSH 的 namespace/method 风格，约 16-20 种。
+  已锁定的完整决策清单见 docs/handoff-2026-10-15.md 与 AGENTS.md；不要重新讨论已定项。
+  测试只写在六个预先约定的 seam 上：回合循环 / 工具注册与管线 / 文件工具契约 / 日志追加与折叠 / Provider 接口 / CLI 黑盒。
+
+rules:
+  proposal:
+    - 必须写明本里程碑明确不做什么
+    - 引用 DSH 时区分「DSH 这么做」与「mini 版故意简化」，简化处要落 ADR
+    - 不超过 600 词
+  specs:
+    - 每个 Requirement 用 SHALL 语句，至少一个 Scenario（WHEN / THEN）
+    - 失败路径写成结果，不写成异常
+  design:
+    - 写清 seam 边界与测试策略，不写实现代码
+  tasks:
+    - 每个任务是一个 red → green 单切片，并标注它测哪个 seam
+
+operations:
+  apply:
+    guidance:
+      - 先写失败测试再写实现，一次一个切片，禁止先写完全部测试
+      - 提交粒度 = 一个红绿循环一次，分支 change/<id>
+  archive:
+    guidance:
+      - 归档前确认规格与实现一致，并把简化决策写进 docs/adr/
