@@ -87,7 +87,9 @@ uv run minihns serve --http   # M7 之后
 /openspec-archive-change        → 归档进 openspec/changes/archive/
 ```
 
-分支纪律：每个 change 一个分支 `change/<id>`，完成后合入 `main` 并做 archive 提交。提交粒度 = 一个红绿循环一次。
+分支纪律：每个 change 一个分支 `change/<id>`，完成后合入 `main` 并做 archive 提交。
+
+**提交粒度**：一个红绿循环一次提交，提交信息带 task 编号，让 `git log` 能对上 `tasks.md` 的复选框。**一个提交最多覆盖同一 seam 上相邻的 3 个 task**；超过就在提交信息里写明为什么打包（例如同一个 seam 上的连续小步无法单独变红）。反例是 M1 的 `8320f1e`，它打包了 tasks 7.1–9.4 共 14 个任务，出问题不好二分。全量 `pytest` 只要 9 秒，没有理由为了省时间打包。
 
 **测试只写在下面六个 seam 上**（tdd 技能要求先约定再写，不许水平切片）：
 ① 回合循环 ② 工具注册与管线 ③ 文件工具契约 ④ 日志追加与折叠 ⑤ Provider 接口 ⑥ CLI 黑盒（subprocess 跑真实命令）
