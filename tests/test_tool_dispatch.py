@@ -17,7 +17,9 @@ _TOOL_ENTRY = {
 }
 
 
-async def _run(tmp_path: Path, session_id: str, entries: list[dict[str, object]], max_turns: int = 8):
+async def _run(
+    tmp_path: Path, session_id: str, entries: list[dict[str, object]], max_turns: int = 8
+):
     log = EventLog.create(session_dir=tmp_path, session_id=session_id)
     outcome = await run_session(
         prompt="任务",
@@ -33,7 +35,9 @@ async def _run(tmp_path: Path, session_id: str, entries: list[dict[str, object]]
 
 
 async def test_unregistered_tool_call_is_a_paired_unknown_tool_result(tmp_path: Path) -> None:
-    log, _ = await _run(tmp_path, "s-tool", [_TOOL_ENTRY, {"content": "算了", "finish_reason": "stop"}])
+    log, _ = await _run(
+        tmp_path, "s-tool", [_TOOL_ENTRY, {"content": "算了", "finish_reason": "stop"}]
+    )
 
     records = read_events(log.path)
     calls = [record for record in records if record.type == "tool/call"]
@@ -49,7 +53,9 @@ async def test_unregistered_tool_call_is_a_paired_unknown_tool_result(tmp_path: 
 
 
 async def test_previous_tool_result_is_folded_into_the_next_context(tmp_path: Path) -> None:
-    log, _ = await _run(tmp_path, "s-fold-tool", [_TOOL_ENTRY, {"content": "算了", "finish_reason": "stop"}])
+    log, _ = await _run(
+        tmp_path, "s-fold-tool", [_TOOL_ENTRY, {"content": "算了", "finish_reason": "stop"}]
+    )
 
     records = read_events(log.path)
     assembled = [record for record in records if record.type == "context/assembled"]

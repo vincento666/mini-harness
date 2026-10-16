@@ -23,9 +23,7 @@ def _cli(*args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
 
 
 def _run_once(tmp_path: Path, fixture: str = str(HELLO_SCENARIO)) -> tuple[str, Path]:
-    result = _cli(
-        "run", "-p", "任务", "--provider", "mock", "--fixture", fixture, cwd=tmp_path
-    )
+    result = _cli("run", "-p", "任务", "--provider", "mock", "--fixture", fixture, cwd=tmp_path)
     session_id = result.stdout.strip()
     return session_id, tmp_path / "sessions" / f"{session_id}.jsonl"
 

@@ -32,10 +32,7 @@ def test_seq_starts_at_zero_and_increments_by_one(tmp_path: Path) -> None:
     log.append("turn/start", {"turn_id": "t1"})
     log.append("turn/end", {"turn_id": "t1"})
 
-    seqs = [
-        json.loads(line)["seq"]
-        for line in log.path.read_text(encoding="utf-8").splitlines()
-    ]
+    seqs = [json.loads(line)["seq"] for line in log.path.read_text(encoding="utf-8").splitlines()]
     assert seqs == [0, 1, 2]
 
 
@@ -115,8 +112,3 @@ def test_unwritable_session_dir_is_a_log_write_failure(tmp_path: Path) -> None:
     assert isinstance(outcome, LogWriteFailure)
     assert outcome.code == "LOG_WRITE_FAILED"
     assert str(blocker / "sessions") in outcome.detail
-
-
-
-
-

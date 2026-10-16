@@ -114,9 +114,7 @@ async def test_context_assembled_carries_the_turn_id_it_belongs_to(tmp_path: Pat
         cancel=asyncio.Event(),
     )
 
-    assembled = [
-        record for record in read_events(log.path) if record.type == "context/assembled"
-    ]
+    assembled = [record for record in read_events(log.path) if record.type == "context/assembled"]
     assert len(assembled) == 2
     assert [record.payload["turn_id"] for record in assembled] == ["t1", "t2"]
 
@@ -249,7 +247,9 @@ async def test_a_cancelled_turn_writes_an_error_abort_event(tmp_path: Path) -> N
     assert outcome.stop_reason == "ABORTED"
 
 
-async def test_provider_failure_is_recorded_as_error_model_and_provider_error(tmp_path: Path) -> None:
+async def test_provider_failure_is_recorded_as_error_model_and_provider_error(
+    tmp_path: Path,
+) -> None:
     log = EventLog.create(session_dir=tmp_path, session_id="s-fail")
 
     outcome = await run_session(
@@ -267,7 +267,9 @@ async def test_provider_failure_is_recorded_as_error_model_and_provider_error(tm
     errors = [record for record in records if record.type == "error/model"]
     assert len(errors) == 1
     assert errors[0].payload["code"] == "PROVIDER_EXHAUSTED"
-    assert [record.payload["stop_reason"] for record in records if record.type == "turn/end"] == ["PROVIDER_ERROR"]
+    assert [record.payload["stop_reason"] for record in records if record.type == "turn/end"] == [
+        "PROVIDER_ERROR"
+    ]
     assert outcome.stop_reason == "PROVIDER_ERROR"
     assert outcome.failure_code == "PROVIDER_EXHAUSTED"
 
@@ -303,5 +305,3 @@ async def test_loop_only_calls_generate_with_three_positional_parameters(tmp_pat
 
     assert spy.calls == [("generate", 3)]
     assert spy.signals[0] is cancel
-
-

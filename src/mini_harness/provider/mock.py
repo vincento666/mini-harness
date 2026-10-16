@@ -43,7 +43,8 @@ class FixtureProvider:
         if self._index >= len(self._entries):
             return ProviderFailure(
                 "PROVIDER_EXHAUSTED",
-                f"fixture 只有 {len(self._entries)} 条条目，第 {self._index + 1} 次调用没有回复可用",
+                f"fixture 只有 {len(self._entries)} 条条目，"
+                f"第 {self._index + 1} 次调用没有回复可用",
             )
         raw = self._entries[self._index]
         self._index += 1

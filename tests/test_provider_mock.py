@@ -40,7 +40,11 @@ async def test_generate_returns_an_assistant_turn() -> None:
 async def test_generate_replays_the_fixture_entries_in_order() -> None:
     provider = FixtureProvider(
         entries=[
-            {"content": "first", "finish_reason": "tool_calls", "tool_calls": [{"id": "c1", "name": "read"}]},
+            {
+                "content": "first",
+                "finish_reason": "tool_calls",
+                "tool_calls": [{"id": "c1", "name": "read"}],
+            },
             {"content": "second", "finish_reason": "stop"},
             {"content": "third", "finish_reason": "stop"},
         ]

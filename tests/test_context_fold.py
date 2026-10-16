@@ -94,13 +94,21 @@ def test_fold_puts_the_system_prompt_first_and_keeps_the_body_in_order() -> None
             {
                 "turn_id": "t1",
                 "content": "thinking",
-                "tool_calls": [{"id": "call-1", "name": "read", "arguments": {"file_path": "a.md"}}],
+                "tool_calls": [
+                    {"id": "call-1", "name": "read", "arguments": {"file_path": "a.md"}}
+                ],
                 "finish_reason": "tool_calls",
             },
         ),
         _rec(2, "tool/call", {"turn_id": "t1", "tool_call_id": "call-1", "name": "read"}),
-        _rec(3, "tool/result", {"turn_id": "t1", "tool_call_id": "call-1", "outcome": "UNKNOWN_TOOL"}),
-        _rec(4, "model/response", {"turn_id": "t1", "content": "done", "tool_calls": [], "finish_reason": "stop"}),
+        _rec(
+            3, "tool/result", {"turn_id": "t1", "tool_call_id": "call-1", "outcome": "UNKNOWN_TOOL"}
+        ),
+        _rec(
+            4,
+            "model/response",
+            {"turn_id": "t1", "content": "done", "tool_calls": [], "finish_reason": "stop"},
+        ),
         _rec(5, "turn/end", {"turn_id": "t1", "stop_reason": "MODEL_COMPLETED"}),
     ]
 
@@ -117,7 +125,11 @@ def test_fold_puts_the_system_prompt_first_and_keeps_the_body_in_order() -> None
 
 def test_header_cannot_be_replaced_by_conversation_content() -> None:
     events = [
-        _rec(0, "model/response", {"turn_id": "t1", "content": SYSTEM_PROMPT, "tool_calls": [], "finish_reason": "stop"}),
+        _rec(
+            0,
+            "model/response",
+            {"turn_id": "t1", "content": SYSTEM_PROMPT, "tool_calls": [], "finish_reason": "stop"},
+        ),
     ]
 
     context = fold(events)
@@ -138,13 +150,24 @@ def test_append_system_prompt_is_appended_after_the_builtin_constant() -> None:
 
 def test_long_conversation_is_folded_without_truncation() -> None:
     events = [
-        _rec(index, "model/response", {"turn_id": f"t{index}", "content": f"m{index}", "tool_calls": [], "finish_reason": "stop"})
+        _rec(
+            index,
+            "model/response",
+            {
+                "turn_id": f"t{index}",
+                "content": f"m{index}",
+                "tool_calls": [],
+                "finish_reason": "stop",
+            },
+        )
         for index in range(50)
     ]
 
     context = fold(events)
 
-    assert [message.content for message in context.messages[1:]] == [f"m{index}" for index in range(50)]
+    assert [message.content for message in context.messages[1:]] == [
+        f"m{index}" for index in range(50)
+    ]
     assert "CONTEXT_WINDOW_EXCEEDED" not in context.model_dump_json()
 
 
@@ -164,11 +187,9 @@ def test_cold_start_fold_matches_the_recorded_context_assembled(tmp_path: Path) 
 
     replayed = fold(read_events(log.path))
 
-    recorded = [
+    recorded = next(
         json.loads(line)["payload"]
         for line in log.path.read_text(encoding="utf-8").splitlines()
         if json.loads(line)["type"] == "context/assembled"
-    ][0]
+    )
     assert replayed.model_dump(mode="json") == recorded
-
-

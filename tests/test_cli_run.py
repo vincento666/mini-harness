@@ -14,12 +14,14 @@ from pathlib import Path
 from mini_harness.cli import main as cli_main
 from mini_harness.cli.main import STOP_REASONS_TO_EXIT_CODES, exit_code_for, sigint_handler
 from mini_harness.events import EventLog
-from mini_harness.loop import RunOutcome, STOP_REASONS
+from mini_harness.loop import STOP_REASONS, RunOutcome
 from mini_harness.provider import AssistantTurn
 from paths import HELLO_SCENARIO
 
 
-def _cli(*args: str, cwd: Path, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+def _cli(
+    *args: str, cwd: Path, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, "-m", "mini_harness.cli.main", *args],
         cwd=str(cwd),
@@ -54,7 +56,9 @@ def test_every_stop_reason_maps_to_an_exit_code() -> None:
     assert STOP_REASONS_TO_EXIT_CODES["PROVIDER_ERROR"] == 1
     assert STOP_REASONS_TO_EXIT_CODES["ABORTED"] == 5
     for stop_reason, exit_code in STOP_REASONS_TO_EXIT_CODES.items():
-        assert exit_code_for(RunOutcome(session_id="s", stop_reason=stop_reason, turns=1)) == exit_code
+        assert (
+            exit_code_for(RunOutcome(session_id="s", stop_reason=stop_reason, turns=1)) == exit_code
+        )
 
 
 def test_a_log_layer_failure_outcome_maps_to_exit_code_one() -> None:
@@ -74,8 +78,16 @@ def test_unwritable_session_dir_is_a_log_write_failure(tmp_path: Path) -> None:
     blocker.write_text("not a directory", encoding="utf-8")
 
     result = _cli(
-        "run", "-p", "任务", "--provider", "mock", "--fixture", str(HELLO_SCENARIO),
-        "--session-dir", str(blocker / "sessions"), cwd=tmp_path,
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--session-dir",
+        str(blocker / "sessions"),
+        cwd=tmp_path,
     )
 
     assert result.returncode == 1
@@ -110,8 +122,16 @@ def test_run_with_empty_prompt_is_an_invalid_argument(tmp_path: Path) -> None:
 
 def test_max_turns_zero_is_an_invalid_argument(tmp_path: Path) -> None:
     result = _cli(
-        "run", "-p", "任务", "--provider", "mock", "--fixture", str(HELLO_SCENARIO),
-        "--max-turns", "0", cwd=tmp_path,
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--max-turns",
+        "0",
+        cwd=tmp_path,
     )
 
     assert result.returncode == 2
@@ -129,9 +149,7 @@ def test_invalid_fixture_is_rejected(tmp_path: Path) -> None:
     broken = tmp_path / "broken.json"
     broken.write_text("{not json", encoding="utf-8")
 
-    result = _cli(
-        "run", "-p", "任务", "--provider", "mock", "--fixture", str(broken), cwd=tmp_path
-    )
+    result = _cli("run", "-p", "任务", "--provider", "mock", "--fixture", str(broken), cwd=tmp_path)
 
     assert result.returncode == 2
     assert "FIXTURE_INVALID" in result.stderr
@@ -142,12 +160,12 @@ def test_fixture_with_a_utf8_bom_runs(tmp_path: Path) -> None:
     bommed = tmp_path / "bommed.json"
     bommed.write_bytes(
         codecs.BOM_UTF8
-        + json.dumps([{"content": "hello", "finish_reason": "stop"}], ensure_ascii=False).encode("utf-8")
+        + json.dumps([{"content": "hello", "finish_reason": "stop"}], ensure_ascii=False).encode(
+            "utf-8"
+        )
     )
 
-    result = _cli(
-        "run", "-p", "任务", "--provider", "mock", "--fixture", str(bommed), cwd=tmp_path
-    )
+    result = _cli("run", "-p", "任务", "--provider", "mock", "--fixture", str(bommed), cwd=tmp_path)
 
     assert result.returncode == 0
     assert "FIXTURE_INVALID" not in result.stderr
@@ -180,8 +198,16 @@ def test_happy_path_prints_session_id_and_writes_the_log(tmp_path: Path) -> None
 
 def test_events_jsonl_stdout_matches_the_log_line_by_line(tmp_path: Path) -> None:
     result = _cli(
-        "run", "-p", "任务", "--provider", "mock", "--fixture", str(HELLO_SCENARIO),
-        "--events", "jsonl", cwd=tmp_path,
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--events",
+        "jsonl",
+        cwd=tmp_path,
     )
 
     log_path = _log_files(tmp_path)[0]
@@ -198,8 +224,15 @@ def test_api_key_from_the_environment_never_reaches_log_or_stdout(tmp_path: Path
     env = {**os.environ, "DEEPSEEK_API_KEY": secret}
 
     result = _cli(
-        "run", "-p", "任务", "--provider", "mock", "--fixture", str(HELLO_SCENARIO),
-        cwd=tmp_path, env=env,
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        cwd=tmp_path,
+        env=env,
     )
 
     log_text = _log_files(tmp_path)[0].read_text(encoding="utf-8")

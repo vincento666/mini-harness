@@ -20,10 +20,21 @@ def _cli(*args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _run_scenario(tmp_path: Path, session_dir: Path, fixture: Path, *extra: str) -> tuple[int, list[dict[str, object]]]:
+def _run_scenario(
+    tmp_path: Path, session_dir: Path, fixture: Path, *extra: str
+) -> tuple[int, list[dict[str, object]]]:
     result = _cli(
-        "run", "-p", "任务", "--provider", "mock", "--fixture", str(fixture),
-        "--session-dir", str(session_dir), *extra, cwd=tmp_path,
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(fixture),
+        "--session-dir",
+        str(session_dir),
+        *extra,
+        cwd=tmp_path,
     )
     files = sorted(session_dir.glob("*.jsonl"))
     events: list[dict[str, object]] = []
@@ -36,7 +47,9 @@ def test_multi_turn_scenario_with_tool_call_and_fixture_exhaustion(tmp_path: Pat
     session_dir = tmp_path / "sessions"
 
     ok_code, ok_events = _run_scenario(tmp_path, session_dir / "ok", TOOL_THEN_DONE_SCENARIO)
-    fail_code, fail_events = _run_scenario(tmp_path, session_dir / "fail", TOOL_THEN_EXHAUST_SCENARIO)
+    fail_code, fail_events = _run_scenario(
+        tmp_path, session_dir / "fail", TOOL_THEN_EXHAUST_SCENARIO
+    )
 
     assert ok_code == 0
     assert [event["type"] for event in ok_events].count("tool/call") == 1

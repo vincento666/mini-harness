@@ -138,20 +138,22 @@ def _run(args: argparse.Namespace) -> int:
     fixture: str | None = args.fixture
 
     if prompt is None or prompt == "":
-        return _report_failure(
-            "INVALID_ARGUMENT", "-p/--prompt 必填且非空", EXIT_INVALID_ARGUMENT
-        )
+        return _report_failure("INVALID_ARGUMENT", "-p/--prompt 必填且非空", EXIT_INVALID_ARGUMENT)
     if max_turns < 1:
         return _report_failure(
             "INVALID_ARGUMENT", f"--max-turns 至少为 1，收到 {max_turns}", EXIT_INVALID_ARGUMENT
         )
     if provider_name != "mock":
         return _report_failure(
-            "UNKNOWN_PROVIDER", f"M1 只支持 --provider mock，收到 {provider_name}", EXIT_INVALID_ARGUMENT
+            "UNKNOWN_PROVIDER",
+            f"M1 只支持 --provider mock，收到 {provider_name}",
+            EXIT_INVALID_ARGUMENT,
         )
     if fixture is None:
         return _report_failure(
-            "INVALID_ARGUMENT", "--provider mock 需要 --fixture 指向 JSON 数组", EXIT_INVALID_ARGUMENT
+            "INVALID_ARGUMENT",
+            "--provider mock 需要 --fixture 指向 JSON 数组",
+            EXIT_INVALID_ARGUMENT,
         )
 
     loaded = load_fixture_provider(Path(fixture))
@@ -210,7 +212,9 @@ def _replay(args: argparse.Namespace) -> int:
     ]
     if not assembled:
         return _report_failure(
-            "REPLAY_MISMATCH", f"error/replay 日志里没有任何 context/assembled：{path}", EXIT_INTERNAL_ERROR
+            "REPLAY_MISMATCH",
+            f"error/replay 日志里没有任何 context/assembled：{path}",
+            EXIT_INTERNAL_ERROR,
         )
 
     append_system_prompt = str(records[0].payload.get("append_system_prompt", ""))

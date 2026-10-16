@@ -50,7 +50,8 @@ def _append_all(
 def _kernel_failure(
     log: EventLog, failure: LogWriteFailure | LogReadFailure, turns: int
 ) -> RunOutcome:
-    """日志层失败作为结果结束。`stop_reason` 取失败码，它不是 `turn/end` 的词表值：日志层坏了就写不出 `turn/end`。"""
+    """日志层失败作为结果结束。`stop_reason` 取失败码，它不是 `turn/end` 的词表值：
+    日志层坏了就写不出 `turn/end`。"""
     return RunOutcome(
         session_id=log.session_id,
         stop_reason=failure.code,
@@ -151,7 +152,9 @@ async def run_session(
                     {
                         "turn_id": turn_id,
                         "content": generated.content,
-                        "tool_calls": [call.model_dump(mode="json") for call in generated.tool_calls],
+                        "tool_calls": [
+                            call.model_dump(mode="json") for call in generated.tool_calls
+                        ],
                         "usage": generated.usage.model_dump(mode="json"),
                         "finish_reason": generated.finish_reason,
                     },
