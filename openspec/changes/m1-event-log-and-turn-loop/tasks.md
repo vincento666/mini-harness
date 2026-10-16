@@ -71,11 +71,11 @@
 
 ## 10. 规格修订轮（用户裁决后的新增可观察行为）
 
-- [ ] 10.1 红：断言 `tool_calls` 非空且未达回合上限的回合 `turn/end.stop_reason == TOOL_CALLS`，且 `MODEL_COMPLETED` 只出现在模型不再要求继续的回合；绿后验证（seam ①）
-- [ ] 10.2 红：断言 `minihns replay` 对每条 `context/assembled` 逐点重算相等；当某条被人为篡改时 replay 产出 `error/replay`（`code: REPLAY_MISMATCH`）且退出码 1、被重放的日志不被改写；绿后验证（seam ⑥④）
-- [ ] 10.3 红：断言 `session/start` payload 含 `prompt` 原文且不含 `schema_version`，且折叠里用户 prompt 是头部后第一条 `user` 消息；绿后验证（seam ④⑥）
-- [ ] 10.4 红：断言 `--provider mock` 缺 `--fixture` 时退出码 2、stderr 含 `INVALID_ARGUMENT`、没有 session 日志（覆盖性切片，行为在 7.x 已实现）；绿后验证（seam ⑥）
-- [ ] 10.5 变异测试收尾：跑一轮有效变异并记进 `docs/verification/m1-mutation.md`，`git checkout --` 还原后确认全绿与 `uv run mypy --strict src` 干净，并在 `AGENTS.md` 写下「每个里程碑收尾跑一轮变异测试并记录」
+- [x] 10.1 红：断言 `tool_calls` 非空且未达回合上限的回合 `turn/end.stop_reason == TOOL_CALLS`，且 `MODEL_COMPLETED` 只出现在模型不再要求继续的回合；绿后验证（seam ①）
+- [x] 10.2 红：断言 `minihns replay` 对每条 `context/assembled` 逐点重算相等；当某条被人为篡改时 replay 产出 `error/replay`（`code: REPLAY_MISMATCH`）且退出码 1、被重放的日志不被改写；绿后验证（seam ⑥④）
+- [x] 10.3 红：断言 `session/start` payload 含 `prompt` 原文且不含 `schema_version`，且折叠里用户 prompt 是头部后第一条 `user` 消息；绿后验证（seam ④⑥）
+- [x] 10.4 红：断言 `--provider mock` 缺 `--fixture` 时退出码 2、stderr 含 `INVALID_ARGUMENT`、没有 session 日志（覆盖性切片，行为在 7.x 已实现）；绿后验证（seam ⑥）
+- [x] 10.5 变异测试收尾：跑一轮有效变异并记进 `docs/verification/m1-mutation.md`，`git checkout --` 还原后确认全绿与 `uv run mypy --strict src` 干净，并在 `AGENTS.md` 写下「每个里程碑收尾跑一轮变异测试并记录」
 
 ## Workflow follow-up
 

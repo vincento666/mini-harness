@@ -37,6 +37,27 @@ def _one_turn_events() -> list[EventRecord]:
     ]
 
 
+def test_header_fingerprint_tracks_the_header_not_the_conversation() -> None:
+    events = _one_turn_events()
+
+    plain = fold(events)
+    with_extra = fold(events, append_system_prompt="额外规则")
+    longer = fold(
+        [
+            *events,
+            _rec(
+                4,
+                "model/response",
+                {"turn_id": "t2", "content": "再说一句", "tool_calls": [], "finish_reason": "stop"},
+            ),
+        ]
+    )
+
+    assert plain.header_fingerprint != with_extra.header_fingerprint
+    assert longer.header_fingerprint == plain.header_fingerprint
+    assert len(longer.messages) > len(plain.messages)
+
+
 def test_user_prompt_is_the_first_body_message_after_the_header() -> None:
     events = [
         _rec(

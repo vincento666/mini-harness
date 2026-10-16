@@ -2,7 +2,7 @@
 
 个人实验版 agent harness 的 MVP。headless CLI 优先，架构决策照抄 DeepSeek Harness（DSH）的核心思想，用 OpenSpec 做规格（SDD）、用 TDD 做实现。
 
-**当前状态**：**M0 已完成** —— 工作区已建、DSH 参考材料已拷入、OpenSpec 1.14.2 已装并 `init --tools dsh`（技能在 `.dsh/skills/`）、首次提交 `0b27bdb`。**M1 尚未开始，一行实现代码都没有。**
+**当前状态**：**M1 已实现完毕、停在裁决前** —— 47 个测试全绿、`uv run mypy --strict src` 干净，change `m1-event-log-and-turn-loop` 的任务全部勾选，分支 `change/m1-event-log-and-turn-loop` 未合 `main`、未 archive。M0 的三样东西（工作区、DSH 参考材料、OpenSpec 1.14.2 技能在 `.dsh/skills/`）仍在原位。
 
 已装的 OpenSpec 工作流（core profile，delivery=skills）：`openspec-propose`、`openspec-explore`、`openspec-apply-change`、`openspec-update-change`、`openspec-sync-specs`、`openspec-archive-change`。`openspec-verify-change` **未装**——它要 `openspec config profile` 交互勾选；在它可用之前，规格与实现的一致性用 `code-review` 技能（Standards / Spec 两轴）代劳。
 
@@ -23,7 +23,7 @@ uv sync                       # 装依赖（含 dev）
 uv run pytest                 # 全部测试
 uv run pytest -k <表达式>     # 单个红绿循环
 uv run mypy --strict src      # 类型检查
-uv run minihns run -p "任务" --workspace <dir> --events jsonl
+uv run minihns run -p "任务" --provider mock --fixture <turns.json> --workspace <dir> --events jsonl
 uv run minihns replay <session-id>
 uv run minihns chat           # M6 之后
 uv run minihns serve --http   # M7 之后
@@ -58,6 +58,8 @@ uv run minihns serve --http   # M7 之后
 
 **测试只写在下面六个 seam 上**（tdd 技能要求先约定再写，不许水平切片）：
 ① 回合循环 ② 工具注册与管线 ③ 文件工具契约 ④ 日志追加与折叠 ⑤ Provider 接口 ⑥ CLI 黑盒（subprocess 跑真实命令）
+
+**每个里程碑收尾跑一轮变异测试并记录**：改坏一处实现 → 跑全量测试 → 把「变异 / 改法 / 哪些测试变红」记进 `docs/verification/<change-id>-mutation.md` → `git checkout --` 还原并确认回到基线。判据：每个变异都被至少一条测试杀死；存活的算覆盖缺口，补一条能杀死它的测试（先确认它在变异下红）。做法与判据见 `docs/verification/m1-mutation.md`。
 
 ---
 
