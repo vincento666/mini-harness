@@ -4,9 +4,9 @@
 
 ## 1. 工程骨架（无测试）
 
-- [ ] 1.1 建 `pyproject.toml`（`requires-python >= 3.12`、`src/mini_harness/` 布局、`minihns` console script、pydantic v2）与 `uv sync`，验证 `uv run minihns --help` 退出码 0 且打印 usage
-- [ ] 1.2 配 mypy strict 与 pytest + pytest-asyncio，验证 `uv run mypy --strict src` 与 `uv run pytest`（此时 0 个测试）都退出码 0
-- [ ] 1.3 建 `tests/fixtures/scenarios/` 目录与一个最小 mock fixture（单条纯文本回复），验证该文件被 pytest 的 fixture 路径常量解析到
+- [x] 1.1 建 `pyproject.toml`（`requires-python >= 3.12`、`src/mini_harness/` 布局、`minihns` console script、pydantic v2）与 `uv sync`，验证 `uv run minihns --help` 退出码 0 且打印 usage
+- [x] 1.2 配 mypy strict 与 pytest + pytest-asyncio，验证 `uv run mypy --strict src` 与 `uv run pytest`（此时 0 个测试）都退出码 0
+- [x] 1.3 建 `tests/fixtures/scenarios/` 目录与一个最小 mock fixture（单条纯文本回复），验证该文件被 pytest 的 fixture 路径常量解析到
 
 ## 2. 事件日志追加（seam ④）
 
