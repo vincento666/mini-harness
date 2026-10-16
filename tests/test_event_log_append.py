@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from mini_harness.events import EventLog
+from mini_harness.events import EventLog, LogWriteFailure
 
 
 def test_appended_record_carries_the_six_envelope_fields(tmp_path: Path) -> None:

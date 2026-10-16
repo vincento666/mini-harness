@@ -12,6 +12,15 @@ from mini_harness.events.record import SCHEMA_VERSION, EventRecord
 from mini_harness.events.vocabulary import is_known_type
 
 
+class LogWriteFailure:
+    """日志无法创建或写入的结果：失败也是结果，不是异常。"""
+
+    def __init__(self, path: Path, detail: str, code: str = "LOG_WRITE_FAILED") -> None:
+        self.path = path
+        self.detail = detail
+        self.code = code
+
+
 class EventLog:
     """一个 session 的 JSONL 日志：只追加，`seq` 在此单点分配。"""
 
@@ -21,15 +30,18 @@ class EventLog:
         self._next_seq = 0
 
     @classmethod
-    def start(cls, session_dir: Path) -> EventLog:
+    def start(cls, session_dir: Path) -> EventLog | LogWriteFailure:
         """为新 session 生成唯一 session id 并打开它的日志。"""
         return cls.create(session_dir=session_dir, session_id=uuid.uuid4().hex)
 
     @classmethod
-    def create(cls, session_dir: Path, session_id: str) -> EventLog:
-        session_dir.mkdir(parents=True, exist_ok=True)
+    def create(cls, session_dir: Path, session_id: str) -> EventLog | LogWriteFailure:
         path = session_dir / f"{session_id}.jsonl"
-        path.touch()
+        try:
+            session_dir.mkdir(parents=True, exist_ok=True)
+            path.touch()
+        except OSError as exc:
+            return LogWriteFailure(path=path, detail=f"{session_dir}: {exc}")
         return cls(path, session_id)
 
     def append(self, event_type: str, payload: dict[str, Any]) -> EventRecord:
