@@ -11,9 +11,17 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import NoReturn
 
-from mini_harness.events import EventLog, LogWriteFailure, read_events
-from mini_harness.events.fold import fold
-from mini_harness.loop import run_session
+from mini_harness.events import EventLog, LogReadFailure, LogWriteFailure, read_events
+from mini_harness.events.fold import assembled_payload, fold
+from mini_harness.loop import (
+    STOP_ABORTED,
+    STOP_MAX_TURNS,
+    STOP_MODEL_COMPLETED,
+    STOP_PROVIDER_ERROR,
+    STOP_REASONS,
+    STOP_TOOL_CALLS,
+    run_session,
+)
 from mini_harness.provider import FixtureLoadFailure, load_fixture_provider
 from mini_harness.tools import ToolRegistry
 
@@ -22,11 +30,12 @@ EXIT_INTERNAL_ERROR = 1
 EXIT_INVALID_ARGUMENT = 2
 EXIT_ABORTED = 5
 
-_STOP_REASONS_TO_EXIT_CODES: dict[str, int] = {
-    "MODEL_COMPLETED": EXIT_OK,
-    "MAX_TURNS": EXIT_OK,
-    "PROVIDER_ERROR": EXIT_INTERNAL_ERROR,
-    "ABORTED": EXIT_ABORTED,
+STOP_REASONS_TO_EXIT_CODES: dict[str, int] = {
+    STOP_MODEL_COMPLETED: EXIT_OK,
+    STOP_TOOL_CALLS: EXIT_OK,
+    STOP_MAX_TURNS: EXIT_OK,
+    STOP_PROVIDER_ERROR: EXIT_INTERNAL_ERROR,
+    STOP_ABORTED: EXIT_ABORTED,
 }
 
 
@@ -117,13 +126,18 @@ def _run(args: argparse.Namespace) -> int:
         )
     )
 
+    if outcome.stop_reason not in STOP_REASONS:
+        return _report_failure(
+            outcome.failure_code or outcome.stop_reason, outcome.detail, EXIT_INTERNAL_ERROR
+        )
+
     if args.events == "jsonl":
         for line in log.path.read_text(encoding="utf-8").splitlines():
             if line.strip():
                 print(line)
     else:
         print(outcome.session_id)
-    return _STOP_REASONS_TO_EXIT_CODES[outcome.stop_reason]
+    return STOP_REASONS_TO_EXIT_CODES[outcome.stop_reason]
 
 
 def _replay(args: argparse.Namespace) -> int:
@@ -136,6 +150,9 @@ def _replay(args: argparse.Namespace) -> int:
         )
 
     records = read_events(path)
+    if isinstance(records, LogReadFailure):
+        return _report_failure(records.code, records.detail, EXIT_INTERNAL_ERROR)
+
     assembled = [
         (index, record)
         for index, record in enumerate(records)
@@ -148,6 +165,11 @@ def _replay(args: argparse.Namespace) -> int:
 
     append_system_prompt = str(records[0].payload.get("append_system_prompt", ""))
     for index, record in assembled:
+        preceding_turn = next(
+            (item for item in reversed(records[:index]) if item.type == "turn/start"),
+            None,
+        )
+        turn_id = "" if preceding_turn is None else str(preceding_turn.payload.get("turn_id", ""))
         following = records[index + 1] if index + 1 < len(records) else None
         tools: list[str] = []
         if following is not None and following.type == "model/request":
@@ -157,7 +179,7 @@ def _replay(args: argparse.Namespace) -> int:
             append_system_prompt=append_system_prompt,
             tool_descriptions=tools,
         )
-        if recomputed.model_dump(mode="json") != record.payload:
+        if assembled_payload(turn_id, recomputed) != record.payload:
             return _report_failure(
                 "REPLAY_MISMATCH",
                 f"error/replay seq={record.seq} 的 context/assembled 与其前缀的重算不一致",

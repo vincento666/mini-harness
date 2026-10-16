@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
+import stat
 from pathlib import Path
 
-from mini_harness.events import EventLog, LogWriteFailure
+from mini_harness.events import EventLog, LogReadFailure, LogWriteFailure, read_events
 
 
 def test_appended_record_carries_the_six_envelope_fields(tmp_path: Path) -> None:
@@ -76,6 +78,35 @@ def test_types_outside_the_vocabulary_are_written_as_error_internal(tmp_path: Pa
     payload = json.loads(lines[1])["payload"]
     assert payload["unrecognized_type"] == "widget/frobnicate"
     assert payload["detail"] == "boom"
+
+
+def test_a_corrupt_line_is_a_log_read_failure(tmp_path: Path) -> None:
+    log = EventLog.create(session_dir=tmp_path, session_id="sess-7")
+    log.append("session/start", {})
+    with log.path.open("a", encoding="utf-8") as handle:
+        handle.write("{not json}\n")
+
+    outcome = read_events(log.path)
+
+    assert isinstance(outcome, LogReadFailure)
+    assert outcome.code == "LOG_UNREADABLE"
+    assert str(log.path) in outcome.detail
+
+
+def test_a_log_that_becomes_unwritable_mid_session_is_a_log_write_failure(tmp_path: Path) -> None:
+    log = EventLog.create(session_dir=tmp_path, session_id="sess-6")
+    log.append("session/start", {})
+    written_so_far = log.path.read_bytes()
+    os.chmod(log.path, stat.S_IREAD)
+    try:
+        outcome = log.append("turn/start", {"turn_id": "t1"})
+    finally:
+        os.chmod(log.path, stat.S_IREAD | stat.S_IWRITE)
+
+    assert isinstance(outcome, LogWriteFailure)
+    assert outcome.code == "LOG_WRITE_FAILED"
+    assert outcome.path == log.path
+    assert log.path.read_bytes() == written_so_far
 
 
 def test_unwritable_session_dir_is_a_log_write_failure(tmp_path: Path) -> None:

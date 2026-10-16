@@ -44,7 +44,7 @@ class EventLog:
             return LogWriteFailure(path=path, detail=f"{session_dir}: {exc}")
         return cls(path, session_id)
 
-    def append(self, event_type: str, payload: dict[str, Any]) -> EventRecord:
+    def append(self, event_type: str, payload: dict[str, Any]) -> EventRecord | LogWriteFailure:
         if not is_known_type(event_type):
             payload = {"unrecognized_type": event_type, **payload}
             event_type = "error/internal"
@@ -56,7 +56,10 @@ class EventLog:
             ts=datetime.now(UTC).isoformat(),
             payload=payload,
         )
+        try:
+            with self.path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(record.model_dump(mode="json"), ensure_ascii=False) + "\n")
+        except OSError as exc:
+            return LogWriteFailure(path=self.path, detail=f"{self.path}: {exc}")
         self._next_seq += 1
-        with self.path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(record.model_dump(mode="json"), ensure_ascii=False) + "\n")
         return record

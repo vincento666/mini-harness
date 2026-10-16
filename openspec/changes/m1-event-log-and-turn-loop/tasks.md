@@ -74,8 +74,24 @@
 - [x] 10.1 红：断言 `tool_calls` 非空且未达回合上限的回合 `turn/end.stop_reason == TOOL_CALLS`，且 `MODEL_COMPLETED` 只出现在模型不再要求继续的回合；绿后验证（seam ①）
 - [x] 10.2 红：断言 `minihns replay` 对每条 `context/assembled` 逐点重算相等；当某条被人为篡改时 replay 产出 `error/replay`（`code: REPLAY_MISMATCH`）且退出码 1、被重放的日志不被改写；绿后验证（seam ⑥④）
 - [x] 10.3 红：断言 `session/start` payload 含 `prompt` 原文且不含 `schema_version`，且折叠里用户 prompt 是头部后第一条 `user` 消息；绿后验证（seam ④⑥）
-- [x] 10.4 红：断言 `--provider mock` 缺 `--fixture` 时退出码 2、stderr 含 `INVALID_ARGUMENT`、没有 session 日志（覆盖性切片，行为在 7.x 已实现）；绿后验证（seam ⑥）
+- [x] 10.4 覆盖性切片（无红，不是 red→green）：断言 `--provider mock` 缺 `--fixture` 时退出码 2、stderr 含 `INVALID_ARGUMENT`、没有 session 日志（行为在 7.x 已实现）（seam ⑥）
 - [x] 10.5 变异测试收尾：跑一轮有效变异并记进 `docs/verification/m1-mutation.md`，`git checkout --` 还原后确认全绿与 `uv run mypy --strict src` 干净，并在 `AGENTS.md` 写下「每个里程碑收尾跑一轮变异测试并记录」
+
+## 11. code-review 修复轮（两轴审查 + 用户裁决后的必修项）
+
+- [ ] 11.1 红：断言每条 `context/assembled` 的 payload 含 `turn_id` 且等于所属回合；绿后验证（seam ①④）
+- [ ] 11.2 红：日志文件在 session 中途变得不可写时 `EventLog.append` 返回 `LogWriteFailure`（`LOG_WRITE_FAILED`）而不是抛异常，回合以失败结果结束、CLI 退出码 1；绿后验证（seam ④①⑥）
+- [ ] 11.3 红：fixture 条目形状不合法（`[{"foo":1}]`）时退出码 2、stderr 含 `FIXTURE_INVALID`、session 日志数量不变；绿后验证（seam ⑤⑥）
+- [ ] 11.4 红：断言停止原因词表里每个值都在 CLI 的退出码映射表里，且 `TOOL_CALLS` 映射到 0；绿后验证（seam ⑥）
+- [ ] 11.5 红：日志里有坏行时 `read_events` 返回 `LogReadFailure`（`LOG_UNREADABLE`）而不是抛异常，`minihns replay` 以退出码 1 结束；绿后验证（seam ④⑥）
+- [ ] 11.6 红：带 UTF-8 BOM 的 fixture 能跑通（退出码 0）；绿后验证（seam ⑤⑥）
+- [ ] 11.7 红：装配点之后的事件被篡改时 replay 仍然通过（折叠入参只从该点之前的事件派生）；绿后验证（seam ⑥④）
+- [ ] 11.8 红：取消被置位时写 `error/abort` 事件、`turn/end.stop_reason == ABORTED`、SIGINT 处理器把取消置位、CLI 映射到退出码 5；绿后验证（seam ①⑥）
+- [ ] 11.9 红：已注册工具在 M1 的派发结果是 `NOT_IMPLEMENTED` 而不是 `OK`；绿后验证（seam ②）
+- [ ] 11.10 把「replay 的失败只走 stderr 与退出码 1」这条例外写进 cli spec 正文与 `docs/adr/0001`（规格内部矛盾消解，无红）
+- [ ] 11.11 新开 `docs/adr/0002-deferred-refactors.md`：把审查记下的坏味道记账，写明 M2 一并处理；不动代码（无红）
+- [ ] 11.12 一致性收尾：proposal 的 Impact 与实现落点一致（`events/fold.py`）；`tests/test_fixture_paths.py` 的断言并进 seam ⑥ 后删除该文件；10.4 标注为覆盖性切片
+- [ ] 11.13 变异测试一轮并追加进 `docs/verification/m1-mutation.md` 第 11 节：去掉 `append` 的 OSError 捕获、把 fixture 形状校验挪到 `EventLog.start` 之后、去掉 `context/assembled` 的 `turn_id`、`utf-8-sig` 改回 `utf-8`、replay 的入参派生改回读后一条事件；存活变异补测试杀死
 
 ## Workflow follow-up
 

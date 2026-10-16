@@ -116,3 +116,14 @@ def test_replay_reports_a_mismatched_assembly_point_and_leaves_the_log_alone(
     assert "REPLAY_MISMATCH" in replay.stderr
     assert str(tampered_seq) in replay.stderr
     assert log_path.read_bytes() == before
+
+
+def test_replay_of_a_corrupt_log_is_an_internal_error(tmp_path: Path) -> None:
+    session_id, log_path = _run_once(tmp_path)
+    with log_path.open("a", encoding="utf-8") as handle:
+        handle.write("{not json}\n")
+
+    replay = _cli("replay", session_id, cwd=tmp_path)
+
+    assert replay.returncode == 1
+    assert "LOG_UNREADABLE" in replay.stderr

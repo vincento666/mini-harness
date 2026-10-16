@@ -84,3 +84,8 @@ def fold(
         "\n".join(message.content for message in header).encode("utf-8")
     ).hexdigest()
     return AssembledContext(messages=[*header, *body], header_fingerprint=fingerprint)
+
+
+def assembled_payload(turn_id: str, context: AssembledContext) -> dict[str, Any]:
+    """`context/assembled` 的 payload：所属回合的 `turn_id` 加折叠结果。"""
+    return {"turn_id": turn_id, **context.model_dump(mode="json")}

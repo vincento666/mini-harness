@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import stat
 from pathlib import Path
 
 from mini_harness.events import EventLog, read_events
@@ -72,6 +74,51 @@ async def test_each_turn_is_closed_before_the_next_one_starts(tmp_path: Path) ->
     assert all(ends[index] < starts[index + 1] for index in range(2))
     turn_ids = [record.payload["turn_id"] for record in records if record.type == "turn/start"]
     assert len(set(turn_ids)) == 3
+
+
+async def test_a_log_that_becomes_unwritable_ends_the_run_as_a_failure_result(
+    tmp_path: Path,
+) -> None:
+    log = EventLog.create(session_dir=tmp_path, session_id="s-logfail")
+    os.chmod(log.path, stat.S_IREAD)
+    try:
+        outcome = await run_session(
+            prompt="任务",
+            provider=FixtureProvider(entries=[{"content": "done", "finish_reason": "stop"}]),
+            provider_name="mock",
+            log=log,
+            registry=ToolRegistry(),
+            workspace=tmp_path,
+            max_turns=8,
+            cancel=asyncio.Event(),
+        )
+    finally:
+        os.chmod(log.path, stat.S_IREAD | stat.S_IWRITE)
+
+    assert outcome.stop_reason == "LOG_WRITE_FAILED"
+    assert outcome.failure_code == "LOG_WRITE_FAILED"
+    assert log.path.read_text(encoding="utf-8") == ""
+
+
+async def test_context_assembled_carries_the_turn_id_it_belongs_to(tmp_path: Path) -> None:
+    log = EventLog.create(session_dir=tmp_path, session_id="s-turnid")
+
+    await run_session(
+        prompt="任务",
+        provider=FixtureProvider(entries=_tool_call_entries(2)),
+        provider_name="mock",
+        log=log,
+        registry=ToolRegistry(),
+        workspace=tmp_path,
+        max_turns=2,
+        cancel=asyncio.Event(),
+    )
+
+    assembled = [
+        record for record in read_events(log.path) if record.type == "context/assembled"
+    ]
+    assert len(assembled) == 2
+    assert [record.payload["turn_id"] for record in assembled] == ["t1", "t2"]
 
 
 async def test_empty_tool_calls_ends_the_loop_with_model_completed(tmp_path: Path) -> None:

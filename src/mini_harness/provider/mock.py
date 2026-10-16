@@ -54,11 +54,19 @@ class FixtureProvider:
 
 
 def load_fixture_provider(path: Path) -> FixtureProvider | FixtureLoadFailure:
-    """读 fixture 文件：必须是 JSON 数组，每条是对象。"""
+    """读 fixture 文件：必须是 JSON 数组，且每条都符合 `AssistantTurn` 形状。"""
     try:
-        parsed = json.loads(path.read_text(encoding="utf-8"))
+        parsed = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, json.JSONDecodeError) as exc:
         return FixtureLoadFailure(path, f"{path}: {exc}")
     if not isinstance(parsed, list) or not all(isinstance(entry, dict) for entry in parsed):
         return FixtureLoadFailure(path, f"{path}: fixture 必须是 JSON 对象数组")
-    return FixtureProvider([dict(entry) for entry in parsed])
+    entries = [dict(entry) for entry in parsed]
+    for index, entry in enumerate(entries):
+        try:
+            AssistantTurn.model_validate(entry)
+        except ValidationError as exc:
+            return FixtureLoadFailure(
+                path, f"{path}: 第 {index + 1} 条不符合 AssistantTurn 形状：{exc}"
+            )
+    return FixtureProvider(entries)

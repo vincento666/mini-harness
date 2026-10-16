@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import codecs
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
 
+from mini_harness.cli.main import STOP_REASONS_TO_EXIT_CODES
+from mini_harness.loop import STOP_REASONS
 from paths import HELLO_SCENARIO
 
 
@@ -27,6 +30,15 @@ def _log_files(cwd: Path) -> list[Path]:
     if not session_dir.is_dir():
         return []
     return sorted(session_dir.glob("*.jsonl"))
+
+
+def test_every_stop_reason_maps_to_an_exit_code() -> None:
+    assert set(STOP_REASONS_TO_EXIT_CODES) == set(STOP_REASONS)
+    assert STOP_REASONS_TO_EXIT_CODES["TOOL_CALLS"] == 0
+    assert STOP_REASONS_TO_EXIT_CODES["MODEL_COMPLETED"] == 0
+    assert STOP_REASONS_TO_EXIT_CODES["MAX_TURNS"] == 0
+    assert STOP_REASONS_TO_EXIT_CODES["PROVIDER_ERROR"] == 1
+    assert STOP_REASONS_TO_EXIT_CODES["ABORTED"] == 5
 
 
 def test_mock_provider_without_fixture_is_an_invalid_argument(tmp_path: Path) -> None:
@@ -80,6 +92,36 @@ def test_invalid_fixture_is_rejected(tmp_path: Path) -> None:
 
     assert result.returncode == 2
     assert "FIXTURE_INVALID" in result.stderr
+    assert _log_files(tmp_path) == []
+
+
+def test_fixture_with_a_utf8_bom_runs(tmp_path: Path) -> None:
+    bommed = tmp_path / "bommed.json"
+    bommed.write_bytes(
+        codecs.BOM_UTF8
+        + json.dumps([{"content": "hello", "finish_reason": "stop"}], ensure_ascii=False).encode("utf-8")
+    )
+
+    result = _cli(
+        "run", "-p", "任务", "--provider", "mock", "--fixture", str(bommed), cwd=tmp_path
+    )
+
+    assert result.returncode == 0
+    assert "FIXTURE_INVALID" not in result.stderr
+    assert _log_files(tmp_path)
+
+
+def test_malformed_fixture_entry_is_rejected_before_any_session_log(tmp_path: Path) -> None:
+    malformed = tmp_path / "malformed.json"
+    malformed.write_text(json.dumps([{"foo": 1}]), encoding="utf-8")
+
+    result = _cli(
+        "run", "-p", "任务", "--provider", "mock", "--fixture", str(malformed), cwd=tmp_path
+    )
+
+    assert result.returncode == 2
+    assert "FIXTURE_INVALID" in result.stderr
+    assert _log_files(tmp_path) == []
 
 
 def test_happy_path_prints_session_id_and_writes_the_log(tmp_path: Path) -> None:
