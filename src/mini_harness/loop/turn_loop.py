@@ -18,7 +18,7 @@ from mini_harness.tools.fences import (
     STDIN_APPROVAL_GATE,
     ApprovalGate,
     DispatchContext,
-    read_paths_from_records,
+    reads_from_records,
 )
 from mini_harness.tools.registry import ToolRegistry
 
@@ -196,7 +196,7 @@ async def run_session(
                 return _kernel_failure(log, prefix, turns)
             dispatch_context = DispatchContext.from_settings(
                 settings,
-                read_paths=read_paths_from_records(prefix, settings.workspace),
+                reads=reads_from_records(prefix, settings.workspace),
             )
             dispatched = await dispatch_tool_call(call, registry, dispatch_context, approval_gate)
 

@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import os
 import sys
-from collections.abc import Iterable
-from dataclasses import dataclass
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, Protocol, TextIO
+from typing import TYPE_CHECKING, Any, Literal, Protocol, TextIO
 
 from mini_harness.events.record import EventRecord
-from mini_harness.loop.settings import ApprovalMode, SandboxLevel, SessionSettings
+
+if TYPE_CHECKING:
+    # 只给类型检查看：运行时导入会绕成 fences → loop → tools.dispatch → fences 的环。
+    from mini_harness.loop.settings import ApprovalMode, SandboxLevel, SessionSettings
 
 FenceCode = Literal[
     "OUTSIDE_WORKSPACE",
@@ -22,23 +25,33 @@ FenceOutcome = Literal["ALLOWED", "NEEDS_APPROVAL", "DENIED"]
 
 
 @dataclass(frozen=True)
+class PriorRead:
+    """这段前缀里最后一次成功 `read` 留下的事实，CAS 与写前必读都只认它。"""
+
+    raw_path: str
+    offset: int
+    limit: int | None
+    content: str
+
+
+@dataclass(frozen=True)
 class DispatchContext:
     """一次派发能看到的全部事实：工具只读它，不读进程内状态。"""
 
     workspace: Path
     sandbox: SandboxLevel
     approval: ApprovalMode
-    read_paths: frozenset[str]
+    reads: Mapping[str, PriorRead] = field(default_factory=dict)
 
     @classmethod
     def from_settings(
-        cls, settings: SessionSettings, read_paths: frozenset[str]
+        cls, settings: SessionSettings, *, reads: Mapping[str, PriorRead] | None = None
     ) -> DispatchContext:
         return cls(
             workspace=settings.workspace,
             sandbox=settings.sandbox,
             approval=settings.approval,
-            read_paths=read_paths,
+            reads=reads or {},
         )
 
 
@@ -100,14 +113,14 @@ class StdinApprovalGate:
 STDIN_APPROVAL_GATE = StdinApprovalGate()
 
 
-def read_paths_from_records(records: Iterable[EventRecord], workspace: Path) -> frozenset[str]:
+def reads_from_records(records: Iterable[EventRecord], workspace: Path) -> dict[str, PriorRead]:
     """「算不算读过」= 这段前缀之前存在针对该路径且 `outcome` 为 `OK` 的 `read`。
 
     `tool/result` 的 payload 里没有工具名，所以先把 `tool/call` 的名字与入参记下来，
-    再按配对结果判定。
+    再按配对结果判定；同一路径后来的成功读覆盖先前的。
     """
     called: dict[str, tuple[str, dict[str, Any]]] = {}
-    paths: set[str] = set()
+    reads: dict[str, PriorRead] = {}
     for record in records:
         if record.type == "tool/call":
             called[record.payload["tool_call_id"]] = (
@@ -117,9 +130,18 @@ def read_paths_from_records(records: Iterable[EventRecord], workspace: Path) -> 
         elif record.type == "tool/result" and record.payload["outcome"] == "OK":
             name, arguments = called.get(record.payload["tool_call_id"], ("", {}))
             file_path = arguments.get("file_path")
-            if name == "read" and isinstance(file_path, str):
-                paths.add(path_key(workspace, file_path))
-    return frozenset(paths)
+            if name != "read" or not isinstance(file_path, str):
+                continue
+            offset = arguments.get("offset")
+            limit = arguments.get("limit")
+            content = record.payload["content"]
+            reads[path_key(workspace, file_path)] = PriorRead(
+                raw_path=file_path,
+                offset=offset if isinstance(offset, int) else 1,
+                limit=limit if isinstance(limit, int) else None,
+                content=content if isinstance(content, str) else "",
+            )
+    return reads
 
 
 def judge_fence(context: DispatchContext, *, raw_path: str, mutates: bool) -> FenceDecision:

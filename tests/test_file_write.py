@@ -2,58 +2,25 @@
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 
-from mini_harness.events import EventLog, read_events
-from mini_harness.loop import RunOutcome, SessionSettings, run_session
-from mini_harness.provider import FixtureProvider
-from mini_harness.tools import ToolRegistry
+from mini_harness.events import read_events
 from mini_harness.tools.dispatch import DispatchOutcome
-from mini_harness.tools.fences import path_key, read_paths_from_records
-from mini_harness.tools.file_tools import file_tool_definitions
+from mini_harness.tools.fences import path_key, reads_from_records
 from paths import copy_repo_to
-from tool_harness import dispatch_call
+from tool_harness import (
+    DONE,
+    dispatch_call,
+    run_fixture_session,
+    tool_call_entry,
+    tool_outcomes,
+)
 
 _RAW_BLOB = bytes([0xFF, 0xFE, 0x00, 0x41])
 
 
-def _call(name: str, call_id: str, **arguments: object) -> dict[str, object]:
-    return {
-        "content": f"调用 {name}",
-        "finish_reason": "tool_calls",
-        "tool_calls": [{"id": call_id, "name": name, "arguments": dict(arguments)}],
-    }
-
-
-_DONE: dict[str, object] = {"content": "算了", "finish_reason": "stop"}
-
-
 async def _write(workspace: Path, **arguments: object) -> DispatchOutcome:
     return await dispatch_call(workspace, "write", dict(arguments))
-
-
-async def _run_session(
-    tmp_path: Path, session_id: str, entries: list[dict[str, object]]
-) -> tuple[EventLog, RunOutcome]:
-    log = EventLog.create(session_dir=tmp_path, session_id=session_id)
-    settings = SessionSettings(
-        workspace=tmp_path, provider_name="mock", max_turns=4, approval="auto"
-    )
-    outcome = await run_session(
-        prompt="任务",
-        provider=FixtureProvider(entries=entries),
-        log=log,
-        registry=ToolRegistry(file_tool_definitions()),
-        settings=settings,
-        cancel=asyncio.Event(),
-    )
-    return log, outcome
-
-
-def _outcomes(log: EventLog) -> list[str]:
-    results = [record for record in read_events(log.path) if record.type == "tool/result"]
-    return [record.payload["outcome"] for record in results]
 
 
 async def test_writing_a_new_file_creates_it_and_the_parent_dirs(tmp_path: Path) -> None:
@@ -96,14 +63,14 @@ async def test_danger_full_access_still_requires_reading_first(tmp_path: Path) -
 async def test_reading_first_then_writing_succeeds_in_the_same_session(tmp_path: Path) -> None:
     (tmp_path / "a.md").write_text("原文\n", encoding="utf-8")
     entries = [
-        _call("read", "c1", file_path="a.md"),
-        _call("write", "c2", file_path="a.md", content="改写\n"),
-        _DONE,
+        tool_call_entry("read", "c1", file_path="a.md"),
+        tool_call_entry("write", "c2", file_path="a.md", content="改写\n"),
+        DONE,
     ]
 
-    log, _ = await _run_session(tmp_path, "s-readwrite", entries)
+    log, _ = await run_fixture_session(tmp_path, "s-readwrite", entries)
 
-    assert _outcomes(log) == ["OK", "OK"]
+    assert tool_outcomes(log) == ["OK", "OK"]
     assert (tmp_path / "a.md").read_text(encoding="utf-8") == "改写\n"
 
 
@@ -111,28 +78,30 @@ async def test_a_failed_read_does_not_count_as_reading(tmp_path: Path) -> None:
     blob = tmp_path / "blob.bin"
     blob.write_bytes(_RAW_BLOB)
     entries = [
-        _call("read", "c1", file_path="blob.bin"),
-        _call("write", "c2", file_path="blob.bin", content="覆盖\n"),
-        _DONE,
+        tool_call_entry("read", "c1", file_path="blob.bin"),
+        tool_call_entry("write", "c2", file_path="blob.bin", content="覆盖\n"),
+        DONE,
     ]
 
-    log, _ = await _run_session(tmp_path, "s-failedread", entries)
+    log, _ = await run_fixture_session(tmp_path, "s-failedread", entries)
 
-    assert _outcomes(log) == ["NOT_UTF8_TEXT", "WRITE_WITHOUT_READ"]
+    assert tool_outcomes(log) == ["NOT_UTF8_TEXT", "WRITE_WITHOUT_READ"]
     assert blob.read_bytes() == _RAW_BLOB
 
 
 async def test_a_new_session_does_not_inherit_the_read_set(tmp_path: Path) -> None:
     (tmp_path / "a.md").write_text("原文\n", encoding="utf-8")
 
-    log_a, _ = await _run_session(tmp_path, "s-a", [_call("read", "c1", file_path="a.md"), _DONE])
-    assert _outcomes(log_a) == ["OK"]
+    log_a, _ = await run_fixture_session(
+        tmp_path, "s-a", [tool_call_entry("read", "c1", file_path="a.md"), DONE]
+    )
+    assert tool_outcomes(log_a) == ["OK"]
 
-    log_b, _ = await _run_session(
-        tmp_path, "s-b", [_call("write", "c1", file_path="a.md", content="改写\n"), _DONE]
+    log_b, _ = await run_fixture_session(
+        tmp_path, "s-b", [tool_call_entry("write", "c1", file_path="a.md", content="改写\n"), DONE]
     )
 
-    assert _outcomes(log_b) == ["WRITE_WITHOUT_READ"]
+    assert tool_outcomes(log_b) == ["WRITE_WITHOUT_READ"]
     assert (tmp_path / "a.md").read_text(encoding="utf-8") == "原文\n"
 
 
@@ -148,14 +117,14 @@ async def test_the_same_log_prefix_yields_the_same_read_set(tmp_path: Path) -> N
                 {"id": "c2", "name": "read", "arguments": {"file_path": "blob.bin"}},
             ],
         },
-        _DONE,
+        DONE,
     ]
 
-    log, _ = await _run_session(tmp_path, "s-prefix", entries)
+    log, _ = await run_fixture_session(tmp_path, "s-prefix", entries)
     records = read_events(log.path)
 
-    first = read_paths_from_records(records, tmp_path)
-    second = read_paths_from_records(records, tmp_path)
+    first = reads_from_records(records, tmp_path)
+    second = reads_from_records(records, tmp_path)
 
     assert first == second
     assert path_key(tmp_path, "notes/plan.md") in first

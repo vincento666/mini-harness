@@ -24,7 +24,7 @@ def _context(
         sandbox=sandbox,
         approval=approval,
     )
-    return DispatchContext.from_settings(settings, read_paths=frozenset())
+    return DispatchContext.from_settings(settings)
 
 
 def test_the_same_file_written_two_ways_gets_one_path_key(tmp_path: Path) -> None:

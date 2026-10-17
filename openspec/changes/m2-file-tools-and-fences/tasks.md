@@ -52,9 +52,9 @@
 
 ## 8. 文件工具契约：edit 与 CAS（seam ③）
 
-- [ ] 8.1 红：断言 `old_string` 唯一匹配时替换成功且只替换这一处；绿后验证（seam ③）
-- [ ] 8.2 红：断言 `old_string` 出现 0 次是 `EDIT_TARGET_NOT_FOUND`、出现多次且 `replace_all` 为假是 `EDIT_TARGET_AMBIGUOUS`，两者文件内容都不变；`replace_all` 为真时全部替换；绿后验证（seam ③）
-- [ ] 8.3 红：断言读过之后文件被外部改动再 `edit` 是 `STALE_EDIT` 且不被改写；未 `read` 直接 `edit` 是 `WRITE_WITHOUT_READ`；绿后验证（seam ③）
+- [x] 8.1 红：断言 `old_string` 唯一匹配时替换成功且只替换这一处；绿后验证（seam ③）——另加一条 fixture 仓库里的真实判据（改 `notes/retro.md` 的那行 TODO）
+- [x] 8.2 红：断言 `old_string` 出现 0 次是 `EDIT_TARGET_NOT_FOUND`、出现多次且 `replace_all` 为假是 `EDIT_TARGET_AMBIGUOUS`，两者文件内容都不变；`replace_all` 为真时全部替换；绿后验证（seam ③）——`old_string` 为空串是 `TOOL_ARGS_INVALID`（`min_length=1`），否则「出现 0 次」与「处处匹配」分不开
+- [x] 8.3 红：断言读过之后文件被外部改动再 `edit` 是 `STALE_EDIT` 且不被改写；未 `read` 直接 `edit` 是 `WRITE_WITHOUT_READ`；绿后验证（seam ③）——CAS 的「读到的原文」取自日志里那次 `read` 的 `tool/result` 内容加它的 `offset`/`limit`，不另立真源；8.1–8.3 写出来就全绿，补两次变异：去掉 CAS 比对被 `test_editing_a_file_changed_outside_the_session_is_stale` 杀死；歧义判定去掉 `not args.replace_all` 被 `test_replace_all_replaces_every_match` 杀死。`error/fence` 的 `APPROVAL_UNAVAILABLE` 断言仍在 12.x / 13.x
 
 ## 9. 文件工具契约：glob 与 grep（seam ③）
 
