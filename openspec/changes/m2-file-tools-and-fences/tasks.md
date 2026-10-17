@@ -92,7 +92,7 @@
 - [x] 13.5 红：断言 M2 全部成功与失败场景没有任何 run 以 4 退出，且退出码非 2 的失败都有 `error/*` 事件；绿后验证（seam ⑥）——六个场景退出码 `[0, 0, 3, 3, 3, 1]`，4 保留
 - [x] 13.6 红：断言带 `--events jsonl` 时 stdout 与日志逐行相等（含 `approval/*` 与 `error/fence` 的 run）；绿后验证（seam ⑥④）——退出码 3 的 run 也要逐行相等，所以失败报告只能走 stderr
 - 变异记录（组 13）：`approval` 恒为 `auto`（无视 `--yes`）被 13.3 / 13.5 / 13.6 与 11.2 杀死；边界只在 `danger-full-access` 下生效被 13.2 / 13.5 杀死；`--yes` 顺手把档位抬成 `workspace-write` 被 13.4 / 13.5 杀死；`EXIT_FENCE_DENIED = 4` 被 13.5 与 `test_every_stop_reason_maps_to_an_exit_code` 杀死；提问写进 stdout 被 13.6 与 gate 的 `capsys` 判据杀死
-- [ ] 13.7 手动 smoke：在真实 tty 里跑一次会提问的 run，记录 `y` 与 `n` 两种回答的实际行为到 `docs/verification/m2-file-tools-and-fences-approval-smoke.md`；验证该文件存在且记录了两次退出码
+- [x] 13.7 手动 smoke：在真实 tty 里跑一次会提问的 run，记录 `y` 与 `n` 两种回答的实际行为到 `docs/verification/m2-file-tools-and-fences-approval-smoke.md`；验证该文件存在且记录了两次退出码——`y` → `APPROVED` / 退出码 0 / 文件被改写，`n` → `DENIED` + `error/fence(APPROVAL_DENIED)` / 退出码 3 / 文件字节不变。夹具 `docs/verification/m2-file-tools-and-fences-approval-smoke-harness.py`：子进程 `CREATE_NEW_CONSOLE` 得到自己的真实控制台，父进程 `AttachConsole` + `CONIN$` + `WriteConsoleInput` 投递按键；本沙箱的 stdin 是 `NUL`（`isatty()` 真但读即 EOF），ConPTY 路线在本机 `UpdateProcThreadAttribute` 恒返回 87
 
 ## 14. 词表可达性与文档（seam ⑥④）
 
