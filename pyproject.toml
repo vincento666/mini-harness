@@ -46,8 +46,11 @@ allowed-confusables = ["：", "，", "；", "（", "）"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# `tests/fixtures/` 是数据与只读 fixture 仓库，不是测试：`tests/fixtures/repo` 里那条必然失败的
+# 哨兵用例一旦被主套件收集，主套件立刻变红。它只能被显式调用（`pytest tests/fixtures/repo`）。
 # 覆盖率不在这里出报告：pytest-cov 在 `coverage combine` 之前报告，看不见子进程的数据。
 # 门禁的三步是 `coverage run -m pytest` → `coverage combine` → `coverage report --fail-under`。
+norecursedirs = ["fixtures"]
 
 # seam ⑥ 的 CLI 测试是真实子进程，每个子进程各写一份 partial 数据文件（见 tests/cli_blackbox.py），
 # 所以 source 明写包名、parallel 常开。

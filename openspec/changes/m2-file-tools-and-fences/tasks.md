@@ -4,7 +4,7 @@
 
 ## 1. fixture 仓库与测试 helper（无红）
 
-- [ ] 1.1 建 `tests/fixtures/repo/`：5 个 `.md`（含可搜的共同词）+ 一个可跑的小 pytest 工程（含一个必然失败用例）；验证 `uv run pytest tests/fixtures/repo -q` 退出码非 0 且失败用例被收集（seam ③ 的内容源）
+- [x] 1.1 建 `tests/fixtures/repo/`：5 个 `.md`（含可搜的共同词）+ 一个可跑的小 pytest 工程（含一个必然失败用例）；验证 `uv run pytest tests/fixtures/repo -q` 退出码非 0 且失败用例被收集（seam ③ 的内容源）
 - [ ] 1.2 在 `tests/paths.py` 加 fixture 仓库路径常量与 `copy_repo_to(tmp_path)` helper；验证一条测试断言复制后的目录含那 5 个 `.md` 且原仓库字节不变（seam ③）
 - [ ] 1.3 把 `--sandbox`（三档、默认 `workspace-write`）与 `--yes` 加进 `build_parser`，非法档位以退出码 2 + `INVALID_ARGUMENT` 且无 session 日志；验证黑盒两条测试红→绿（seam ⑥）
 
