@@ -11,6 +11,7 @@ from typing import Any, Literal, get_args
 from mini_harness.events.fold import assembled_payload, fold
 from mini_harness.events.reader import LogReadFailure, read_events
 from mini_harness.events.writer import EventLog, LogWriteFailure
+from mini_harness.loop.settings import SessionSettings
 from mini_harness.provider.contract import Provider, ProviderFailure
 from mini_harness.tools.dispatch import dispatch_tool_call
 from mini_harness.tools.registry import ToolRegistry
@@ -66,13 +67,10 @@ async def run_session(
     *,
     prompt: str,
     provider: Provider,
-    provider_name: str,
     log: EventLog,
     registry: ToolRegistry,
-    workspace: Path,
-    max_turns: int,
+    settings: SessionSettings,
     cancel: asyncio.Event,
-    append_system_prompt: str = "",
 ) -> RunOutcome:
     """跑完一个 session 的全部回合。"""
     failure = _append_all(
@@ -81,11 +79,14 @@ async def run_session(
             (
                 "session/start",
                 {
-                    "workspace": str(Path(workspace).resolve()),
-                    "provider": provider_name,
-                    "max_turns": max_turns,
-                    "append_system_prompt": append_system_prompt,
+                    "workspace": str(Path(settings.workspace).resolve()),
+                    "provider": settings.provider_name,
+                    "max_turns": settings.max_turns,
+                    "append_system_prompt": settings.append_system_prompt,
                     "prompt": prompt,
+                    "sandbox": settings.sandbox,
+                    "approval": settings.approval,
+                    "tools": [spec.name for spec in registry.specs()],
                 },
             ),
         ],
@@ -95,7 +96,7 @@ async def run_session(
 
     stop_reason = STOP_MODEL_COMPLETED
     turns = 0
-    for turn_index in range(1, max_turns + 1):
+    for turn_index in range(1, settings.max_turns + 1):
         turns = turn_index
         turn_id = f"t{turn_index}"
         tool_names = [spec.name for spec in registry.specs()]
@@ -109,7 +110,7 @@ async def run_session(
             return _kernel_failure(log, events, turns)
         context = fold(
             events,
-            append_system_prompt=append_system_prompt,
+            append_system_prompt=settings.append_system_prompt,
             tool_descriptions=tool_names,
         )
         failure = _append_all(
@@ -206,7 +207,7 @@ async def run_session(
             stop_reason = STOP_ABORTED
         elif not generated.tool_calls:
             stop_reason = STOP_MODEL_COMPLETED
-        elif turn_index == max_turns:
+        elif turn_index == settings.max_turns:
             stop_reason = STOP_MAX_TURNS
         else:
             stop_reason = STOP_TOOL_CALLS
@@ -225,7 +226,7 @@ async def run_session(
         if failure is not None:
             return _kernel_failure(log, failure, turns)
 
-        if cancel.is_set() or not generated.tool_calls or turn_index == max_turns:
+        if cancel.is_set() or not generated.tool_calls or turn_index == settings.max_turns:
             break
 
     failure = _append_all(log, [("session/end", {"stop_reason": stop_reason, "turns": turns})])

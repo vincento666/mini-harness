@@ -16,9 +16,9 @@
 
 ## 3. SessionSettings 与 session/start 新字段（seam ①④⑥）
 
-- [ ] 3.1 红：断言 `session/start.payload` 含 `sandbox`、`approval`、`tools`（五个工具名），且 payload 里没有 `schema_version`；绿后验证（seam ④⑥）
-- [ ] 3.2 红：断言 `run_session` 收 `SessionSettings` 且 `session/start.payload` 由它派生（同一事实只写一遍）；绿后验证既有 seam ① 测试在新签名下全绿（seam ①，ADR-0002 第 1 条）
-- [ ] 3.3 红：断言 `--sandbox read-only` 与 `--yes` 分别落到 payload 的 `sandbox` 与 `approval`（`ask` / `auto`）；绿后验证（seam ⑥④）
+- [x] 3.1 红：断言 `session/start.payload` 含 `sandbox`、`approval`、`tools`，且 payload 里没有 `schema_version`；绿后验证（seam ④⑥）——`tools` 这一轮钉的是「由注册表派生」这条通道（空注册表 → `[]`），五个工具名在组 10 断言
+- [x] 3.2 红：断言 `run_session` 收 `SessionSettings` 且 `session/start.payload` 由它派生（同一事实只写一遍）；绿后验证既有 seam ① 测试在新签名下全绿（seam ①，ADR-0002 第 1 条）
+- [x] 3.3 红：断言 `--sandbox read-only` 与 `--yes` 分别落到 payload 的 `sandbox` 与 `approval`（`ask` / `auto`）；绿后验证（seam ⑥④）——这条在 3.1 的实现周期里就已经可达，所以补了一次变异（把 `sandbox` / `approval` 写死）确认它会变红
 
 ## 4. 围栏判定：规范化、边界、档位（seam ②）
 

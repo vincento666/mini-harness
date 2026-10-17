@@ -23,6 +23,7 @@ from mini_harness.loop import (
     STOP_REASONS,
     STOP_TOOL_CALLS,
     RunOutcome,
+    SessionSettings,
     run_session,
 )
 from mini_harness.provider import FixtureLoadFailure, load_fixture_provider
@@ -111,11 +112,8 @@ async def _await_session(
     *,
     prompt: str,
     provider: Provider,
-    provider_name: str,
+    settings: SessionSettings,
     log: EventLog,
-    workspace: Path,
-    max_turns: int,
-    append_system_prompt: str,
 ) -> RunOutcome:
     """装好 Ctrl-C 处理器再跑内核：Ctrl-C 是取消，不是崩溃。"""
     cancel = asyncio.Event()
@@ -125,13 +123,10 @@ async def _await_session(
         return await run_session(
             prompt=prompt,
             provider=provider,
-            provider_name=provider_name,
             log=log,
             registry=ToolRegistry(),
-            workspace=workspace,
-            max_turns=max_turns,
+            settings=settings,
             cancel=cancel,
-            append_system_prompt=append_system_prompt,
         )
     finally:
         signal.signal(signal.SIGINT, previous)
@@ -171,16 +166,16 @@ def _run(args: argparse.Namespace) -> int:
         return _report_failure(log.code, log.detail, EXIT_INTERNAL_ERROR)
 
     workspace: str | None = args.workspace
+    settings = SessionSettings(
+        workspace=Path(workspace) if workspace is not None else Path.cwd(),
+        provider_name=provider_name,
+        max_turns=max_turns,
+        sandbox=args.sandbox,
+        approval="auto" if args.yes else "ask",
+        append_system_prompt=args.append_system_prompt,
+    )
     outcome = asyncio.run(
-        _await_session(
-            prompt=prompt,
-            provider=loaded,
-            provider_name=provider_name,
-            log=log,
-            workspace=Path(workspace) if workspace is not None else Path.cwd(),
-            max_turns=max_turns,
-            append_system_prompt=args.append_system_prompt,
-        )
+        _await_session(prompt=prompt, provider=loaded, settings=settings, log=log)
     )
 
     exit_code = exit_code_for(outcome)

@@ -1,0 +1,23 @@
+"""一次 session 的设置：`session/start.payload` 由它派生，同一事实只写一遍。"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Literal
+
+# 围栏的两条独立轴：设置对象带着它们，围栏模块消费它们。
+SandboxLevel = Literal["read-only", "workspace-write", "danger-full-access"]
+ApprovalMode = Literal["ask", "auto"]
+
+
+@dataclass(frozen=True)
+class SessionSettings:
+    """一次运行的全部设置（不含 prompt：prompt 是这一轮的内容，不是设置）。"""
+
+    workspace: Path
+    provider_name: str
+    max_turns: int
+    sandbox: SandboxLevel = "workspace-write"
+    approval: ApprovalMode = "ask"
+    append_system_prompt: str = ""

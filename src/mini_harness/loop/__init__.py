@@ -1,5 +1,6 @@
 """回合层：显式主循环。"""
 
+from mini_harness.loop.settings import SessionSettings
 from mini_harness.loop.turn_loop import (
     STOP_ABORTED,
     STOP_MAX_TURNS,
@@ -19,5 +20,6 @@ __all__ = [
     "STOP_REASONS",
     "STOP_TOOL_CALLS",
     "RunOutcome",
+    "SessionSettings",
     "run_session",
 ]

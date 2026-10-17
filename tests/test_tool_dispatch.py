@@ -6,7 +6,7 @@ import asyncio
 from pathlib import Path
 
 from mini_harness.events import EventLog, read_events
-from mini_harness.loop import run_session
+from mini_harness.loop import SessionSettings, run_session
 from mini_harness.provider import FixtureProvider, ToolCall
 from mini_harness.tools import ToolDefinition, ToolRegistry, dispatch_tool_call
 
@@ -24,11 +24,9 @@ async def _run(
     outcome = await run_session(
         prompt="任务",
         provider=FixtureProvider(entries=entries),
-        provider_name="mock",
         log=log,
         registry=ToolRegistry(),
-        workspace=tmp_path,
-        max_turns=max_turns,
+        settings=SessionSettings(workspace=tmp_path, provider_name="mock", max_turns=max_turns),
         cancel=asyncio.Event(),
     )
     return log, outcome

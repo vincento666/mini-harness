@@ -8,9 +8,13 @@ import stat
 from pathlib import Path
 
 from mini_harness.events import EventLog, read_events
-from mini_harness.loop import run_session
+from mini_harness.loop import SessionSettings, run_session
 from mini_harness.provider import AssistantTurn, FixtureProvider
 from mini_harness.tools import ToolRegistry
+
+
+def _settings(workspace: Path, max_turns: int = 8) -> SessionSettings:
+    return SessionSettings(workspace=workspace, provider_name="mock", max_turns=max_turns)
 
 
 async def test_single_turn_writes_the_expected_event_sequence(tmp_path: Path) -> None:
@@ -19,11 +23,9 @@ async def test_single_turn_writes_the_expected_event_sequence(tmp_path: Path) ->
     outcome = await run_session(
         prompt="任务",
         provider=FixtureProvider(entries=[{"content": "done", "finish_reason": "stop"}]),
-        provider_name="mock",
         log=log,
         registry=ToolRegistry(),
-        workspace=tmp_path,
-        max_turns=8,
+        settings=_settings(tmp_path, max_turns=8),
         cancel=asyncio.Event(),
     )
 
@@ -58,11 +60,9 @@ async def test_each_turn_is_closed_before_the_next_one_starts(tmp_path: Path) ->
     await run_session(
         prompt="任务",
         provider=FixtureProvider(entries=_tool_call_entries(3)),
-        provider_name="mock",
         log=log,
         registry=ToolRegistry(),
-        workspace=tmp_path,
-        max_turns=3,
+        settings=_settings(tmp_path, max_turns=3),
         cancel=asyncio.Event(),
     )
 
@@ -85,11 +85,9 @@ async def test_a_log_that_becomes_unwritable_ends_the_run_as_a_failure_result(
         outcome = await run_session(
             prompt="任务",
             provider=FixtureProvider(entries=[{"content": "done", "finish_reason": "stop"}]),
-            provider_name="mock",
             log=log,
             registry=ToolRegistry(),
-            workspace=tmp_path,
-            max_turns=8,
+            settings=_settings(tmp_path, max_turns=8),
             cancel=asyncio.Event(),
         )
     finally:
@@ -106,11 +104,9 @@ async def test_context_assembled_carries_the_turn_id_it_belongs_to(tmp_path: Pat
     await run_session(
         prompt="任务",
         provider=FixtureProvider(entries=_tool_call_entries(2)),
-        provider_name="mock",
         log=log,
         registry=ToolRegistry(),
-        workspace=tmp_path,
-        max_turns=2,
+        settings=_settings(tmp_path, max_turns=2),
         cancel=asyncio.Event(),
     )
 
@@ -125,11 +121,9 @@ async def test_empty_tool_calls_ends_the_loop_with_model_completed(tmp_path: Pat
     outcome = await run_session(
         prompt="任务",
         provider=FixtureProvider(entries=[{"content": "done", "finish_reason": "stop"}]),
-        provider_name="mock",
         log=log,
         registry=ToolRegistry(),
-        workspace=tmp_path,
-        max_turns=8,
+        settings=_settings(tmp_path, max_turns=8),
         cancel=asyncio.Event(),
     )
 
@@ -146,11 +140,9 @@ async def test_reaching_max_turns_stops_with_max_turns_and_no_failure(tmp_path: 
     outcome = await run_session(
         prompt="任务",
         provider=FixtureProvider(entries=_tool_call_entries(5)),
-        provider_name="mock",
         log=log,
         registry=ToolRegistry(),
-        workspace=tmp_path,
-        max_turns=2,
+        settings=_settings(tmp_path, max_turns=2),
         cancel=asyncio.Event(),
     )
 
@@ -170,11 +162,9 @@ async def test_turn_that_requests_tool_calls_closes_with_tool_calls(tmp_path: Pa
         provider=FixtureProvider(
             entries=[*_tool_call_entries(1), {"content": "done", "finish_reason": "stop"}]
         ),
-        provider_name="mock",
         log=log,
         registry=ToolRegistry(),
-        workspace=tmp_path,
-        max_turns=8,
+        settings=_settings(tmp_path, max_turns=8),
         cancel=asyncio.Event(),
     )
 
@@ -207,11 +197,9 @@ async def test_cancel_signal_ends_the_turn_with_aborted(tmp_path: Path) -> None:
     outcome = await run_session(
         prompt="任务",
         provider=_CancelDuringGenerate(cancel),
-        provider_name="mock",
         log=log,
         registry=ToolRegistry(),
-        workspace=tmp_path,
-        max_turns=8,
+        settings=_settings(tmp_path, max_turns=8),
         cancel=cancel,
     )
 
@@ -230,11 +218,9 @@ async def test_a_cancelled_turn_writes_an_error_abort_event(tmp_path: Path) -> N
     outcome = await run_session(
         prompt="任务",
         provider=_CancelDuringGenerate(cancel),
-        provider_name="mock",
         log=log,
         registry=ToolRegistry(),
-        workspace=tmp_path,
-        max_turns=8,
+        settings=_settings(tmp_path, max_turns=8),
         cancel=cancel,
     )
 
@@ -255,11 +241,9 @@ async def test_provider_failure_is_recorded_as_error_model_and_provider_error(
     outcome = await run_session(
         prompt="任务",
         provider=FixtureProvider(entries=[]),
-        provider_name="mock",
         log=log,
         registry=ToolRegistry(),
-        workspace=tmp_path,
-        max_turns=8,
+        settings=_settings(tmp_path, max_turns=8),
         cancel=asyncio.Event(),
     )
 
@@ -295,11 +279,9 @@ async def test_loop_only_calls_generate_with_three_positional_parameters(tmp_pat
     await run_session(
         prompt="任务",
         provider=spy,
-        provider_name="mock",
         log=log,
         registry=ToolRegistry(),
-        workspace=tmp_path,
-        max_turns=8,
+        settings=_settings(tmp_path, max_turns=8),
         cancel=cancel,
     )
 

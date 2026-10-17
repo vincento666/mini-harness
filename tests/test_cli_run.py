@@ -13,7 +13,7 @@ from cli_blackbox import _cli
 from mini_harness.cli import main as cli_main
 from mini_harness.cli.main import STOP_REASONS_TO_EXIT_CODES, exit_code_for, sigint_handler
 from mini_harness.events import EventLog
-from mini_harness.loop import STOP_REASONS, RunOutcome
+from mini_harness.loop import STOP_REASONS, RunOutcome, SessionSettings
 from mini_harness.provider import AssistantTurn
 from paths import HELLO_SCENARIO
 
@@ -237,11 +237,8 @@ async def test_the_cli_installs_and_restores_the_sigint_handler(tmp_path: Path) 
     await cli_main._await_session(
         prompt="任务",
         provider=spy,
-        provider_name="mock",
+        settings=SessionSettings(workspace=tmp_path, provider_name="mock", max_turns=8),
         log=log,
-        workspace=tmp_path,
-        max_turns=8,
-        append_system_prompt="",
     )
 
     assert len(spy.seen_handlers) == 1
@@ -320,3 +317,48 @@ def test_sandbox_and_yes_are_accepted_without_changing_a_write_free_run(tmp_path
 
     assert result.returncode == 0
     assert len(_log_files(tmp_path)) == 1
+
+
+def test_session_start_records_sandbox_approval_and_tools(tmp_path: Path) -> None:
+    result = _cli(
+        "run", "-p", "任务", "--provider", "mock", "--fixture", str(HELLO_SCENARIO), cwd=tmp_path
+    )
+
+    records = [
+        json.loads(line)
+        for line in _log_files(tmp_path)[0].read_text(encoding="utf-8").splitlines()
+    ]
+    payload = next(record["payload"] for record in records if record["type"] == "session/start")
+
+    assert result.returncode == 0
+    assert payload["sandbox"] == "workspace-write"
+    assert payload["approval"] == "ask"
+    # 注册表要到组 10 才有五个工具名；这里钉的是「tools 由注册表派生」这条通道。
+    assert payload["tools"] == []
+    assert "schema_version" not in payload
+
+
+def test_sandbox_and_yes_flags_land_in_the_session_start_payload(tmp_path: Path) -> None:
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--sandbox",
+        "danger-full-access",
+        "--yes",
+        cwd=tmp_path,
+    )
+
+    records = [
+        json.loads(line)
+        for line in _log_files(tmp_path)[0].read_text(encoding="utf-8").splitlines()
+    ]
+    payload = next(record["payload"] for record in records if record["type"] == "session/start")
+
+    assert result.returncode == 0
+    assert payload["sandbox"] == "danger-full-access"
+    assert payload["approval"] == "auto"
