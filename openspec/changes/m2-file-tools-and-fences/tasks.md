@@ -38,10 +38,10 @@
 
 ## 6. 文件工具契约：read（seam ③）
 
-- [ ] 6.1 红：直接调 `read` 执行入口，断言 3 行文件整读返回 `1: `、`2: `、`3: ` 前缀；绿后验证（seam ③）
-- [ ] 6.2 红：断言 `offset=2, limit=1` 只返回第 2 行且行号为 2；`offset` 或 `limit` 为 0 时是 `TOOL_ARGS_INVALID`；绿后验证（seam ③）
-- [ ] 6.3 红：断言 `PATH_NOT_FOUND`、`IS_A_DIRECTORY`、`NOT_UTF8_TEXT` 三种失败都是结果且文件字节不变；绿后验证（seam ③）
-- [ ] 6.4 红：断言 `read` 缺 `file_path` 时是 `TOOL_ARGS_INVALID` 且没有任何文件被触碰；绿后验证（seam ③）
+- [x] 6.1 红：直接调 `read` 执行入口，断言 3 行文件整读返回 `1: `、`2: `、`3: ` 前缀；绿后验证（seam ③）——另加一条判据钉住 `limit` 默认 2000（2500 行文件整读只回 2000 行）
+- [x] 6.2 红：断言 `offset=2, limit=1` 只返回第 2 行且行号为 2；`offset` 或 `limit` 为 0 时是 `TOOL_ARGS_INVALID`；绿后验证（seam ③）
+- [x] 6.3 红：断言 `PATH_NOT_FOUND`、`IS_A_DIRECTORY`、`NOT_UTF8_TEXT` 三种失败都是结果且文件字节不变；绿后验证（seam ③）
+- [x] 6.4 红：断言 `read` 缺 `file_path` 时是 `TOOL_ARGS_INVALID` 且没有任何文件被触碰；绿后验证（seam ③）
 
 ## 7. 文件工具契约：write 与写前必读（seam ③）
 
