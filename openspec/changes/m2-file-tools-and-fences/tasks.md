@@ -96,7 +96,7 @@
 
 ## 14. 词表可达性与文档（seam ⑥④）
 
-- [ ] 14.1 红：断言 `tool/result.outcome` 的 12 个取值、`error/fence.code` 的 4 个取值、`approval/response.decision` 的 3 个取值、`turn/end.stop_reason` 的 6 个取值每个都至少被一条测试断言到；绿后验证（seam ②④⑥，Active Lesson 1）
+- [x] 14.1 红：断言 `tool/result.outcome` 的 12 个取值、`error/fence.code` 的 4 个取值、`approval/response.decision` 的 3 个取值、`turn/end.stop_reason` 的 6 个取值每个都至少被一条测试断言到；绿后验证（seam ②④⑥，Active Lesson 1）——`tests/test_vocabulary_reachability.py` 四条判据把「跑出来的取值集合 == 词表」钉死：12 个 outcome 由真实派发跑出来（含 `TOOL_ARGS_INVALID` 走 pydantic 校验段、`STALE_EDIT` 走「fixture 会话读过 + 事后被改」），4 个 fence code 读 `DispatchOutcome.fence_code`，3 个 decision 走 `StdinApprovalGate` 的 tty 假流，6 个 stop reason 从日志的 `turn/end` / `session/end` 里收（`TOOL_CALLS` 只作为 `turn/end` 的取值出现，不是 `RunOutcome` 的终态）。第一次就全绿，补两条变异证明守卫会咬：词表里加一个跑不到的 `NOT_IMPLEMENTED` → `test_every_tool_outcome_is_reachable` 红；`matches > 1` 改成 `matches > 2`（AMBIGUOUS 再也跑不出来）→ 同一条红
 - [ ] 14.2 新开 `docs/adr/0003-m2-fence-simplifications.md`：照 `domain-modeling` 的 ADR-FORMAT 写「无 OS 级强制」「无 approval 提权通道」「管线塌成三段」「两轴不预设」四条简化与代价；验证文件存在且引用本 change（无红）
 - [ ] 14.3 更新 `docs/CURRENT.md`（门禁实测与已知缺口）与 `docs/roadmap.md` 的 M2 行；验证两份文件里的 M2 判据与本 change 的 specs 一致（无红）
 
