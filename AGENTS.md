@@ -6,20 +6,17 @@
 
 ---
 
-## 先读这四样，再动手
+## 先读这三样，再动手
 
 1. **`docs/handoff-2026-10-15.md`** —— 已锁定的 **38 条编号决策 + 6 条不变量**，这就是规格输入。**不要重新 grill**，除非实现过程中出现新的设计分叉。
-2. **`docs/dsh-reference/DSH运行时设计说明.html`** 与 **`docs/dsh-reference/DSH运行时设计图集.html`** —— DSH 运行时机制的参考。要照某个机制实现，先读对应章节、或把对应图的锚点读出来（图集锚点形如 `#fig-<图名>`）。
-3. **`docs/lessons.md`** —— 教训的收件箱与活跃区；Active Lessons 每次接手都读。
-4. **`docs/CURRENT.md`** —— 当前进度、门禁实测、已知缺口。
+2. **`docs/lessons.md`** —— 教训的收件箱与活跃区；Active Lessons 每次接手都读。
+3. **`docs/CURRENT.md`** —— 当前进度、门禁实测、已知缺口。
 
 **接手先核实时状态**：先 `git status --short` 与 `git log --oneline -3`。跟 `docs/CURRENT.md` 对不上时以仓库实况为准并报告偏差——不要相信上一段会话的叙事。
 
 ---
 
 ## 编码行为四规
-
-摘要在此，**全文见 `docs/reference/karpathy-claude-md.md`**（来源 <https://github.com/multica-ai/andrej-karpathy-skills/blob/main/CLAUDE.md>，逐字留存）。与上面的「先读这四样」或下面的六条不变量冲突时，**以本文件与 `openspec/specs/` 为准**。
 
 1. **先想再写**：假设写出来；同一句话有多种读法时把读法摆出来让人裁决，不许默默选一种。
 2. **最简实现**：不为单次使用的代码加抽象，不加没被要求过的可配置性，不为不可能的场景写错误处理。
@@ -107,7 +104,6 @@ Python **>= 3.12** · **uv** · `src/mini_harness/` 布局 · **mypy strict** ·
 
 ## 引用纪律
 
-- DSH 的事实只引 `docs/dsh-reference/` 里的四份文档与 `DSH逆向分析报告.md`。
-- 需要更细的出处时，只允许引 `S:\Develop\agent_harness\re\verified\dsh\` 与 `re\shell\`。**`re\full\` 是 8 字节偏移的损坏副本，永远不要引用**；不要 grep `rea/app-graph.json`。
+- DSH 的参考文档在本仓库 `docs/dsh-reference/`（5 份，4.24 MB）。**不要无差别先读**：只在照某个机制实现时去查对应章节或图的锚点（图集锚点形如 `#fig-<图名>`）。这些图只做过静态结构校验，**没有视觉复核**。
+- 需要更细的出处时，只允许引 `S:\Develop\agent_harness\re\verified\dsh\` 与 `re\shell\`。**`re\full\` 是 8 字节偏移的损坏副本，永远不要引用**；不要 grep `rea/app-graph.json`（376 MB，分析时两次 OOM 被杀）。
 - 写规格时把「DSH 这么做」与「mini 版故意简化」分开写，简化处必须在 `docs/adr/` 里写明代价（用 `domain-modeling` 技能写 ADR）。
-- 四份参考 HTML 的图只做过静态结构校验，**没有视觉复核**。
