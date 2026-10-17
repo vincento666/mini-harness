@@ -8,6 +8,7 @@
 
 - 现在不动的理由：参数形状就是 seam ① 的接口本身，M1 只有一个调用方（CLI）；抽 `SessionSettings` 会让「payload 里有什么」这条事实变成两层间接。
 - M2 的处理：加文件工具时参数还会再长（工具白名单、预算），那时引入 `SessionSettings`（pydantic 模型），让它同时是 `run_session` 的入参和 `session/start.payload` 的来源，测试改用一个构造 helper。
+- **已处理（2026-10-17，M2 change `m2-file-tools-and-fences` 任务 3.2）**：`loop/settings.py::SessionSettings` 落地，`run_session` 收 `settings=`，`session/start.payload` 由它生成；测试改用 `tests/tool_harness.py` 的 helper 构造，不再各自重复一遍参数串。
 
 ## 2. `ToolDefinition` 与 `ToolSpec` 字段完全相同
 
@@ -15,6 +16,7 @@
 
 - 现在不动的理由：两个名字对应两个概念（注册表里的定义 / 送给模型的规格），M1 里合并会抹掉这条区分，而区分本身是设计意图。
 - M2 的处理：文件工具落地时看它们是否开始分叉（参数 schema、权限标记）。分叉就保留两个并让 `specs()` 显式映射；不分叉就合并成一个类型并在两处复用。
+- **已处理（2026-10-17，M2 任务 10.1）**：分叉了——`ToolDefinition` 多了 `args_model`、`mutates`、`run`，`ToolSpec` 仍然只有 `name` + `description`，`specs()` 显式映射。两个名字对应两个概念这条区分因此保留。
 
 ## 3. `main._replay` 摸的是事件层的内部形状
 
@@ -37,6 +39,7 @@
 
 - 现在不动的理由：词表本身在 M1 期间还在被 spec 改动（本轮就加了 `NOT_IMPLEMENTED`），锁成 `Literal` 会让每次词表改动多一处类型编辑；测试目前从日志断言词表，覆盖是够的。
 - M2 的处理：词表稳定后改成 `Literal[...]` 或枚举，并让 `EventRecord.type` 的校验也走同一份词表常量。
+- **已处理（2026-10-17，M2 任务 2.3 / 10.3 / 12.2）**：`StopReason`、`ToolOutcome`、`FenceCode`、`ApprovalDecision` 都是 `Literal`，词表常量与 `Literal` 同源（`STOP_REASONS = frozenset(get_args(StopReason))`），`EventRecord.type` 的校验走 `events/vocabulary.py`；后两份词表随围栏模块（任务组 4 与 5）落地。词表里「有取值跑不到」由 `tests/test_vocabulary_reachability.py` 挡（任务 14.1）。
 
 ## 6. `RunOutcome.failure_code` 与 `detail` 只被 CLI 读一次，`turns` 在生产里没人读
 
@@ -51,6 +54,7 @@
 
 - 现在不动的理由：M1 没有任何注册工具，这条差异不存在；把它做成「前缀可见的工具描述」要改 `session/start` 的 payload 字段表，属于扩词表级决定。
 - M2 的处理：在 `session/start.payload`（或每个 `turn/start.payload`）里记下当时的工具名列表，让折叠入参全部可从日志前缀派生；`tests/test_cli_replay.py::test_replay_does_not_use_events_after_the_assembly_point` 已经是这条判据的守门测试，M2 只需把取空的这一行换成从前缀派生。
+- **已处理（2026-10-17，M2 任务 3.2 与 11.1）**：工具名列表进 `session/start.payload.tools`，`fold()` 不再收 `append_system_prompt` / `tool_descriptions` 参数——单一真源是 `session/start`，回放侧与实时侧从同一份前缀派生。CLI 一接线就让三条 replay 判据立刻红（`REPLAY_MISMATCH: seq=2`），这条差异不是假设。
 
 ## 8. `provider` 层的两处 import 指向 `events.fold`
 

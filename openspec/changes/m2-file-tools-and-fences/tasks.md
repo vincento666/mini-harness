@@ -5,7 +5,7 @@
 ## 1. fixture 仓库与测试 helper（无红）
 
 - [x] 1.1 建 `tests/fixtures/repo/`：5 个 `.md`（含可搜的共同词）+ 一个可跑的小 pytest 工程（含一个必然失败用例）；验证 `uv run pytest tests/fixtures/repo -q` 退出码非 0 且失败用例被收集（seam ③ 的内容源）
-- [ ] 1.2 在 `tests/paths.py` 加 fixture 仓库路径常量与 `copy_repo_to(tmp_path)` helper；验证一条测试断言复制后的目录含那 5 个 `.md` 且原仓库字节不变（seam ③）
+- [x] 1.2 在 `tests/paths.py` 加 fixture 仓库路径常量与 `copy_repo_to(tmp_path)` helper；验证一条测试断言复制后的目录含那 5 个 `.md` 且原仓库字节不变（seam ③）——判据在 `tests/test_fixture_repo.py` 两条测试里；复选框在 `f8f76ce` 那轮漏勾，本轮核对时补上
 - [x] 1.3 把 `--sandbox`（三档、默认 `workspace-write`）与 `--yes` 加进 `build_parser`，非法档位以退出码 2 + `INVALID_ARGUMENT` 且无 session 日志；验证黑盒两条测试红→绿（seam ⑥）
 
 ## 2. 事件词表与类型常量（seam ④）
@@ -97,8 +97,8 @@
 ## 14. 词表可达性与文档（seam ⑥④）
 
 - [x] 14.1 红：断言 `tool/result.outcome` 的 12 个取值、`error/fence.code` 的 4 个取值、`approval/response.decision` 的 3 个取值、`turn/end.stop_reason` 的 6 个取值每个都至少被一条测试断言到；绿后验证（seam ②④⑥，Active Lesson 1）——`tests/test_vocabulary_reachability.py` 四条判据把「跑出来的取值集合 == 词表」钉死：12 个 outcome 由真实派发跑出来（含 `TOOL_ARGS_INVALID` 走 pydantic 校验段、`STALE_EDIT` 走「fixture 会话读过 + 事后被改」），4 个 fence code 读 `DispatchOutcome.fence_code`，3 个 decision 走 `StdinApprovalGate` 的 tty 假流，6 个 stop reason 从日志的 `turn/end` / `session/end` 里收（`TOOL_CALLS` 只作为 `turn/end` 的取值出现，不是 `RunOutcome` 的终态）。第一次就全绿，补两条变异证明守卫会咬：词表里加一个跑不到的 `NOT_IMPLEMENTED` → `test_every_tool_outcome_is_reachable` 红；`matches > 1` 改成 `matches > 2`（AMBIGUOUS 再也跑不出来）→ 同一条红
-- [ ] 14.2 新开 `docs/adr/0003-m2-fence-simplifications.md`：照 `domain-modeling` 的 ADR-FORMAT 写「无 OS 级强制」「无 approval 提权通道」「管线塌成三段」「两轴不预设」四条简化与代价；验证文件存在且引用本 change（无红）
-- [ ] 14.3 更新 `docs/CURRENT.md`（门禁实测与已知缺口）与 `docs/roadmap.md` 的 M2 行；验证两份文件里的 M2 判据与本 change 的 specs 一致（无红）
+- [x] 14.2 新开 `docs/adr/0003-m2-fence-simplifications.md`：照 `domain-modeling` 的 ADR-FORMAT 写「无 OS 级强制」「无 approval 提权通道」「管线塌成三段」「两轴不预设」四条简化与代价；验证文件存在且引用本 change（无红）——另加第五条「提问走 stderr、EOF 是 UNAVAILABLE 不是 DENIED」：它是 Windows 上 `NUL` 也是 tty 这条平台事实逼出来的取舍，不写下来下一个人会把它「改回去」
+- [x] 14.3 更新 `docs/CURRENT.md`（门禁实测与已知缺口）与 `docs/roadmap.md` 的 M2 行；验证两份文件里的 M2 判据与本 change 的 specs 一致（无红）——门禁实测换成 137 passed / 1 skipped、TOTAL 96%、20 个源文件、49 个文件格式干净；已知缺口补上「approval smoke 的按键是 `WriteConsoleInput` 投递的」与「符号链接判据在本机 skip」；`docs/adr/0002-deferred-refactors.md` 的第 1、2、5、7 条就地记为已处理
 
 ## 15. 收尾门禁
 
