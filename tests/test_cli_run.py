@@ -36,10 +36,13 @@ async def test_sigint_handler_sets_the_cancel_event() -> None:
 
 def test_every_stop_reason_maps_to_an_exit_code() -> None:
     assert set(STOP_REASONS_TO_EXIT_CODES) == set(STOP_REASONS)
+    assert len(STOP_REASONS) == 6
+    assert "FENCE_DENIED" in STOP_REASONS
     assert STOP_REASONS_TO_EXIT_CODES["TOOL_CALLS"] == 0
     assert STOP_REASONS_TO_EXIT_CODES["MODEL_COMPLETED"] == 0
     assert STOP_REASONS_TO_EXIT_CODES["MAX_TURNS"] == 0
     assert STOP_REASONS_TO_EXIT_CODES["PROVIDER_ERROR"] == 1
+    assert STOP_REASONS_TO_EXIT_CODES["FENCE_DENIED"] == 3
     assert STOP_REASONS_TO_EXIT_CODES["ABORTED"] == 5
     for stop_reason, exit_code in STOP_REASONS_TO_EXIT_CODES.items():
         assert (

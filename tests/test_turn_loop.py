@@ -11,6 +11,7 @@ from mini_harness.events import EventLog, read_events
 from mini_harness.loop import SessionSettings, run_session
 from mini_harness.provider import AssistantTurn, FixtureProvider
 from mini_harness.tools import ToolRegistry
+from mini_harness.tools.file_tools import file_tool_definitions
 
 
 def _settings(workspace: Path, max_turns: int = 8) -> SessionSettings:
@@ -287,3 +288,93 @@ async def test_loop_only_calls_generate_with_three_positional_parameters(tmp_pat
 
     assert spy.calls == [("generate", 3)]
     assert spy.signals[0] is cancel
+
+
+def _two_write_entries() -> list[dict[str, object]]:
+    return [
+        {
+            "content": "两处写",
+            "finish_reason": "tool_calls",
+            "tool_calls": [
+                {"id": "c1", "name": "write", "arguments": {"file_path": "a.md", "content": "x\n"}},
+                {"id": "c2", "name": "write", "arguments": {"file_path": "b.md", "content": "y\n"}},
+            ],
+        },
+        {"content": "这一轮不该被走到", "finish_reason": "stop"},
+    ]
+
+
+async def test_a_fence_denial_ends_the_run_without_dispatching_the_rest(
+    tmp_path: Path,
+) -> None:
+    log = EventLog.create(session_dir=tmp_path, session_id="s-fence")
+
+    outcome = await run_session(
+        prompt="任务",
+        provider=FixtureProvider(entries=_two_write_entries()),
+        log=log,
+        registry=ToolRegistry(file_tool_definitions()),
+        settings=SessionSettings(
+            workspace=tmp_path, provider_name="mock", max_turns=8, sandbox="read-only"
+        ),
+        cancel=asyncio.Event(),
+    )
+
+    records = read_events(log.path)
+    assert [record.type for record in records] == [
+        "session/start",
+        "turn/start",
+        "context/assembled",
+        "model/request",
+        "model/response",
+        "tool/call",
+        "tool/result",
+        "error/fence",
+        "turn/end",
+        "session/end",
+    ]
+    assert [r.payload["tool_call_id"] for r in records if r.type == "tool/call"] == ["c1"]
+    assert records[-2].payload["stop_reason"] == "FENCE_DENIED"
+    assert records[-1].payload["stop_reason"] == "FENCE_DENIED"
+    assert outcome.stop_reason == "FENCE_DENIED"
+    assert not (tmp_path / "a.md").exists()
+    assert not (tmp_path / "b.md").exists()
+
+
+async def test_no_m2_scenario_writes_tool_cancelled_or_model_retry(tmp_path: Path) -> None:
+    cancel_log = EventLog.create(session_dir=tmp_path, session_id="s-no-cancel-event")
+    cancel = asyncio.Event()
+    fence_log = EventLog.create(session_dir=tmp_path / "fence", session_id="s-no-retry")
+
+    await run_session(
+        prompt="任务",
+        provider=_CancelDuringGenerate(cancel),
+        log=cancel_log,
+        registry=ToolRegistry(),
+        settings=_settings(tmp_path, max_turns=8),
+        cancel=cancel,
+    )
+    await run_session(
+        prompt="任务",
+        provider=FixtureProvider(entries=_two_write_entries()),
+        log=fence_log,
+        registry=ToolRegistry(file_tool_definitions()),
+        settings=SessionSettings(
+            workspace=tmp_path, provider_name="mock", max_turns=8, sandbox="read-only"
+        ),
+        cancel=asyncio.Event(),
+    )
+
+    types = [record.type for record in read_events(cancel_log.path)]
+    types += [record.type for record in read_events(fence_log.path)]
+    assert "tool/cancelled" not in types
+    assert "model/retry" not in types
+    # 词表外的类型会被 `EventLog.append` 塌成 `error/internal`，所以还要看它记下的原类型。
+    unrecognized = [
+        record.payload.get("unrecognized_type")
+        for record in read_events(cancel_log.path) + read_events(fence_log.path)
+    ]
+    assert "tool/cancelled" not in unrecognized
+    assert "model/retry" not in unrecognized
+    assert "error/abort" in types
+    assert "error/fence" in types

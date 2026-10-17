@@ -78,9 +78,10 @@
 
 ## 12. 围栏拒绝的终止序列（seam ①⑥）
 
-- [ ] 12.1 红：断言围栏拒绝时事件顺序为 `tool/call` → 配对的 `tool/result` → `error/fence` → `turn/end`（`FENCE_DENIED`）→ `session/end`，且同回合剩余调用不被派发；绿后验证（seam ①④）
-- [ ] 12.2 红：断言 `stop_reason` 词表含 `FENCE_DENIED` 且映射到退出码 3；绿后验证既有「每个停止原因都在退出码映射表里」的测试仍绿（seam ⑥①）
-- [ ] 12.3 红：断言 M2 全部场景（含围栏拒绝与取消）都不写 `tool/cancelled`、也不写 `model/retry`；绿后验证（seam ①④）
+- [x] 12.1 红：断言围栏拒绝时事件顺序为 `tool/call` → 配对的 `tool/result` → `error/fence` → `turn/end`（`FENCE_DENIED`）→ `session/end`，且同回合剩余调用不被派发；绿后验证（seam ①④）——一个回合两个 `write`、`--sandbox read-only`：断言整条类型序列逐点相等、`tool/call` 只有 `c1`、两个文件都没落盘
+- [x] 12.2 红：断言 `stop_reason` 词表含 `FENCE_DENIED` 且映射到退出码 3；绿后验证既有「每个停止原因都在退出码映射表里」的测试仍绿（seam ⑥①）——`StopReason` 六个值、`STOP_FENCE_DENIED` 与 Literal 同源、`EXIT_FENCE_DENIED = 3` 进映射表
+- [x] 12.3 红：断言 M2 全部场景（含围栏拒绝与取消）都不写 `tool/cancelled`、也不写 `model/retry`；绿后验证（seam ①④）——这条第一次就绿，补变异时才发现：往 `closing_events` 里塞 `tool/cancelled` 并不会写出那个类型，`EventLog.append` 把它塌成 `error/internal` 并在 payload 里记 `unrecognized_type`。判据因此加一层：既断言事件类型，也断言 `payload["unrecognized_type"]` 里没有这两个词
+- 变异记录（组 12）：去掉围栏拒绝后的 `break` 被 12.1 杀死；`FENCE_DENIED → 0` 的映射被 `test_every_stop_reason_maps_to_an_exit_code` 杀死；塞 `tool/cancelled` 被加强后的 12.3 杀死；塞 `model/retry` 被 seam ① 的事件序列判据与 12.3 杀死
 
 ## 13. CLI 黑盒集成（seam ⑥）
 

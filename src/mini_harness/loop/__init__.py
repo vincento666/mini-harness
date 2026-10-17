@@ -3,6 +3,7 @@
 from mini_harness.loop.settings import SessionSettings
 from mini_harness.loop.turn_loop import (
     STOP_ABORTED,
+    STOP_FENCE_DENIED,
     STOP_MAX_TURNS,
     STOP_MODEL_COMPLETED,
     STOP_PROVIDER_ERROR,
@@ -14,6 +15,7 @@ from mini_harness.loop.turn_loop import (
 
 __all__ = [
     "STOP_ABORTED",
+    "STOP_FENCE_DENIED",
     "STOP_MAX_TURNS",
     "STOP_MODEL_COMPLETED",
     "STOP_PROVIDER_ERROR",

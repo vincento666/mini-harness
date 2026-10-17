@@ -23,13 +23,21 @@ from mini_harness.tools.fences import (
 from mini_harness.tools.registry import ToolRegistry
 
 # `turn/end.stop_reason` 的词表：常量与 `Literal` 同源，加一个值只改这一处。
-StopReason = Literal["MODEL_COMPLETED", "TOOL_CALLS", "MAX_TURNS", "PROVIDER_ERROR", "ABORTED"]
+StopReason = Literal[
+    "MODEL_COMPLETED",
+    "TOOL_CALLS",
+    "MAX_TURNS",
+    "PROVIDER_ERROR",
+    "ABORTED",
+    "FENCE_DENIED",
+]
 
 STOP_MODEL_COMPLETED = "MODEL_COMPLETED"
 STOP_TOOL_CALLS = "TOOL_CALLS"
 STOP_MAX_TURNS = "MAX_TURNS"
 STOP_PROVIDER_ERROR = "PROVIDER_ERROR"
 STOP_ABORTED = "ABORTED"
+STOP_FENCE_DENIED = "FENCE_DENIED"
 STOP_REASONS: frozenset[str] = frozenset(get_args(StopReason))
 
 
@@ -169,6 +177,7 @@ async def run_session(
         if failure is not None:
             return _kernel_failure(log, failure, turns)
 
+        fence_denied = False
         for call in generated.tool_calls:
             failure = _append_all(
                 log,
@@ -247,8 +256,14 @@ async def run_session(
             if failure is not None:
                 return _kernel_failure(log, failure, turns)
 
+            if dispatched.fence_code is not None:
+                fence_denied = True
+                break
+
         if cancel.is_set():
             stop_reason = STOP_ABORTED
+        elif fence_denied:
+            stop_reason = STOP_FENCE_DENIED
         elif not generated.tool_calls:
             stop_reason = STOP_MODEL_COMPLETED
         elif turn_index == settings.max_turns:
@@ -270,7 +285,12 @@ async def run_session(
         if failure is not None:
             return _kernel_failure(log, failure, turns)
 
-        if cancel.is_set() or not generated.tool_calls or turn_index == settings.max_turns:
+        if (
+            cancel.is_set()
+            or fence_denied
+            or not generated.tool_calls
+            or turn_index == settings.max_turns
+        ):
             break
 
     failure = _append_all(log, [("session/end", {"stop_reason": stop_reason, "turns": turns})])
