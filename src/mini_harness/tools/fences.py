@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Protocol, TextIO
 
 from mini_harness.loop.settings import ApprovalMode, SandboxLevel, SessionSettings
 
@@ -67,6 +68,34 @@ def _is_inside_workspace(workspace: Path, key: str) -> bool:
     root = Path(path_key(workspace, "."))
     target = Path(key)
     return target == root or target.is_relative_to(root)
+
+
+ApprovalDecision = Literal["APPROVED", "DENIED", "UNAVAILABLE"]
+
+
+class ApprovalGate(Protocol):
+    """问一次 → 结论。内核只认这个接口：CLI 层接真实 stdin，测试注入固定结论。"""
+
+    def request(self, *, tool_name: str, detail: str) -> ApprovalDecision: ...
+
+
+class StdinApprovalGate:
+    """tty 时往 stdin 提问一次；非 tty 直接结论「不可问人」，不挂起等待，也不默认批准。"""
+
+    def __init__(self, stream: TextIO | None = None) -> None:
+        self._stream = stream
+
+    def request(self, *, tool_name: str, detail: str) -> ApprovalDecision:
+        stream = sys.stdin if self._stream is None else self._stream
+        if not stream.isatty():
+            return "UNAVAILABLE"
+        stream.write(f"允许 {tool_name} 改动 {detail}，输入 y 或 n：")
+        stream.flush()
+        answer = stream.readline().strip().lower()
+        return "APPROVED" if answer in {"y", "yes"} else "DENIED"
+
+
+STDIN_APPROVAL_GATE = StdinApprovalGate()
 
 
 def judge_fence(context: DispatchContext, *, raw_path: str, mutates: bool) -> FenceDecision:

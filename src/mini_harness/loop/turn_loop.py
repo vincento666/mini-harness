@@ -14,6 +14,7 @@ from mini_harness.events.writer import EventLog, LogWriteFailure
 from mini_harness.loop.settings import SessionSettings
 from mini_harness.provider.contract import Provider, ProviderFailure
 from mini_harness.tools.dispatch import dispatch_tool_call
+from mini_harness.tools.fences import STDIN_APPROVAL_GATE, ApprovalGate, DispatchContext
 from mini_harness.tools.registry import ToolRegistry
 
 # `turn/end.stop_reason` 的词表：常量与 `Literal` 同源，加一个值只改这一处。
@@ -71,6 +72,7 @@ async def run_session(
     registry: ToolRegistry,
     settings: SessionSettings,
     cancel: asyncio.Event,
+    approval_gate: ApprovalGate = STDIN_APPROVAL_GATE,
 ) -> RunOutcome:
     """跑完一个 session 的全部回合。"""
     failure = _append_all(
@@ -184,22 +186,45 @@ async def run_session(
             if failure is not None:
                 return _kernel_failure(log, failure, turns)
 
-            result = await dispatch_tool_call(call, registry)
+            dispatch_context = DispatchContext.from_settings(settings, read_paths=frozenset())
+            dispatched = await dispatch_tool_call(call, registry, dispatch_context, approval_gate)
 
-            failure = _append_all(
-                log,
-                [
+            written: list[tuple[str, dict[str, Any]]] = []
+            if dispatched.approval is not None:
+                written.append(
                     (
-                        "tool/result",
+                        "approval/request",
                         {
                             "turn_id": turn_id,
                             "tool_call_id": call.id,
-                            "outcome": result.outcome,
-                            "content": result.content,
+                            "name": call.name,
+                            "arguments": call.arguments,
                         },
-                    ),
-                ],
+                    )
+                )
+                written.append(
+                    (
+                        "approval/response",
+                        {
+                            "turn_id": turn_id,
+                            "tool_call_id": call.id,
+                            "decision": dispatched.approval,
+                        },
+                    )
+                )
+            written.append(
+                (
+                    "tool/result",
+                    {
+                        "turn_id": turn_id,
+                        "tool_call_id": call.id,
+                        "outcome": dispatched.result.outcome,
+                        "content": dispatched.result.content,
+                    },
+                ),
             )
+
+            failure = _append_all(log, written)
             if failure is not None:
                 return _kernel_failure(log, failure, turns)
 

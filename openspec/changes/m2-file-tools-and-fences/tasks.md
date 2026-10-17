@@ -30,8 +30,8 @@
 
 ## 5. approval 门（seam ②①）
 
-- [ ] 5.1 红：注入返回 `APPROVED` 的假 approval 门，断言 `write`/`edit` 各产生一对 `approval/request` + `approval/response`（`decision: APPROVED`）且随后 `outcome: OK`；绿后验证（seam ②④）
-- [ ] 5.2 红：断言 `read`/`glob`/`grep` 在任何档位下都不产生 `approval/*` 记录；绿后验证（seam ②④）
+- [x] 5.1 红：注入返回 `APPROVED` 的假 approval 门，断言 `write`/`edit` 各产生一对 `approval/request` + `approval/response`（`decision: APPROVED`）且随后 `outcome: OK`；绿后验证（seam ②④）——这里的工具是测试本地桩；`ToolDefinition` 的 `args_model` / `mutates` / `run` 与 `ToolArgs.target_path()` 是 10.1 的类型工作提前落地（派发管线没有它们就跑不起来）
+- [x] 5.2 红：断言 `read`/`glob`/`grep` 在任何档位下都不产生 `approval/*` 记录；绿后验证（seam ②④）——这一轮用非改动类桩工具测「不问人」，真 `glob`/`grep` 的对应判据在 9.x
 - [ ] 5.3 红：注入返回 `DENIED` 的门，断言 `outcome: DENIED_BY_APPROVAL` 与 `error/fence`（`APPROVAL_DENIED`）；绿后验证（seam ②④）
 - [ ] 5.4 红：断言 stdin 非 tty 且未 `--yes` 时结论是 `UNAVAILABLE`（不挂起、不默认批准），`--yes` 时不产生任何 `approval/*` 记录；绿后验证（seam ②⑥）
 - [ ] 5.5 红：断言 `approval/response.decision` 三个取值各有判据（批准 / 拒绝 / 不可问人）；绿后验证（seam ②④）
@@ -47,7 +47,7 @@
 
 - [ ] 7.1 红：断言目标不存在时 `write` 直接创建并返回 `OK`（含必要时创建父目录）；绿后验证（seam ③）
 - [ ] 7.2 红：断言已存在文件在未 `read` 过时是 `WRITE_WITHOUT_READ` 且字节不变；绿后验证（seam ③）
-- [ ] 7.3 红：断言同一派发上下文里先 `read`（`OK`）再 `write` 成功，且失败的 `read`（`PATH_NOT_FOUND`）不算读过；绿后验证（seam ③）
+- [ ] 7.3 红：断言同一派发上下文里先 `read`（`OK`）再 `write` 成功，且失败的 `read`（`PATH_NOT_FOUND`）不算读过；绿后验证（seam ③）——组 5 起 `run_session` 传给派发的 `read_paths` 还是空集，这一条负责把它接成「从日志前缀重算」（design D6）
 - [ ] 7.4 红：断言「已读过」判定跨 session 不继承（session B 直接 `write` session A 读过的文件是 `WRITE_WITHOUT_READ`），且同一日志前缀重算两次判定相同；绿后验证（seam ③④）
 
 ## 8. 文件工具契约：edit 与 CAS（seam ③）
