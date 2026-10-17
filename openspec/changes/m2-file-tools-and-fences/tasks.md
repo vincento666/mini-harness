@@ -73,8 +73,8 @@
 ## 11. 折叠头部与 replay（seam ④⑥）
 
 - [x] 11.1 红：断言折叠头部的工具块取自 `session/start.payload.tools` 而非进程内注册表，且对同一前缀重算两次头部相同；绿后验证（seam ④）——`fold()` 不再收 `append_system_prompt` / `tool_descriptions` 参数，两者都由 `_start_facts()` 从日志里的 `session/start` 读出；`protected_header` 的参数改名成 `tool_names`（头部里放的是名字，描述走 `model/request.tools` 那条通道）；回放侧的 `append_system_prompt` 局部变量随之清掉
-- [ ] 11.2 红：断言 `minihns replay` 对注册了工具、含 `approval/*` 与 `error/fence` 的合法日志逐点重算相等、退出码 0；绿后验证既有「装配点之后的事件被篡改时 replay 仍通过」的测试仍绿（seam ⑥④，ADR-0002 第 7 条）
-- [ ] 11.3 红：断言 replay 过程中没有任何 Provider 调用且工作区里没有任何文件被创建或修改；绿后验证（seam ⑥⑤③）
+- [x] 11.2 红：断言 `minihns replay` 对注册了工具、含 `approval/*` 与 `error/fence` 的合法日志逐点重算相等、退出码 0；绿后验证既有「装配点之后的事件被篡改时 replay 仍通过」的测试仍绿（seam ⑥④，ADR-0002 第 7 条）——新 fixture `read_then_write/turns.json`（先 `read notes/plan.md` 再 `write`）；`cli_blackbox._cli` 把子进程 stdin 固定成 `DEVNULL`，非 tty 是确定的而不是看运行环境脸色。红过一次：`StdinApprovalGate` 把提问写进 `sys.stdin`，真实路径上 `io.UnsupportedOperation: not writable`，run 直接崩——问题改写到 stderr（stdout 是会话 id 与 `--events jsonl` 的地盘），并补一条 seam ② 的 `capsys` 判据钉住「问题在 stderr、stdout 为空」
+- [x] 11.3 红：断言 replay 过程中没有任何 Provider 调用且工作区里没有任何文件被创建或修改；绿后验证（seam ⑥⑤③）——「没有 Provider 调用」用可观察代理：run 之后把 fixture 副本删掉再 replay，仍退出 0；工作区快照比的是 `(mtime_ns, 字节)` 字典；日志字节不变；stdout 里没有 `model/request`。变异记录：`assembled[:2]` 被 11.2 杀死；给日志追加一行被「replay 两次日志字节不变」与 11.3 杀死；往记录的 workspace 落一个 marker 被 11.3 的快照杀死；replay 里打印 `model/request` 被既有判据与 11.3 杀死
 
 ## 12. 围栏拒绝的终止序列（seam ①⑥）
 

@@ -9,6 +9,8 @@ import asyncio
 from pathlib import Path
 from typing import get_args
 
+import pytest
+
 from mini_harness.events import EventLog, read_events
 from mini_harness.loop import RunOutcome, SessionSettings, run_session
 from mini_harness.loop.settings import ApprovalMode
@@ -207,7 +209,7 @@ class _Stream:
 
 
 def _ask(tty: bool, answer: str) -> ApprovalDecision:
-    return StdinApprovalGate(_Stream(tty=tty, answer=answer)).request(
+    return StdinApprovalGate(stream=_Stream(tty=tty, answer=answer)).request(
         tool_name="write", detail="a.md"
     )
 
@@ -223,6 +225,23 @@ def test_the_three_approval_decisions_are_each_reachable_through_the_real_gate()
     assert _ask(tty=False, answer="y\n") == "UNAVAILABLE"
 
     stream = _Stream(tty=True, answer="y\n")
-    StdinApprovalGate(stream).request(tool_name="write", detail="C:\\ws\\a.md")
-    assert "write" in stream.written[0]
-    assert "a.md" in stream.written[0]
+    prompt = _Stream(tty=True)
+    StdinApprovalGate(stream=stream, prompt_stream=prompt).request(
+        tool_name="write", detail="C:\\ws\\a.md"
+    )
+    assert "write" in prompt.written[0]
+    assert "a.md" in prompt.written[0]
+    assert stream.written == []
+
+
+def test_the_default_gate_asks_on_stderr_and_leaves_stdout_empty(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    gate = StdinApprovalGate(stream=_Stream(tty=True, answer="y\n"))
+
+    assert gate.request(tool_name="write", detail="notes/plan.md") == "APPROVED"
+
+    captured = capsys.readouterr()
+    assert "write" in captured.err
+    assert "notes/plan.md" in captured.err
+    assert captured.out == ""

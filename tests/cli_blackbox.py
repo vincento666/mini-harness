@@ -43,4 +43,7 @@ def _cli(
         text=True,
         encoding="utf-8",
         env=child_env,
+        # 子进程的 stdin 固定成「非 tty 且立刻 EOF」：approval 门因此不会挂在真实终端上，
+        # 黑盒测试拿到的是确定的 UNAVAILABLE，而不是看运行环境脸色。
+        stdin=subprocess.DEVNULL,
     )

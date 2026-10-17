@@ -18,6 +18,7 @@ HELLO_SCENARIO = SCENARIOS_DIR / "hello" / "turns.json"
 TOOL_THEN_DONE_SCENARIO = SCENARIOS_DIR / "tool_then_done" / "turns.json"
 TOOL_THEN_EXHAUST_SCENARIO = SCENARIOS_DIR / "tool_then_exhaust" / "turns.json"
 UNKNOWN_TOOL_SCENARIO = SCENARIOS_DIR / "unknown_tool" / "turns.json"
+READ_THEN_WRITE_SCENARIO = SCENARIOS_DIR / "read_then_write" / "turns.json"
 FIXTURE_REPO_DIR = FIXTURES_DIR / "repo"
 
 
@@ -41,6 +42,7 @@ __all__ = [
     "FIXTURE_REPO_DIR",
     "HELLO_SCENARIO",
     "PYPROJECT_TOML",
+    "READ_THEN_WRITE_SCENARIO",
     "REPO_ROOT",
     "SCENARIOS_DIR",
     "TESTS_DIR",

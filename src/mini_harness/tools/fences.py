@@ -95,18 +95,29 @@ class ApprovalGate(Protocol):
 
 
 class StdinApprovalGate:
-    """tty 时往 stdin 提问一次；非 tty 直接结论「不可问人」，不挂起等待，也不默认批准。"""
+    """tty 时提问一次：问题写 stderr，回答读 stdin；非 tty 直接结论「不可问人」。
 
-    def __init__(self, stream: TextIO | None = None) -> None:
+    不挂起等待，也不默认批准。问题不能写进 stdout：那条流归会话 id 与 `--events jsonl`，
+    混进去就不再与日志逐行相等。
+    """
+
+    def __init__(
+        self,
+        *,
+        stream: TextIO | None = None,
+        prompt_stream: TextIO | None = None,
+    ) -> None:
         self._stream = stream
+        self._prompt_stream = prompt_stream
 
     def request(self, *, tool_name: str, detail: str) -> ApprovalDecision:
-        stream = sys.stdin if self._stream is None else self._stream
-        if not stream.isatty():
+        answers = sys.stdin if self._stream is None else self._stream
+        if not answers.isatty():
             return "UNAVAILABLE"
-        stream.write(f"允许 {tool_name} 改动 {detail}，输入 y 或 n：")
-        stream.flush()
-        answer = stream.readline().strip().lower()
+        prompt = sys.stderr if self._prompt_stream is None else self._prompt_stream
+        prompt.write(f"允许 {tool_name} 改动 {detail}，输入 y 或 n：")
+        prompt.flush()
+        answer = answers.readline().strip().lower()
         return "APPROVED" if answer in {"y", "yes"} else "DENIED"
 
 
