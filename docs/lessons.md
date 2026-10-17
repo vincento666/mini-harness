@@ -12,7 +12,7 @@
 2. **写新 Requirement 时成对检查它跟已有 Requirement 是否互斥**。「每个非零退出都有 `error/*` 事件」与「重放不追加事件」各自正确、合起来不可满足，最后靠 ADR-0001 开一个显式例外收场。
 3. **测试写下即绿就是危险信号**。M1 有约 24 个切片没有红。判据不是测试数量，是变异测试：15 个变异 14 个被杀，存活的 `P` 证明当时没有任何 CLI 测试守 `LOG_WRITE_FAILED`。
 4. **接手前先核实时状态，不要相信上一段的叙事**。M1 期间 `git checkout --` 误回滚了未提交的改动，导致一次 `ImportError`。跑 `git status --short` 与 `git log --oneline -3` 再动手。
-5. **文本文件绝不经 PowerShell 往返**。`Set-Content` 毁 UTF-8（真毁过一次测试文件），`Out-File -Encoding utf8` 带 BOM，`>` 产生 UTF-16LE。改文件用编辑工具；要读命令的 stderr 就 `2> 文件` 再读。
+5. **文本文件绝不经 PowerShell 往返，读也要显式 `-Encoding UTF8`**。`Set-Content` 毁 UTF-8（真毁过一次测试文件），`Out-File -Encoding utf8` 带 BOM，`>` 产生 UTF-16LE；不带 `-Encoding UTF8` 的 `Get-Content` 连行数都会数错（见 L-013）。改文件用编辑工具；要读命令的 stderr 就 `2> 文件` 再读。
 
 ## Candidate Inbox
 
@@ -129,6 +129,15 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Next use: 估算「搬缓存能腾出多少」之前先数谁在共享它；跨盘搬缓存会让总占用上升
 - Promotion candidate: 无需进 AGENTS.md（环境事实，非项目规则）
 - Status: inbox
+
+### L-013
+- Date: 2026-10-17
+- Context: 复核「AGENTS.md 压缩了多少」
+- Observation: PowerShell 5.1 的 `Get-Content` 不带 `-Encoding UTF8` 时按 ANSI 解码 UTF-8 中文，**行数会数错、控制台全是乱码**：同一份文件报 99 个 LF / 8062 字符，真实是 138 行 / 6892 字符。我据此向用户报了「135 → 100 行」的错误结论
+- Evidence: `Get-Content -Raw` 99 LF vs `Get-Content -Raw -Encoding UTF8` 138 LF；`git cat-file -s` 11,815 B；`git diff --stat 8298373 060c067 -- AGENTS.md` = +27 / −19
+- Next use: 行数与字数统计一律 `-Encoding UTF8`，或用 `git cat-file -s` 的字节数；跨工具核对以 git 与文件读取工具为准
+- Promotion candidate: 已并入 Active Lessons 第 5 条
+- Status: active
 
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 
