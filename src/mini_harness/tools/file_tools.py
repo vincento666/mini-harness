@@ -166,7 +166,7 @@ def _search_root(context: DispatchContext, args: GlobArgs | GrepArgs) -> Path | 
     if not root.exists():
         return ToolResult(outcome="PATH_NOT_FOUND", content=f"搜索根不存在：{root}")
     if not root.is_dir():
-        return ToolResult(outcome="IS_A_DIRECTORY", content=f"搜索根不是目录：{root}")
+        return ToolResult(outcome="NOT_A_DIRECTORY", content=f"搜索根不是目录：{root}")
     return root
 
 

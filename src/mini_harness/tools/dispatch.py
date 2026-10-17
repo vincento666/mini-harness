@@ -66,7 +66,16 @@ async def dispatch_tool_call(
                 fence_code=_approval_denial_code(approval),
             )
 
-    return DispatchOutcome(await definition.run(args, context), approval=approval)
+    try:
+        result = await definition.run(args, context)
+    except OSError as exc:
+        # 不变量 B：执行段的 I/O 失败也是结果，不抛异常打断回合。
+        return DispatchOutcome(
+            ToolResult(outcome="TOOL_IO_FAILED", content=f"工具 {call.name} 读写文件失败：{exc}"),
+            approval=approval,
+        )
+
+    return DispatchOutcome(result, approval=approval)
 
 
 def _approval_denial_code(approval: ApprovalDecision) -> FenceCode:

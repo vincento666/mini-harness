@@ -70,12 +70,19 @@ def test_the_registry_holds_exactly_the_five_file_tools() -> None:
     assert all(set(spec.model_fields) == {"name", "description"} for spec in registry.specs())
 
 
-def test_the_outcome_vocabulary_has_twelve_values_and_no_not_implemented() -> None:
+def test_the_outcome_vocabulary_has_fourteen_values_and_no_not_implemented() -> None:
     outcomes = set(get_args(ToolOutcome))
 
-    assert len(outcomes) == 12
+    assert len(outcomes) == 14
     assert "NOT_IMPLEMENTED" not in outcomes
-    required = {"DENIED_BY_FENCE", "DENIED_BY_APPROVAL", "UNKNOWN_TOOL", "TOOL_ARGS_INVALID"}
+    required = {
+        "DENIED_BY_FENCE",
+        "DENIED_BY_APPROVAL",
+        "UNKNOWN_TOOL",
+        "TOOL_ARGS_INVALID",
+        "TOOL_IO_FAILED",
+        "NOT_A_DIRECTORY",
+    }
     assert required <= outcomes
 
 

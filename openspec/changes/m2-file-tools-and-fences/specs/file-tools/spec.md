@@ -39,6 +39,17 @@
 - **WHEN** 模型调用 `grep` 且 `pattern` 是非法正则
 - **THEN** 结果是 `TOOL_ARGS_INVALID`，内容里含该正则的解析错误
 
+### Requirement: 执行段的文件 I/O 失败是 TOOL_IO_FAILED 结果
+系统 SHALL 把执行段的文件系统错误塌成 `outcome: TOOL_IO_FAILED` 的 `tool/result`：内容里写明是哪个工具、哪个路径、什么错误，MUST NOT 让异常逃出派发管线打断回合。这类结果 MUST NOT 被写成围栏拒绝——它没有对应的 `error/fence`。
+
+#### Scenario: 父路径是已存在的文件
+- **WHEN** `write` 的 `file_path` 为 `a.md/b.md` 而 `a.md` 是一个文件
+- **THEN** 结果是 `TOOL_IO_FAILED`，没有任何文件被创建或改写，回合继续走到 `turn/end`
+
+#### Scenario: I/O 失败不写 error/fence
+- **WHEN** 任一文件工具因 I/O 失败产出 `TOOL_IO_FAILED`
+- **THEN** 该调用不伴随 `error/fence`，`session/end` 的停止原因不是 `FENCE_DENIED`
+
 ### Requirement: read 返回带行号的文本窗口
 系统 SHALL 让 `read` 按 `file_path` 读取 UTF-8 文本，返回带行号前缀（`<行号>: <内容>`）的窗口；`offset` 默认 1、`limit` 默认 2000，两者 MUST 是 ≥ 1 的整数。
 
@@ -73,6 +84,10 @@
 - **WHEN** `write` 的目标在派发点之前不存在
 - **THEN** 结果是 `OK` 且文件被创建
 
+#### Scenario: 目标是目录是 IS_A_DIRECTORY
+- **WHEN** `write` 的 `file_path` 指向一个目录
+- **THEN** 结果是 `IS_A_DIRECTORY`，该目录的内容不变
+
 ### Requirement: edit 是字面替换且受 CAS 约束
 系统 SHALL 让 `edit` 在已 `read` 过的文件里做字面替换：`old_string` MUST 恰好出现一次，除非 `replace_all` 为真。`edit` MUST 要求该派发点之前有对该路径 `outcome` 为 `OK` 的 `read`，且替换时的文件内容 MUST 与该次 `read` 返回的内容一致。
 
@@ -93,7 +108,7 @@
 - **THEN** 结果是 `WRITE_WITHOUT_READ`
 
 ### Requirement: glob 按模式返回工作区内的相对路径
-系统 SHALL 让 `glob` 按 glob 模式匹配文件（MUST NOT 返回目录），返回相对工作区根的路径列表，按修改时间从新到旧排序，最多 100 条；无匹配 SHALL 是 `outcome: OK` 且内容说明没有匹配。
+系统 SHALL 让 `glob` 按 glob 模式匹配文件（MUST NOT 返回目录），返回相对工作区根的路径列表，按修改时间从新到旧排序，最多 100 条；无匹配 SHALL 是 `outcome: OK` 且内容说明没有匹配。`path` 给出的搜索根 MUST 是目录：不存在 SHALL 是 `PATH_NOT_FOUND`，是文件 SHALL 是 `NOT_A_DIRECTORY`。
 
 #### Scenario: 匹配与排序
 - **WHEN** 对含 5 个 `.md` 的 fixture 仓库调用 `glob` 且 `pattern` 为 `**/*.md`
@@ -103,8 +118,12 @@
 - **WHEN** `pattern` 没有任何文件匹配
 - **THEN** 结果是 `OK`，内容说明没有匹配
 
+#### Scenario: 搜索根不存在与不是目录是两个结果
+- **WHEN** `path` 指向不存在的路径，或指向一个文件
+- **THEN** 结果分别是 `PATH_NOT_FOUND` 与 `NOT_A_DIRECTORY`
+
 ### Requirement: grep 返回带文件与行号的匹配行
-系统 SHALL 让 `grep` 按正则搜索文本文件内容，返回 `文件:行号: 行内容` 形式的匹配行，最多 250 条；无匹配 SHALL 是 `outcome: OK` 且内容说明没有匹配。
+系统 SHALL 让 `grep` 按正则搜索文本文件内容，返回 `文件:行号: 行内容` 形式的匹配行，最多 250 条；无匹配 SHALL 是 `outcome: OK` 且内容说明没有匹配。`path` 给出的搜索根 MUST 是目录：不存在 SHALL 是 `PATH_NOT_FOUND`，是文件 SHALL 是 `NOT_A_DIRECTORY`。
 
 #### Scenario: 命中带文件与行号
 - **WHEN** fixture 仓库里恰有 3 行含 `TODO` 且调用 `grep` 搜 `TODO`
@@ -114,8 +133,12 @@
 - **WHEN** 搜索一个不存在于任何文件里的词
 - **THEN** 结果是 `OK`，内容说明没有匹配
 
+#### Scenario: 搜索根是文件不是目录
+- **WHEN** `grep` 的 `path` 指向一个文件
+- **THEN** 结果是 `NOT_A_DIRECTORY`，没有任何文件被读取或改写
+
 ### Requirement: 文件层工具结果词表在 M2 定稿且每个值可达
-`tool/result.outcome` 的文件层取值 SHALL 是 `OK`、`UNKNOWN_TOOL`、`TOOL_ARGS_INVALID`、`PATH_NOT_FOUND`、`IS_A_DIRECTORY`、`NOT_UTF8_TEXT`、`WRITE_WITHOUT_READ`、`STALE_EDIT`、`EDIT_TARGET_NOT_FOUND`、`EDIT_TARGET_AMBIGUOUS`；围栏与 approval 的拒绝取值由 `fences` 规定。词表外的值 MUST NOT 被写出；M1 的 `NOT_IMPLEMENTED` 被移除。
+`tool/result.outcome` 的文件层取值 SHALL 是 `OK`、`UNKNOWN_TOOL`、`TOOL_ARGS_INVALID`、`PATH_NOT_FOUND`、`IS_A_DIRECTORY`、`NOT_A_DIRECTORY`、`NOT_UTF8_TEXT`、`WRITE_WITHOUT_READ`、`STALE_EDIT`、`EDIT_TARGET_NOT_FOUND`、`EDIT_TARGET_AMBIGUOUS`、`TOOL_IO_FAILED`；围栏与 approval 的拒绝取值由 `fences` 规定。词表外的值 MUST NOT 被写出；M1 的 `NOT_IMPLEMENTED` 被移除。
 
 #### Scenario: 每个值都有可达判据
 - **WHEN** 跑完 M2 的 seam ③ 与 seam ② 测试

@@ -129,3 +129,47 @@ async def test_the_same_log_prefix_yields_the_same_read_set(tmp_path: Path) -> N
     assert first == second
     assert path_key(tmp_path, "notes/plan.md") in first
     assert path_key(tmp_path, "blob.bin") not in first
+
+
+async def test_writing_to_a_directory_is_refused(tmp_path: Path) -> None:
+    """规格追认：`write` 的目标是目录时是 `IS_A_DIRECTORY`，目录内容不变。"""
+    (tmp_path / "sub").mkdir()
+
+    outcome = await _write(tmp_path, file_path="sub", content="x\n")
+
+    assert outcome.result.outcome == "IS_A_DIRECTORY"
+    assert list((tmp_path / "sub").iterdir()) == []
+
+
+async def test_a_parent_path_that_is_a_file_is_an_io_failure_not_an_exception(
+    tmp_path: Path,
+) -> None:
+    """不变量 B：失败也是结果。父路径是已存在的文件时不抛异常，也不写任何东西。"""
+    (tmp_path / "a.md").write_text("原文\n", encoding="utf-8")
+
+    outcome = await _write(tmp_path, file_path="a.md/b.md", content="新文件\n")
+
+    assert outcome.result.outcome == "TOOL_IO_FAILED"
+    assert outcome.fence_code is None
+    assert not (tmp_path / "b.md").exists()
+
+
+async def test_an_io_failure_stays_a_result_and_the_turn_still_closes(tmp_path: Path) -> None:
+    """seam ①：执行段的 I/O 失败不打断回合，`turn/end` 照写，会话正常收尾。"""
+    (tmp_path / "a.md").write_text("原文\n", encoding="utf-8")
+    entries = [
+        tool_call_entry("write", "c1", file_path="a.md/b.md", content="新文件\n"),
+        DONE,
+    ]
+
+    log, outcome = await run_fixture_session(tmp_path, "s-io-failure", entries)
+
+    assert tool_outcomes(log) == ["TOOL_IO_FAILED"]
+    assert (tmp_path / "a.md").read_text(encoding="utf-8") == "原文\n"
+    turn_ends = [record for record in read_events(log.path) if record.type == "turn/end"]
+    assert [str(record.payload["stop_reason"]) for record in turn_ends] == [
+        "TOOL_CALLS",
+        "MODEL_COMPLETED",
+    ]
+    assert outcome.failure_code is None
+    assert outcome.stop_reason == "MODEL_COMPLETED"

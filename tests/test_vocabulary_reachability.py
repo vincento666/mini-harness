@@ -116,6 +116,8 @@ async def test_every_tool_outcome_is_reachable(tmp_path: Path) -> None:
     await run("read", {"file_path": "sub"})
     await run("read", {"file_path": "bin.dat"})
     await run("read", {"file_path": 7})
+    await run("write", {"file_path": "read.md/child.md", "content": "x\n"})
+    await run("glob", {"pattern": "*", "path": "read.md"})
     await run("nosuch_tool", {})
     await run("write", {"file_path": "unread.md", "content": "改写\n"})
     await run(

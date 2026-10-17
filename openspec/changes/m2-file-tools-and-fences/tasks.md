@@ -105,6 +105,15 @@
 - [x] 15.1 变异测试一轮：改坏围栏判定、CAS 判定、词表校验、`FENCE_DENIED` 映射、已读集合派生各一处，跑全量测试，把「变异 / 改法 / 哪些测试变红」记进 `docs/verification/m2-file-tools-and-fences-mutation.md`；还原前先看 `git status`，还原后确认全绿与 `uv run mypy --strict src` 干净。判据：每个变异都被至少一条测试杀死，存活的补一条能杀死它的测试——19 条变异记进那份文档：围栏判定 H / I / G、CAS 判定 R（含它的输入 K / L / M / N）、词表校验 A / B、`FENCE_DENIED` 映射 S、已读集合派生 M / N，另有 O（行号）、P（失败行走 stdout）、Q（`approval/*` 无条件写）、J（校验段与围栏段互换）。16 条被既有测试杀死；G / I / J′ 是 dud mutant（语义等价，见那份文档的 dud 一节，不当覆盖缺口）；M 与 N 存活 → 各补一条判据（`test_a_later_read_replaces_the_earlier_one`、`test_a_write_does_not_count_as_having_read_it`，都先确认在变异下红）。还原后基线 140 passed / 1 skipped、TOTAL 96%、mypy 与 ruff 干净
 - [x] 15.2 Learning Gate：扫本轮证据（红过的测试、存活的变异、返工过的规格、踩过的工具坑），可复用教训写进 `docs/lessons.md` 收件箱，没有可复用信号就写 `NO-PROMOTION`；验证 `docs/lessons.md` 已更新或明确写了 `NO-PROMOTION`——收了 L-016 至 L-020 五条（dud mutant 的三种形态、同一函数连中两条存活说明只测端点、Windows 的 NUL 报 `isatty() == True` 与可用的 console-input harness、编辑工具的锚点与 `git checkout --` 后必须重读、`EventLog.append` 会把词表外类型塌成 `error/internal`），并先消化掉 L-001 / L-009（合并）与 L-002（关闭）；AGENTS.md 本轮不晋升，理由写在 `docs/lessons.md` 的「M2 收尾轮的消化记录」
 
+## 16. 审查修复（`code-review` 两轴之后）
+
+- [x] 16.1 红：`write` 的父路径是已存在文件时 SHALL 是 `TOOL_IO_FAILED` 结果而不是异常（seam ②③①）；绿后验证——派发段统一兜底 `OSError`，词表加 `TOOL_IO_FAILED`，可达性判据跟着加一条探针。红证据：`FileExistsError: [WinError 183]` 直接从 `pathlib.mkdir` 逃出；两条新判据 `test_a_parent_path_that_is_a_file_is_an_io_failure_not_an_exception`（seam ③）与 `test_an_io_failure_stays_a_result_and_the_turn_still_closes`（seam ①：`tool/result` 是 `TOOL_IO_FAILED`、`turn/end` 照写、`RunOutcome.failure_code is None`）
+- [x] 16.2 红：`glob` / `grep` 的搜索根是文件时 SHALL 是 `NOT_A_DIRECTORY`，而不是标签与语义相反的 `IS_A_DIRECTORY`（seam ③）；绿后验证——词表加 `NOT_A_DIRECTORY`，可达性判据跟着加一条探针。红证据：`assert 'IS_A_DIRECTORY' == 'NOT_A_DIRECTORY'`；新判据 `test_a_search_root_that_is_a_file_is_not_a_directory` 同时钉住「搜索根不存在是 `PATH_NOT_FOUND`」
+- [x] 16.3 file-tools delta 追认与补齐：词表 14 值、`write` 目标是目录是 `IS_A_DIRECTORY`、`glob` / `grep` 搜索根「不存在」与「不是目录」两条 Scenario、新增「执行段的文件 I/O 失败是 `TOOL_IO_FAILED` 结果」Requirement（含「不写 `error/fence`」那条 Scenario）；`openspec validate m2-file-tools-and-fences --strict` 过。追认的 `write` 目标是目录补了判据 `test_writing_to_a_directory_is_refused`
+- [ ] 16.4 其余四条审查发现记账（本轮不改代码）：CAS 只比「读到的窗口」（新开 ADR 记取舍与代价）、`approval/*` 在问完人之后才落盘、取消信号只在回合边界被看到、`error/fence` 的路径只在自由文本 `detail` 里——写进 ADR 与 `docs/CURRENT.md` 的已知缺口
+- [ ] 16.5 未跟踪内容处置：`docs/tools/` 的脚本进仓库（`pyproject.toml` 的 per-file-ignores 需要它存在才不自相矛盾），`docs/milestones/`、`repowiki/`、`__pycache__` 进 `.gitignore`
+- [ ] 16.6 重跑全部门禁与一次变异抽查：词表加值之后 14.1 的可达性判据仍然咬得住（把 `TOOL_IO_FAILED` 从 Literal 里删掉必须让测试变红）
+
 ## Workflow follow-up
 
 - 人工审阅 proposal / specs / design / tasks 后再进入 apply（`/openspec-apply-change`），分支 `change/m2-file-tools-and-fences`。

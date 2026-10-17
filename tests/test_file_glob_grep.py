@@ -127,3 +127,17 @@ async def test_an_invalid_pattern_is_an_argument_error(tmp_path: Path) -> None:
     assert outcome.result.outcome == "TOOL_ARGS_INVALID"
     assert "正则" in outcome.result.content
     assert (tmp_path / "notes" / "plan.md").read_bytes() == before
+
+
+async def test_a_search_root_that_is_a_file_is_not_a_directory(tmp_path: Path) -> None:
+    """搜索根必须是目录：给了文件不能报成标签与语义相反的 `IS_A_DIRECTORY`。"""
+    (tmp_path / "a.md").write_text("命中\n", encoding="utf-8")
+
+    grep = await _grep(tmp_path, pattern="命中", path="a.md")
+    glob = await _glob(tmp_path, pattern="*", path="a.md")
+    missing = await _glob(tmp_path, pattern="*", path="不存在")
+
+    assert grep.result.outcome == "NOT_A_DIRECTORY"
+    assert glob.result.outcome == "NOT_A_DIRECTORY"
+    assert "目录" in grep.result.content
+    assert missing.result.outcome == "PATH_NOT_FOUND"
