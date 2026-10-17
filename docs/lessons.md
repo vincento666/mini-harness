@@ -121,6 +121,15 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Promotion candidate: 已在 AGENTS.md 引用纪律
 - Status: promoted
 
+### L-012
+- Date: 2026-10-17
+- Context: 把 uv 缓存从 C: 搬到 S:
+- Observation: 同盘时 uv 用 hardlink 把缓存文件接进 venv，**字节是共享的**；搬走缓存只回收「没有被任何 venv 引用」的那部分。实测搬走 5.338 GB 只让 C: 多出 0.4 GB，因为其中约 4.91 GB 与三个 uv 建的 venv 共享（`.unsloth` 4.11 / hermes-agent 0.61 / uv tools 0.19）
+- Evidence: `fsutil hardlink list …\cryptography\hazmat\bindings\_rust.pyd` 列出三个 venv 路径；robocopy 日志 `5.338 g copied / 0 failed`；三个 `pyvenv.cfg` 都写着 `uv = 0.12.5`
+- Next use: 估算「搬缓存能腾出多少」之前先数谁在共享它；跨盘搬缓存会让总占用上升
+- Promotion candidate: 无需进 AGENTS.md（环境事实，非项目规则）
+- Status: inbox
+
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 
 - 每个里程碑收尾扫一次，**允许输出 `NO-PROMOTION`**（没有可复用信号就不写条目）。
