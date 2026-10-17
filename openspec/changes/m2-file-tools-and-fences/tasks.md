@@ -112,7 +112,7 @@
 - [x] 16.3 file-tools delta 追认与补齐：词表 14 值、`write` 目标是目录是 `IS_A_DIRECTORY`、`glob` / `grep` 搜索根「不存在」与「不是目录」两条 Scenario、新增「执行段的文件 I/O 失败是 `TOOL_IO_FAILED` 结果」Requirement（含「不写 `error/fence`」那条 Scenario）；`openspec validate m2-file-tools-and-fences --strict` 过。追认的 `write` 目标是目录补了判据 `test_writing_to_a_directory_is_refused`
 - [x] 16.4 其余四条审查发现记账（本轮不改代码）：CAS 只比「读到的窗口」（新开 ADR 记取舍与代价）、`approval/*` 在问完人之后才落盘、取消信号只在回合边界被看到、`error/fence` 的路径只在自由文本 `detail` 里——写进 ADR 与 `docs/CURRENT.md` 的已知缺口。落点：新开 `docs/adr/0004-cas-compares-the-read-window.md`（含「窗口外那一半既没有判据也没有测试钉住现状」这条）；后三条进 `docs/adr/0002-deferred-refactors.md` 第 9 至 11 条，另加第 12 条（seam ②③ 的桩与常量各留一份，根因是 helper 不收 `registry` / `approval_gate`）；`docs/CURRENT.md` 的已知缺口加四条。顺带更正 ADR-0002 第 1 条的「已处理」说法——seam ②③ 里仍有四处手搓 `SessionSettings`，改为「部分处理」
 - [x] 16.5 未跟踪内容处置：`docs/tools/` 的脚本进仓库（`pyproject.toml` 的 per-file-ignores 需要它存在才不自相矛盾），`docs/milestones/`、`repowiki/`、`__pycache__` 进 `.gitignore`。落进仓库的是 8 份脚本（8380 行）；`docs/milestones/` 那 636 KB 的 HTML 与 `repowiki/` 的 120 份 2.33 MB 派生物不再出现在 `git status` 里。顺带把 AGENTS.md 的「ruff 唯一的例外」改成「只有两处」——`per-file-ignores` 那句话自 8755a71 起就不成立，且当时 AGENTS.md 没同步
-- [ ] 16.6 重跑全部门禁与一次变异抽查：词表加值之后 14.1 的可达性判据仍然咬得住（把 `TOOL_IO_FAILED` 从 Literal 里删掉必须让测试变红）
+- [x] 16.6 重跑全部门禁与一次变异抽查：词表加值之后 14.1 的可达性判据仍然咬得住（把 `TOOL_IO_FAILED` 从 Literal 里删掉必须让测试变红）。四条抽查 T / U / V / W 全被杀死，记在 `docs/verification/m2-file-tools-and-fences-mutation.md` 的「审查修复之后的抽查」一节；顺带记下一条事实——`ToolResult` 是 dataclass，词表在运行期不挡（注 6）
 
 ## Workflow follow-up
 

@@ -90,6 +90,21 @@ E   AssertionError: assert ['OK', 'STALE_EDIT'] == ['OK', 'WRITE_WITHOUT_READ']
 | 13 | 提问写进 stdout | 13.6 与 gate 的 `capsys` 判据 |
 | 13 | 回答流 EOF 判成 `DENIED` | 13.3（Windows 的 NUL 也报 `isatty() == True`，所以 `stdin=DEVNULL` 会走到「问人」这一步） |
 
+## 审查修复之后的抽查（tasks 16.6）
+
+`code-review` 两轴修掉两条最重的发现之后，补跑四条抽查，确认新判据不是白给的。基线：144 passed / 1 skipped、TOTAL 97%（802 语句 / 24 未覆盖）、mypy 与 ruff 干净。
+
+| 变异 | 改法 | 变红的测试 | 判定 |
+|---|---|---|---|
+| T | 把 `TOOL_IO_FAILED` 从 `ToolOutcome` 的 `Literal` 里删掉 | `test_the_outcome_vocabulary_has_fourteen_values_and_no_not_implemented`、`test_every_tool_outcome_is_reachable` | 杀死 |
+| U | `dispatch_tool_call` 的 `except OSError` 改成 `except ValueError`（等于不兜底 I/O） | `test_a_parent_path_that_is_a_file_is_an_io_failure_not_an_exception`、`test_an_io_failure_stays_a_result_and_the_turn_still_closes`、可达性 | 杀死 |
+| V | `_search_root` 的 `NOT_A_DIRECTORY` 改回 `IS_A_DIRECTORY` | `test_a_search_root_that_is_a_file_is_not_a_directory`、可达性 | 杀死 |
+| W | `write_file` 的目录分支从 `IS_A_DIRECTORY` 改成 `PATH_NOT_FOUND`（规格追认的追认检查） | `test_writing_to_a_directory_is_refused` | 杀死 |
+
+还原后基线确认：144 passed / 1 skipped、`mypy --strict` 干净、`ruff check` 干净。
+
+6. **T 只让 2 条测试变红，两条新写的 I/O 判据仍然绿**：`ToolResult` 是 dataclass，`outcome: ToolOutcome` 在运行期不校验，所以把词表外的值写出去不会报错。规格里「词表外的值 MUST NOT 被写出」目前由 `mypy --strict`（静态）与可达性测试（集合相等）守着，不是由运行时校验守着。M3 若要让它在运行期也挡得住，改的是 `ToolResult` 的构造（换成 pydantic 模型或加 `__post_init__` 校验），代价是每次派发多一次校验、且失败方式从「类型检查红」变成「运行期红」。
+
 ## 方法论注记
 
 1. **dud mutant 的三种形态本轮都撞到了**：语义等价（G）、被前置条件挡住的顺序互换（I）、只挪调用不挪结论（J′）。判据只认「可观察行为变了」，所以这三条不算变异，也不当覆盖缺口——但值得写下来，因为它们各自暴露了一个「看起来在测、其实测不到」的写法。
