@@ -2,13 +2,13 @@
 
 每里程碑收尾更新一次。接手时以 `git status --short` 与 `git log --oneline -3` 为准，本文件只是快照。
 
-更新：2026-10-17（`main` = `a871fa3`）
+更新：2026-10-17（`main` = `134ae69`）
 
 ## 进度
 
 - **M1 完成并已归档**：change `m1-event-log-and-turn-loop` 已合入 `main`（merge commit `141e28c`），归档在 `openspec/changes/archive/2026-10-16-m1-event-log-and-turn-loop/`，tag `m1`。
 - 五份主规格已同步进 `openspec/specs/`（`openspec list --specs` 可查），`openspec validate --specs` 全过。
-- **下一步：M2 `m2-file-tools-and-fences`，等用户发话再 `/openspec-propose`。**
+- **M2 的规划工件已写完**：change `m2-file-tools-and-fences`（proposal + 六份 spec delta + design + 55 个任务），`openspec validate --strict` 通过，未开始实现、未建分支。下一步是 `/openspec-apply-change`。
 
 ## 门禁实测
 
@@ -28,3 +28,4 @@
 - 变异测试记录与剩余缺口：`docs/verification/m1-mutation.md`。
 - `_run` 的内核失败 stderr 分支没有黑盒覆盖；Ctrl-C 只在进程内测过（Windows 上没有 CTRL_C_EVENT 黑盒）。
 - replay 把工具描述当成空：M2 注册真实工具后必须改成从事件前缀推导（ADR-0002 第 7 条）。
+- 门禁判据目前**只在 Windows 上跑绿过**，仓库没有 CI。跨平台对齐（Linux/macOS）与 CI 矩阵已裁决并入 M3，不单开里程碑——见 `docs/roadmap.md` 的「跨平台与 CI 排在哪儿」。M2 的 seam ⑥ 判据同样只在 Windows 验证；平台绑定点只有路径规范化（大小写 / junction）、tty 检测、SIGINT 三处，围栏本身不做 OS 级强制所以天生可移植。
