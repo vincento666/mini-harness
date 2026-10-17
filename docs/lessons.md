@@ -139,6 +139,15 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Promotion candidate: 已并入 Active Lessons 第 5 条
 - Status: active
 
+### L-014
+- Date: 2026-10-17
+- Context: 复核 AGENTS.md 命令段
+- Observation: 我写进 AGENTS.md 的判据「`ruff format --diff` 空输出 = 干净」是凭印象写的。实测干净时它**退出码 0 且往 stderr 打 `27 files already formatted`**，不是空输出。同一文件里还抓到过一处过时的「全量测试 9 秒」
+- Evidence: `uv run ruff format --diff src tests` → exit 0 + stderr「27 files already formatted」
+- Next use: 写进 AGENTS.md 的每一条判据都要当场跑一次并记下真实输出；判据优先写成「退出码」而不是「输出长什么样」
+- Promotion candidate: 无需进 AGENTS.md（判据本身已改对）
+- Status: inbox
+
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 
 - 每个里程碑收尾扫一次，**允许输出 `NO-PROMOTION`**（没有可复用信号就不写条目）。

@@ -31,15 +31,13 @@
 ## 命令
 
 ```bash
-uv sync                       # 装依赖（含 dev）
 uv run coverage erase         # 先清空旧 partial，再开始记账
 uv run coverage run -m pytest -q        # 跑测试并记账：主进程 + seam ⑥ 的每个子进程各写一份 partial
 uv run coverage combine                 # 把仓库根里的 partial 合并进 .coverage
 uv run coverage report --fail-under=95 --show-missing   # 覆盖率地板
-uv run pytest -k <表达式>     # 单个红绿循环（不出覆盖率报告，覆盖率只走上面四步）
 uv run mypy --strict src      # 类型检查
 uv run ruff check src tests   # 风格门禁
-uv run ruff format --diff src tests   # 看还有没有没格式化的（空输出 = 干净）
+uv run ruff format --diff src tests   # 干净 = 退出码 0 且没有 diff 块（它会往 stderr 打「N files already formatted」）
 uv run minihns run -p "任务" --provider mock --fixture <turns.json> --workspace <dir> --events jsonl
 uv run minihns replay <session-id>
 ```
@@ -68,14 +66,9 @@ uv run minihns replay <session-id>
 
 ## 六条不可让步的运行时不变量
 
-| | 不变量 | 大白话 |
-|---|---|---|
-| A | 事件日志是唯一真源，只追加不改写；当前上下文由折叠派生 | 账本只往后记，「现在算数的内容」是算出来的 |
-| B | 工具是能力契约，定义与执行分离；**失败也是结果** | 工具挂了返回 `UNKNOWN_TOOL`/`TOOL_TIMEOUT`/`ABORTED`，不抛异常打断回合 |
-| C | 回合主循环显式：记账 → 装配上下文 → 调模型 → 派发工具 → 判定停止 | 循环是明写的，不是藏在回调里 |
-| D | 上下文有窗口预算与显式溢出错误 `CONTEXT_WINDOW_EXCEEDED` | 桌子多大、什么时候收、收不动了就明说 |
-| E | 能力受围栏约束：工作区边界 + 写前必读 CAS + 「能干什么」与「要不要问人」两条独立轴 | 权限开关和问不问人是两回事 |
-| F | 全程可观测：CLI 输出可重放的 JSONL 事件流 | 每次运行都能重放得到同一结果 |
+**A** 日志唯一真源，只追加不改写 · **B** 工具是能力契约，失败也是结果 · **C** 回合主循环显式 · **D** 窗口预算与 `CONTEXT_WINDOW_EXCEEDED` · **E** 围栏两条独立轴 + 工作区边界 + 写前必读 CAS · **F** 全程可观测
+
+全文见 `openspec/config.yaml` 的 `context`（每个 OpenSpec 命令都会自动读到它）与 `docs/handoff-2026-10-15.md` §4.2。**写任何代码前先读**；违反任何一条必须在 `docs/adr/` 留 ADR 并由人裁决，规格与测试不得自行放宽它们。
 
 ---
 
