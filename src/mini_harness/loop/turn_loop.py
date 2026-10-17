@@ -14,7 +14,12 @@ from mini_harness.events.writer import EventLog, LogWriteFailure
 from mini_harness.loop.settings import SessionSettings
 from mini_harness.provider.contract import Provider, ProviderFailure
 from mini_harness.tools.dispatch import dispatch_tool_call
-from mini_harness.tools.fences import STDIN_APPROVAL_GATE, ApprovalGate, DispatchContext
+from mini_harness.tools.fences import (
+    STDIN_APPROVAL_GATE,
+    ApprovalGate,
+    DispatchContext,
+    read_paths_from_records,
+)
 from mini_harness.tools.registry import ToolRegistry
 
 # `turn/end.stop_reason` 的词表：常量与 `Literal` 同源，加一个值只改这一处。
@@ -186,7 +191,13 @@ async def run_session(
             if failure is not None:
                 return _kernel_failure(log, failure, turns)
 
-            dispatch_context = DispatchContext.from_settings(settings, read_paths=frozenset())
+            prefix = read_events(log.path)
+            if isinstance(prefix, LogReadFailure):
+                return _kernel_failure(log, prefix, turns)
+            dispatch_context = DispatchContext.from_settings(
+                settings,
+                read_paths=read_paths_from_records(prefix, settings.workspace),
+            )
             dispatched = await dispatch_tool_call(call, registry, dispatch_context, approval_gate)
 
             written: list[tuple[str, dict[str, Any]]] = []

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from pydantic import Field
 
-from mini_harness.tools.fences import DispatchContext
+from mini_harness.tools.fences import DispatchContext, path_key
 from mini_harness.tools.registry import ToolArgs, ToolDefinition, ToolResult
 
 DEFAULT_READ_LIMIT = 2000
@@ -46,6 +46,30 @@ async def read_file(args: ReadArgs, context: DispatchContext) -> ToolResult:
     return ToolResult(outcome="OK", content="\n".join(numbered))
 
 
+class WriteArgs(ToolArgs):
+    file_path: str
+    content: str
+
+    def target_path(self) -> str | None:
+        return self.file_path
+
+
+async def write_file(args: WriteArgs, context: DispatchContext) -> ToolResult:
+    target = resolve_target(context.workspace, args.file_path)
+    if target.is_dir():
+        return ToolResult(outcome="IS_A_DIRECTORY", content=f"目标是目录而不是文件：{target}")
+    if target.exists() and path_key(context.workspace, args.file_path) not in context.read_paths:
+        return ToolResult(
+            outcome="WRITE_WITHOUT_READ",
+            content=f"覆盖已存在的文件之前没有读过它：{target}",
+        )
+
+    if target.parent != target:
+        target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(args.content, encoding="utf-8")
+    return ToolResult(outcome="OK", content=f"写了 {target}（{len(args.content)} 个字符）")
+
+
 def file_tool_definitions() -> list[ToolDefinition]:
     """注册表的内容：每个工具的定义、入参模型、会不会改动、执行入口。"""
     return [
@@ -55,5 +79,12 @@ def file_tool_definitions() -> list[ToolDefinition]:
             args_model=ReadArgs,
             mutates=False,
             run=read_file,
-        )
+        ),
+        ToolDefinition(
+            name="write",
+            description="覆盖式写入 UTF-8 文本文件；覆盖已存在的文件前必须先读过。",
+            args_model=WriteArgs,
+            mutates=True,
+            run=write_file,
+        ),
     ]

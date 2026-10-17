@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Protocol, TextIO
+from typing import Any, Literal, Protocol, TextIO
 
+from mini_harness.events.record import EventRecord
 from mini_harness.loop.settings import ApprovalMode, SandboxLevel, SessionSettings
 
 FenceCode = Literal[
@@ -96,6 +98,28 @@ class StdinApprovalGate:
 
 
 STDIN_APPROVAL_GATE = StdinApprovalGate()
+
+
+def read_paths_from_records(records: Iterable[EventRecord], workspace: Path) -> frozenset[str]:
+    """「算不算读过」= 这段前缀之前存在针对该路径且 `outcome` 为 `OK` 的 `read`。
+
+    `tool/result` 的 payload 里没有工具名，所以先把 `tool/call` 的名字与入参记下来，
+    再按配对结果判定。
+    """
+    called: dict[str, tuple[str, dict[str, Any]]] = {}
+    paths: set[str] = set()
+    for record in records:
+        if record.type == "tool/call":
+            called[record.payload["tool_call_id"]] = (
+                record.payload["name"],
+                record.payload["arguments"],
+            )
+        elif record.type == "tool/result" and record.payload["outcome"] == "OK":
+            name, arguments = called.get(record.payload["tool_call_id"], ("", {}))
+            file_path = arguments.get("file_path")
+            if name == "read" and isinstance(file_path, str):
+                paths.add(path_key(workspace, file_path))
+    return frozenset(paths)
 
 
 def judge_fence(context: DispatchContext, *, raw_path: str, mutates: bool) -> FenceDecision:

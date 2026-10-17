@@ -45,10 +45,10 @@
 
 ## 7. 文件工具契约：write 与写前必读（seam ③）
 
-- [ ] 7.1 红：断言目标不存在时 `write` 直接创建并返回 `OK`（含必要时创建父目录）；绿后验证（seam ③）
-- [ ] 7.2 红：断言已存在文件在未 `read` 过时是 `WRITE_WITHOUT_READ` 且字节不变；绿后验证（seam ③）
-- [ ] 7.3 红：断言同一派发上下文里先 `read`（`OK`）再 `write` 成功，且失败的 `read`（`PATH_NOT_FOUND`）不算读过；绿后验证（seam ③）——组 5 起 `run_session` 传给派发的 `read_paths` 还是空集，这一条负责把它接成「从日志前缀重算」（design D6）
-- [ ] 7.4 红：断言「已读过」判定跨 session 不继承（session B 直接 `write` session A 读过的文件是 `WRITE_WITHOUT_READ`），且同一日志前缀重算两次判定相同；绿后验证（seam ③④）
+- [x] 7.1 红：断言目标不存在时 `write` 直接创建并返回 `OK`（含必要时创建父目录）；绿后验证（seam ③）
+- [x] 7.2 红：断言已存在文件在未 `read` 过时是 `WRITE_WITHOUT_READ` 且字节不变；绿后验证（seam ③）——另加一条 `danger-full-access` 下的同判据，补上 4.4 的「不放宽」那半
+- [x] 7.3 红：断言同一派发上下文里先 `read`（`OK`）再 `write` 成功，且失败的 `read`（`PATH_NOT_FOUND`）不算读过；绿后验证（seam ③）——「失败不算读过」用 `NOT_UTF8_TEXT` 的失败读来测：`PATH_NOT_FOUND` 之后文件仍不存在，写新文件本来就不需要先读，那条路径测不出差别
+- [x] 7.4 红：断言「已读过」判定跨 session 不继承（session B 直接 `write` session A 读过的文件是 `WRITE_WITHOUT_READ`），且同一日志前缀重算两次判定相同；绿后验证（seam ③④）——7.1–7.4 写出来就全绿，补了两次变异：去掉 `write` 的先读检查被四条判据杀死；`read_paths_from_records` 去掉 `outcome == OK` 过滤被 `test_the_same_log_prefix_yields_the_same_read_set` 与 `test_a_failed_read_does_not_count_as_reading` 杀死
 
 ## 8. 文件工具契约：edit 与 CAS（seam ③）
 
