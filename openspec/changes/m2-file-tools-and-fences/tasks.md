@@ -22,11 +22,11 @@
 
 ## 4. 围栏判定：规范化、边界、档位（seam ②）
 
-- [ ] 4.1 红：断言路径键规范化（解析 junction/符号链接、Windows 大小写折叠），且同一文件两种写法得到同一键；绿后验证（seam ②）
-- [ ] 4.2 红：断言 `write`/`edit` 目标解析后在工作区之外时判定为拒绝（`OUTSIDE_WORKSPACE`），且 `read`/`glob`/`grep` 不受边界约束；绿后验证（seam ②）
-- [ ] 4.3 红：断言 `read-only` 档位拒绝 `write`/`edit`（`SANDBOX_DENIES_WRITE`）而放行读类工具；绿后验证（seam ②）
-- [ ] 4.4 红：断言 `danger-full-access` 解除工作区边界但不放宽写前必读与 CAS；绿后验证（seam ②）
-- [ ] 4.5 红：断言两轴独立——`danger-full-access` 仍默认问人、`--yes` 不使 `read-only` 的写变允许；绿后验证（seam ②）
+- [x] 4.1 红：断言路径键规范化（解析 junction/符号链接、Windows 大小写折叠），且同一文件两种写法得到同一键；绿后验证（seam ②）——符号链接那条在本机 skip（无特权不能建符号链接），记进 `docs/CURRENT.md` 的已知缺口
+- [x] 4.2 红：断言 `write`/`edit` 目标解析后在工作区之外时判定为拒绝（`OUTSIDE_WORKSPACE`），且 `read`/`glob`/`grep` 不受边界约束；绿后验证（seam ②）
+- [x] 4.3 红：断言 `read-only` 档位拒绝 `write`/`edit`（`SANDBOX_DENIES_WRITE`）而放行读类工具；绿后验证（seam ②）
+- [x] 4.4 红：断言 `danger-full-access` 解除工作区边界但不放宽写前必读与 CAS；绿后验证（seam ②）——边界那半在这里；「不放宽」那半由 7.2 / 8.3 在 `danger-full-access` 上下文下断言
+- [x] 4.5 红：断言两轴独立——`danger-full-access` 仍默认问人、`--yes` 不使 `read-only` 的写变允许；绿后验证（seam ②）
 
 ## 5. approval 门（seam ②①）
 
