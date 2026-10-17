@@ -17,6 +17,7 @@ from mini_harness.tools.registry import (
     ToolRegistry,
     ToolResult,
 )
+from tool_harness import dispatch_call
 
 _FIVE_TOOLS = ["read", "write", "edit", "glob", "grep"]
 _FIVE_MUTATES = [False, True, True, False, False]
@@ -119,3 +120,11 @@ async def test_a_fence_denial_skips_the_execution(tmp_path: Path) -> None:
     assert outcome.result.outcome == "DENIED_BY_FENCE"
     assert outcome.fence_code == "OUTSIDE_WORKSPACE"
     assert _RAN == []
+
+
+async def test_invalid_arguments_are_caught_before_the_fence_is_consulted(tmp_path: Path) -> None:
+    """入参不合法且路径越界时，报的是校验段的 `TOOL_ARGS_INVALID`，不是围栏段的拒绝。"""
+    outcome = await dispatch_call(tmp_path, "write", {"file_path": "../outside.md", "content": 7})
+
+    assert outcome.result.outcome == "TOOL_ARGS_INVALID"
+    assert outcome.fence_code is None

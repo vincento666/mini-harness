@@ -159,3 +159,38 @@ async def test_edit_in_the_fixture_repo_replaces_a_todo_line(tmp_path: Path) -> 
     body = (tmp_path / "notes" / "retro.md").read_text(encoding="utf-8")
     assert "DONE：覆盖率记账的三步见 AGENTS.md 命令段。" in body
     assert "TODO" not in body
+
+
+async def test_a_later_read_replaces_the_earlier_one(tmp_path: Path) -> None:
+    """同一路径后来的成功读覆盖先前的：改完再读，第二次 `edit` 用的是新读到的原文。"""
+    (tmp_path / "a.md").write_text("第一行\n第二行\n", encoding="utf-8")
+    entries = [
+        tool_call_entry("read", "c1", file_path="a.md"),
+        tool_call_entry(
+            "edit", "c2", file_path="a.md", old_string="第一行", new_string="改过的第一行"
+        ),
+        tool_call_entry("read", "c3", file_path="a.md"),
+        tool_call_entry(
+            "edit", "c4", file_path="a.md", old_string="改过的第一行", new_string="再改一次"
+        ),
+        DONE,
+    ]
+
+    log, _ = await run_fixture_session(tmp_path, "s-reread", entries)
+
+    assert tool_outcomes(log) == ["OK", "OK", "OK", "OK"]
+    assert (tmp_path / "a.md").read_text(encoding="utf-8") == "再改一次\n第二行\n"
+
+
+async def test_a_write_does_not_count_as_having_read_it(tmp_path: Path) -> None:
+    """写成功不算读过：紧接着的 `edit` 仍是 `WRITE_WITHOUT_READ`，不是 `STALE_EDIT`。"""
+    entries = [
+        tool_call_entry("write", "c1", file_path="new.md", content="新写的\n"),
+        tool_call_entry("edit", "c2", file_path="new.md", old_string="新写的", new_string="改一下"),
+        DONE,
+    ]
+
+    log, _ = await run_fixture_session(tmp_path, "s-write-not-read", entries)
+
+    assert tool_outcomes(log) == ["OK", "WRITE_WITHOUT_READ"]
+    assert (tmp_path / "new.md").read_text(encoding="utf-8") == "新写的\n"

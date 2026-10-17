@@ -102,7 +102,7 @@
 
 ## 15. 收尾门禁
 
-- [ ] 15.1 变异测试一轮：改坏围栏判定、CAS 判定、词表校验、`FENCE_DENIED` 映射、已读集合派生各一处，跑全量测试，把「变异 / 改法 / 哪些测试变红」记进 `docs/verification/m2-file-tools-and-fences-mutation.md`；还原前先看 `git status`，还原后确认全绿与 `uv run mypy --strict src` 干净。判据：每个变异都被至少一条测试杀死，存活的补一条能杀死它的测试
+- [x] 15.1 变异测试一轮：改坏围栏判定、CAS 判定、词表校验、`FENCE_DENIED` 映射、已读集合派生各一处，跑全量测试，把「变异 / 改法 / 哪些测试变红」记进 `docs/verification/m2-file-tools-and-fences-mutation.md`；还原前先看 `git status`，还原后确认全绿与 `uv run mypy --strict src` 干净。判据：每个变异都被至少一条测试杀死，存活的补一条能杀死它的测试——19 条变异记进那份文档：围栏判定 H / I / G、CAS 判定 R（含它的输入 K / L / M / N）、词表校验 A / B、`FENCE_DENIED` 映射 S、已读集合派生 M / N，另有 O（行号）、P（失败行走 stdout）、Q（`approval/*` 无条件写）、J（校验段与围栏段互换）。16 条被既有测试杀死；G / I / J′ 是 dud mutant（语义等价，见那份文档的 dud 一节，不当覆盖缺口）；M 与 N 存活 → 各补一条判据（`test_a_later_read_replaces_the_earlier_one`、`test_a_write_does_not_count_as_having_read_it`，都先确认在变异下红）。还原后基线 140 passed / 1 skipped、TOTAL 96%、mypy 与 ruff 干净
 - [ ] 15.2 Learning Gate：扫本轮证据（红过的测试、存活的变异、返工过的规格、踩过的工具坑），可复用教训写进 `docs/lessons.md` 收件箱，没有可复用信号就写 `NO-PROMOTION`；验证 `docs/lessons.md` 已更新或明确写了 `NO-PROMOTION`
 
 ## Workflow follow-up
