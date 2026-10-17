@@ -1,4 +1,4 @@
-# 记账：M1 留下的六处坏味道与一处设计缺口，M2 加文件工具时一并处理
+# 记账：M1 留下的七处坏味道与一处设计缺口，M2 加文件工具时一并处理
 
 这一条不是待办清单的优先级排序，而是 code-review 修复轮（change `m1-event-log-and-turn-loop` 的 tasks 第 11 节）留下的**账**：审查里确认存在的重复与泄漏，M1 里改它们只会增加改动面、不会增加判据，因此只记账不动代码。任何一条到 M2 都可以按新证据改判——但改判要发生在 M2 的 change 里，不是顺手改。
 
@@ -52,4 +52,11 @@
 - 现在不动的理由：M1 没有任何注册工具，这条差异不存在；把它做成「前缀可见的工具描述」要改 `session/start` 的 payload 字段表，属于扩词表级决定。
 - M2 的处理：在 `session/start.payload`（或每个 `turn/start.payload`）里记下当时的工具名列表，让折叠入参全部可从日志前缀派生；`tests/test_cli_replay.py::test_replay_does_not_use_events_after_the_assembly_point` 已经是这条判据的守门测试，M2 只需把取空的这一行换成从前缀派生。
 
-Considered options：现在就抽 `SessionSettings` 与 `Literal` 词表（否：M1 的判据已经全绿，改动只增加面不增加证据）；把 `_replay` 的扫描逻辑立刻下沉（否：只有一个消费者，等第二个消费者出现再抽）；M1 就把工具描述写进 `session/start`（否：M1 没有任何工具可写，写了也测不出差异）。
+## 8. `provider` 层的两处 import 指向 `events.fold`
+
+`provider/contract.py:11` 与 `provider/mock.py:13` 都 `from mini_harness.events.fold import Message`，因为 `generate` 的入参类型是 `Sequence[Message]`。依赖方向因此是 provider → events，而不是两份契约各自独立；分层图上看是一条反向箭头。
+
+- 现在不动的理由：`Message` 目前只有折叠一个生产者，另立一个消息类型模块会让同一个类型有两个家；M1 的判据不依赖这条方向。
+- M2 的处理：文件工具落地后看 `Message` 是否需要携带更多工具相关字段（`tool_calls` 与 `tool_call_id` 已经在）。需要就把 `Message` 抽成独立的类型模块，provider 与 events 都指向它；不需要就把这条方向记为长期形态并在此处改判。
+
+Considered options：现在就抽 `SessionSettings` 与 `Literal` 词表（否：M1 的判据已经全绿，改动只增加面不增加证据）；把 `_replay` 的扫描逻辑立刻下沉（否：只有一个消费者，等第二个消费者出现再抽）；M1 就把工具描述写进 `session/start`（否：M1 没有任何工具可写，写了也测不出差异）；M1 就把 `Message` 抽到独立类型模块（否：一个生产者两个消费者，抽出去只是把同一行 import 换个地方）。

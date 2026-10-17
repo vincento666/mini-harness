@@ -43,6 +43,13 @@ select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RUF"]
 # 用 allowed-confusables 只放行这五个字符，其余可疑字符仍然照报。
 allowed-confusables = ["：", "，", "；", "（", "）"]
 
+[tool.ruff.lint.per-file-ignores]
+# docs/tools 下的脚本是文档与图表构建器，不在收尾门禁里跑（门禁只跑 src 与 tests）。
+# E402：先 sys.path.insert 再 import 同目录模块；
+# E501：图表 IR 的一行就是一条节点定义，拆行会让图定义比图本身更难读；
+# RUF001：图标签里的「· ≤ × →」是刻意的记号，不是打错的 ASCII 近似字符。
+"docs/tools/*.py" = ["E402", "E501", "RUF001"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
