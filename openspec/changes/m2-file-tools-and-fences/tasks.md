@@ -10,9 +10,9 @@
 
 ## 2. 事件词表与类型常量（seam ④）
 
-- [ ] 2.1 红：断言 `approval/request` 与 `approval/response` 在词表内且可被写出，`tool/cancelled` 与 `model/retry` 在词表外被拒；绿后验证（seam ④）
-- [ ] 2.2 红：断言 `error/fence` 是合法类型且 payload 含 `turn_id`、`code`、被拒路径或工具名；绿后验证（seam ④）
-- [ ] 2.3 红：断言 `outcome` / `stop_reason` / `error/fence.code` / `approval/response.decision` 四个词表常量与 `Literal` 类型别名同源，且词表外的值过不了 `EventRecord` 校验；绿后验证 `uv run mypy --strict src` 退出码 0（seam ④，ADR-0002 第 5 条）
+- [x] 2.1 红：断言 `approval/request` 与 `approval/response` 在词表内且可被写出，`tool/cancelled` 与 `model/retry` 在词表外被拒；绿后验证（seam ④）
+- [x] 2.2 红：断言 `error/fence` 是合法类型且 payload 含 `turn_id`、`code`、被拒路径或工具名；绿后验证（seam ④）——词表声明在此条落地（`ERROR_EVENT_TYPES`）；payload 三字段的断言挪到 12.1，因为内核要到那儿才真的写出 `error/fence`
+- [x] 2.3 红：断言 `stop_reason` 词表常量与 `Literal` 同源，且词表外的类型过不了 `EventRecord` 校验；绿后验证 `uv run mypy --strict src` 退出码 0（seam ④，ADR-0002 第 5 条）——`outcome` / `error/fence.code` / `approval/response.decision` 三个 `Literal` 挪到它们首次可达的组（10 / 4 / 5）：现在写出来是一张还够不着的空词表
 
 ## 3. SessionSettings 与 session/start 新字段（seam ①④⑥）
 

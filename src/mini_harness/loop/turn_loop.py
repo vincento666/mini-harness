@@ -6,7 +6,7 @@ import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, get_args
 
 from mini_harness.events.fold import assembled_payload, fold
 from mini_harness.events.reader import LogReadFailure, read_events
@@ -15,14 +15,15 @@ from mini_harness.provider.contract import Provider, ProviderFailure
 from mini_harness.tools.dispatch import dispatch_tool_call
 from mini_harness.tools.registry import ToolRegistry
 
+# `turn/end.stop_reason` 的词表：常量与 `Literal` 同源，加一个值只改这一处。
+StopReason = Literal["MODEL_COMPLETED", "TOOL_CALLS", "MAX_TURNS", "PROVIDER_ERROR", "ABORTED"]
+
 STOP_MODEL_COMPLETED = "MODEL_COMPLETED"
 STOP_TOOL_CALLS = "TOOL_CALLS"
 STOP_MAX_TURNS = "MAX_TURNS"
 STOP_PROVIDER_ERROR = "PROVIDER_ERROR"
 STOP_ABORTED = "ABORTED"
-STOP_REASONS: frozenset[str] = frozenset(
-    {STOP_MODEL_COMPLETED, STOP_TOOL_CALLS, STOP_MAX_TURNS, STOP_PROVIDER_ERROR, STOP_ABORTED}
-)
+STOP_REASONS: frozenset[str] = frozenset(get_args(StopReason))
 
 
 @dataclass(frozen=True)
