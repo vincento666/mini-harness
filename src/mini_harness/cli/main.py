@@ -73,6 +73,12 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--max-turns", type=int, default=8)
     run.add_argument("--append-system-prompt", default="")
     run.add_argument("--events", choices=("jsonl",), default=None)
+    run.add_argument(
+        "--sandbox",
+        choices=("read-only", "workspace-write", "danger-full-access"),
+        default="workspace-write",
+    )
+    run.add_argument("--yes", action="store_true")
 
     replay = subcommands.add_parser("replay", help="重放一个 session 的日志")
     replay.add_argument("session_id")

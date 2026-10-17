@@ -280,3 +280,43 @@ def test_the_repo_hello_fixture_is_one_plain_reply(tmp_path: Path) -> None:
     assert len(responses) == 1
     assert responses[0]["payload"]["content"] == "hello from fixture"
     assert responses[0]["payload"]["finish_reason"] == "stop"
+
+
+def test_an_unknown_sandbox_level_is_an_argument_error(tmp_path: Path) -> None:
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--sandbox",
+        "network-write",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 2
+    # 「档位存在但取值非法」与「档位不存在」必须是两条不同的判据：前者报 invalid choice。
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert "invalid choice" in result.stderr
+    assert _log_files(tmp_path) == []
+
+
+def test_sandbox_and_yes_are_accepted_without_changing_a_write_free_run(tmp_path: Path) -> None:
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--sandbox",
+        "read-only",
+        "--yes",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 0
+    assert len(_log_files(tmp_path)) == 1
