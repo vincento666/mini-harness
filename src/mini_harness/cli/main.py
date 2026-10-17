@@ -29,6 +29,7 @@ from mini_harness.loop import (
 from mini_harness.provider import FixtureLoadFailure, load_fixture_provider
 from mini_harness.provider.contract import Provider
 from mini_harness.tools import ToolRegistry
+from mini_harness.tools.file_tools import file_tool_definitions
 
 EXIT_OK = 0
 EXIT_INTERNAL_ERROR = 1
@@ -124,7 +125,7 @@ async def _await_session(
             prompt=prompt,
             provider=provider,
             log=log,
-            registry=ToolRegistry(),
+            registry=ToolRegistry(file_tool_definitions()),
             settings=settings,
             cancel=cancel,
         )
@@ -218,21 +219,15 @@ def _replay(args: argparse.Namespace) -> int:
             EXIT_INTERNAL_ERROR,
         )
 
-    append_system_prompt = str(records[0].payload.get("append_system_prompt", ""))
     for index, record in assembled:
         preceding_turn = next(
             (item for item in reversed(records[:index]) if item.type == "turn/start"),
             None,
         )
         turn_id = "" if preceding_turn is None else str(preceding_turn.payload.get("turn_id", ""))
-        # 折叠入参只从该点之前的事实派生：`append_system_prompt` 来自 `session/start`，
-        # 工具描述取空——M1 的注册表为空，任何注册工具的名字都只出现在该点之后的 `model/request` 里。
-        # 注册表非空时这条必须改（见 docs/adr/0002-deferred-refactors.md）。
-        recomputed = fold(
-            records[:index],
-            append_system_prompt=append_system_prompt,
-            tool_descriptions=(),
-        )
+        # 折叠入参只从该点之前的事实派生：工具块与追加段都在 `session/start` 里，
+        # 回放侧不存在「进程内注册表」这个第二真源。
+        recomputed = fold(records[:index])
         if assembled_payload(turn_id, recomputed) != record.payload:
             return _report_failure(
                 "REPLAY_MISMATCH",

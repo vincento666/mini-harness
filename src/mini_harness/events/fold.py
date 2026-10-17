@@ -35,15 +35,32 @@ class AssembledContext(BaseModel):
 def protected_header(
     *,
     append_system_prompt: str = "",
-    tool_descriptions: Sequence[str] = (),
+    tool_names: Sequence[str] = (),
 ) -> list[Message]:
     """受保护头部：内置常量在前，只能追加不能替换。"""
     parts = [SYSTEM_PROMPT]
-    if tool_descriptions:
-        parts.append("可用工具：\n" + "\n".join(tool_descriptions))
+    if tool_names:
+        parts.append("可用工具：\n" + "\n".join(tool_names))
     if append_system_prompt:
         parts.append(append_system_prompt)
     return [Message(role="system", content="\n\n".join(parts))]
+
+
+def _start_facts(events: Sequence[EventRecord]) -> tuple[list[str], str]:
+    """头部里的工具块与追加段取自日志里的 `session/start`，不取自进程内注册表。
+
+    这样实时装配与回放折叠的是同一份事实：注册表在回放时根本不存在。
+    """
+    for event in events:
+        if event.type != "session/start":
+            continue
+        raw_tools = event.payload.get("tools")
+        names: list[str] = []
+        if isinstance(raw_tools, list):
+            names = [name for name in raw_tools if isinstance(name, str)]
+        appended = event.payload.get("append_system_prompt")
+        return names, appended if isinstance(appended, str) else ""
+    return [], ""
 
 
 def _body_message(event: EventRecord) -> Message | None:
@@ -68,16 +85,12 @@ def _body_message(event: EventRecord) -> Message | None:
     return None
 
 
-def fold(
-    events: Sequence[EventRecord],
-    *,
-    append_system_prompt: str = "",
-    tool_descriptions: Sequence[str] = (),
-) -> AssembledContext:
+def fold(events: Sequence[EventRecord]) -> AssembledContext:
     """折叠事件序列。M1 不截断、不遮蔽、不摘要。"""
+    tool_names, append_system_prompt = _start_facts(events)
     header = protected_header(
         append_system_prompt=append_system_prompt,
-        tool_descriptions=tool_descriptions,
+        tool_names=tool_names,
     )
     body = [message for event in events if (message := _body_message(event)) is not None]
     fingerprint = hashlib.sha256(

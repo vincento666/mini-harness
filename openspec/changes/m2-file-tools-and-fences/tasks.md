@@ -65,14 +65,14 @@
 
 ## 10. 注册表接线与三段派发（seam ②③⑤⑥）
 
-- [ ] 10.1 红：断言注册表非空且恰含五个工具，`ToolDefinition` 带参数校验模型与「会不会改动」标记，`ToolSpec` 仍是 `name` + `description`（`specs()` 显式映射）；绿后验证（seam ②，ADR-0002 第 2 条）
-- [ ] 10.2 红：断言三段顺序——参数校验失败时不做围栏判定也不执行、围栏拒绝时不执行；绿后验证（seam ②）
-- [ ] 10.3 红：断言 `NOT_IMPLEMENTED` 从词表移除且任何场景都不出现；未注册工具名仍是 `UNKNOWN_TOOL`；绿后验证（seam ②）
-- [ ] 10.4 把既有 M1 场景断言搬家（design D9）：`tool_then_done` 与 `tool_then_exhaust` 的 `read a.md` 断言改为 `PATH_NOT_FOUND`，新增 `unknown_tool/turns.json` 场景守 `UNKNOWN_TOOL`；验证三条既有测试红→绿且 fixture 文件本身未被改（seam ⑤②⑥）
-
+- [x] 10.1 红：断言注册表非空且恰含五个工具，`ToolDefinition` 带参数校验模型与「会不会改动」标记，`ToolSpec` 仍是 `name` + `description`（`specs()` 显式映射）；绿后验证（seam ②，ADR-0002 第 2 条）——`tests/test_tool_registry.py` 钉住名字顺序、`mutates` 序列 `[False, True, True, False, False]`、`specs()` 的字段集合恰为 `{name, description}`；`session/start.tools` 的断言从 `[]` 改成五个名字
+- [x] 10.2 红：断言三段顺序——参数校验失败时不做围栏判定也不执行、围栏拒绝时不执行；绿后验证（seam ②）——桩工具记录「有没有被执行」：校验失败时 `fence_code is None`、`approval is None`、执行记录为空；围栏拒绝时 `fence_code == "OUTSIDE_WORKSPACE"` 且执行记录为空
+- [x] 10.3 红：断言 `NOT_IMPLEMENTED` 从词表移除且任何场景都不出现；未注册工具名仍是 `UNKNOWN_TOOL`；绿后验证（seam ②）——`ToolOutcome` 收成 12 值的 `Literal`（`ToolResult.outcome` 用它标注），词表测试断言 `len == 12` 且不含 `NOT_IMPLEMENTED`；CLI 场景测试断言所有 `tool/result` 的结果词集合恰为 `{PATH_NOT_FOUND}`
+- [x] 10.4 把既有 M1 场景断言搬家（design D9）：`tool_then_done` 与 `tool_then_exhaust` 的 `read a.md` 断言改为 `PATH_NOT_FOUND`，新增 `unknown_tool/turns.json` 场景守 `UNKNOWN_TOOL`；验证三条既有测试红→绿且 fixture 文件本身未被改（seam ⑤②⑥）——既有两份 `turns.json` 逐字节未动（`git status` 里只有新增的 `unknown_tool/turns.json`）；`test_no_m1_scenario_exits_with_the_reserved_codes` 的退出码表 `[0, 0, 0, 1, 2, 2, 2, 2]` 与「没有 3/4」原样保留
+- 打包说明（本提交含 11.1）：CLI 注册表一接线，`test_cli_replay.py` 的三条判据立刻红——`REPLAY_MISMATCH: seq=2`，因为折叠头部的工具块当时取自进程内注册表而回放侧取空。11.1 是同一轮红绿的必要改动，不是顺手改的别处
 ## 11. 折叠头部与 replay（seam ④⑥）
 
-- [ ] 11.1 红：断言折叠头部的工具块取自 `session/start.payload.tools` 而非进程内注册表，且对同一前缀重算两次头部相同；绿后验证（seam ④）
+- [x] 11.1 红：断言折叠头部的工具块取自 `session/start.payload.tools` 而非进程内注册表，且对同一前缀重算两次头部相同；绿后验证（seam ④）——`fold()` 不再收 `append_system_prompt` / `tool_descriptions` 参数，两者都由 `_start_facts()` 从日志里的 `session/start` 读出；`protected_header` 的参数改名成 `tool_names`（头部里放的是名字，描述走 `model/request.tools` 那条通道）；回放侧的 `append_system_prompt` 局部变量随之清掉
 - [ ] 11.2 红：断言 `minihns replay` 对注册了工具、含 `approval/*` 与 `error/fence` 的合法日志逐点重算相等、退出码 0；绿后验证既有「装配点之后的事件被篡改时 replay 仍通过」的测试仍绿（seam ⑥④，ADR-0002 第 7 条）
 - [ ] 11.3 红：断言 replay 过程中没有任何 Provider 调用且工作区里没有任何文件被创建或修改；绿后验证（seam ⑥⑤③）
 

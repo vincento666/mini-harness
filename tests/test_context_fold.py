@@ -24,9 +24,14 @@ def _rec(seq: int, event_type: str, payload: dict[str, Any]) -> EventRecord:
     )
 
 
-def _one_turn_events() -> list[EventRecord]:
+def _one_turn_events(
+    *,
+    append_system_prompt: str = "",
+    tools: tuple[str, ...] = (),
+) -> list[EventRecord]:
+    start_payload = {"append_system_prompt": append_system_prompt, "tools": list(tools)}
     return [
-        _rec(0, "session/start", {}),
+        _rec(0, "session/start", start_payload),
         _rec(1, "turn/start", {"turn_id": "t1"}),
         _rec(
             2,
@@ -37,11 +42,22 @@ def _one_turn_events() -> list[EventRecord]:
     ]
 
 
+def test_the_tool_block_in_the_header_comes_from_session_start() -> None:
+    from_log = fold(_one_turn_events(tools=("read", "grep")))
+    without = fold(_one_turn_events())
+
+    assert "可用工具" in from_log.messages[0].content
+    assert "read" in from_log.messages[0].content
+    assert "grep" in from_log.messages[0].content
+    assert "可用工具" not in without.messages[0].content
+    assert from_log.header_fingerprint != without.header_fingerprint
+
+
 def test_header_fingerprint_tracks_the_header_not_the_conversation() -> None:
     events = _one_turn_events()
 
     plain = fold(events)
-    with_extra = fold(events, append_system_prompt="额外规则")
+    with_extra = fold(_one_turn_events(append_system_prompt="额外规则"))
     longer = fold(
         [
             *events,
@@ -141,7 +157,7 @@ def test_header_cannot_be_replaced_by_conversation_content() -> None:
 
 
 def test_append_system_prompt_is_appended_after_the_builtin_constant() -> None:
-    context = fold([], append_system_prompt="额外规则")
+    context = fold(_one_turn_events(append_system_prompt="额外规则"))
 
     assert context.messages[0].role == "system"
     assert context.messages[0].content.startswith(SYSTEM_PROMPT)

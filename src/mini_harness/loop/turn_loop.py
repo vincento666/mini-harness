@@ -115,11 +115,7 @@ async def run_session(
         events = read_events(log.path)
         if isinstance(events, LogReadFailure):
             return _kernel_failure(log, events, turns)
-        context = fold(
-            events,
-            append_system_prompt=settings.append_system_prompt,
-            tool_descriptions=tool_names,
-        )
+        context = fold(events)
         failure = _append_all(
             log,
             [

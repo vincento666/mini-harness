@@ -1,0 +1,8 @@
+[
+  {
+    "content": "调一个不存在的工具",
+    "finish_reason": "tool_calls",
+    "tool_calls": [{ "id": "c1", "name": "delete_file", "arguments": { "file_path": "a.md" } }]
+  },
+  { "content": "换个办法", "finish_reason": "stop" }
+]

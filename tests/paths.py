@@ -17,6 +17,7 @@ SCENARIOS_DIR = FIXTURES_DIR / "scenarios"
 HELLO_SCENARIO = SCENARIOS_DIR / "hello" / "turns.json"
 TOOL_THEN_DONE_SCENARIO = SCENARIOS_DIR / "tool_then_done" / "turns.json"
 TOOL_THEN_EXHAUST_SCENARIO = SCENARIOS_DIR / "tool_then_exhaust" / "turns.json"
+UNKNOWN_TOOL_SCENARIO = SCENARIOS_DIR / "unknown_tool" / "turns.json"
 FIXTURE_REPO_DIR = FIXTURES_DIR / "repo"
 
 
@@ -45,5 +46,6 @@ __all__ = [
     "TESTS_DIR",
     "TOOL_THEN_DONE_SCENARIO",
     "TOOL_THEN_EXHAUST_SCENARIO",
+    "UNKNOWN_TOOL_SCENARIO",
     "copy_repo_to",
 ]

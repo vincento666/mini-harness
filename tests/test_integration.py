@@ -6,7 +6,12 @@ import json
 from pathlib import Path
 
 from cli_blackbox import _cli
-from paths import HELLO_SCENARIO, TOOL_THEN_DONE_SCENARIO, TOOL_THEN_EXHAUST_SCENARIO
+from paths import (
+    HELLO_SCENARIO,
+    TOOL_THEN_DONE_SCENARIO,
+    TOOL_THEN_EXHAUST_SCENARIO,
+    UNKNOWN_TOOL_SCENARIO,
+)
 
 
 def _run_scenario(
@@ -52,6 +57,28 @@ def test_multi_turn_scenario_with_tool_call_and_fixture_exhaustion(tmp_path: Pat
     assert errors[0]["payload"]["code"] == "PROVIDER_EXHAUSTED"
 
 
+def test_the_registered_read_tool_reports_a_missing_path_as_a_result(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+
+    code, events = _run_scenario(tmp_path, session_dir / "missing", TOOL_THEN_DONE_SCENARIO)
+    results = [event for event in events if event["type"] == "tool/result"]
+
+    assert code == 0
+    assert [event["payload"]["outcome"] for event in results] == ["PATH_NOT_FOUND"]
+    assert all(not str(event["type"]).startswith("error/") for event in events)
+
+
+def test_an_unregistered_tool_name_is_still_unknown_tool(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+
+    code, events = _run_scenario(tmp_path, session_dir / "unknown", UNKNOWN_TOOL_SCENARIO)
+    results = [event for event in events if event["type"] == "tool/result"]
+
+    assert code == 0
+    assert [event["payload"]["outcome"] for event in results] == ["UNKNOWN_TOOL"]
+    assert all(not str(event["type"]).startswith("error/") for event in events)
+
+
 def test_no_m1_scenario_exits_with_the_reserved_codes(tmp_path: Path) -> None:
     session_dir = tmp_path / "sessions"
     broken = tmp_path / "broken.json"
@@ -78,3 +105,13 @@ def test_no_m1_scenario_exits_with_the_reserved_codes(tmp_path: Path) -> None:
         code, events = case
         if code not in (0, 2):
             assert any(str(event["type"]).startswith("error/") for event in events)
+
+    outcomes = [
+        event["payload"]["outcome"]
+        for case in cases
+        if not isinstance(case, int)
+        for event in case[1]
+        if event["type"] == "tool/result"
+    ]
+    assert outcomes
+    assert set(outcomes) == {"PATH_NOT_FOUND"}

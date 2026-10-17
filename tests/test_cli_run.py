@@ -333,8 +333,8 @@ def test_session_start_records_sandbox_approval_and_tools(tmp_path: Path) -> Non
     assert result.returncode == 0
     assert payload["sandbox"] == "workspace-write"
     assert payload["approval"] == "ask"
-    # 注册表要到组 10 才有五个工具名；这里钉的是「tools 由注册表派生」这条通道。
-    assert payload["tools"] == []
+    # 五个名字来自注册表：session/start 的 tools 由它派生，不是另立一份清单。
+    assert payload["tools"] == ["read", "write", "edit", "glob", "grep"]
     assert "schema_version" not in payload
 
 

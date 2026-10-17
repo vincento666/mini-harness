@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -19,11 +19,27 @@ class ToolArgs(BaseModel):
         return None
 
 
+ToolOutcome = Literal[
+    "OK",
+    "UNKNOWN_TOOL",
+    "TOOL_ARGS_INVALID",
+    "PATH_NOT_FOUND",
+    "IS_A_DIRECTORY",
+    "NOT_UTF8_TEXT",
+    "WRITE_WITHOUT_READ",
+    "STALE_EDIT",
+    "EDIT_TARGET_NOT_FOUND",
+    "EDIT_TARGET_AMBIGUOUS",
+    "DENIED_BY_FENCE",
+    "DENIED_BY_APPROVAL",
+]
+
+
 @dataclass(frozen=True)
 class ToolResult:
     """一次工具派发的结果。失败也是结果，不是异常。"""
 
-    outcome: str
+    outcome: ToolOutcome
     content: str
 
 
