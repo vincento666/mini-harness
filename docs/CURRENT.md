@@ -24,7 +24,7 @@
 
 ## 待办与已知缺口
 
-- 延后的重构：`docs/adr/0002-deferred-refactors.md`（7 条，第 4 条已处理）。
+- 延后的重构：`docs/adr/0002-deferred-refactors.md`（7 条，第 4 条已处理）。现有两份：`0001-m1-simplifications.md`、`0002-deferred-refactors.md`；新增按 `domain-modeling` 的 `ADR-FORMAT` 扫最大号 +1 → `0003-slug.md`。
 - 变异测试记录与剩余缺口：`docs/verification/m1-mutation.md`。
 - `_run` 的内核失败 stderr 分支没有黑盒覆盖；Ctrl-C 只在进程内测过（Windows 上没有 CTRL_C_EVENT 黑盒）。
 - replay 把工具描述当成空：M2 注册真实工具后必须改成从事件前缀推导（ADR-0002 第 7 条）。

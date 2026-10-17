@@ -148,6 +148,15 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Promotion candidate: 无需进 AGENTS.md（判据本身已改对）
 - Status: inbox
 
+### L-015
+- Date: 2026-10-17
+- Context: 决定坏味道账本与 ADR 编号规则
+- Observation: 技能已有官方格式时我另立规矩：发明了「ADR 一个里程碑一份」「命名 `NNNN-<milestone>-<slug>.md`」「允许原地更新」，被用户纠正。`ADR-FORMAT.md` 里只有：顺序编号 `NNNN-slug.md`、编号扫现有最大号 +1、目录用到时才建、正文 1–3 句、三条判据同时成立才写、可选 `Status` 与 `superseded by ADR-NNNN`
+- Evidence: `C:\Users\vincento\.agents\skills\domain-modeling\ADR-FORMAT.md` 第 3、5、15、21、27、29-37 行
+- Next use: 用任何技能之前先读它的 SKILL/FORMAT 文件并按官方规则写；要偏离就在 ADR 里写明偏离与理由，不要在 AGENTS.md 里另立一套
+- Promotion candidate: AGENTS.md 引用纪律已改为「照 ADR-FORMAT」；教训本身留本文件
+- Status: inbox
+
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 
 - 每个里程碑收尾扫一次，**允许输出 `NO-PROMOTION`**（没有可复用信号就不写条目）。
