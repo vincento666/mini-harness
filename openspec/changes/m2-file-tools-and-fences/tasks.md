@@ -58,9 +58,10 @@
 
 ## 9. 文件工具契约：glob 与 grep（seam ③）
 
-- [ ] 9.1 红：断言 `glob` 对 fixture 仓库的 `**/*.md` 返回那 5 个相对路径、按修改时间从新到旧、不含目录、上限 100；无匹配是 `OK` 且说明没有匹配；绿后验证（seam ③）
-- [ ] 9.2 红：断言 `grep` 返回 `文件:行号: 行内容` 形式的命中、上限 250、无匹配是 `OK`；绿后验证（seam ③）
-- [ ] 9.3 红：断言非法正则是 `TOOL_ARGS_INVALID` 且内容含解析错误；绿后验证（seam ③）
+- [x] 9.1 红：断言 `glob` 对 fixture 仓库的 `**/*.md` 返回那 5 个相对路径、按修改时间从新到旧、不含目录、上限 100；无匹配是 `OK` 且说明没有匹配；绿后验证（seam ③）——上限用 130 个文件测：100 条路径加一行「共 130 个匹配」
+- [x] 9.2 红：断言 `grep` 返回 `文件:行号: 行内容` 形式的命中、上限 250、无匹配是 `OK`；绿后验证（seam ③）——fixture 仓库里含 `TODO` 的恰 3 行分布在 3 个文件里，判据按文件集合断言
+- [x] 9.3 红：断言非法正则是 `TOOL_ARGS_INVALID` 且内容含解析错误；绿后验证（seam ③）——正则的编译校验放在 `GrepArgs` 的 field_validator 里，让「非法正则」在派发管线的校验段就被拦住，执行段不再抛异常
+- 变异记录（组 6–9 的「一次就全绿」都补了变异）：去掉 `entry.is_file()` 被 `test_glob_never_returns_a_directory` 杀死；去掉 mtime 排序被 `test_glob_orders_by_modification_time_newest_first` 杀死；去掉 grep 的 250 上限被 `test_grep_lists_at_most_two_hundred_and_fifty_matches` 杀死
 
 ## 10. 注册表接线与三段派发（seam ②③⑤⑥）
 

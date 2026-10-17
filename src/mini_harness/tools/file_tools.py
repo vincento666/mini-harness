@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import os
+import re
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from mini_harness.tools.fences import DispatchContext, path_key
 from mini_harness.tools.registry import ToolArgs, ToolDefinition, ToolResult
 
 DEFAULT_READ_LIMIT = 2000
+GLOB_LIMIT = 100
+GREP_LIMIT = 250
 
 
 class ReadArgs(ToolArgs):
@@ -37,6 +41,31 @@ class EditArgs(ToolArgs):
 
     def target_path(self) -> str | None:
         return self.file_path
+
+
+class GlobArgs(ToolArgs):
+    pattern: str
+    path: str = "."
+
+    def target_path(self) -> str | None:
+        return self.path
+
+
+class GrepArgs(ToolArgs):
+    pattern: str
+    path: str = "."
+
+    @field_validator("pattern")
+    @classmethod
+    def compile_pattern(cls, value: str) -> str:
+        try:
+            re.compile(value)
+        except re.error as exc:
+            raise ValueError(f"不是合法的正则：{exc}") from exc
+        return value
+
+    def target_path(self) -> str | None:
+        return self.path
 
 
 def resolve_target(workspace: Path, raw_path: str) -> Path:
@@ -125,6 +154,68 @@ async def edit_file(args: EditArgs, context: DispatchContext) -> ToolResult:
     return ToolResult(outcome="OK", content=f"替换了 {count} 处：{target}")
 
 
+def _relative_to(workspace: Path, target: Path) -> str:
+    try:
+        return target.relative_to(workspace).as_posix()
+    except ValueError:
+        return os.path.relpath(target, workspace).replace("\\", "/")
+
+
+def _search_root(context: DispatchContext, args: GlobArgs | GrepArgs) -> Path | ToolResult:
+    root = resolve_target(context.workspace, args.path)
+    if not root.exists():
+        return ToolResult(outcome="PATH_NOT_FOUND", content=f"搜索根不存在：{root}")
+    if not root.is_dir():
+        return ToolResult(outcome="IS_A_DIRECTORY", content=f"搜索根不是目录：{root}")
+    return root
+
+
+async def glob_files(args: GlobArgs, context: DispatchContext) -> ToolResult:
+    root = _search_root(context, args)
+    if isinstance(root, ToolResult):
+        return root
+
+    matches = [entry for entry in root.glob(args.pattern) if entry.is_file()]
+    matches.sort(key=lambda entry: entry.stat().st_mtime, reverse=True)
+    if not matches:
+        return ToolResult(outcome="OK", content=f"没有文件匹配该模式：{args.pattern}")
+
+    shown = matches[:GLOB_LIMIT]
+    lines = [_relative_to(context.workspace, entry) for entry in shown]
+    if len(matches) > len(shown):
+        lines.append(f"共 {len(matches)} 个匹配，只列出前 {GLOB_LIMIT} 个。")
+    return ToolResult(outcome="OK", content="\n".join(lines))
+
+
+async def search_files(args: GrepArgs, context: DispatchContext) -> ToolResult:
+    root = _search_root(context, args)
+    if isinstance(root, ToolResult):
+        return root
+
+    expression = re.compile(args.pattern)
+    hits: list[str] = []
+    total = 0
+    for entry in sorted(root.rglob("*")):
+        if not entry.is_file():
+            continue
+        body = _read_body(entry)
+        if body is None:
+            continue
+        for number, line in enumerate(body.splitlines(), start=1):
+            if not expression.search(line):
+                continue
+            total += 1
+            if len(hits) < GREP_LIMIT:
+                relative = _relative_to(context.workspace, entry)
+                hits.append(f"{relative}:{number}: {line}")
+
+    if total == 0:
+        return ToolResult(outcome="OK", content=f"没有匹配：{args.pattern}")
+    if total > len(hits):
+        hits.append(f"共 {total} 条匹配，只列出前 {GREP_LIMIT} 条。")
+    return ToolResult(outcome="OK", content="\n".join(hits))
+
+
 def file_tool_definitions() -> list[ToolDefinition]:
     """注册表的内容：每个工具的定义、入参模型、会不会改动、执行入口。"""
     return [
@@ -148,5 +239,19 @@ def file_tool_definitions() -> list[ToolDefinition]:
             args_model=EditArgs,
             mutates=True,
             run=edit_file,
+        ),
+        ToolDefinition(
+            name="glob",
+            description="按 glob 模式匹配工作区里的文件，返回相对路径，按修改时间从新到旧。",
+            args_model=GlobArgs,
+            mutates=False,
+            run=glob_files,
+        ),
+        ToolDefinition(
+            name="grep",
+            description="按正则搜索文本文件，返回「文件:行号: 行内容」形式的匹配行。",
+            args_model=GrepArgs,
+            mutates=False,
+            run=search_files,
         ),
     ]
