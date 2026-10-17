@@ -1,0 +1,103 @@
+[
+  {
+    "content": "读 README",
+    "finish_reason": "tool_calls",
+    "tool_calls": [{ "id": "r1", "name": "read", "arguments": { "file_path": "README.md" } }]
+  },
+  {
+    "content": "改 README",
+    "finish_reason": "tool_calls",
+    "tool_calls": [
+      {
+        "id": "e1",
+        "name": "edit",
+        "arguments": {
+          "file_path": "README.md",
+          "old_string": "只读 fixture",
+          "new_string": "只读 fixture（已复核）"
+        }
+      }
+    ]
+  },
+  {
+    "content": "读 plan",
+    "finish_reason": "tool_calls",
+    "tool_calls": [{ "id": "r2", "name": "read", "arguments": { "file_path": "notes/plan.md" } }]
+  },
+  {
+    "content": "改 plan",
+    "finish_reason": "tool_calls",
+    "tool_calls": [
+      {
+        "id": "e2",
+        "name": "edit",
+        "arguments": {
+          "file_path": "notes/plan.md",
+          "old_string": "TODO：把第 2 节的验收口径写成可断言的判据。",
+          "new_string": "TODO：把第 2 节的验收口径写成可断言的判据。（已复核）"
+        }
+      }
+    ]
+  },
+  {
+    "content": "读 meeting",
+    "finish_reason": "tool_calls",
+    "tool_calls": [{ "id": "r3", "name": "read", "arguments": { "file_path": "notes/meeting.md" } }]
+  },
+  {
+    "content": "改 meeting",
+    "finish_reason": "tool_calls",
+    "tool_calls": [
+      {
+        "id": "e3",
+        "name": "edit",
+        "arguments": {
+          "file_path": "notes/meeting.md",
+          "old_string": "TODO：确认谁负责围栏那一节的复核。",
+          "new_string": "TODO：确认谁负责围栏那一节的复核。（已复核）"
+        }
+      }
+    ]
+  },
+  {
+    "content": "读 retro",
+    "finish_reason": "tool_calls",
+    "tool_calls": [{ "id": "r4", "name": "read", "arguments": { "file_path": "notes/retro.md" } }]
+  },
+  {
+    "content": "改 retro",
+    "finish_reason": "tool_calls",
+    "tool_calls": [
+      {
+        "id": "e4",
+        "name": "edit",
+        "arguments": {
+          "file_path": "notes/retro.md",
+          "old_string": "TODO：把覆盖率记账的三步写进交接文档，别靠记忆。",
+          "new_string": "TODO：把覆盖率记账的三步写进交接文档，别靠记忆。（已复核）"
+        }
+      }
+    ]
+  },
+  {
+    "content": "读 spec",
+    "finish_reason": "tool_calls",
+    "tool_calls": [{ "id": "r5", "name": "read", "arguments": { "file_path": "notes/spec.md" } }]
+  },
+  {
+    "content": "改 spec",
+    "finish_reason": "tool_calls",
+    "tool_calls": [
+      {
+        "id": "e5",
+        "name": "edit",
+        "arguments": {
+          "file_path": "notes/spec.md",
+          "old_string": "工具失败是结果，不是异常。",
+          "new_string": "工具失败是结果，不是异常。（已复核）"
+        }
+      }
+    ]
+  },
+  { "content": "五处都改完了", "finish_reason": "stop" }
+]

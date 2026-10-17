@@ -85,12 +85,13 @@
 
 ## 13. CLI 黑盒集成（seam ⑥）
 
-- [ ] 13.1 红：`--yes` 下跑一个「对 fixture 仓库的 5 个 `.md` 各 `read` + `edit`」的 mock 场景，断言退出码 0、5 个文件内容都被改、日志里没有任何 `approval/*`；绿后验证（seam ⑥③②）
-- [ ] 13.2 红：断言越界写（目标在工作区之外）以退出码 3 结束、stderr 含被拒路径、日志里有 `error/fence`（`OUTSIDE_WORKSPACE`）；绿后验证（seam ⑥②）
-- [ ] 13.3 红：断言 stdin 非 tty 且未 `--yes` 的写场景以退出码 3 结束、stderr 含 `APPROVAL_UNAVAILABLE`；绿后验证（seam ⑥②）
-- [ ] 13.4 红：断言 `--sandbox read-only --yes` 的写场景以退出码 3 结束（`--yes` 不放宽档位）；绿后验证（seam ⑥②）
-- [ ] 13.5 红：断言 M2 全部成功与失败场景没有任何 run 以 4 退出，且退出码非 2 的失败都有 `error/*` 事件；绿后验证（seam ⑥）
-- [ ] 13.6 红：断言带 `--events jsonl` 时 stdout 与日志逐行相等（含 `approval/*` 与 `error/fence` 的 run）；绿后验证（seam ⑥④）
+- [x] 13.1 红：`--yes` 下跑一个「对 fixture 仓库的 5 个 `.md` 各 `read` + `edit`」的 mock 场景，断言退出码 0、5 个文件内容都被改、日志里没有任何 `approval/*`；绿后验证（seam ⑥③②）——新 fixture `edit_five_md/turns.json`（10 次调用 + 收尾 stop，`--max-turns 12`）：10 个 `tool/call`、10 个 `OK`、5 个文件都含「（已复核）」、`approval/` 一条没有
+- [x] 13.2 红：断言越界写（目标在工作区之外）以退出码 3 结束、stderr 含被拒路径、日志里有 `error/fence`（`OUTSIDE_WORKSPACE`）；绿后验证（seam ⑥②）——新 fixture `write_outside/turns.json`（`../outside.md`）；红过一次：CLI 只把会话 id 打到 stdout、失败不在 stderr 说清楚。非 0 退出一律在 stderr 报 `CODE: detail`，`RunOutcome` 带上围栏的 code 与 detail
+- [x] 13.3 红：断言 stdin 非 tty 且未 `--yes` 的写场景以退出码 3 结束、stderr 含 `APPROVAL_UNAVAILABLE`；绿后验证（seam ⑥②）——红过一次且是平台坑：Windows 上 `NUL` 设备 `isatty()` 为真，`stdin=DEVNULL` 的子进程被当成「可以问人」，读到 EOF 后被判成 `DENIED`。判据补在 seam ②：tty 但回答是 EOF ⇒ `UNAVAILABLE`（EOF 是「没有人在回答」，不是「人说了不」）
+- [x] 13.4 红：断言 `--sandbox read-only --yes` 的写场景以退出码 3 结束（`--yes` 不放宽档位）；绿后验证（seam ⑥②）——`error/fence.code == ["SANDBOX_DENIES_WRITE"]` 且没有任何 `approval/*`
+- [x] 13.5 红：断言 M2 全部成功与失败场景没有任何 run 以 4 退出，且退出码非 2 的失败都有 `error/*` 事件；绿后验证（seam ⑥）——六个场景退出码 `[0, 0, 3, 3, 3, 1]`，4 保留
+- [x] 13.6 红：断言带 `--events jsonl` 时 stdout 与日志逐行相等（含 `approval/*` 与 `error/fence` 的 run）；绿后验证（seam ⑥④）——退出码 3 的 run 也要逐行相等，所以失败报告只能走 stderr
+- 变异记录（组 13）：`approval` 恒为 `auto`（无视 `--yes`）被 13.3 / 13.5 / 13.6 与 11.2 杀死；边界只在 `danger-full-access` 下生效被 13.2 / 13.5 杀死；`--yes` 顺手把档位抬成 `workspace-write` 被 13.4 / 13.5 杀死；`EXIT_FENCE_DENIED = 4` 被 13.5 与 `test_every_stop_reason_maps_to_an_exit_code` 杀死；提问写进 stdout 被 13.6 与 gate 的 `capsys` 判据杀死
 - [ ] 13.7 手动 smoke：在真实 tty 里跑一次会提问的 run，记录 `y` 与 `n` 两种回答的实际行为到 `docs/verification/m2-file-tools-and-fences-approval-smoke.md`；验证该文件存在且记录了两次退出码
 
 ## 14. 词表可达性与文档（seam ⑥④）

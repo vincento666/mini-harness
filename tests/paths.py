@@ -19,6 +19,8 @@ TOOL_THEN_DONE_SCENARIO = SCENARIOS_DIR / "tool_then_done" / "turns.json"
 TOOL_THEN_EXHAUST_SCENARIO = SCENARIOS_DIR / "tool_then_exhaust" / "turns.json"
 UNKNOWN_TOOL_SCENARIO = SCENARIOS_DIR / "unknown_tool" / "turns.json"
 READ_THEN_WRITE_SCENARIO = SCENARIOS_DIR / "read_then_write" / "turns.json"
+EDIT_FIVE_MD_SCENARIO = SCENARIOS_DIR / "edit_five_md" / "turns.json"
+WRITE_OUTSIDE_SCENARIO = SCENARIOS_DIR / "write_outside" / "turns.json"
 FIXTURE_REPO_DIR = FIXTURES_DIR / "repo"
 
 
@@ -38,6 +40,7 @@ def copy_repo_to(destination: Path) -> Path:
 
 
 __all__ = [
+    "EDIT_FIVE_MD_SCENARIO",
     "FIXTURES_DIR",
     "FIXTURE_REPO_DIR",
     "HELLO_SCENARIO",
@@ -49,5 +52,6 @@ __all__ = [
     "TOOL_THEN_DONE_SCENARIO",
     "TOOL_THEN_EXHAUST_SCENARIO",
     "UNKNOWN_TOOL_SCENARIO",
+    "WRITE_OUTSIDE_SCENARIO",
     "copy_repo_to",
 ]

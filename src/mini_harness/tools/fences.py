@@ -117,8 +117,11 @@ class StdinApprovalGate:
         prompt = sys.stderr if self._prompt_stream is None else self._prompt_stream
         prompt.write(f"允许 {tool_name} 改动 {detail}，输入 y 或 n：")
         prompt.flush()
-        answer = answers.readline().strip().lower()
-        return "APPROVED" if answer in {"y", "yes"} else "DENIED"
+        answer = answers.readline()
+        if answer == "":
+            # 读到 EOF：没有人在回答，不是「人说了不」。Windows 上 NUL 设备也算 tty。
+            return "UNAVAILABLE"
+        return "APPROVED" if answer.strip().lower() in {"y", "yes"} else "DENIED"
 
 
 STDIN_APPROVAL_GATE = StdinApprovalGate()

@@ -194,6 +194,12 @@ def _run(args: argparse.Namespace) -> int:
                 print(line)
     else:
         print(outcome.session_id)
+
+    if exit_code != EXIT_OK:
+        # 非 0 退出必须在 stderr 说清楚：stdout 归会话 id 与日志逐行输出。
+        return _report_failure(
+            outcome.failure_code or outcome.stop_reason, outcome.detail, exit_code
+        )
     return exit_code
 
 

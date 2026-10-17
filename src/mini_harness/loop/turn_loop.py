@@ -110,6 +110,8 @@ async def run_session(
         return _kernel_failure(log, failure, 0)
 
     stop_reason = STOP_MODEL_COMPLETED
+    denial_code: str | None = None
+    denial_detail = ""
     turns = 0
     for turn_index in range(1, settings.max_turns + 1):
         turns = turn_index
@@ -258,6 +260,8 @@ async def run_session(
 
             if dispatched.fence_code is not None:
                 fence_denied = True
+                denial_code = dispatched.fence_code
+                denial_detail = dispatched.result.content
                 break
 
         if cancel.is_set():
@@ -296,4 +300,10 @@ async def run_session(
     failure = _append_all(log, [("session/end", {"stop_reason": stop_reason, "turns": turns})])
     if failure is not None:
         return _kernel_failure(log, failure, turns)
-    return RunOutcome(session_id=log.session_id, stop_reason=stop_reason, turns=turns)
+    return RunOutcome(
+        session_id=log.session_id,
+        stop_reason=stop_reason,
+        turns=turns,
+        failure_code=denial_code,
+        detail=denial_detail,
+    )

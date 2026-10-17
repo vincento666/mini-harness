@@ -223,6 +223,8 @@ def test_the_three_approval_decisions_are_each_reachable_through_the_real_gate()
     assert _ask(tty=True, answer="\n") == "DENIED"
     assert _ask(tty=True, answer="也许\n") == "DENIED"
     assert _ask(tty=False, answer="y\n") == "UNAVAILABLE"
+    # Windows 上 NUL 设备也算 tty；读到 EOF 是「没有人在回答」，不是「人说了不」。
+    assert _ask(tty=True, answer="") == "UNAVAILABLE"
 
     stream = _Stream(tty=True, answer="y\n")
     prompt = _Stream(tty=True)
