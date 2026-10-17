@@ -7,13 +7,14 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from typing import get_args
 
 from mini_harness.events import EventLog, read_events
 from mini_harness.loop import RunOutcome, SessionSettings, run_session
 from mini_harness.loop.settings import ApprovalMode
 from mini_harness.provider import FixtureProvider
 from mini_harness.tools import ToolArgs, ToolRegistry, ToolResult
-from mini_harness.tools.fences import ApprovalDecision, DispatchContext
+from mini_harness.tools.fences import ApprovalDecision, DispatchContext, StdinApprovalGate
 from mini_harness.tools.registry import ToolDefinition
 
 
@@ -46,7 +47,9 @@ async def _stub_read(args: _WriteArgs, context: DispatchContext) -> ToolResult:
     return ToolResult(outcome="OK", content="读到了")
 
 
-def _registry_and_entries(*, mutates: bool) -> tuple[ToolRegistry, list[dict[str, object]]]:
+def _registry_and_entries(
+    *, mutates: bool, files: tuple[str, ...] = ("a.md", "b.md")
+) -> tuple[ToolRegistry, list[dict[str, object]]]:
     name = "write" if mutates else "read"
     registry = ToolRegistry(
         [
@@ -64,8 +67,12 @@ def _registry_and_entries(*, mutates: bool) -> tuple[ToolRegistry, list[dict[str
             "content": "动两个文件",
             "finish_reason": "tool_calls",
             "tool_calls": [
-                {"id": "c1", "name": name, "arguments": {"file_path": "a.md", "content": "A\n"}},
-                {"id": "c2", "name": name, "arguments": {"file_path": "b.md", "content": "B\n"}},
+                {
+                    "id": f"c{index}",
+                    "name": name,
+                    "arguments": {"file_path": path, "content": "A\n"},
+                }
+                for index, path in enumerate(files, start=1)
             ],
         },
         _DONE,
@@ -124,6 +131,28 @@ async def test_each_approved_write_asks_once_and_then_succeeds(tmp_path: Path) -
     assert (tmp_path / "a.md").read_text(encoding="utf-8") == "A\n"
 
 
+async def test_a_denied_write_is_a_result_and_an_error_fence(tmp_path: Path) -> None:
+    gate = _Gate("DENIED")
+    registry, entries = _registry_and_entries(mutates=True, files=("a.md",))
+
+    log, _ = await _run(tmp_path, "s-deny", registry, entries, gate)
+
+    records = read_events(log.path)
+    fences = [record for record in records if record.type == "error/fence"]
+    assert len(fences) == 1
+    assert fences[0].payload["turn_id"] == "t1"
+    assert fences[0].payload["tool_call_id"] == "c1"
+    assert fences[0].payload["code"] == "APPROVAL_DENIED"
+    assert "a.md" in fences[0].payload["detail"]
+    assert [record.payload["outcome"] for record in records if record.type == "tool/result"] == [
+        "DENIED_BY_APPROVAL"
+    ]
+    assert [
+        record.payload["decision"] for record in records if record.type == "approval/response"
+    ] == ["DENIED"]
+    assert not (tmp_path / "a.md").exists()
+
+
 async def test_read_like_tools_never_ask_a_human(tmp_path: Path) -> None:
     gate = _Gate("APPROVED")
     registry, entries = _registry_and_entries(mutates=False)
@@ -137,3 +166,63 @@ async def test_read_like_tools_never_ask_a_human(tmp_path: Path) -> None:
         "OK",
         "OK",
     ]
+
+
+async def test_auto_approval_writes_no_approval_records(tmp_path: Path) -> None:
+    gate = _Gate("DENIED")
+    registry, entries = _registry_and_entries(mutates=True)
+
+    log, _ = await _run(tmp_path, "s-auto", registry, entries, gate, approval="auto")
+
+    records = read_events(log.path)
+    assert [record for record in records if record.type.startswith("approval/")] == []
+    assert gate.asked == []
+    assert [record.payload["outcome"] for record in records if record.type == "tool/result"] == [
+        "OK",
+        "OK",
+    ]
+    assert (tmp_path / "a.md").read_text(encoding="utf-8") == "A\n"
+
+
+class _Stream:
+    """假 stdin：tty 可控、答案固定、写了什么看得见。"""
+
+    def __init__(self, *, tty: bool, answer: str = "") -> None:
+        self._tty = tty
+        self._answer = answer
+        self.written: list[str] = []
+
+    def isatty(self) -> bool:
+        return self._tty
+
+    def write(self, text: str) -> int:
+        self.written.append(text)
+        return len(text)
+
+    def flush(self) -> None:
+        return None
+
+    def readline(self) -> str:
+        return self._answer
+
+
+def _ask(tty: bool, answer: str) -> ApprovalDecision:
+    return StdinApprovalGate(_Stream(tty=tty, answer=answer)).request(
+        tool_name="write", detail="a.md"
+    )
+
+
+def test_the_three_approval_decisions_are_each_reachable_through_the_real_gate() -> None:
+    assert set(get_args(ApprovalDecision)) == {"APPROVED", "DENIED", "UNAVAILABLE"}
+
+    assert _ask(tty=True, answer="y\n") == "APPROVED"
+    assert _ask(tty=True, answer="YES\n") == "APPROVED"
+    assert _ask(tty=True, answer="n\n") == "DENIED"
+    assert _ask(tty=True, answer="\n") == "DENIED"
+    assert _ask(tty=True, answer="也许\n") == "DENIED"
+    assert _ask(tty=False, answer="y\n") == "UNAVAILABLE"
+
+    stream = _Stream(tty=True, answer="y\n")
+    StdinApprovalGate(stream).request(tool_name="write", detail="C:\\ws\\a.md")
+    assert "write" in stream.written[0]
+    assert "a.md" in stream.written[0]

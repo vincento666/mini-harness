@@ -32,9 +32,9 @@
 
 - [x] 5.1 红：注入返回 `APPROVED` 的假 approval 门，断言 `write`/`edit` 各产生一对 `approval/request` + `approval/response`（`decision: APPROVED`）且随后 `outcome: OK`；绿后验证（seam ②④）——这里的工具是测试本地桩；`ToolDefinition` 的 `args_model` / `mutates` / `run` 与 `ToolArgs.target_path()` 是 10.1 的类型工作提前落地（派发管线没有它们就跑不起来）
 - [x] 5.2 红：断言 `read`/`glob`/`grep` 在任何档位下都不产生 `approval/*` 记录；绿后验证（seam ②④）——这一轮用非改动类桩工具测「不问人」，真 `glob`/`grep` 的对应判据在 9.x
-- [ ] 5.3 红：注入返回 `DENIED` 的门，断言 `outcome: DENIED_BY_APPROVAL` 与 `error/fence`（`APPROVAL_DENIED`）；绿后验证（seam ②④）
-- [ ] 5.4 红：断言 stdin 非 tty 且未 `--yes` 时结论是 `UNAVAILABLE`（不挂起、不默认批准），`--yes` 时不产生任何 `approval/*` 记录；绿后验证（seam ②⑥）
-- [ ] 5.5 红：断言 `approval/response.decision` 三个取值各有判据（批准 / 拒绝 / 不可问人）；绿后验证（seam ②④）
+- [x] 5.3 红：注入返回 `DENIED` 的门，断言 `outcome: DENIED_BY_APPROVAL` 与 `error/fence`（`APPROVAL_DENIED`）；绿后验证（seam ②④）——`error/fence` 的 payload 除 `turn_id` / `code` / `detail` 外还带 `tool_call_id`，让配对可断言
+- [x] 5.4 红：断言 stdin 非 tty 且未 `--yes` 时结论是 `UNAVAILABLE`（不挂起、不默认批准），`--yes` 时不产生任何 `approval/*` 记录；绿后验证（seam ②⑥）——`--yes` 那半在 5.5 的真实门判据里；CLI 黑盒那半（退出码 3）在 13.x
+- [x] 5.5 红：断言 `approval/response.decision` 三个取值各有判据（批准 / 拒绝 / 不可问人）；绿后验证（seam ②④）——5.4 与 5.5 写出来就是绿的，所以各补了一次变异：`auto` 也走 NEEDS_APPROVAL 被 `test_auto_approval_writes_no_approval_records` 与 `test_danger_full_access_lifts_the_workspace_boundary` 杀死；非 tty 返回 `APPROVED` 被 `test_the_three_approval_decisions_are_each_reachable_through_the_real_gate` 杀死
 
 ## 6. 文件工具契约：read（seam ③）
 

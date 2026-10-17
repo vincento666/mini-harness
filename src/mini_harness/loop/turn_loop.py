@@ -223,6 +223,18 @@ async def run_session(
                     },
                 ),
             )
+            if dispatched.fence_code is not None:
+                written.append(
+                    (
+                        "error/fence",
+                        {
+                            "turn_id": turn_id,
+                            "tool_call_id": call.id,
+                            "code": dispatched.fence_code,
+                            "detail": dispatched.result.content,
+                        },
+                    )
+                )
 
             failure = _append_all(log, written)
             if failure is not None:
