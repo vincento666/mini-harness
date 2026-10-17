@@ -2,9 +2,9 @@
 
 个人实验版 agent harness 的 MVP。headless CLI 优先，架构决策照抄 DeepSeek Harness（DSH）的核心思想，用 OpenSpec 做规格（SDD）、用 TDD 做实现。
 
-**当前状态**：**M1 完成并已归档** —— 62 个测试全绿、`uv run mypy --strict src` 干净（17 个源文件）、`uv run ruff check src tests` 干净（覆盖率 combine 后实测 95.62% / 地板 95），change `m1-event-log-and-turn-loop` 已合入 `main`（merge commit `141e28c`）并归档到 `openspec/changes/archive/2026-10-16-m1-event-log-and-turn-loop/`。五份主规格已同步进 `openspec/specs/`：`cli`、`context-projection`、`event-log`、`provider`、`turn-loop`，共 33 个 Requirement / 53 个 Scenario，`openspec validate --specs` 全过。延后的重构与已知缺口见 `docs/adr/0002-deferred-refactors.md` 和 `docs/verification/m1-mutation.md` 的「剩余已知缺口」。下一个里程碑是 **M2**，等用户发话再 `/openspec-propose m2-file-tools-and-fences`。
+**当前状态**：**M1 完成并已归档**（`main`，tag `m1`），门禁全绿：62 测试 / 覆盖率 95.62%（地板 95）/ mypy strict / ruff。五份主规格在 `openspec/specs/`（`openspec list --specs` 可查）。待办与已知缺口见 `docs/adr/0002-deferred-refactors.md` 与 `docs/verification/m1-mutation.md`。下一步 **M2**，等用户发话。
 
-已装的 OpenSpec 工作流（core profile，delivery=skills）：`openspec-propose`、`openspec-explore`、`openspec-apply-change`、`openspec-update-change`、`openspec-sync-specs`、`openspec-archive-change`。`openspec-verify-change` **未装**——它要 `openspec config profile` 交互勾选；在它可用之前，规格与实现的一致性用 `code-review` 技能（Standards / Spec 两轴）代劳。
+OpenSpec 工作流已装 6 个（propose / explore / apply / update / sync-specs / archive）；`openspec-verify-change` **未装**，规格与实现的一致性由 `code-review` 技能（Standards / Spec 两轴）代劳。
 
 ---
 
@@ -13,6 +13,9 @@
 1. **`docs/handoff-2026-10-15.md`** —— 已锁定的 **38 条编号决策 + 6 条不变量**，这就是规格输入。**不要重新 grill**，除非实现过程中出现新的设计分叉。
 2. **`docs/dsh-reference/DSH运行时设计说明.html`** —— 入门三节（什么是 harness / 通用十格流水线 / 上下文压缩）+ 8 章 + 8 张算法卡，每节配图折叠内嵌。
 3. **`docs/dsh-reference/DSH运行时设计图集.html`** —— 75 张图，锚点形如 `#fig-<图名>`；要照某个机制实现时，先把那张图的锚点读出来。
+4. **`docs/lessons.md`** —— 教训的收件箱与活跃区；Active Lessons 五条每次接手都读。
+
+**接手先核实时状态**：先 `git status --short` 与 `git log --oneline -3`。跟「当前状态」行对不上时以仓库实况为准并报告偏差——不要相信上一段会话的叙事。
 
 ---
 
@@ -49,21 +52,19 @@ uv run minihns serve --http   # M7 之后
 
 ## 门禁：有哪几道、各自由谁规定
 
-一次提交算「完成」= 前四道在命令行上全绿；后三道是里程碑收尾时跑的。
+一次提交算「完成」= 前四道全绿；后三道是里程碑收尾时跑的。命令见上面的命令段。每道的通过信号都是**退出码 0**（覆盖率那道额外看 `TOTAL` 行不低于地板）。
 
-| 门禁 | 跑什么 | 规定它的东西 |
-|---|---|---|
-| 测试 | `uv run coverage run -m pytest -q`（红绿循环中可只跑 `uv run pytest -k <表达式>`） | pytest + pytest-asyncio；测试只写在六个 seam 上，当前 62 个 |
-| 覆盖率地板 | `uv run coverage erase` → `uv run coverage run -m pytest -q` → `uv run coverage combine` → `uv run coverage report --fail-under=95 --show-missing` | `pyproject.toml` 的 `[tool.coverage.report] fail_under = 95`，combine 后实测 95.62%（457 条语句 / 20 条未覆盖）；报告不在 pytest 的 `addopts` 里出 |
-| 类型 | `uv run mypy --strict src` | `[tool.mypy] strict = true`，17 个源文件 |
-| 风格 | `uv run ruff check src tests` | `[tool.ruff]` + `[tool.ruff.lint] select = ["E","F","I","UP","B","SIM","C4","RUF"]`，`line-length = 100` |
-| 规格结构 | `openspec validate --specs` | OpenSpec（主 specs 的 Requirement / Scenario 形状） |
-| 规格 ↔ 实现 | `code-review` 技能，Standards 与 Spec 两轴 | 本文件流程节（`openspec-verify-change` 未装，由它代劳） |
-| 变异测试 | 每个里程碑收尾一轮 | 本文件流程节；记录进 `docs/verification/<change-id>-mutation.md` |
+| 门禁 | 规定它的东西 |
+|---|---|
+| 测试 | pytest + pytest-asyncio；测试只写在六个预先约定的 seam 上，当前 62 个 |
+| 覆盖率地板 | `pyproject.toml` 的 `[tool.coverage.report] fail_under = 95`（combine 后实测 95.62%）；报告不在 pytest 的 `addopts` 里出 |
+| 类型 | `[tool.mypy] strict = true` |
+| 风格 | `[tool.ruff]` + `[tool.ruff.lint] select = ["E","F","I","UP","B","SIM","C4","RUF"]`，`line-length = 100` |
+| 规格结构 | OpenSpec 的 Requirement / Scenario 形状 |
+| 规格 ↔ 实现 | 本文件流程节（`code-review` 两轴） |
+| 变异测试 | 本文件流程节；记录进 `docs/verification/<change-id>-mutation.md` |
 
-**覆盖率地板为什么是 95**：seam ⑥ 的 CLI 测试是真实子进程，记账因此分两段——主进程由 `coverage run -m pytest` 记，每个 CLI 子进程由 `tests/cli_blackbox.py::_cli` 套的一层 `coverage run --rcfile=<仓库根>/pyproject.toml -p` 记（`COVERAGE_FILE` 指回仓库根：测试的 `cwd` 是 tmp_path，配置文件与 partial 文件都在仓库外时 coverage 找不到 / `coverage combine` 扫不到）。合并后 TOTAL **95.62%**，地板定在 95，略低于实测。`cli/main.py` 从 36% 抬到 **96%**（未覆盖只剩 57-59、182、214），`provider/mock.py` 80% → 98%。现在真正低的是 `events/reader.py`（85%）与 `loop/turn_loop.py`（90%）——要再抬地板就补这两处的判据，不要靠凑低价值测试。`coverage combine` 报的「Combined 20 files, skipped 18」里 skipped 是**内容完全相同的 partial 被去重**，不是数据丢了。
-
-**覆盖率记账的两条纪律**：① **先 `coverage erase` 再跑**。`coverage combine` 只认文件内容、不认新旧，上一轮残留的 partial 会被混进这一轮的报告；实测不 erase 连跑两轮，第二轮仍报 96%——也就是说旧数据污染是**看不见的**。② 记账是**无条件**的：`tests/cli_blackbox.py::_cli` 给每个 CLI 子进程都套一层 coverage，所以连 `uv run pytest`（不想要报告的那次）也会在仓库根留下 37 个 partial，全量测试也因此从 8.6 秒变成 **15.4 秒**。用这 7 秒换「记账不会因为忘了加开关而悄悄不发生」，M2 往 `cli/main.py` 加围栏判据时尤其要这样。
+**覆盖率为什么是 95**：seam ⑥ 的 CLI 测试是真实子进程，记账分两段（主进程 + 每个子进程一份 partial，`coverage combine` 合并去重）。**先 `coverage erase` 再跑**：combine 只认内容不认新旧，旧 partial 混进这一轮是**看不见的**。记账是**无条件**的，全量测试因此 15 秒——换来的是「不会因为忘了加开关而悄悄不记账」。地板 95 略低于实测 95.62%；真正低的是 reader 与 turn_loop（85% / 90%），要再抬就补这两处的判据，不要凑低价值测试。
 
 **ruff 唯一的例外**：`allowed-confusables = ["：", "，", "；", "（", "）"]`。本项目的 docstring / 注释 / 面向用户的字符串一律用中文全角标点，RUF001/RUF002/RUF003 把这几个字符当成「可疑的 ASCII 近似字符」报警，与这条成文规范冲突；其中 `SYSTEM_PROMPT` 与 `未注册的工具：read` 是规格里的字面量，改标点就是改行为。全仓没有一处 `# noqa`。
 
@@ -87,8 +88,8 @@ uv run minihns serve --http   # M7 之后
 ```
 /openspec-propose <change-id>   → 人工审阅 proposal / specs / design / tasks
 /openspec-apply-change          → 按 tdd 技能实现：red → green 单切片，一次一个
-/openspec-verify-change         → 校验实现与规格一致
-/code-review                    → Standards 与 Spec 两轴
+/code-review                    → Standards 与 Spec 两轴（`openspec-verify-change` 未装，规格 ↔ 实现由它代劳）
+收尾门禁                        → 变异测试一轮 + Learning Gate
 /openspec-archive-change        → 归档进 openspec/changes/archive/
 ```
 
@@ -99,7 +100,9 @@ uv run minihns serve --http   # M7 之后
 **测试只写在下面六个 seam 上**（tdd 技能要求先约定再写，不许水平切片）：
 ① 回合循环 ② 工具注册与管线 ③ 文件工具契约 ④ 日志追加与折叠 ⑤ Provider 接口 ⑥ CLI 黑盒（subprocess 跑真实命令）
 
-**每个里程碑收尾跑一轮变异测试并记录**：改坏一处实现 → 跑全量测试 → 把「变异 / 改法 / 哪些测试变红」记进 `docs/verification/<change-id>-mutation.md` → `git checkout --` 还原并确认回到基线。判据：每个变异都被至少一条测试杀死；存活的算覆盖缺口，补一条能杀死它的测试（先确认它在变异下红）。做法与判据见 `docs/verification/m1-mutation.md`。
+**每个里程碑收尾跑一轮变异测试并记录**：改坏一处实现 → 跑全量测试 → 把「变异 / 改法 / 哪些测试变红」记进 `docs/verification/<change-id>-mutation.md` → 还原并确认回到基线（**还原前先看 `git status`**：M1 就是 `git checkout --` 误回滚了本轮未提交的改动）。判据：每个变异都被至少一条测试杀死；存活的算覆盖缺口，补一条能杀死它的测试（先确认它在变异下红）。变异必须改变**可观察行为**，语义等价的改法是 dud mutant，不算。做法与判据见 `docs/verification/m1-mutation.md`。
+
+**Learning Gate（变异测试之后、归档之前）**：扫一遍本轮证据——红过的测试、存活的变异、返工过的规格、踩过的工具坑——可复用教训写进 `docs/lessons.md` 的收件箱；没有可复用信号就明确写 `NO-PROMOTION`。晋升进本文件的只能是一句话规则，且**一进一出**：同时删掉或压缩本文件的一条旧内容。收件箱超过 15 条必须先消化再收。每个里程碑归档后跑一次 `agents-md-slim` 复核本文件。
 
 ---
 
