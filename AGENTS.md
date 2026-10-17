@@ -57,7 +57,7 @@ uv run minihns replay <session-id>
 
 **覆盖率纪律**：seam ⑥ 的 CLI 测试是真实子进程，记账分两段（主进程 + 每个子进程一份 partial，`coverage combine` 合并去重）。**先 `coverage erase` 再跑**：combine 只认内容不认新旧，旧 partial 混进这一轮是**看不见的**。记账是**无条件**的，全量测试因此 15 秒——换来的是「不会因为忘了加开关而悄悄不记账」。要抬地板就补低覆盖处的判据，不要凑低价值测试。
 
-**ruff 唯一的例外**：`allowed-confusables` 放行中文全角标点 `：，；（）`。本项目的 docstring / 注释 / 面向用户的字符串一律用中文全角标点，RUF001/RUF002/RUF003 会把它们当成「可疑的 ASCII 近似字符」报警，与这条成文规范冲突；其中部分是规格里的字面量，改标点就是改行为。全仓没有一处 `# noqa`。
+**ruff 的例外只有两处**：`allowed-confusables` 放行中文全角标点 `：，；（）`；`per-file-ignores` 对 `docs/tools/*.py`（文档与图表构建脚本，门禁只跑 `src` 与 `tests`）放行 `E402/E501/RUF001`。本项目的 docstring / 注释 / 面向用户的字符串一律用中文全角标点，RUF001/RUF002/RUF003 会把它们当成「可疑的 ASCII 近似字符」报警，与这条成文规范冲突。全仓没有一处 `# noqa`。
 
 ---
 

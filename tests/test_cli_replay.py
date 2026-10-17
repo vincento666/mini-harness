@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 from cli_blackbox import _cli
-from paths import HELLO_SCENARIO, TOOL_THEN_DONE_SCENARIO
+from paths import (
+    HELLO_SCENARIO,
+    READ_THEN_WRITE_SCENARIO,
+    TOOL_THEN_DONE_SCENARIO,
+    copy_repo_to,
+)
 
 _PREFIX = "final_context: "
 
@@ -130,3 +136,79 @@ def test_replay_of_a_corrupt_log_is_an_internal_error(tmp_path: Path) -> None:
 
     assert replay.returncode == 1
     assert "LOG_UNREADABLE" in replay.stderr
+
+
+def _run_in_workspace(tmp_path: Path, fixture: Path, *extra: str) -> tuple[str, Path, Path]:
+    """在复制出来的 fixture 仓库里跑一次 run，返回 (session_id, 日志路径, 工作区)。"""
+    workspace = tmp_path / "ws"
+    copy_repo_to(workspace)
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(fixture),
+        "--workspace",
+        str(workspace),
+        *extra,
+        cwd=tmp_path,
+    )
+    session_id = result.stdout.strip()
+    return session_id, tmp_path / "sessions" / f"{session_id}.jsonl", workspace
+
+
+def _recorded_seqs(log_path: Path) -> list[int]:
+    return [
+        json.loads(line)["seq"]
+        for line in log_path.read_text(encoding="utf-8").splitlines()
+        if json.loads(line)["type"] == "context/assembled"
+    ]
+
+
+def _verified_seqs(stdout: str) -> list[int]:
+    return [
+        int(line.split("seq=")[1].split(":")[0])
+        for line in stdout.splitlines()
+        if line.startswith("verified seq=")
+    ]
+
+
+def _snapshot(workspace: Path) -> dict[str, tuple[int, bytes]]:
+    return {
+        str(path.relative_to(workspace)): (path.stat().st_mtime_ns, path.read_bytes())
+        for path in sorted(workspace.rglob("*"))
+        if path.is_file()
+    }
+
+
+def test_replay_verifies_a_log_that_carries_approval_and_fence_events(tmp_path: Path) -> None:
+    session_id, log_path, _workspace = _run_in_workspace(tmp_path, READ_THEN_WRITE_SCENARIO)
+    types = [json.loads(line)["type"] for line in log_path.read_text(encoding="utf-8").splitlines()]
+    assert "approval/request" in types
+    assert "approval/response" in types
+    assert "error/fence" in types
+
+    replay = _cli("replay", session_id, cwd=tmp_path)
+
+    assert replay.returncode == 0
+    assert _verified_seqs(replay.stdout) == _recorded_seqs(log_path)
+
+
+def test_replay_touches_no_file_and_loads_no_provider(tmp_path: Path) -> None:
+    fixture_copy = tmp_path / "turns.json"
+    shutil.copyfile(READ_THEN_WRITE_SCENARIO, fixture_copy)
+    session_id, log_path, workspace = _run_in_workspace(tmp_path, fixture_copy, "--yes")
+    assert (workspace / "notes" / "plan.md").read_text(encoding="utf-8") == "重写过的计划\n"
+
+    before = _snapshot(workspace)
+    log_before = log_path.read_bytes()
+    fixture_copy.unlink()
+
+    replay = _cli("replay", session_id, cwd=tmp_path)
+
+    assert replay.returncode == 0
+    assert _snapshot(workspace) == before
+    assert log_path.read_bytes() == log_before
+    assert "model/request" not in replay.stdout

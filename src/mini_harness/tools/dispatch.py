@@ -1,26 +1,83 @@
-"""工具派发管线：查表 → 执行或未命中 → 结果。失败也是结果。"""
+"""工具派发管线：校验 → 围栏与 approval → 执行。任一段的失败都是结果。"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
+from pydantic import ValidationError
+
 from mini_harness.provider.contract import ToolCall
-from mini_harness.tools.registry import ToolRegistry
+from mini_harness.tools.fences import (
+    ApprovalDecision,
+    ApprovalGate,
+    DispatchContext,
+    FenceCode,
+    judge_fence,
+)
+from mini_harness.tools.registry import ToolRegistry, ToolResult
 
 
 @dataclass(frozen=True)
-class ToolResult:
-    """一次工具派发的结果。`outcome` 是成功或失败词；M1 里已注册工具的结果是 `NOT_IMPLEMENTED`。"""
+class DispatchOutcome:
+    """一次派发的全部结论：给 `tool/result` 的结果，加上要不要写 `approval/*` 与 `error/fence`。"""
 
-    outcome: str
-    content: str
+    result: ToolResult
+    approval: ApprovalDecision | None = None
+    fence_code: FenceCode | None = None
 
 
-async def dispatch_tool_call(call: ToolCall, registry: ToolRegistry) -> ToolResult:
+async def dispatch_tool_call(
+    call: ToolCall,
+    registry: ToolRegistry,
+    context: DispatchContext,
+    approval_gate: ApprovalGate,
+) -> DispatchOutcome:
+    """按固定顺序判定。校验失败不做围栏判定，围栏拒绝不执行。"""
     definition = registry.lookup(call.name)
     if definition is None:
-        return ToolResult(outcome="UNKNOWN_TOOL", content=f"未注册的工具：{call.name}")
-    return ToolResult(
-        outcome="NOT_IMPLEMENTED",
-        content=f"工具 {call.name} 在 M1 只有定义没有实现：{definition.description}",
-    )
+        return DispatchOutcome(
+            ToolResult(outcome="UNKNOWN_TOOL", content=f"未注册的工具：{call.name}")
+        )
+
+    try:
+        args = definition.args_model.model_validate(call.arguments)
+    except ValidationError as exc:
+        return DispatchOutcome(
+            ToolResult(outcome="TOOL_ARGS_INVALID", content=f"工具 {call.name} 的入参不合法：{exc}")
+        )
+
+    decision = judge_fence(context, raw_path=args.target_path() or "", mutates=definition.mutates)
+    if decision.outcome == "DENIED":
+        return DispatchOutcome(
+            ToolResult(outcome="DENIED_BY_FENCE", content=decision.detail),
+            fence_code=decision.code,
+        )
+
+    approval: ApprovalDecision | None = None
+    if decision.outcome == "NEEDS_APPROVAL":
+        approval = approval_gate.request(tool_name=definition.name, detail=decision.detail)
+        if approval != "APPROVED":
+            return DispatchOutcome(
+                ToolResult(
+                    outcome="DENIED_BY_APPROVAL",
+                    content=f"没有获得批准：{decision.detail}",
+                ),
+                approval=approval,
+                fence_code=_approval_denial_code(approval),
+            )
+
+    try:
+        result = await definition.run(args, context)
+    except OSError as exc:
+        # 不变量 B：执行段的 I/O 失败也是结果，不抛异常打断回合。
+        return DispatchOutcome(
+            ToolResult(outcome="TOOL_IO_FAILED", content=f"工具 {call.name} 读写文件失败：{exc}"),
+            approval=approval,
+        )
+
+    return DispatchOutcome(result, approval=approval)
+
+
+def _approval_denial_code(approval: ApprovalDecision) -> FenceCode:
+    """「人拒了」与「问不到人」共用结果词 `DENIED_BY_APPROVAL`，但 `error/fence.code` 要分开。"""
+    return "APPROVAL_DENIED" if approval == "DENIED" else "APPROVAL_UNAVAILABLE"

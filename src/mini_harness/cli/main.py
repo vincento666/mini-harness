@@ -17,21 +17,25 @@ from mini_harness.events import EventLog, LogReadFailure, LogWriteFailure, read_
 from mini_harness.events.fold import assembled_payload, fold
 from mini_harness.loop import (
     STOP_ABORTED,
+    STOP_FENCE_DENIED,
     STOP_MAX_TURNS,
     STOP_MODEL_COMPLETED,
     STOP_PROVIDER_ERROR,
     STOP_REASONS,
     STOP_TOOL_CALLS,
     RunOutcome,
+    SessionSettings,
     run_session,
 )
 from mini_harness.provider import FixtureLoadFailure, load_fixture_provider
 from mini_harness.provider.contract import Provider
 from mini_harness.tools import ToolRegistry
+from mini_harness.tools.file_tools import file_tool_definitions
 
 EXIT_OK = 0
 EXIT_INTERNAL_ERROR = 1
 EXIT_INVALID_ARGUMENT = 2
+EXIT_FENCE_DENIED = 3
 EXIT_ABORTED = 5
 
 STOP_REASONS_TO_EXIT_CODES: dict[str, int] = {
@@ -39,6 +43,7 @@ STOP_REASONS_TO_EXIT_CODES: dict[str, int] = {
     STOP_TOOL_CALLS: EXIT_OK,
     STOP_MAX_TURNS: EXIT_OK,
     STOP_PROVIDER_ERROR: EXIT_INTERNAL_ERROR,
+    STOP_FENCE_DENIED: EXIT_FENCE_DENIED,
     STOP_ABORTED: EXIT_ABORTED,
 }
 
@@ -73,6 +78,12 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--max-turns", type=int, default=8)
     run.add_argument("--append-system-prompt", default="")
     run.add_argument("--events", choices=("jsonl",), default=None)
+    run.add_argument(
+        "--sandbox",
+        choices=("read-only", "workspace-write", "danger-full-access"),
+        default="workspace-write",
+    )
+    run.add_argument("--yes", action="store_true")
 
     replay = subcommands.add_parser("replay", help="重放一个 session 的日志")
     replay.add_argument("session_id")
@@ -105,11 +116,8 @@ async def _await_session(
     *,
     prompt: str,
     provider: Provider,
-    provider_name: str,
+    settings: SessionSettings,
     log: EventLog,
-    workspace: Path,
-    max_turns: int,
-    append_system_prompt: str,
 ) -> RunOutcome:
     """装好 Ctrl-C 处理器再跑内核：Ctrl-C 是取消，不是崩溃。"""
     cancel = asyncio.Event()
@@ -119,13 +127,10 @@ async def _await_session(
         return await run_session(
             prompt=prompt,
             provider=provider,
-            provider_name=provider_name,
             log=log,
-            registry=ToolRegistry(),
-            workspace=workspace,
-            max_turns=max_turns,
+            registry=ToolRegistry(file_tool_definitions()),
+            settings=settings,
             cancel=cancel,
-            append_system_prompt=append_system_prompt,
         )
     finally:
         signal.signal(signal.SIGINT, previous)
@@ -165,16 +170,16 @@ def _run(args: argparse.Namespace) -> int:
         return _report_failure(log.code, log.detail, EXIT_INTERNAL_ERROR)
 
     workspace: str | None = args.workspace
+    settings = SessionSettings(
+        workspace=Path(workspace) if workspace is not None else Path.cwd(),
+        provider_name=provider_name,
+        max_turns=max_turns,
+        sandbox=args.sandbox,
+        approval="auto" if args.yes else "ask",
+        append_system_prompt=args.append_system_prompt,
+    )
     outcome = asyncio.run(
-        _await_session(
-            prompt=prompt,
-            provider=loaded,
-            provider_name=provider_name,
-            log=log,
-            workspace=Path(workspace) if workspace is not None else Path.cwd(),
-            max_turns=max_turns,
-            append_system_prompt=args.append_system_prompt,
-        )
+        _await_session(prompt=prompt, provider=loaded, settings=settings, log=log)
     )
 
     exit_code = exit_code_for(outcome)
@@ -189,6 +194,12 @@ def _run(args: argparse.Namespace) -> int:
                 print(line)
     else:
         print(outcome.session_id)
+
+    if exit_code != EXIT_OK:
+        # 非 0 退出必须在 stderr 说清楚：stdout 归会话 id 与日志逐行输出。
+        return _report_failure(
+            outcome.failure_code or outcome.stop_reason, outcome.detail, exit_code
+        )
     return exit_code
 
 
@@ -217,21 +228,15 @@ def _replay(args: argparse.Namespace) -> int:
             EXIT_INTERNAL_ERROR,
         )
 
-    append_system_prompt = str(records[0].payload.get("append_system_prompt", ""))
     for index, record in assembled:
         preceding_turn = next(
             (item for item in reversed(records[:index]) if item.type == "turn/start"),
             None,
         )
         turn_id = "" if preceding_turn is None else str(preceding_turn.payload.get("turn_id", ""))
-        # 折叠入参只从该点之前的事实派生：`append_system_prompt` 来自 `session/start`，
-        # 工具描述取空——M1 的注册表为空，任何注册工具的名字都只出现在该点之后的 `model/request` 里。
-        # 注册表非空时这条必须改（见 docs/adr/0002-deferred-refactors.md）。
-        recomputed = fold(
-            records[:index],
-            append_system_prompt=append_system_prompt,
-            tool_descriptions=(),
-        )
+        # 折叠入参只从该点之前的事实派生：工具块与追加段都在 `session/start` 里，
+        # 回放侧不存在「进程内注册表」这个第二真源。
+        recomputed = fold(records[:index])
         if assembled_payload(turn_id, recomputed) != record.payload:
             return _report_failure(
                 "REPLAY_MISMATCH",

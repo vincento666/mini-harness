@@ -1,0 +1,121 @@
+# Tasks
+
+每个任务是一个 red → green 单切片：先写失败测试，再写最小实现，跑绿后提交一次。seam 编号：① 回合循环 ② 工具注册与管线 ③ 文件工具契约 ④ 日志追加与折叠 ⑤ Provider 接口 ⑥ CLI 黑盒。提交粒度照 AGENTS.md：一个红绿循环一次提交，一个提交最多覆盖同一 seam 上相邻 3 个 task。
+
+## 1. fixture 仓库与测试 helper（无红）
+
+- [x] 1.1 建 `tests/fixtures/repo/`：5 个 `.md`（含可搜的共同词）+ 一个可跑的小 pytest 工程（含一个必然失败用例）；验证 `uv run pytest tests/fixtures/repo -q` 退出码非 0 且失败用例被收集（seam ③ 的内容源）
+- [x] 1.2 在 `tests/paths.py` 加 fixture 仓库路径常量与 `copy_repo_to(tmp_path)` helper；验证一条测试断言复制后的目录含那 5 个 `.md` 且原仓库字节不变（seam ③）——判据在 `tests/test_fixture_repo.py` 两条测试里；复选框在 `f8f76ce` 那轮漏勾，本轮核对时补上
+- [x] 1.3 把 `--sandbox`（三档、默认 `workspace-write`）与 `--yes` 加进 `build_parser`，非法档位以退出码 2 + `INVALID_ARGUMENT` 且无 session 日志；验证黑盒两条测试红→绿（seam ⑥）
+
+## 2. 事件词表与类型常量（seam ④）
+
+- [x] 2.1 红：断言 `approval/request` 与 `approval/response` 在词表内且可被写出，`tool/cancelled` 与 `model/retry` 在词表外被拒；绿后验证（seam ④）
+- [x] 2.2 红：断言 `error/fence` 是合法类型且 payload 含 `turn_id`、`code`、被拒路径或工具名；绿后验证（seam ④）——词表声明在此条落地（`ERROR_EVENT_TYPES`）；payload 三字段的断言挪到 12.1，因为内核要到那儿才真的写出 `error/fence`
+- [x] 2.3 红：断言 `stop_reason` 词表常量与 `Literal` 同源，且词表外的类型过不了 `EventRecord` 校验；绿后验证 `uv run mypy --strict src` 退出码 0（seam ④，ADR-0002 第 5 条）——`outcome` / `error/fence.code` / `approval/response.decision` 三个 `Literal` 挪到它们首次可达的组（10 / 4 / 5）：现在写出来是一张还够不着的空词表
+
+## 3. SessionSettings 与 session/start 新字段（seam ①④⑥）
+
+- [x] 3.1 红：断言 `session/start.payload` 含 `sandbox`、`approval`、`tools`，且 payload 里没有 `schema_version`；绿后验证（seam ④⑥）——`tools` 这一轮钉的是「由注册表派生」这条通道（空注册表 → `[]`），五个工具名在组 10 断言
+- [x] 3.2 红：断言 `run_session` 收 `SessionSettings` 且 `session/start.payload` 由它派生（同一事实只写一遍）；绿后验证既有 seam ① 测试在新签名下全绿（seam ①，ADR-0002 第 1 条）
+- [x] 3.3 红：断言 `--sandbox read-only` 与 `--yes` 分别落到 payload 的 `sandbox` 与 `approval`（`ask` / `auto`）；绿后验证（seam ⑥④）——这条在 3.1 的实现周期里就已经可达，所以补了一次变异（把 `sandbox` / `approval` 写死）确认它会变红
+
+## 4. 围栏判定：规范化、边界、档位（seam ②）
+
+- [x] 4.1 红：断言路径键规范化（解析 junction/符号链接、Windows 大小写折叠），且同一文件两种写法得到同一键；绿后验证（seam ②）——符号链接那条在本机 skip（无特权不能建符号链接），记进 `docs/CURRENT.md` 的已知缺口
+- [x] 4.2 红：断言 `write`/`edit` 目标解析后在工作区之外时判定为拒绝（`OUTSIDE_WORKSPACE`），且 `read`/`glob`/`grep` 不受边界约束；绿后验证（seam ②）
+- [x] 4.3 红：断言 `read-only` 档位拒绝 `write`/`edit`（`SANDBOX_DENIES_WRITE`）而放行读类工具；绿后验证（seam ②）
+- [x] 4.4 红：断言 `danger-full-access` 解除工作区边界但不放宽写前必读与 CAS；绿后验证（seam ②）——边界那半在这里；「不放宽」那半由 7.2 / 8.3 在 `danger-full-access` 上下文下断言
+- [x] 4.5 红：断言两轴独立——`danger-full-access` 仍默认问人、`--yes` 不使 `read-only` 的写变允许；绿后验证（seam ②）
+
+## 5. approval 门（seam ②①）
+
+- [x] 5.1 红：注入返回 `APPROVED` 的假 approval 门，断言 `write`/`edit` 各产生一对 `approval/request` + `approval/response`（`decision: APPROVED`）且随后 `outcome: OK`；绿后验证（seam ②④）——这里的工具是测试本地桩；`ToolDefinition` 的 `args_model` / `mutates` / `run` 与 `ToolArgs.target_path()` 是 10.1 的类型工作提前落地（派发管线没有它们就跑不起来）
+- [x] 5.2 红：断言 `read`/`glob`/`grep` 在任何档位下都不产生 `approval/*` 记录；绿后验证（seam ②④）——这一轮用非改动类桩工具测「不问人」，真 `glob`/`grep` 的对应判据在 9.x
+- [x] 5.3 红：注入返回 `DENIED` 的门，断言 `outcome: DENIED_BY_APPROVAL` 与 `error/fence`（`APPROVAL_DENIED`）；绿后验证（seam ②④）——`error/fence` 的 payload 除 `turn_id` / `code` / `detail` 外还带 `tool_call_id`，让配对可断言
+- [x] 5.4 红：断言 stdin 非 tty 且未 `--yes` 时结论是 `UNAVAILABLE`（不挂起、不默认批准），`--yes` 时不产生任何 `approval/*` 记录；绿后验证（seam ②⑥）——`--yes` 那半在 5.5 的真实门判据里；CLI 黑盒那半（退出码 3）在 13.x
+- [x] 5.5 红：断言 `approval/response.decision` 三个取值各有判据（批准 / 拒绝 / 不可问人）；绿后验证（seam ②④）——5.4 与 5.5 写出来就是绿的，所以各补了一次变异：`auto` 也走 NEEDS_APPROVAL 被 `test_auto_approval_writes_no_approval_records` 与 `test_danger_full_access_lifts_the_workspace_boundary` 杀死；非 tty 返回 `APPROVED` 被 `test_the_three_approval_decisions_are_each_reachable_through_the_real_gate` 杀死
+
+## 6. 文件工具契约：read（seam ③）
+
+- [x] 6.1 红：直接调 `read` 执行入口，断言 3 行文件整读返回 `1: `、`2: `、`3: ` 前缀；绿后验证（seam ③）——另加一条判据钉住 `limit` 默认 2000（2500 行文件整读只回 2000 行）
+- [x] 6.2 红：断言 `offset=2, limit=1` 只返回第 2 行且行号为 2；`offset` 或 `limit` 为 0 时是 `TOOL_ARGS_INVALID`；绿后验证（seam ③）
+- [x] 6.3 红：断言 `PATH_NOT_FOUND`、`IS_A_DIRECTORY`、`NOT_UTF8_TEXT` 三种失败都是结果且文件字节不变；绿后验证（seam ③）
+- [x] 6.4 红：断言 `read` 缺 `file_path` 时是 `TOOL_ARGS_INVALID` 且没有任何文件被触碰；绿后验证（seam ③）
+
+## 7. 文件工具契约：write 与写前必读（seam ③）
+
+- [x] 7.1 红：断言目标不存在时 `write` 直接创建并返回 `OK`（含必要时创建父目录）；绿后验证（seam ③）
+- [x] 7.2 红：断言已存在文件在未 `read` 过时是 `WRITE_WITHOUT_READ` 且字节不变；绿后验证（seam ③）——另加一条 `danger-full-access` 下的同判据，补上 4.4 的「不放宽」那半
+- [x] 7.3 红：断言同一派发上下文里先 `read`（`OK`）再 `write` 成功，且失败的 `read`（`PATH_NOT_FOUND`）不算读过；绿后验证（seam ③）——「失败不算读过」用 `NOT_UTF8_TEXT` 的失败读来测：`PATH_NOT_FOUND` 之后文件仍不存在，写新文件本来就不需要先读，那条路径测不出差别
+- [x] 7.4 红：断言「已读过」判定跨 session 不继承（session B 直接 `write` session A 读过的文件是 `WRITE_WITHOUT_READ`），且同一日志前缀重算两次判定相同；绿后验证（seam ③④）——7.1–7.4 写出来就全绿，补了两次变异：去掉 `write` 的先读检查被四条判据杀死；`read_paths_from_records` 去掉 `outcome == OK` 过滤被 `test_the_same_log_prefix_yields_the_same_read_set` 与 `test_a_failed_read_does_not_count_as_reading` 杀死
+
+## 8. 文件工具契约：edit 与 CAS（seam ③）
+
+- [x] 8.1 红：断言 `old_string` 唯一匹配时替换成功且只替换这一处；绿后验证（seam ③）——另加一条 fixture 仓库里的真实判据（改 `notes/retro.md` 的那行 TODO）
+- [x] 8.2 红：断言 `old_string` 出现 0 次是 `EDIT_TARGET_NOT_FOUND`、出现多次且 `replace_all` 为假是 `EDIT_TARGET_AMBIGUOUS`，两者文件内容都不变；`replace_all` 为真时全部替换；绿后验证（seam ③）——`old_string` 为空串是 `TOOL_ARGS_INVALID`（`min_length=1`），否则「出现 0 次」与「处处匹配」分不开
+- [x] 8.3 红：断言读过之后文件被外部改动再 `edit` 是 `STALE_EDIT` 且不被改写；未 `read` 直接 `edit` 是 `WRITE_WITHOUT_READ`；绿后验证（seam ③）——CAS 的「读到的原文」取自日志里那次 `read` 的 `tool/result` 内容加它的 `offset`/`limit`，不另立真源；8.1–8.3 写出来就全绿，补两次变异：去掉 CAS 比对被 `test_editing_a_file_changed_outside_the_session_is_stale` 杀死；歧义判定去掉 `not args.replace_all` 被 `test_replace_all_replaces_every_match` 杀死。`error/fence` 的 `APPROVAL_UNAVAILABLE` 断言仍在 12.x / 13.x
+
+## 9. 文件工具契约：glob 与 grep（seam ③）
+
+- [x] 9.1 红：断言 `glob` 对 fixture 仓库的 `**/*.md` 返回那 5 个相对路径、按修改时间从新到旧、不含目录、上限 100；无匹配是 `OK` 且说明没有匹配；绿后验证（seam ③）——上限用 130 个文件测：100 条路径加一行「共 130 个匹配」
+- [x] 9.2 红：断言 `grep` 返回 `文件:行号: 行内容` 形式的命中、上限 250、无匹配是 `OK`；绿后验证（seam ③）——fixture 仓库里含 `TODO` 的恰 3 行分布在 3 个文件里，判据按文件集合断言
+- [x] 9.3 红：断言非法正则是 `TOOL_ARGS_INVALID` 且内容含解析错误；绿后验证（seam ③）——正则的编译校验放在 `GrepArgs` 的 field_validator 里，让「非法正则」在派发管线的校验段就被拦住，执行段不再抛异常
+- 变异记录（组 6–9 的「一次就全绿」都补了变异）：去掉 `entry.is_file()` 被 `test_glob_never_returns_a_directory` 杀死；去掉 mtime 排序被 `test_glob_orders_by_modification_time_newest_first` 杀死；去掉 grep 的 250 上限被 `test_grep_lists_at_most_two_hundred_and_fifty_matches` 杀死
+
+## 10. 注册表接线与三段派发（seam ②③⑤⑥）
+
+- [x] 10.1 红：断言注册表非空且恰含五个工具，`ToolDefinition` 带参数校验模型与「会不会改动」标记，`ToolSpec` 仍是 `name` + `description`（`specs()` 显式映射）；绿后验证（seam ②，ADR-0002 第 2 条）——`tests/test_tool_registry.py` 钉住名字顺序、`mutates` 序列 `[False, True, True, False, False]`、`specs()` 的字段集合恰为 `{name, description}`；`session/start.tools` 的断言从 `[]` 改成五个名字
+- [x] 10.2 红：断言三段顺序——参数校验失败时不做围栏判定也不执行、围栏拒绝时不执行；绿后验证（seam ②）——桩工具记录「有没有被执行」：校验失败时 `fence_code is None`、`approval is None`、执行记录为空；围栏拒绝时 `fence_code == "OUTSIDE_WORKSPACE"` 且执行记录为空
+- [x] 10.3 红：断言 `NOT_IMPLEMENTED` 从词表移除且任何场景都不出现；未注册工具名仍是 `UNKNOWN_TOOL`；绿后验证（seam ②）——`ToolOutcome` 收成 12 值的 `Literal`（`ToolResult.outcome` 用它标注），词表测试断言 `len == 12` 且不含 `NOT_IMPLEMENTED`；CLI 场景测试断言所有 `tool/result` 的结果词集合恰为 `{PATH_NOT_FOUND}`
+- [x] 10.4 把既有 M1 场景断言搬家（design D9）：`tool_then_done` 与 `tool_then_exhaust` 的 `read a.md` 断言改为 `PATH_NOT_FOUND`，新增 `unknown_tool/turns.json` 场景守 `UNKNOWN_TOOL`；验证三条既有测试红→绿且 fixture 文件本身未被改（seam ⑤②⑥）——既有两份 `turns.json` 逐字节未动（`git status` 里只有新增的 `unknown_tool/turns.json`）；`test_no_m1_scenario_exits_with_the_reserved_codes` 的退出码表 `[0, 0, 0, 1, 2, 2, 2, 2]` 与「没有 3/4」原样保留
+- 打包说明（本提交含 11.1）：CLI 注册表一接线，`test_cli_replay.py` 的三条判据立刻红——`REPLAY_MISMATCH: seq=2`，因为折叠头部的工具块当时取自进程内注册表而回放侧取空。11.1 是同一轮红绿的必要改动，不是顺手改的别处
+## 11. 折叠头部与 replay（seam ④⑥）
+
+- [x] 11.1 红：断言折叠头部的工具块取自 `session/start.payload.tools` 而非进程内注册表，且对同一前缀重算两次头部相同；绿后验证（seam ④）——`fold()` 不再收 `append_system_prompt` / `tool_descriptions` 参数，两者都由 `_start_facts()` 从日志里的 `session/start` 读出；`protected_header` 的参数改名成 `tool_names`（头部里放的是名字，描述走 `model/request.tools` 那条通道）；回放侧的 `append_system_prompt` 局部变量随之清掉
+- [x] 11.2 红：断言 `minihns replay` 对注册了工具、含 `approval/*` 与 `error/fence` 的合法日志逐点重算相等、退出码 0；绿后验证既有「装配点之后的事件被篡改时 replay 仍通过」的测试仍绿（seam ⑥④，ADR-0002 第 7 条）——新 fixture `read_then_write/turns.json`（先 `read notes/plan.md` 再 `write`）；`cli_blackbox._cli` 把子进程 stdin 固定成 `DEVNULL`，非 tty 是确定的而不是看运行环境脸色。红过一次：`StdinApprovalGate` 把提问写进 `sys.stdin`，真实路径上 `io.UnsupportedOperation: not writable`，run 直接崩——问题改写到 stderr（stdout 是会话 id 与 `--events jsonl` 的地盘），并补一条 seam ② 的 `capsys` 判据钉住「问题在 stderr、stdout 为空」
+- [x] 11.3 红：断言 replay 过程中没有任何 Provider 调用且工作区里没有任何文件被创建或修改；绿后验证（seam ⑥⑤③）——「没有 Provider 调用」用可观察代理：run 之后把 fixture 副本删掉再 replay，仍退出 0；工作区快照比的是 `(mtime_ns, 字节)` 字典；日志字节不变；stdout 里没有 `model/request`。变异记录：`assembled[:2]` 被 11.2 杀死；给日志追加一行被「replay 两次日志字节不变」与 11.3 杀死；往记录的 workspace 落一个 marker 被 11.3 的快照杀死；replay 里打印 `model/request` 被既有判据与 11.3 杀死
+
+## 12. 围栏拒绝的终止序列（seam ①⑥）
+
+- [x] 12.1 红：断言围栏拒绝时事件顺序为 `tool/call` → 配对的 `tool/result` → `error/fence` → `turn/end`（`FENCE_DENIED`）→ `session/end`，且同回合剩余调用不被派发；绿后验证（seam ①④）——一个回合两个 `write`、`--sandbox read-only`：断言整条类型序列逐点相等、`tool/call` 只有 `c1`、两个文件都没落盘
+- [x] 12.2 红：断言 `stop_reason` 词表含 `FENCE_DENIED` 且映射到退出码 3；绿后验证既有「每个停止原因都在退出码映射表里」的测试仍绿（seam ⑥①）——`StopReason` 六个值、`STOP_FENCE_DENIED` 与 Literal 同源、`EXIT_FENCE_DENIED = 3` 进映射表
+- [x] 12.3 红：断言 M2 全部场景（含围栏拒绝与取消）都不写 `tool/cancelled`、也不写 `model/retry`；绿后验证（seam ①④）——这条第一次就绿，补变异时才发现：往 `closing_events` 里塞 `tool/cancelled` 并不会写出那个类型，`EventLog.append` 把它塌成 `error/internal` 并在 payload 里记 `unrecognized_type`。判据因此加一层：既断言事件类型，也断言 `payload["unrecognized_type"]` 里没有这两个词
+- 变异记录（组 12）：去掉围栏拒绝后的 `break` 被 12.1 杀死；`FENCE_DENIED → 0` 的映射被 `test_every_stop_reason_maps_to_an_exit_code` 杀死；塞 `tool/cancelled` 被加强后的 12.3 杀死；塞 `model/retry` 被 seam ① 的事件序列判据与 12.3 杀死
+
+## 13. CLI 黑盒集成（seam ⑥）
+
+- [x] 13.1 红：`--yes` 下跑一个「对 fixture 仓库的 5 个 `.md` 各 `read` + `edit`」的 mock 场景，断言退出码 0、5 个文件内容都被改、日志里没有任何 `approval/*`；绿后验证（seam ⑥③②）——新 fixture `edit_five_md/turns.json`（10 次调用 + 收尾 stop，`--max-turns 12`）：10 个 `tool/call`、10 个 `OK`、5 个文件都含「（已复核）」、`approval/` 一条没有
+- [x] 13.2 红：断言越界写（目标在工作区之外）以退出码 3 结束、stderr 含被拒路径、日志里有 `error/fence`（`OUTSIDE_WORKSPACE`）；绿后验证（seam ⑥②）——新 fixture `write_outside/turns.json`（`../outside.md`）；红过一次：CLI 只把会话 id 打到 stdout、失败不在 stderr 说清楚。非 0 退出一律在 stderr 报 `CODE: detail`，`RunOutcome` 带上围栏的 code 与 detail
+- [x] 13.3 红：断言 stdin 非 tty 且未 `--yes` 的写场景以退出码 3 结束、stderr 含 `APPROVAL_UNAVAILABLE`；绿后验证（seam ⑥②）——红过一次且是平台坑：Windows 上 `NUL` 设备 `isatty()` 为真，`stdin=DEVNULL` 的子进程被当成「可以问人」，读到 EOF 后被判成 `DENIED`。判据补在 seam ②：tty 但回答是 EOF ⇒ `UNAVAILABLE`（EOF 是「没有人在回答」，不是「人说了不」）
+- [x] 13.4 红：断言 `--sandbox read-only --yes` 的写场景以退出码 3 结束（`--yes` 不放宽档位）；绿后验证（seam ⑥②）——`error/fence.code == ["SANDBOX_DENIES_WRITE"]` 且没有任何 `approval/*`
+- [x] 13.5 红：断言 M2 全部成功与失败场景没有任何 run 以 4 退出，且退出码非 2 的失败都有 `error/*` 事件；绿后验证（seam ⑥）——六个场景退出码 `[0, 0, 3, 3, 3, 1]`，4 保留
+- [x] 13.6 红：断言带 `--events jsonl` 时 stdout 与日志逐行相等（含 `approval/*` 与 `error/fence` 的 run）；绿后验证（seam ⑥④）——退出码 3 的 run 也要逐行相等，所以失败报告只能走 stderr
+- 变异记录（组 13）：`approval` 恒为 `auto`（无视 `--yes`）被 13.3 / 13.5 / 13.6 与 11.2 杀死；边界只在 `danger-full-access` 下生效被 13.2 / 13.5 杀死；`--yes` 顺手把档位抬成 `workspace-write` 被 13.4 / 13.5 杀死；`EXIT_FENCE_DENIED = 4` 被 13.5 与 `test_every_stop_reason_maps_to_an_exit_code` 杀死；提问写进 stdout 被 13.6 与 gate 的 `capsys` 判据杀死
+- [x] 13.7 手动 smoke：在真实 tty 里跑一次会提问的 run，记录 `y` 与 `n` 两种回答的实际行为到 `docs/verification/m2-file-tools-and-fences-approval-smoke.md`；验证该文件存在且记录了两次退出码——`y` → `APPROVED` / 退出码 0 / 文件被改写，`n` → `DENIED` + `error/fence(APPROVAL_DENIED)` / 退出码 3 / 文件字节不变。夹具 `docs/verification/m2-file-tools-and-fences-approval-smoke-harness.py`：子进程 `CREATE_NEW_CONSOLE` 得到自己的真实控制台，父进程 `AttachConsole` + `CONIN$` + `WriteConsoleInput` 投递按键；本沙箱的 stdin 是 `NUL`（`isatty()` 真但读即 EOF），ConPTY 路线在本机 `UpdateProcThreadAttribute` 恒返回 87
+
+## 14. 词表可达性与文档（seam ⑥④）
+
+- [x] 14.1 红：断言 `tool/result.outcome` 的 12 个取值、`error/fence.code` 的 4 个取值、`approval/response.decision` 的 3 个取值、`turn/end.stop_reason` 的 6 个取值每个都至少被一条测试断言到；绿后验证（seam ②④⑥，Active Lesson 1）——`tests/test_vocabulary_reachability.py` 四条判据把「跑出来的取值集合 == 词表」钉死：12 个 outcome 由真实派发跑出来（含 `TOOL_ARGS_INVALID` 走 pydantic 校验段、`STALE_EDIT` 走「fixture 会话读过 + 事后被改」），4 个 fence code 读 `DispatchOutcome.fence_code`，3 个 decision 走 `StdinApprovalGate` 的 tty 假流，6 个 stop reason 从日志的 `turn/end` / `session/end` 里收（`TOOL_CALLS` 只作为 `turn/end` 的取值出现，不是 `RunOutcome` 的终态）。第一次就全绿，补两条变异证明守卫会咬：词表里加一个跑不到的 `NOT_IMPLEMENTED` → `test_every_tool_outcome_is_reachable` 红；`matches > 1` 改成 `matches > 2`（AMBIGUOUS 再也跑不出来）→ 同一条红
+- [x] 14.2 新开 `docs/adr/0003-m2-fence-simplifications.md`：照 `domain-modeling` 的 ADR-FORMAT 写「无 OS 级强制」「无 approval 提权通道」「管线塌成三段」「两轴不预设」四条简化与代价；验证文件存在且引用本 change（无红）——另加第五条「提问走 stderr、EOF 是 UNAVAILABLE 不是 DENIED」：它是 Windows 上 `NUL` 也是 tty 这条平台事实逼出来的取舍，不写下来下一个人会把它「改回去」
+- [x] 14.3 更新 `docs/CURRENT.md`（门禁实测与已知缺口）与 `docs/roadmap.md` 的 M2 行；验证两份文件里的 M2 判据与本 change 的 specs 一致（无红）——门禁实测换成 137 passed / 1 skipped、TOTAL 96%、20 个源文件、49 个文件格式干净；已知缺口补上「approval smoke 的按键是 `WriteConsoleInput` 投递的」与「符号链接判据在本机 skip」；`docs/adr/0002-deferred-refactors.md` 的第 1、2、5、7 条就地记为已处理
+
+## 15. 收尾门禁
+
+- [x] 15.1 变异测试一轮：改坏围栏判定、CAS 判定、词表校验、`FENCE_DENIED` 映射、已读集合派生各一处，跑全量测试，把「变异 / 改法 / 哪些测试变红」记进 `docs/verification/m2-file-tools-and-fences-mutation.md`；还原前先看 `git status`，还原后确认全绿与 `uv run mypy --strict src` 干净。判据：每个变异都被至少一条测试杀死，存活的补一条能杀死它的测试——19 条变异记进那份文档：围栏判定 H / I / G、CAS 判定 R（含它的输入 K / L / M / N）、词表校验 A / B、`FENCE_DENIED` 映射 S、已读集合派生 M / N，另有 O（行号）、P（失败行走 stdout）、Q（`approval/*` 无条件写）、J（校验段与围栏段互换）。16 条被既有测试杀死；G / I / J′ 是 dud mutant（语义等价，见那份文档的 dud 一节，不当覆盖缺口）；M 与 N 存活 → 各补一条判据（`test_a_later_read_replaces_the_earlier_one`、`test_a_write_does_not_count_as_having_read_it`，都先确认在变异下红）。还原后基线 140 passed / 1 skipped、TOTAL 96%、mypy 与 ruff 干净
+- [x] 15.2 Learning Gate：扫本轮证据（红过的测试、存活的变异、返工过的规格、踩过的工具坑），可复用教训写进 `docs/lessons.md` 收件箱，没有可复用信号就写 `NO-PROMOTION`；验证 `docs/lessons.md` 已更新或明确写了 `NO-PROMOTION`——收了 L-016 至 L-020 五条（dud mutant 的三种形态、同一函数连中两条存活说明只测端点、Windows 的 NUL 报 `isatty() == True` 与可用的 console-input harness、编辑工具的锚点与 `git checkout --` 后必须重读、`EventLog.append` 会把词表外类型塌成 `error/internal`），并先消化掉 L-001 / L-009（合并）与 L-002（关闭）；AGENTS.md 本轮不晋升，理由写在 `docs/lessons.md` 的「M2 收尾轮的消化记录」
+
+## 16. 审查修复（`code-review` 两轴之后）
+
+- [x] 16.1 红：`write` 的父路径是已存在文件时 SHALL 是 `TOOL_IO_FAILED` 结果而不是异常（seam ②③①）；绿后验证——派发段统一兜底 `OSError`，词表加 `TOOL_IO_FAILED`，可达性判据跟着加一条探针。红证据：`FileExistsError: [WinError 183]` 直接从 `pathlib.mkdir` 逃出；两条新判据 `test_a_parent_path_that_is_a_file_is_an_io_failure_not_an_exception`（seam ③）与 `test_an_io_failure_stays_a_result_and_the_turn_still_closes`（seam ①：`tool/result` 是 `TOOL_IO_FAILED`、`turn/end` 照写、`RunOutcome.failure_code is None`）
+- [x] 16.2 红：`glob` / `grep` 的搜索根是文件时 SHALL 是 `NOT_A_DIRECTORY`，而不是标签与语义相反的 `IS_A_DIRECTORY`（seam ③）；绿后验证——词表加 `NOT_A_DIRECTORY`，可达性判据跟着加一条探针。红证据：`assert 'IS_A_DIRECTORY' == 'NOT_A_DIRECTORY'`；新判据 `test_a_search_root_that_is_a_file_is_not_a_directory` 同时钉住「搜索根不存在是 `PATH_NOT_FOUND`」
+- [x] 16.3 file-tools delta 追认与补齐：词表 14 值、`write` 目标是目录是 `IS_A_DIRECTORY`、`glob` / `grep` 搜索根「不存在」与「不是目录」两条 Scenario、新增「执行段的文件 I/O 失败是 `TOOL_IO_FAILED` 结果」Requirement（含「不写 `error/fence`」那条 Scenario）；`openspec validate m2-file-tools-and-fences --strict` 过。追认的 `write` 目标是目录补了判据 `test_writing_to_a_directory_is_refused`
+- [x] 16.4 其余四条审查发现记账（本轮不改代码）：CAS 只比「读到的窗口」（新开 ADR 记取舍与代价）、`approval/*` 在问完人之后才落盘、取消信号只在回合边界被看到、`error/fence` 的路径只在自由文本 `detail` 里——写进 ADR 与 `docs/CURRENT.md` 的已知缺口。落点：新开 `docs/adr/0004-cas-compares-the-read-window.md`（含「窗口外那一半既没有判据也没有测试钉住现状」这条）；后三条进 `docs/adr/0002-deferred-refactors.md` 第 9 至 11 条，另加第 12 条（seam ②③ 的桩与常量各留一份，根因是 helper 不收 `registry` / `approval_gate`）；`docs/CURRENT.md` 的已知缺口加四条。顺带更正 ADR-0002 第 1 条的「已处理」说法——seam ②③ 里仍有四处手搓 `SessionSettings`，改为「部分处理」
+- [x] 16.5 未跟踪内容处置：`docs/tools/` 的脚本进仓库（`pyproject.toml` 的 per-file-ignores 需要它存在才不自相矛盾），`docs/milestones/`、`repowiki/`、`__pycache__` 进 `.gitignore`。落进仓库的是 8 份脚本（8380 行）；`docs/milestones/` 那 636 KB 的 HTML 与 `repowiki/` 的 120 份 2.33 MB 派生物不再出现在 `git status` 里。顺带把 AGENTS.md 的「ruff 唯一的例外」改成「只有两处」——`per-file-ignores` 那句话自 8755a71 起就不成立，且当时 AGENTS.md 没同步
+- [x] 16.6 重跑全部门禁与一次变异抽查：词表加值之后 14.1 的可达性判据仍然咬得住（把 `TOOL_IO_FAILED` 从 Literal 里删掉必须让测试变红）。四条抽查 T / U / V / W 全被杀死，记在 `docs/verification/m2-file-tools-and-fences-mutation.md` 的「审查修复之后的抽查」一节；顺带记下一条事实——`ToolResult` 是 dataclass，词表在运行期不挡（注 6）
+
+## Workflow follow-up
+
+- 人工审阅 proposal / specs / design / tasks 后再进入 apply（`/openspec-apply-change`），分支 `change/m2-file-tools-and-fences`。
+- 实现完成后用 `code-review` 技能做 Standards / Spec 两轴审查（`openspec-verify-change` 未装）。
+- 审查通过后合入 `main`，再 `openspec-archive-change` 把六份 delta 同步进 `openspec/specs/`，并跑一次 `agents-md-slim`。

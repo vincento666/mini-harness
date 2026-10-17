@@ -43,11 +43,21 @@ select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RUF"]
 # 用 allowed-confusables 只放行这五个字符，其余可疑字符仍然照报。
 allowed-confusables = ["：", "，", "；", "（", "）"]
 
+[tool.ruff.lint.per-file-ignores]
+# docs/tools 下的脚本是文档与图表构建器，不在收尾门禁里跑（门禁只跑 src 与 tests）。
+# E402：先 sys.path.insert 再 import 同目录模块；
+# E501：图表 IR 的一行就是一条节点定义，拆行会让图定义比图本身更难读；
+# RUF001：图标签里的「· ≤ × →」是刻意的记号，不是打错的 ASCII 近似字符。
+"docs/tools/*.py" = ["E402", "E501", "RUF001"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# `tests/fixtures/` 是数据与只读 fixture 仓库，不是测试：`tests/fixtures/repo` 里那条必然失败的
+# 哨兵用例一旦被主套件收集，主套件立刻变红。它只能被显式调用（`pytest tests/fixtures/repo`）。
 # 覆盖率不在这里出报告：pytest-cov 在 `coverage combine` 之前报告，看不见子进程的数据。
 # 门禁的三步是 `coverage run -m pytest` → `coverage combine` → `coverage report --fail-under`。
+norecursedirs = ["fixtures"]
 
 # seam ⑥ 的 CLI 测试是真实子进程，每个子进程各写一份 partial 数据文件（见 tests/cli_blackbox.py），
 # 所以 source 明写包名、parallel 常开。

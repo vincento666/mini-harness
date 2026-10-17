@@ -13,7 +13,7 @@ from cli_blackbox import _cli
 from mini_harness.cli import main as cli_main
 from mini_harness.cli.main import STOP_REASONS_TO_EXIT_CODES, exit_code_for, sigint_handler
 from mini_harness.events import EventLog
-from mini_harness.loop import STOP_REASONS, RunOutcome
+from mini_harness.loop import STOP_REASONS, RunOutcome, SessionSettings
 from mini_harness.provider import AssistantTurn
 from paths import HELLO_SCENARIO
 
@@ -36,10 +36,13 @@ async def test_sigint_handler_sets_the_cancel_event() -> None:
 
 def test_every_stop_reason_maps_to_an_exit_code() -> None:
     assert set(STOP_REASONS_TO_EXIT_CODES) == set(STOP_REASONS)
+    assert len(STOP_REASONS) == 6
+    assert "FENCE_DENIED" in STOP_REASONS
     assert STOP_REASONS_TO_EXIT_CODES["TOOL_CALLS"] == 0
     assert STOP_REASONS_TO_EXIT_CODES["MODEL_COMPLETED"] == 0
     assert STOP_REASONS_TO_EXIT_CODES["MAX_TURNS"] == 0
     assert STOP_REASONS_TO_EXIT_CODES["PROVIDER_ERROR"] == 1
+    assert STOP_REASONS_TO_EXIT_CODES["FENCE_DENIED"] == 3
     assert STOP_REASONS_TO_EXIT_CODES["ABORTED"] == 5
     for stop_reason, exit_code in STOP_REASONS_TO_EXIT_CODES.items():
         assert (
@@ -237,11 +240,8 @@ async def test_the_cli_installs_and_restores_the_sigint_handler(tmp_path: Path) 
     await cli_main._await_session(
         prompt="任务",
         provider=spy,
-        provider_name="mock",
+        settings=SessionSettings(workspace=tmp_path, provider_name="mock", max_turns=8),
         log=log,
-        workspace=tmp_path,
-        max_turns=8,
-        append_system_prompt="",
     )
 
     assert len(spy.seen_handlers) == 1
@@ -280,3 +280,88 @@ def test_the_repo_hello_fixture_is_one_plain_reply(tmp_path: Path) -> None:
     assert len(responses) == 1
     assert responses[0]["payload"]["content"] == "hello from fixture"
     assert responses[0]["payload"]["finish_reason"] == "stop"
+
+
+def test_an_unknown_sandbox_level_is_an_argument_error(tmp_path: Path) -> None:
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--sandbox",
+        "network-write",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 2
+    # 「档位存在但取值非法」与「档位不存在」必须是两条不同的判据：前者报 invalid choice。
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert "invalid choice" in result.stderr
+    assert _log_files(tmp_path) == []
+
+
+def test_sandbox_and_yes_are_accepted_without_changing_a_write_free_run(tmp_path: Path) -> None:
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--sandbox",
+        "read-only",
+        "--yes",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 0
+    assert len(_log_files(tmp_path)) == 1
+
+
+def test_session_start_records_sandbox_approval_and_tools(tmp_path: Path) -> None:
+    result = _cli(
+        "run", "-p", "任务", "--provider", "mock", "--fixture", str(HELLO_SCENARIO), cwd=tmp_path
+    )
+
+    records = [
+        json.loads(line)
+        for line in _log_files(tmp_path)[0].read_text(encoding="utf-8").splitlines()
+    ]
+    payload = next(record["payload"] for record in records if record["type"] == "session/start")
+
+    assert result.returncode == 0
+    assert payload["sandbox"] == "workspace-write"
+    assert payload["approval"] == "ask"
+    # 五个名字来自注册表：session/start 的 tools 由它派生，不是另立一份清单。
+    assert payload["tools"] == ["read", "write", "edit", "glob", "grep"]
+    assert "schema_version" not in payload
+
+
+def test_sandbox_and_yes_flags_land_in_the_session_start_payload(tmp_path: Path) -> None:
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--sandbox",
+        "danger-full-access",
+        "--yes",
+        cwd=tmp_path,
+    )
+
+    records = [
+        json.loads(line)
+        for line in _log_files(tmp_path)[0].read_text(encoding="utf-8").splitlines()
+    ]
+    payload = next(record["payload"] for record in records if record["type"] == "session/start")
+
+    assert result.returncode == 0
+    assert payload["sandbox"] == "danger-full-access"
+    assert payload["approval"] == "auto"

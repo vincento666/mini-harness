@@ -6,9 +6,9 @@ import asyncio
 from pathlib import Path
 
 from mini_harness.events import EventLog, read_events
-from mini_harness.loop import run_session
-from mini_harness.provider import FixtureProvider, ToolCall
-from mini_harness.tools import ToolDefinition, ToolRegistry, dispatch_tool_call
+from mini_harness.loop import SessionSettings, run_session
+from mini_harness.provider import FixtureProvider
+from mini_harness.tools import ToolRegistry
 
 _TOOL_ENTRY = {
     "content": "需要读文件",
@@ -24,11 +24,9 @@ async def _run(
     outcome = await run_session(
         prompt="任务",
         provider=FixtureProvider(entries=entries),
-        provider_name="mock",
         log=log,
         registry=ToolRegistry(),
-        workspace=tmp_path,
-        max_turns=max_turns,
+        settings=SessionSettings(workspace=tmp_path, provider_name="mock", max_turns=max_turns),
         cancel=asyncio.Event(),
     )
     return log, outcome
@@ -79,13 +77,3 @@ async def test_session_start_records_the_run_settings(tmp_path: Path) -> None:
     assert "schema_version" not in payload
     assert Path(payload["workspace"]).is_absolute()
     assert Path(payload["workspace"]) == Path(tmp_path).resolve()
-
-
-async def test_a_registered_tool_is_dispatched_as_not_implemented_in_m1() -> None:
-    registry = ToolRegistry([ToolDefinition(name="read", description="读一个文件")])
-    call = ToolCall(id="c1", name="read", arguments={"file_path": "a.md"})
-
-    result = await dispatch_tool_call(call, registry)
-
-    assert result.outcome == "NOT_IMPLEMENTED"
-    assert "read" in result.content

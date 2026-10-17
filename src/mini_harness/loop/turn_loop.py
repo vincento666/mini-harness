@@ -6,23 +6,39 @@ import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, get_args
 
 from mini_harness.events.fold import assembled_payload, fold
 from mini_harness.events.reader import LogReadFailure, read_events
 from mini_harness.events.writer import EventLog, LogWriteFailure
+from mini_harness.loop.settings import SessionSettings
 from mini_harness.provider.contract import Provider, ProviderFailure
 from mini_harness.tools.dispatch import dispatch_tool_call
+from mini_harness.tools.fences import (
+    STDIN_APPROVAL_GATE,
+    ApprovalGate,
+    DispatchContext,
+    reads_from_records,
+)
 from mini_harness.tools.registry import ToolRegistry
+
+# `turn/end.stop_reason` 的词表：常量与 `Literal` 同源，加一个值只改这一处。
+StopReason = Literal[
+    "MODEL_COMPLETED",
+    "TOOL_CALLS",
+    "MAX_TURNS",
+    "PROVIDER_ERROR",
+    "ABORTED",
+    "FENCE_DENIED",
+]
 
 STOP_MODEL_COMPLETED = "MODEL_COMPLETED"
 STOP_TOOL_CALLS = "TOOL_CALLS"
 STOP_MAX_TURNS = "MAX_TURNS"
 STOP_PROVIDER_ERROR = "PROVIDER_ERROR"
 STOP_ABORTED = "ABORTED"
-STOP_REASONS: frozenset[str] = frozenset(
-    {STOP_MODEL_COMPLETED, STOP_TOOL_CALLS, STOP_MAX_TURNS, STOP_PROVIDER_ERROR, STOP_ABORTED}
-)
+STOP_FENCE_DENIED = "FENCE_DENIED"
+STOP_REASONS: frozenset[str] = frozenset(get_args(StopReason))
 
 
 @dataclass(frozen=True)
@@ -65,13 +81,11 @@ async def run_session(
     *,
     prompt: str,
     provider: Provider,
-    provider_name: str,
     log: EventLog,
     registry: ToolRegistry,
-    workspace: Path,
-    max_turns: int,
+    settings: SessionSettings,
     cancel: asyncio.Event,
-    append_system_prompt: str = "",
+    approval_gate: ApprovalGate = STDIN_APPROVAL_GATE,
 ) -> RunOutcome:
     """跑完一个 session 的全部回合。"""
     failure = _append_all(
@@ -80,11 +94,14 @@ async def run_session(
             (
                 "session/start",
                 {
-                    "workspace": str(Path(workspace).resolve()),
-                    "provider": provider_name,
-                    "max_turns": max_turns,
-                    "append_system_prompt": append_system_prompt,
+                    "workspace": str(Path(settings.workspace).resolve()),
+                    "provider": settings.provider_name,
+                    "max_turns": settings.max_turns,
+                    "append_system_prompt": settings.append_system_prompt,
                     "prompt": prompt,
+                    "sandbox": settings.sandbox,
+                    "approval": settings.approval,
+                    "tools": [spec.name for spec in registry.specs()],
                 },
             ),
         ],
@@ -93,8 +110,10 @@ async def run_session(
         return _kernel_failure(log, failure, 0)
 
     stop_reason = STOP_MODEL_COMPLETED
+    denial_code: str | None = None
+    denial_detail = ""
     turns = 0
-    for turn_index in range(1, max_turns + 1):
+    for turn_index in range(1, settings.max_turns + 1):
         turns = turn_index
         turn_id = f"t{turn_index}"
         tool_names = [spec.name for spec in registry.specs()]
@@ -106,11 +125,7 @@ async def run_session(
         events = read_events(log.path)
         if isinstance(events, LogReadFailure):
             return _kernel_failure(log, events, turns)
-        context = fold(
-            events,
-            append_system_prompt=append_system_prompt,
-            tool_descriptions=tool_names,
-        )
+        context = fold(events)
         failure = _append_all(
             log,
             [
@@ -164,6 +179,7 @@ async def run_session(
         if failure is not None:
             return _kernel_failure(log, failure, turns)
 
+        fence_denied = False
         for call in generated.tool_calls:
             failure = _append_all(
                 log,
@@ -182,30 +198,79 @@ async def run_session(
             if failure is not None:
                 return _kernel_failure(log, failure, turns)
 
-            result = await dispatch_tool_call(call, registry)
+            prefix = read_events(log.path)
+            if isinstance(prefix, LogReadFailure):
+                return _kernel_failure(log, prefix, turns)
+            dispatch_context = DispatchContext.from_settings(
+                settings,
+                reads=reads_from_records(prefix, settings.workspace),
+            )
+            dispatched = await dispatch_tool_call(call, registry, dispatch_context, approval_gate)
 
-            failure = _append_all(
-                log,
-                [
+            written: list[tuple[str, dict[str, Any]]] = []
+            if dispatched.approval is not None:
+                written.append(
                     (
-                        "tool/result",
+                        "approval/request",
                         {
                             "turn_id": turn_id,
                             "tool_call_id": call.id,
-                            "outcome": result.outcome,
-                            "content": result.content,
+                            "name": call.name,
+                            "arguments": call.arguments,
                         },
-                    ),
-                ],
+                    )
+                )
+                written.append(
+                    (
+                        "approval/response",
+                        {
+                            "turn_id": turn_id,
+                            "tool_call_id": call.id,
+                            "decision": dispatched.approval,
+                        },
+                    )
+                )
+            written.append(
+                (
+                    "tool/result",
+                    {
+                        "turn_id": turn_id,
+                        "tool_call_id": call.id,
+                        "outcome": dispatched.result.outcome,
+                        "content": dispatched.result.content,
+                    },
+                ),
             )
+            if dispatched.fence_code is not None:
+                written.append(
+                    (
+                        "error/fence",
+                        {
+                            "turn_id": turn_id,
+                            "tool_call_id": call.id,
+                            "code": dispatched.fence_code,
+                            "detail": dispatched.result.content,
+                        },
+                    )
+                )
+
+            failure = _append_all(log, written)
             if failure is not None:
                 return _kernel_failure(log, failure, turns)
 
+            if dispatched.fence_code is not None:
+                fence_denied = True
+                denial_code = dispatched.fence_code
+                denial_detail = dispatched.result.content
+                break
+
         if cancel.is_set():
             stop_reason = STOP_ABORTED
+        elif fence_denied:
+            stop_reason = STOP_FENCE_DENIED
         elif not generated.tool_calls:
             stop_reason = STOP_MODEL_COMPLETED
-        elif turn_index == max_turns:
+        elif turn_index == settings.max_turns:
             stop_reason = STOP_MAX_TURNS
         else:
             stop_reason = STOP_TOOL_CALLS
@@ -224,10 +289,21 @@ async def run_session(
         if failure is not None:
             return _kernel_failure(log, failure, turns)
 
-        if cancel.is_set() or not generated.tool_calls or turn_index == max_turns:
+        if (
+            cancel.is_set()
+            or fence_denied
+            or not generated.tool_calls
+            or turn_index == settings.max_turns
+        ):
             break
 
     failure = _append_all(log, [("session/end", {"stop_reason": stop_reason, "turns": turns})])
     if failure is not None:
         return _kernel_failure(log, failure, turns)
-    return RunOutcome(session_id=log.session_id, stop_reason=stop_reason, turns=turns)
+    return RunOutcome(
+        session_id=log.session_id,
+        stop_reason=stop_reason,
+        turns=turns,
+        failure_code=denial_code,
+        detail=denial_detail,
+    )
