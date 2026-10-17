@@ -28,17 +28,6 @@
 - **WHEN** 同一 session 日志中任取相邻的两条记录
 - **THEN** 后写入记录的 `seq` 比先写入记录的大 1
 
-### Requirement: 事件类型只取自 M1 词表
-系统 SHALL 只发出 M1 词表中的事件类型：`session/start`、`turn/start`、`context/assembled`、`model/request`、`model/response`、`tool/call`、`tool/result`、`turn/end`、`session/end`、`error/*`。`error/*` 在 M1 用到的具体类型是 `error/model`、`error/internal`、`error/abort`。词表外的事实 MUST NOT 通过临时新造类型表达。
-
-#### Scenario: 一轮纯文本回复的事件序列
-- **WHEN** mock Provider 在一个回合返回不含工具调用的回复，run 正常结束
-- **THEN** 日志的类型序列恰为 `session/start`、`turn/start`、`context/assembled`、`model/request`、`model/response`、`turn/end`、`session/end`
-
-#### Scenario: 无法归类的内部故障走 error 命名空间
-- **WHEN** 内核发生一个不属于任何既有 `namespace/method` 的故障
-- **THEN** 日志写入 `error/internal` 记录，而不是新造事件类型
-
 ### Requirement: 每次 run 一个新 session 与确定的日志路径
 系统 SHALL 为每次 `minihns run` 生成唯一 session id，并把日志写到 `<session-dir>/<session-id>.jsonl`；`<session-dir>` 默认为当前工作目录下的 `sessions/`，可由 `--session-dir` 覆盖；目录不存在时 SHALL 创建。
 
@@ -74,3 +63,32 @@
 #### Scenario: 日志里有一行不是合法的事件记录
 - **WHEN** 被重放的日志里某一行不是合法的事件记录
 - **THEN** `minihns replay` 以退出码 1 结束，stderr 含 `LOG_UNREADABLE`，且进程没有未捕获异常
+
+### Requirement: 事件类型只取自当前事件词表
+系统 SHALL 只发出当前词表中的事件类型：`session/start`、`session/end`、`turn/start`、`turn/end`、`context/assembled`、`model/request`、`model/response`、`tool/call`、`tool/result`、`approval/request`、`approval/response`、`error/*`。`error/*` 在 M2 用到的具体类型是 `error/model`、`error/internal`、`error/abort`、`error/fence`。词表外的事实 MUST NOT 通过临时新造类型表达；`tool/cancelled` 与 `model/retry` 在 M2 MUST NOT 被写出。
+
+#### Scenario: 一次带审批的写的事件序列
+- **WHEN** 一次 run 的某回合派发一次获批的 `edit`
+- **THEN** 该回合里事件类型按 `tool/call`、`approval/request`、`approval/response`、`tool/result` 的顺序成组出现
+
+#### Scenario: 无法归类的内部故障仍走 error 命名空间
+- **WHEN** 内核发生一个不属于任何既有 `namespace/method` 的故障
+- **THEN** 日志写入 `error/internal` 记录，而不是新造事件类型
+
+### Requirement: approval 事件记录问与答
+系统 SHALL 在每次向人请求批准时写一条 `approval/request`（含 `turn_id`、`tool_call_id`、工具名、关键参数），并在得到结论时写一条 `approval/response`（含同样的 `turn_id` 与 `tool_call_id`，`decision` 取 `APPROVED`、`DENIED`、`UNAVAILABLE`）。每条 `approval/request` MUST 有且只有一条配对的 `approval/response`。
+
+#### Scenario: 获批的一对记录
+- **WHEN** 一次提问得到批准
+- **THEN** 日志里该 `tool_call_id` 有一条 `approval/request` 与一条 `decision: APPROVED` 的 `approval/response`
+
+#### Scenario: 词表每个 decision 值可达
+- **WHEN** 跑完 M2 的 approval 场景（批准、拒绝、不可问人）
+- **THEN** 三个 `decision` 取值各至少被一条测试断言到
+
+### Requirement: 围栏拒绝写 error/fence
+系统 SHALL 在围栏或审批拒绝终止 run 时写一条 `error/fence`，payload 含 `turn_id`、`code`、被拒的路径或工具名；该记录 MUST 在配对的 `tool/result` 之后、`turn/end` 之前写入。
+
+#### Scenario: error/fence 的位置可断言
+- **WHEN** 一次 run 因越界写终止
+- **THEN** 日志里 `error/fence` 出现在该调用的 `tool/result` 之后、该回合的 `turn/end` 之前
