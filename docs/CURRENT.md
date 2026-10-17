@@ -2,13 +2,13 @@
 
 每里程碑收尾更新一次。接手时以 `git status --short` 与 `git log --oneline -3` 为准，本文件只是快照。
 
-更新：2026-10-17（分支 `change/m2-file-tools-and-fences`，`main` = `134ae69`）
+更新：2026-10-18（`main` = archive 提交，M2 已合入并归档）
 
 ## 进度
 
 - **M1 完成并已归档**：change `m1-event-log-and-turn-loop` 已合入 `main`（merge commit `141e28c`），归档在 `openspec/changes/archive/2026-10-16-m1-event-log-and-turn-loop/`，tag `m1`。
-- 五份主规格已同步进 `openspec/specs/`（`openspec list --specs` 可查），`openspec validate --specs` 全过。M2 的六份 delta 还没同步——archive 时才同步。
-- **M2 实现与收尾门禁完成**：分支 `change/m2-file-tools-and-fences` 上 55/55 个任务已勾（15.1 变异一轮 19 条、15.2 Learning Gate 收了 L-016 至 L-020）。未合入 `main`、未 archive、未打 tag；下一步是 `code-review` 两轴审查。
+- **M2 完成并已归档**：change `m2-file-tools-and-fences` 已合入 `main`（merge commit `d89a7c2`），归档在 `openspec/changes/archive/2026-10-18-m2-file-tools-and-fences/`，tag `m2`。六份 delta 已同步进主规格：新增 29 条 Requirement、修改 9 条、移除 2 条；主规格现有 7 个能力（`openspec list --specs`：cli 6 / context-projection 8 / event-log 9 / fences 12 / file-tools 11 / provider 5 / turn-loop 9），`openspec validate --specs` 7 过 0 失败。
+- 收尾门禁全跑完：变异 19 条 + 审查后抽查 4 条、Learning Gate 收 L-016 至 L-020、`code-review` 两轴修掉两条最重的发现（tasks 第 16 节）。剩下的只有 `agents-md-slim`。
 - M2 落地的东西：五个文件工具 `read` / `write` / `edit`（CAS）/ `glob` / `grep`；三段派发管线（校验 → 围栏 → 执行）；围栏判定（档位 → 工作区边界 → 要不要问人）；`approval/request` 与 `approval/response` 事件；`error/fence` 的四种 code；`FENCE_DENIED` → 退出码 3；`SessionSettings` 同时是 `run_session` 的入参与 `session/start.payload` 的来源。
 
 ## 门禁实测
@@ -25,7 +25,7 @@
 
 ## 待办与已知缺口
 
-- **`code-review` 两轴已跑**（fixed point `main` = `134ae69`，22 提交）。两条最重的发现已在 tasks 第 16 节修掉：执行段的文件 I/O 失败塌成 `TOOL_IO_FAILED`（此前 `FileExistsError` 逃出管线，违反不变量 B）、`glob` / `grep` 搜索根是文件时改报 `NOT_A_DIRECTORY`（此前是标签与语义相反的 `IS_A_DIRECTORY`）。词表因此 14 值。剩下的流程：合入 `main` → `openspec-archive-change` → `agents-md-slim`。
+- **`code-review` 两轴已跑**（fixed point `main` = `134ae69`，22 提交）。两条最重的发现已在 tasks 第 16 节修掉：执行段的文件 I/O 失败塌成 `TOOL_IO_FAILED`（此前 `FileExistsError` 逃出管线，违反不变量 B）、`glob` / `grep` 搜索根是文件时改报 `NOT_A_DIRECTORY`（此前是标签与语义相反的 `IS_A_DIRECTORY`）。词表因此 14 值。已合入 `main`（merge commit `d89a7c2`）并归档在 `openspec/changes/archive/2026-10-18-m2-file-tools-and-fences/`；剩下的只有 `agents-md-slim`。
 - 延后的重构与记账：`docs/adr/0002-deferred-refactors.md`。第 1、2、4、5、7 条已处理（M2 落了 `SessionSettings`、`ToolDefinition` 与 `ToolSpec` 分叉、`Literal` 词表、工具名列表进 `session/start`）；第 1 条只剩「seam ②③ 里四处手搓 `SessionSettings`」这一半，连同第 3、6、8 条与 M2 审查新增的第 9 至 12 条（`approval/*` 晚落盘、取消只在回合边界被看到、`error/fence` 的路径只在自由文本 `detail` 里、seam ②③ 的桩各留一份）留给 M3。ADR 现有四份：`0001-m1-simplifications.md`、`0002-deferred-refactors.md`、`0003-m2-fence-simplifications.md`（M2 围栏的简化与代价）、`0004-cas-compares-the-read-window.md`（CAS 比的是读到的窗口）。
 - 变异测试记录：M1 的在 `docs/verification/m1-mutation.md`；M2 的在 `docs/verification/m2-file-tools-and-fences-mutation.md`（收尾轮 19 条：16 条被既有测试杀死，G / I / J′ 是 dud mutant，M 与 N 存活并已各补一条判据；审查修复后又跑 4 条抽查 T / U / V / W，全被杀死。同文档注 6 记了一条事实：`ToolResult` 是 dataclass，词表外的值在运行期不会被挡，靠 `mypy --strict` 与可达性判据守）。
 - 已知缺口：
