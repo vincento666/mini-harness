@@ -23,3 +23,7 @@ mini.config.toml
 sessions/
 .tmp/
 *.jsonl.tmp
+
+# 文档构建产物与派生站点：本机生成、可重建，不入库
+docs/milestones/
+repowiki/
