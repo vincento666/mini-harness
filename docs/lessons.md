@@ -29,7 +29,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Evidence: 规格返工提交 `73069a6` 前后；tasks 1.2 措辞改写
 - Next use: 写「验证类」任务时先跑一次真实命令拿退出码，再写判据
 - Promotion candidate: AGENTS.md（已并入 Active 1 的同类）
-- Status: inbox
+- Status: merged into L-014
 
 ### L-002
 - Date: 2026-10-15
@@ -38,7 +38,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Evidence: 新增第五个值 `TOOL_CALLS`（提交 `73069a6`）
 - Next use: M2 写工具事件词表时先穷举「回合结束 / 会话结束 / 失败」三态
 - Promotion candidate: solution document（M2 design.md）
-- Status: inbox
+- Status: closed（M2 的 14.1 已把「每个取值都可达」做成判据）
 
 ### L-003
 - Date: 2026-10-15
@@ -101,7 +101,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Evidence: 实现会话的回报；缓存随后搬到 `S:\AppData\uv\cache`
 - Next use: 跨盘项目设 `UV_LINK_MODE=copy` 或让缓存与仓库同盘
 - Promotion candidate: 无需进 AGENTS.md（环境事实，非项目规则）
-- Status: inbox
+- Status: merged into L-012
 
 ### L-010
 - Date: 2026-10-16
@@ -156,6 +156,57 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Next use: 用任何技能之前先读它的 SKILL/FORMAT 文件并按官方规则写；要偏离就在 ADR 里写明偏离与理由，不要在 AGENTS.md 里另立一套
 - Promotion candidate: AGENTS.md 引用纪律已改为「照 ADR-FORMAT」；教训本身留本文件
 - Status: inbox
+
+### L-016
+- Date: 2026-10-17
+- Context: M2 收尾变异轮（tasks 15.1）
+- Observation: 三种「看起来在变异」其实全绿的改法，都不是变异：① 删掉 `path_key` 里的 `os.path.normcase` —— 本机 `os.path.realpath` 走 `GetFinalPathNameByHandleW`，已经把**存在**的路径折叠成磁盘上的大小写，语义等价；② 把围栏的档位段与边界段互换 —— 两段各自带互斥的 `context.sandbox` 前置条件，不可能同时命中，顺序不可观察；③ 把 `judge_fence` 调用挪到参数校验之前、但 `DENIED` 的返回留在原位 —— 可观察顺序没变
+- Evidence: `docs/verification/m2-file-tools-and-fences-mutation.md` 的 dud 一节（G / I / J′ 三行）；①的大小写实测记在同文档
+- Next use: 做「顺序类」变异之前先确认那两段可能同时命中；否则先把前置条件一起去掉（那是另一条变异，本轮的 H）
+- Promotion candidate: 无需进 AGENTS.md（L-004 已晋升的那句「变异必须改变可观察行为」已覆盖原则）
+- Status: inbox
+
+### L-017
+- Date: 2026-10-17
+- Context: M2 收尾变异轮，`reads_from_records` 连中两条存活（M、N）
+- Observation: 同一个函数被改坏两次都全绿：「后来的成功读不覆盖先前的」与「一次 `write` 也算读过」。当时的判据只有「读过 / 没读过」两个端点，没有「读的顺序」和「什么算读过」这两个维度。补完两条后端点从 2 个变 4 个
+- Evidence: 存活与补测记录 `a146f8c`；变异下的红：`assert ['OK', 'OK', ... 'STALE_EDIT'] == ['OK', 'OK', 'OK', 'OK']`、`assert ['OK', 'STALE_EDIT'] == ['OK', 'WRITE_WITHOUT_READ']`
+- Next use: 一条规则有多个输入维度时，变异按维度逐个做；同一函数连续两条存活就是「只测了端点」的信号
+- Promotion candidate: AGENTS.md 流程节的变异段（若要晋升就与「一次只改一处」那句合并，不新增句子）
+- Status: inbox
+
+### L-018
+- Date: 2026-10-17
+- Context: M2 13.7 的真实 tty approval smoke
+- Observation: 本机 `subprocess.DEVNULL` 的 stdin 是 NUL 设备，`isatty()` 报 **True**，所以「没有人类可问」不能用 DEVNULL 表达，EOF 才是 `UNAVAILABLE` 的判据。ConPTY 路线在本机 `UpdateProcThreadAttribute` 恒返回 87；可用的路线是 `CREATE_NEW_CONSOLE` + `AttachConsole(child pid)` + `CONIN$` + `WriteConsoleInputW` 投 KEY_EVENT
+- Evidence: `docs/verification/m2-file-tools-and-fences-approval-smoke.md` 与同目录 `-approval-smoke-harness.py`（`y` → 0、`n` → 3）；13.3 第一次红的记录
+- Next use: M3 要真实 tty 的黑盒（Ctrl-C、交互式 approval）直接复用那份 harness，别再试 ConPTY
+- Promotion candidate: 无需进 AGENTS.md（环境事实，非项目规则）
+- Status: inbox
+
+### L-019
+- Date: 2026-10-17
+- Context: M2 变异轮里补测试
+- Observation: 编辑工具的两个坑各咬过一次：把 `async def test_...:` 整行（含结尾换行）当 `old_string` 会把下一行粘到 def 行上、语法当场坏掉；`git checkout -- <file>` 之后直接 edit 会报「file changed since it was read」，必须先重读那一小段
+- Evidence: 本轮 `tests/test_tool_registry.py` 的 def 行被粘坏过一次；`dispatch.py` / `fences.py` / `file_tools.py` 各撞过一次「file changed since it was read」
+- Next use: 锚点选正文里唯一的两行组合，不选 def 行；每次 `git checkout --` 之后先 read 再 edit
+- Promotion candidate: 无需进 AGENTS.md（工具用法，不是项目规则）
+- Status: inbox
+
+### L-020
+- Date: 2026-10-17
+- Context: M2 12.3「不写 `tool/cancelled` / `model/retry`」
+- Observation: 往 `closing_events` 里塞 `tool/cancelled` 并不会写出那个类型——`EventLog.append` 把词表外的类型塌成 `error/internal` 并在 payload 里记 `unrecognized_type`。只断言「日志里没有那个类型」会绿在错误的原因上
+- Evidence: tasks 12.3 的变异记录；`docs/verification/m2-file-tools-and-fences-mutation.md` 方法论注 3
+- Next use: 断言「某事件类型不该出现」时同时断言 `payload["unrecognized_type"]` 里没有那个词
+- Promotion candidate: 无需进 AGENTS.md（本仓 `EventLog` 的具体行为，规格与测试已自证）
+- Status: inbox
+
+### M2 收尾轮的消化记录（2026-10-17，tasks 15.2）
+
+收新条目之前先消化：L-001 并入 L-014（同一件事——判据要当场跑一次并记下真实输出）、L-009 并入 L-012（同一件事——uv 缓存与跨盘）、L-002 关闭（M2 的 14.1 已经把「词表每个取值都可达」做成判据）。收件箱从 9 条变成 6 条旧 + 5 条新 = 11 条，仍在 15 条以内。
+
+**AGENTS.md 本轮不晋升**：M2 的可复用信号要么已被 Active Lessons 覆盖（第 3 条「测试写下即绿就是危险信号」、第 4 条「接手前先核实时状态」），要么是环境事实或工具用法（L-018 / L-019 / L-020），没有值得占 AGENTS.md 额度的一句话新规则。
 
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 
