@@ -1,6 +1,6 @@
 # 记账：M1 与 M2 留下的坏味道与设计缺口，到对应里程碑再动
 
-这一条不是待办清单的优先级排序，而是 code-review 修复轮（change `m1-event-log-and-turn-loop` 的 tasks 第 11 节）留下的**账**：审查里确认存在的重复与泄漏，M1 里改它们只会增加改动面、不会增加判据，因此只记账不动代码。任何一条到 M2 都可以按新证据改判——但改判要发生在 M2 的 change 里，不是顺手改。第 9 至 11 条来自 M2（change `m2-file-tools-and-fences`）的 `code-review` 两轴审查，处理方式同样是记账。
+这一条不是待办清单的优先级排序，而是 code-review 修复轮（change `m1-event-log-and-turn-loop` 的 tasks 第 11 节）留下的**账**：审查里确认存在的重复与泄漏，M1 里改它们只会增加改动面、不会增加判据，因此只记账不动代码。任何一条到 M2 都可以按新证据改判——但改判要发生在 M2 的 change 里，不是顺手改。第 9 至 12 条来自 M2（change `m2-file-tools-and-fences`）的 `code-review` 两轴审查，第 13 至 17 条来自 M4（change `m4-real-provider`）的同一轮审查；处理方式同样是记账。
 
 ## 1. `run_session` 的九个关键字参数就是 `session/start` 的 payload
 
@@ -90,5 +90,40 @@ payload 是 `turn_id` / `tool_call_id` / `code` / `detail`。规格要求「被�
 
 - 现在不动的理由：seam ②③ 的判据要能单独读懂「这个门只批准一次」「这个工具只记录被调用过」，把桩收进共享模块会让每条判据多一次跳转。
 - M3 的处理：与第 1 条剩下的那一半一起做——helper 收 `registry` / `gate` 之后，桩才有唯一的家。
+
+## 13. `generate` 里重试前后两段是同形的
+
+`provider/openai_compat.py::generate` 把「发一次 → 是失败结果就返回 → 状态码可重试就记一条」在第一次与第二次请求前后各写一遍，`_retryable` 因此被调两次。
+
+- 现在不动的理由：规格钉死「只重试一次」。把两段收成一个循环要么加一个没人要求的 `max_attempts` 参数（编码四规第 2 条），要么把「只重试一次」这条规格事实藏进循环边界——两者都让规格 ↔ 代码的对应变难读。
+- M3 的处理：只有当「重试策略要可配置」真的成为需求（它现在在 AGENTS.md 的「明确不做」清单里）才抽；否则这条就是长期形态，到 M3 在此处改判。
+
+## 14. `base_url` / `model` / `api_key_env` 三个 `str | None` 一路结伴
+
+它们从 `cli/main.py` 进 `loop/settings.py::SessionSettings` 再进适配器，只对 openai 路径有意义；mock 路径上三条都是 `None`。
+
+- 现在不动的理由：`SessionSettings` 是 `session/start.payload` 的唯一来源（第 1 条的处理结果），而 payload 的字段表是规格事实；把三条收成一个 `ProviderEndpoint | None` 会让 payload 多一层嵌套，改的是规格而不是代码。
+- M3 / M5 的处理：出现第二个真实 provider，或 REPL 需要显示端点时，立一个端点类型并让 payload 由它派生。
+
+## 15. 「这是 openai 路径」这个判断在四处重复
+
+`cli/main.py` 三处（选 provider、`--fixture` 互斥、payload 那三条填不填）加 `loop/turn_loop.py` 一处（`start_payload` 里加不加那三条）。
+
+- 现在不动的理由：四处各自决定不同的事；抽一个 `is_openai` 布尔只是把判断搬个地方，不减少任何一处。
+- M3 / M5 的处理：与第 14 条同源——`SessionSettings` 带一个可选端点对象之后，「是不是 openai」变成「端点在不在」，四处塌成一处。
+
+## 16. seam ① 的测试里 provider 桩与 run helper 各两份
+
+`tests/test_turn_loop.py` 里 `_openai_provider(bodies)`（386 行）与 `_scripted_provider(responses)`（486 行）都是「用 `httpx.MockTransport` 按顺序回放响应」；`_run_with_provider`（503 行）与本 change 新加的 `_run_through`（644 行）都是「建日志、跑一次、读回记录」。
+
+- 现在不动的理由：两份桩分别服务不同的判据（一份喂 JSON 体、一份喂现成的 `httpx.Response` 用来塞 429/500），两份 helper 的差别在 workspace 与 settings 是否要分开——M4 的「两种 provider 同一场景」那条判据必须两个 session 用同一份 workspace。
+- M3 的处理：与第 1 条剩下的那一半、第 12 条一起做：`tests/tool_harness.py` 的 helper 收 `registry` / `gate` / provider 时，桩与 run helper 才有唯一的家。
+
+## 17. 一次回合发了两次 HTTP，日志只有一条 `model/request`
+
+429 重试的回合里日志形状是 `model/request` → `model/retry` → `model/response`：请求实际发了两次，日志说的是「一次请求 + 一次重试」。
+
+- 现在不动的理由：`model/retry` 的存在就是为了让这条可读；写两条 `model/request` 会让「一个回合一次请求」这条形状变模糊，而且要改 event-log 的 payload 字段表（扩词表级决定）。
+- M3 的处理：若流式或并发派发让「一个回合多次请求」成为真实形状，再决定 `model/request` 是否带 `attempt` 字段。
 
 Considered options：现在就抽 `SessionSettings` 与 `Literal` 词表（否：M1 的判据已经全绿，改动只增加面不增加证据）；把 `_replay` 的扫描逻辑立刻下沉（否：只有一个消费者，等第二个消费者出现再抽）；M1 就把工具描述写进 `session/start`（否：M1 没有任何工具可写，写了也测不出差异）；M1 就把 `Message` 抽到独立类型模块（否：一个生产者两个消费者，抽出去只是把同一行 import 换个地方）；M2 就把 `approval/request` 改成提问前写（否：会留下「有 request 没 response」的半对，而 M2 词表里没有表达它的取值）；M2 就在派发循环里查取消（否：先要决定未执行的调用怎么写日志，那是扩词表级决定）。

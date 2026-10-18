@@ -57,7 +57,7 @@
 - [x] 9.3 三条规格 scenario 补上判据：同一场景 mock 与 openai 各跑一遍、日志序列与关键 payload 一致（seam ①）；`NO_PROXY` 带 `[::1]` 时请求照常（seam ⑥，判据自己设这个变量，不靠本机恰好有）；200 但缺 `choices` 在 CLI 层的 `error/model` 与退出码（seam ⑥）。诚实记账：这三条写完即绿——缺的是判据，不是实现。
 - [x] 9.4 取消信号在重试之前再查一次（seam ⑤）：429 之后信号置位 → 第二次请求不得发出，返回 `PROVIDER_ABORTED` 并带回已记的 429。判据：先红后绿。
 - [x] 9.5 请求体显式 `parallel_tool_calls: true`（决策 23，seam ⑤）。判据：先红后绿。
-- [ ] 9.6 记账：ADR-0006 补两条（决策 22 的指数退避没做；`AssistantTurn.attempts` 扩了决策 20 锁死的形状，mock 侧剥掉它）；ADR-0002 补本轮识别的味道欠账（`generate` 两段同形、`base_url`/`model`/`api_key_env` 三个 `str | None` 结伴、`provider_name == "openai"` 四处判断、seam ① 桩重复、一次回合两次 HTTP 只有一条 `model/request`）。
+- [x] 9.6 记账：ADR-0006 补两条（决策 22 的指数退避没做；`AssistantTurn.attempts` 扩了决策 20 锁死的形状，mock 侧剥掉它）；ADR-0002 补本轮识别的味道欠账（`generate` 两段同形、`base_url`/`model`/`api_key_env` 三个 `str | None` 结伴、`provider_name == "openai"` 四处判断、seam ① 桩重复、一次回合两次 HTTP 只有一条 `model/request`）。
 
 ## Workflow follow-up
 

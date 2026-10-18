@@ -10,14 +10,15 @@
 - **M2 完成并已归档**：change `m2-file-tools-and-fences` 已合入 `main`（merge commit `d89a7c2`），归档在 `openspec/changes/archive/2026-10-18-m2-file-tools-and-fences/`，tag `m2`。六份 delta 已同步进主规格：新增 29 条 Requirement、修改 9 条、移除 2 条；主规格现有 7 个能力（`openspec list --specs`：cli 6 / context-projection 8 / event-log 9 / fences 12 / file-tools 11 / provider 5 / turn-loop 9），`openspec validate --specs` 7 过 0 失败。
 - **M2 的收尾门禁全跑完**：变异 20 条 + 审查后抽查 4 条、Learning Gate 收 L-016 至 L-020、`code-review` 两轴修掉两条最重的发现（tasks 第 16 节）、`agents-md-slim` 已跑（AGENTS.md 110 → 100 行）。
 - M2 落地的东西：五个文件工具 `read` / `write` / `edit`（CAS）/ `glob` / `grep`；三段派发管线（校验 → 围栏 → 执行）；围栏判定（档位 → 工作区边界 → 要不要问人）；`approval/request` 与 `approval/response` 事件；`error/fence` 的四种 code；`FENCE_DENIED` → 退出码 3；`SessionSettings` 同时是 `run_session` 的入参与 `session/start.payload` 的来源。
-- **M4 实现完成，收尾流程未完**：change `m4-real-provider`，分支 `change/m4-real-provider`（9 个提交，`bad809d` 起），`tasks.md` 26 项全勾。落地的东西：`ToolSpec` 带上从派发侧 pydantic 模型派生的参数 JSON Schema；`provider/openai_compat.py` 一个适配器（httpx、非流式、429/5xx 重试一次、超时与传输层失败塌成 `PROVIDER_TIMEOUT` / `PROVIDER_TRANSPORT`、取消信号已置位就不发请求、`trust_env=False`）；重试事实由 `ProviderAttempt` 带回、由回合循环写成 `model/retry`（provider 不碰日志，不变量 A）；CLI 的 `--provider openai` 与 `--base-url` / `--model` / `--api-key-env`，密钥只走变量名。词表新增 `model/retry`，provider 失败 code 词表六值。剩的收尾：`code-review` 两轴 → 合入 `main` → 归档 → tag `m4` → `agents-md-slim`。
+- **M4 实现完成，收尾流程未完**：change `m4-real-provider`，分支 `change/m4-real-provider`（11 个提交，`bad809d` 起），`tasks.md` 32 项全勾（含第 9 节）。落地的东西：`ToolSpec` 带上从派发侧 pydantic 模型派生的参数 JSON Schema；`provider/openai_compat.py` 一个适配器（httpx、非流式、429/5xx 重试一次、请求体显式 `parallel_tool_calls: true`、超时与传输层失败塌成 `PROVIDER_TIMEOUT` / `PROVIDER_TRANSPORT`、取消信号已置位就不发请求也不发重试、`trust_env=False`）；重试事实由 `ProviderAttempt` 带回、由回合循环写成 `model/retry`（provider 不碰日志，不变量 A）；CLI 的 `--provider openai` 与 `--base-url` / `--model` / `--api-key-env`，密钥只走变量名。词表新增 `model/retry`，provider 失败 code 词表六值。剩的收尾：合入 `main` → 归档 → tag `m4` → `agents-md-slim`。
+- **M4 的 `code-review` 两轴跑完**（fixed point `main`）：Standards 5 条硬违反 + 5 条味道，Spec 11 条。人裁决「修四条硬的 + 补 `parallel_tool_calls`」→ tasks 第 9 节 9.1–9.5 已修（`--base-url` 形状校验、fixture 不得伪造 `model/retry`、三条 scenario 补判据、重试前再查取消、`parallel_tool_calls`）；其余记账：ADR-0006 补两条（决策 22 的指数退避没做、`AssistantTurn.attempts` 扩了决策 20 的形状），ADR-0002 补第 13 至 17 条（`generate` 两段同形、三条 `str | None` 结伴、「是 openai」四处判断、seam ① 桩两份、一次回合两次 HTTP 只有一条 `model/request`）。
 
 ## 门禁实测
 
 | 门禁 | 实测 |
 |---|---|
-| 测试 | 168 passed / 1 skipped（skip 的是符号链接判据：本机不允许创建符号链接）；全量带覆盖率记账约 40 秒（seam ⑥ 的真实子进程比 M2 多） |
-| 覆盖率 | `coverage erase` → `coverage run -m pytest` → `coverage combine`（合并 33 份 partial）后 TOTAL **96%**（931 语句 / 35 未覆盖）；地板 `fail_under = 95` |
+| 测试 | 176 passed / 1 skipped（skip 的是符号链接判据：本机不允许创建符号链接）；全量带覆盖率记账约 43 秒（seam ⑥ 的真实子进程比 M2 多） |
+| 覆盖率 | `coverage erase` → `coverage run -m pytest` → `coverage combine`（合并 36 份 partial）后 TOTAL **96%**（950 语句 / 37 未覆盖）；地板 `fail_under = 95` |
 | 覆盖率分布 | `provider/openai_compat.py` 89% · `loop/turn_loop.py` 92% · `events/reader.py` 85% · `tools/file_tools.py` 96% · `tools/registry.py` 97% · `provider/mock.py` 98% · `cli/main.py` 99% · 其余 100% |
 | 类型 | `mypy --strict` 干净，21 个源文件 |
 | 风格 | `ruff check` 干净；`ruff format --diff` 空（52 文件）；全仓没有一处 `# noqa` |
