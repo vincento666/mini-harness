@@ -10,7 +10,7 @@
 
 1. **词表类规格必须配「每个值都可达」的测试**。M1 的 `turn/end.stop_reason` 从成功路径倒推，漏了 `TOOL_CALLS`；`ABORTED` 写了却不可达，直到实现才暴露。
 2. **写新 Requirement 时成对检查它跟已有 Requirement 是否互斥**。「每个非零退出都有 `error/*` 事件」与「重放不追加事件」各自正确、合起来不可满足，最后靠 ADR-0001 开一个显式例外收场。
-3. **测试写下即绿就是危险信号**。M1 有约 24 个切片没有红。判据不是测试数量，是变异测试：15 个变异 14 个被杀，存活的 `P` 证明当时没有任何 CLI 测试守 `LOG_WRITE_FAILED`。
+3. **测试写下即绿就是危险信号**。M1 有约 24 个切片没有红。判据不是测试数量，是变异测试：两轮共 18 个变异、16 个被杀，存活的 `G` 与 `P` 各换回一条判据（`P` 证明当时没有任何 CLI 测试守 `LOG_WRITE_FAILED`）。
 4. **接手前先核实时状态，不要相信上一段的叙事**。M1 期间 `git checkout --` 误回滚了未提交的改动，导致一次 `ImportError`。跑 `git status --short` 与 `git log --oneline -3` 再动手。
 5. **文本文件绝不经 PowerShell 往返，读也要显式 `-Encoding UTF8`**。`Set-Content` 毁 UTF-8（真毁过一次测试文件），`Out-File -Encoding utf8` 带 BOM，`>` 产生 UTF-16LE；不带 `-Encoding UTF8` 的 `Get-Content` 连行数都会数错（见 L-013），还会把中文注释行与紧随其后的代码行粘成一行（见 L-022）。改文件用编辑工具；要读命令的 stderr 就 `2> 文件` 再读。
 
@@ -74,7 +74,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Evidence: 修提交 `6ad6256`；黑盒九发的结果记录
 - Next use: 里程碑收尾除了自动门禁，手动跑一遍真实命令（含畸形输入）
 - Promotion candidate: AGENTS.md 流程节
-- Status: inbox
+- Status: closed（AGENTS.md 流程节已把「人手验收」写成每个里程碑的固定完成判据，M4 的 `docs/verification/m4-real-provider-manual.md` 是它的产物）
 
 ### L-007
 - Date: 2026-10-16
@@ -83,7 +83,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Evidence: 提交 `0a9745e`；`cli/main.py` 36% → 96%
 - Next use: 任何「黑盒 + 记账」需求直接照这套
 - Promotion candidate: solution document
-- Status: inbox
+- Status: closed（AGENTS.md 命令段与覆盖率纪律段已把这套三步走写死，M2/M4 每轮门禁都在跑）
 
 ### L-008
 - Date: 2026-10-16
@@ -128,7 +128,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Evidence: `fsutil hardlink list …\cryptography\hazmat\bindings\_rust.pyd` 列出三个 venv 路径；robocopy 日志 `5.338 g copied / 0 failed`；三个 `pyvenv.cfg` 都写着 `uv = 0.12.5`
 - Next use: 估算「搬缓存能腾出多少」之前先数谁在共享它；跨盘搬缓存会让总占用上升
 - Promotion candidate: 无需进 AGENTS.md（环境事实，非项目规则）
-- Status: inbox
+- Status: closed（环境事实已处置：缓存在 S: 与仓库同盘，本项目不再涉及）
 
 ### L-013
 - Date: 2026-10-17
@@ -155,7 +155,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Evidence: `C:\Users\vincento\.agents\skills\domain-modeling\ADR-FORMAT.md` 第 3、5、15、21、27、29-37 行
 - Next use: 用任何技能之前先读它的 SKILL/FORMAT 文件并按官方规则写；要偏离就在 ADR 里写明偏离与理由，不要在 AGENTS.md 里另立一套
 - Promotion candidate: AGENTS.md 引用纪律已改为「照 ADR-FORMAT」；教训本身留本文件
-- Status: inbox
+- Status: closed（AGENTS.md 引用纪律已写死照 ADR-FORMAT；M4 的 ADR-0006 按它写）
 
 ### L-016
 - Date: 2026-10-17
@@ -164,7 +164,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Evidence: `docs/verification/m2-file-tools-and-fences-mutation.md` 的 dud 一节（G / I / J′ 三行）；①的大小写实测记在同文档
 - Next use: 做「顺序类」变异之前先确认那两段可能同时命中；否则先把前置条件一起去掉（那是另一条变异，本轮的 H）
 - Promotion candidate: 无需进 AGENTS.md（L-004 已晋升的那句「变异必须改变可观察行为」已覆盖原则）
-- Status: inbox
+- Status: merged into L-004
 
 ### L-017
 - Date: 2026-10-17
@@ -200,7 +200,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Evidence: tasks 12.3 的变异记录；`docs/verification/m2-file-tools-and-fences-mutation.md` 方法论注 3
 - Next use: 断言「某事件类型不该出现」时同时断言 `payload["unrecognized_type"]` 里没有那个词
 - Promotion candidate: 无需进 AGENTS.md（本仓 `EventLog` 的具体行为，规格与测试已自证）
-- Status: inbox
+- Status: closed（`EventLog` 的词表外塌缩有判据钉着，M4 的 `model/retry` 进词表时也复用了同一条断言形状）
 
 ### L-021
 - Date: 2026-10-18
@@ -218,13 +218,55 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Evidence: 第一次抽取报「位置 行:13 字符:1 意外的标记 `}`」；加 `-Encoding utf8` 后同一份脚本 11 个场景全对
 - Next use: 任何「读文件内容再执行/计数」的 PowerShell 都显式 `-Encoding utf8`（Active 5 的加强版：不只是行数数错，还会粘行）
 - Promotion candidate: 已并入 Active 5 的证据，不占 AGENTS.md 额度
-- Status: inbox
+- Status: merged into Active 5
 
 ### M2 收尾轮的消化记录（2026-10-17，tasks 15.2）
 
 收新条目之前先消化：L-001 并入 L-014（同一件事——判据要当场跑一次并记下真实输出）、L-009 并入 L-012（同一件事——uv 缓存与跨盘）、L-002 关闭（M2 的 14.1 已经把「词表每个取值都可达」做成判据）。收件箱从 9 条变成 6 条旧 + 5 条新 = 11 条，仍在 15 条以内。
 
 **AGENTS.md 本轮不晋升**：M2 的可复用信号要么已被 Active Lessons 覆盖（第 3 条「测试写下即绿就是危险信号」、第 4 条「接手前先核实时状态」），要么是环境事实或工具用法（L-018 / L-019 / L-020），没有值得占 AGENTS.md 额度的一句话新规则。
+
+### L-023
+- Date: 2026-10-18
+- Context: M4 收尾变异轮 E2（`except httpx.HTTPError` → `except httpx.ConnectError`）
+- Observation: 变异存活。补的第一条判据用 `ConnectError` 也杀不死它——**最常见的失败恰好还在收窄后的捕获里**；真正杀死它的是同族里不显眼的 `ReadError`。同一时刻规格里 `PROVIDER_TRANSPORT` 有 Scenario，却没有任何判据经过那条捕获（覆盖率印证：`openai_compat.py` 的 85–86 行未覆盖）
+- Evidence: `docs/verification/m4-real-provider-mutation.md` 的 E2 行与「存活的那一条」节；补测提交 `e1e951a`；`openai_compat.py` 87% → 89%
+- Next use: 任何 `except <基类>` 的代码，判据至少覆盖族里两个成员，其中一个不是最显眼的那个
+- Promotion candidate: AGENTS.md 流程节的变异段（本轮晋升，一进一出换掉「做法与判据见 `docs/verification/` 下的记录」）
+- Status: promoted
+
+### L-024
+- Date: 2026-10-18
+- Context: M4 6.x，CLI 子进程打本地 `http://127.0.0.1:8300/v1`
+- Observation: httpx 默认 `trust_env=True` 会解析本机 `NO_PROXY=localhost,127.0.0.1,::1,[::1]` 并抛 `httpx.InvalidURL: Invalid port: ':1]'`；它不是 `httpx.HTTPError` 的子类，于是绕过适配器对传输层失败的捕获，直接给用户一个未捕获 traceback（违反不变量 B 与 F）。症状是「端点明明活着，请求却炸在客户端构造时」，第一反应会去查端点
+- Evidence: `.tmp/dbg_proxy.py` 三情形实测（默认 → InvalidURL；`trust_env=False` → 正常；删掉 `NO_PROXY` → 正常）；provider delta 新增「适配器不继承代理环境变量」；ADR-0006 第 2 条记代价
+- Next use: 接任何第三方网络库先问「它默认读哪些环境变量与配置文件」，并把「哪些异常类不在你的捕获族里」当成捕获契约的一部分检查
+- Promotion candidate: 无需进 AGENTS.md（已由 ADR-0006 与那条 Requirement 承载）
+- Status: inbox
+
+### L-025
+- Date: 2026-10-18
+- Context: M4 7.1 / 7.2 两个端点跑同一条任务
+- Observation: 同一条 prompt、同一份工作区形状：8300 五个回合、多一次没必要的 `glob`、四个 `tool_calls` 回合 `content` 全空；`deepseek-chat` 三个回合、会叙述、把每条的 `TODO ` 前缀去掉了还在末回合自己说明这处偏离。而日志形状、工具派发、退出码、一轮两个调用完全一致——**差异全在模型行为层，harness 层没有一处 provider 分支**。且「有没有照吩咐做」这一层 harness 看不见：日志只记录它做了什么
+- Evidence: `docs/verification/m4-real-provider-manual.md` 的差异表与两个 session id
+- Next use: M5 之后的人手验收记录固定分两栏：harness 层（必须一致，出现差异就是缺陷）与模型层（允许不同，只观察不修）
+- Promotion candidate: AGENTS.md 完成判据那句（本轮不晋升，先看 M3 的验收是否也需要这个分栏）
+- Status: inbox
+
+### L-026
+- Date: 2026-10-18
+- Context: 用 PowerShell 把 DeepSeek 会话日志摘要成逐回合表
+- Observation: `switch ($_.type)` 的分支里 `$_` 换成了 switch 的主语（那个类型字符串），于是 `$_.payload` 与 `$_.seq` 全空，输出 13 行全空白——症状与「日志里没有内容」完全同形，差点误报成产品缺陷
+- Evidence: 第一次摘要 13 行全空；改成 `foreach ($r in $recs) { $p = $r.payload; switch ($r.type) { … } }` 后同一份日志 13 行全对
+- Next use: 在 `switch` 里访问原对象一律先赋给命名变量；与 Active 5 同族——读取端把真相弄错，不是被读的东西坏了
+- Promotion candidate: 无需进 AGENTS.md（工具用法，不是项目规则）
+- Status: inbox
+
+### M4 收尾轮的消化记录（2026-10-18，tasks 8.3）
+
+先消化再收新条目：关闭 L-006（人手验收已是 AGENTS.md 的固定完成判据）、L-007（覆盖率三步走已写死在命令段）、L-012（环境事实已处置）、L-015（引用纪律已写死照 ADR-FORMAT）、L-020（`EventLog` 词表外塌缩有判据自证）；合并 L-016 → L-004、L-022 → Active 5。收件箱从 13 条降到 6 条（L-005 / L-014 / L-017 / L-018 / L-019 / L-021），收进 L-023 至 L-026 后是 10 条，仍在 15 条以内。
+
+**AGENTS.md 本轮晋升一条**：L-023 的「捕获一整个异常类族的代码，判据要用族里不显眼的那个成员」进流程节的变异段；换掉的那条是变异段末尾的「做法与判据见 `docs/verification/` 下的记录」（同一句里已经写了记录去哪儿）。另有一处**事实修正**不算晋升：技术选型段的密钥那句改成「只走环境变量（默认 `DEEPSEEK_API_KEY`，`--api-key-env` 指定变量名）」——`--api-key-env` 是 M4 新加的 CLI 参数。
 
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 
