@@ -2,7 +2,9 @@
 
 自动化门禁跑 pytest；这份清单跑**真实命令**：`uv run minihns run` / `replay`，看退出码、看 JSONL 日志、看工作区文件真的变了没有。下面每个退出码与每条日志证据都是 2026-10-18 在 Windows 上实测得到的，不是推测。
 
-前提：仓库根目录、`uv` 可用。脚手架与日志都在 `.tmp/`（已 gitignore）。fixture 是 JSON 数组，每条 = 一次 `AssistantTurn`（`content` / `finish_reason` / `tool_calls[].{id,name,arguments}`）。
+前提：**在仓库根跑**（`uv` 靠当前目录找项目，跑别处会报 `error: Failed to spawn: minihns` / `Caused by: program not found`）；`uv` 可用。脚手架与日志都在 `.tmp/`（已 gitignore）。fixture 是 JSON 数组，每条 = 一次 `AssistantTurn`（`content` / `finish_reason` / `tool_calls[].{id,name,arguments}`）。
+
+命令入口用 `uv run python -m mini_harness.cli.main`——跟 seam ⑥ 测试起子进程的形状一模一样（`tests/cli_blackbox.py`），不依赖 `.venv/Scripts/minihns.exe` 有没有装出来。装好了当然可以直接写 `uv run minihns`。
 
 ---
 
@@ -82,7 +84,7 @@ $cases=@(
 $bad=0
 foreach($c in $cases){
   $ws='.tmp/smoke/ws'; Reset-Ws $ws
-  $out = uv run minihns run -p smoke --provider mock --fixture "$fx/$($c.f)" `
+  $out = uv run python -m mini_harness.cli.main run -p smoke --provider mock --fixture "$fx/$($c.f)" `
              --workspace $ws --session-dir $sd --events jsonl @($c.e) 2>&1
   $code=$LASTEXITCODE; $oc=''
   if($code -ne 2){
@@ -98,6 +100,14 @@ foreach($c in $cases){
 }
 Write-Output "mismatches=$bad"
 ```
+
+### 跑不通时先查这三件事
+
+| 症状 | 原因 | 怎么办 |
+|---|---|---|
+| 每个场景都是 `exit=2`、stderr `error: Failed to spawn: minihns` / `Caused by: program not found` | 当前目录不是仓库根：`uv run` 靠当前目录找项目，找不到就起一个**不含本项目**的临时环境，里面没有 `minihns` | `cd` 到仓库根再跑；或用本文档的 `uv run python -m mini_harness.cli.main` 形状（不依赖 console script 是否装出来） |
+| 每个场景都是 `exit=2`、stderr 是 `FIXTURE_INVALID: …` | fixture 没写出来或路径不对 | 看 `.tmp/smoke/fixtures/` 里有没有那 9 个文件，每个第一行该是 `[` |
+| `ConvertTo-Json : 找不到与参数名称"AsArray"匹配的参数` | 这台机器的 PowerShell 没有 `-AsArray`（5.1 没有） | 用本文档的 `ConvertTo-Json -InputObject @(...)` 写法 |
 
 ---
 
@@ -123,8 +133,8 @@ Write-Output "mismatches=$bad"
 
 ```powershell
 $id = (Get-ChildItem $sd -Filter '*.jsonl' | Sort-Object LastWriteTime -Descending | Select-Object -First 1).BaseName
-uv run minihns replay $id --session-dir $sd      # 退出码 0
-uv run minihns replay deadbeef --session-dir $sd # 退出码 2，SESSION_NOT_FOUND
+uv run python -m mini_harness.cli.main replay $id --session-dir $sd      # 退出码 0
+uv run python -m mini_harness.cli.main replay deadbeef --session-dir $sd # 退出码 2，SESSION_NOT_FOUND
 ```
 
 实测 `replay` 输出：逐条 `verified seq=…: OK`、每回合 `turn t1: TOOL_CALLS` / `turn t2: MAX_TURNS`、最后一行 `final_context` 带 `header_fingerprint`。`verified` 就是「日志只追加、没被改写」（不变量 A）的机器版检查。
