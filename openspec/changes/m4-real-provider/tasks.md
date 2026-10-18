@@ -45,8 +45,8 @@
 
 ## 8. 集成检查与收尾
 
-- [ ] 8.1 四道门禁全绿：`coverage erase` → `coverage run -m pytest` → `coverage combine` → `coverage report --fail-under=95`，加 `mypy --strict src`、`ruff check src tests`、`ruff format --diff src tests`。判据：四条命令退出码均为 0 且 `TOTAL` 不低于 95%。
-- [ ] 8.2 跑一轮变异测试并记进 `docs/verification/m4-real-provider-mutation.md`（重点变异：重试次数、429 与 400/401 的分支、schema 派生、`model/retry` 的写入位置、密钥是否漏进 payload）。判据：每个变异都被至少一条测试杀死，存活的补一条能杀死它的测试。
+- [x] 8.1 四道门禁全绿：`coverage erase` → `coverage run -m pytest` → `coverage combine` → `coverage report --fail-under=95`，加 `mypy --strict src`、`ruff check src tests`、`ruff format --diff src tests`。判据：四条命令退出码均为 0 且 `TOTAL` 不低于 95%。
+- [x] 8.2 跑一轮变异测试并记进 `docs/verification/m4-real-provider-mutation.md`（重点变异：重试次数、429 与 400/401 的分支、schema 派生、`model/retry` 的写入位置、密钥是否漏进 payload）。判据：每个变异都被至少一条测试杀死，存活的补一条能杀死它的测试。
 - [ ] 8.3 Learning Gate：可复用教训写进 `docs/lessons.md` 收件箱，没有信号就写 `NO-PROMOTION`。判据：`docs/lessons.md` 有本轮条目或 `NO-PROMOTION`。
 - [ ] 8.4 用 `domain-modeling` 的 ADR-FORMAT 写 `docs/adr/0006-*.md`：mini 版相对 DSH 的 Provider 简化（单适配器、非流式、只重试一次、无 usage 预算）与「本地 8300 先跑通、DeepSeek 收尾」的顺序，并写明代价；同步更新 `docs/CURRENT.md` 的 ADR 计数与已知缺口。判据：文件存在、`docs/CURRENT.md` 的 ADR 计数与它一致。
 

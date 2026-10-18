@@ -176,3 +176,18 @@ def test_openai_run_records_base_url_model_and_the_key_variable_name(tmp_path: P
     assert start["payload"]["model"] == "test-model"
     assert start["payload"]["api_key_env"] == _KEY_ENV
     assert _KEY_VALUE not in json.dumps(start["payload"])
+
+
+def test_a_dead_endpoint_collapses_into_a_transport_result(tmp_path: Path) -> None:
+    """端点没在监听：退出码 1、`error/model` 是 `PROVIDER_TRANSPORT`、没有重试、没有 traceback。"""
+    result = _run_openai(tmp_path, "http://127.0.0.1:9/v1", key_env_value=None)
+
+    assert result.returncode == 1
+    assert "PROVIDER_TRANSPORT" in result.stderr
+    assert "Traceback" not in result.stderr
+    records = _session_records(tmp_path)
+    types = [record["type"] for record in records]
+    assert "model/retry" not in types
+    error = next(record for record in records if record["type"] == "error/model")
+    assert error["payload"]["code"] == "PROVIDER_TRANSPORT"
+    assert records[-1]["type"] == "session/end"

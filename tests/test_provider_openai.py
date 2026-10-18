@@ -228,3 +228,29 @@ async def test_a_set_cancel_signal_sends_no_request() -> None:
     assert seen == []
     assert isinstance(outcome, ProviderFailure)
     assert outcome.code == "PROVIDER_ABORTED"
+
+
+async def test_a_dead_endpoint_is_a_transport_result() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("端点没在监听", request=request)
+
+    provider, _ = _provider(handler=handler)
+
+    outcome = await _generate(provider)
+
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_TRANSPORT"
+
+
+async def test_a_transport_failure_that_is_not_a_connect_error_is_still_a_result() -> None:
+    """捕获的是传输层失败这一整类：把它收窄成 `ConnectError` 就该被这条判据打死。"""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadError("连接被对方掐断", request=request)
+
+    provider, _ = _provider(handler=handler)
+
+    outcome = await _generate(provider)
+
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_TRANSPORT"
