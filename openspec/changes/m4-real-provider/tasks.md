@@ -19,7 +19,7 @@
 
 ## 4. 一轮多调用（seam ①⑤）
 
-- [ ] 4.1 red：假 HTTP 层返回含两个 `tool_calls` 的响应 → 该回合产生两条 `tool/call` 与两条 `tool/result`、`turn/end` 的 `stop_reason` 为 `TOOL_CALLS`（seam ①）→ green（确认内核这条路径真的可达）。判据：该测试先红后绿。
+- [x] 4.1 red：假 HTTP 层返回含两个 `tool_calls` 的响应 → 该回合产生两条 `tool/call` 与两条 `tool/result`、`turn/end` 的 `stop_reason` 为 `TOOL_CALLS`（seam ①）→ green（确认内核这条路径真的可达）。判据：该测试先红后绿。
 
 ## 5. 重试、状态码与超时（seam ⑤①④）
 

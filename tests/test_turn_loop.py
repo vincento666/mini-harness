@@ -7,9 +7,12 @@ import os
 import stat
 from pathlib import Path
 
+import httpx
+
 from mini_harness.events import EventLog, read_events
 from mini_harness.loop import SessionSettings, run_session
 from mini_harness.provider import AssistantTurn, FixtureProvider
+from mini_harness.provider.openai_compat import OpenAICompatProvider
 from mini_harness.tools import ToolRegistry
 from mini_harness.tools.file_tools import file_tool_definitions
 
@@ -378,3 +381,92 @@ async def test_no_m2_scenario_writes_tool_cancelled_or_model_retry(tmp_path: Pat
     assert "model/retry" not in unrecognized
     assert "error/abort" in types
     assert "error/fence" in types
+
+
+def _openai_provider(bodies: list[dict[str, object]]) -> OpenAICompatProvider:
+    """按顺序回放响应体的假 HTTP 层；最后一个体重复回放。"""
+    index = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal index
+        body = bodies[min(index, len(bodies) - 1)]
+        index += 1
+        return httpx.Response(200, json=body)
+
+    return OpenAICompatProvider(
+        base_url="http://127.0.0.1:9/v1",
+        model="test-model",
+        api_key=None,
+        transport=httpx.MockTransport(handler),
+    )
+
+
+_ONE_TURN_TWO_CALLS: list[dict[str, object]] = [
+    {
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "c1",
+                            "type": "function",
+                            "function": {
+                                "name": "read",
+                                "arguments": '{"file_path": "a.md"}',
+                            },
+                        },
+                        {
+                            "id": "c2",
+                            "type": "function",
+                            "function": {
+                                "name": "read",
+                                "arguments": '{"file_path": "b.md"}',
+                            },
+                        },
+                    ],
+                },
+                "finish_reason": "tool_calls",
+            }
+        ]
+    },
+    {
+        "choices": [
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": "完成", "tool_calls": []},
+                "finish_reason": "stop",
+            }
+        ]
+    },
+]
+
+
+async def test_one_turn_with_two_tool_calls_dispatches_both(tmp_path: Path) -> None:
+    """一轮里两个工具调用都要派发，第二个不许被吞掉。"""
+    (tmp_path / "a.md").write_text("甲", encoding="utf-8")
+    (tmp_path / "b.md").write_text("乙", encoding="utf-8")
+    log = EventLog.create(session_dir=tmp_path, session_id="s-two-calls")
+
+    outcome = await run_session(
+        prompt="读两个文件",
+        provider=_openai_provider(_ONE_TURN_TWO_CALLS),
+        log=log,
+        registry=ToolRegistry(file_tool_definitions()),
+        settings=_settings(tmp_path, max_turns=8),
+        cancel=asyncio.Event(),
+    )
+
+    records = read_events(log.path)
+    calls = [record for record in records if record.type == "tool/call"]
+    results = [record for record in records if record.type == "tool/result"]
+    first_turn_end = next(record for record in records if record.type == "turn/end")
+
+    assert [record.payload["tool_call_id"] for record in calls] == ["c1", "c2"]
+    assert [record.payload["tool_call_id"] for record in results] == ["c1", "c2"]
+    assert [record.payload["outcome"] for record in results] == ["OK", "OK"]
+    assert first_turn_end.payload["stop_reason"] == "TOOL_CALLS"
+    assert outcome.turns == 2
+    assert outcome.stop_reason == "MODEL_COMPLETED"
