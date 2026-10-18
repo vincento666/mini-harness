@@ -54,7 +54,7 @@ uv run python -m mini_harness.cli.main run \
 4. **`--yes` 是必须的**：不给 `--yes` 时写类工具落在 approval 门上，stdin 非 tty → `UNAVAILABLE` → 拒绝、退出码 3。人手验收第一次就跑的是 `--yes`，非 `--yes` 的路径只有 seam ② 的黑盒测试覆盖。
 5. **端点没有 `--max-turns` 之外的刹车**：t5 的 384 输出 tokens 是一段人读不着的总结，`--yes` 模式下它照样进日志、照样计费。
 
-## 7.2 DeepSeek：未达成（账户余额）
+## 7.2 DeepSeek：成功（第一次撞在余额上，充值后重跑）
 
 同一条任务、同一份工作区副本（`.tmp/m4-manual-ds/`），只换端点与密钥变量：
 
@@ -65,10 +65,39 @@ uv run python -m mini_harness.cli.main run -p "…" \
   --max-turns 6 --yes
 ```
 
+### 第一次：余额不足（这条留着，它是失败路径的真实证据）
+
 - session id `8edd79c3d12b4416a89c645bd8502b2b`，退出码 **1**，墙钟 **0.94 s**。
 - 唯一一条模型记录：`error/model code=PROVIDER_HTTP_STATUS detail=HTTP 402`，`turn/end` 与 `session/end` 都是 `PROVIDER_ERROR`；`model/retry` **0 条**（402 是 4xx，按规格不重试）。
 - 402 说明密钥被接受（不是 401），DeepSeek 侧回的是「余额不足」。工作区没有被改动。
-- 这条判据要求「两个端点各一次**成功**的真实会话」，**没有达成**：`tasks.md` 的 7.2 保持未勾，`docs/CURRENT.md` 记为 M4 的未收尾项。两个端点的差异对比（参数 schema 遵守、一轮几个调用、耗时、`finish_reason` 用词）等 key 有余额再补。
+
+### 第二次：跑通
+
+同一条命令、同一份工作区副本重跑（`.tmp/m4-manual-ds/`）。
+
+- session id `eead6d7e2d15424da0fa12127b53978d`，退出码 **0**，墙钟 **4.0 s**，23 条记录，3965 tokens。
+- 产出 `.tmp/m4-manual-ds/TODO.md`：7 条、顺序与源文件一致；`inbox.md` 与 `notes/week-41.md` 没有被改动。
+
+| 回合 | finish_reason | 工具调用 | in / out tokens |
+| --- | --- | --- | --- |
+| t1 | `tool_calls` | `read` ×2（同一回合两个调用） | 864 / 76 |
+| t2 | `tool_calls` | `write` ×1 | 1170 / 202 |
+| t3 | `stop` | — | 1403 / 250 |
+
+### 两个端点的差异（同一条 prompt、同一份工作区）
+
+| | 本地 8300 `qwen3.8-flash-next-iq3_xxs` | DeepSeek `deepseek-chat` |
+|---|---|---|
+| 回合数 | 5 | 3 |
+| 墙钟 / tokens | 14.9 s / 7308 | 4.0 s / 3965 |
+| 一轮几个调用 | t1 两个 `read` | t1 两个 `read` |
+| 多余动作 | t2 多一次 `glob` | 没有 |
+| `finish_reason` 用词 | `tool_calls` / `stop` | `tool_calls` / `stop`（一致） |
+| 是否叙述 | 四个 `tool_calls` 回合 `content` 全空 | t1 有「我先读取这两个源文件。」，末回合 442 字符 |
+| 参数 schema 被遵守 | `arguments` 是对象、字段名与参数模型一致 | 同样对；`write` 的 `content` 里换行与中文都正确 |
+| 「保留原措辞」 | 保留了每条的 `TODO ` 前缀 | **去掉了 `TODO ` 前缀**，并在末回合自己说明了这处偏离 |
+
+结论：seam ⑤ 的契约在两个端点上都成立——同一份日志形状、同一套工具派发、同样的退出码、一轮两个调用都落地成两条 `tool/call` + 两条 `tool/result`。差异全在模型行为层（回合数、要不要多余动作、说不说话、指令遵守度），harness 层没有一处 provider 分支。唯一实质分歧是「保留原措辞」这种指令的遵守度，而它不在 harness 的可见范围里：日志只记录它做了什么，不记录它有没有照吩咐做。
 
 ## 顺带钉住的环境事实（task 6.x 期间踩到）
 
