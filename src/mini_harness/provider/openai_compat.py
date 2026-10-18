@@ -11,6 +11,7 @@ import asyncio
 import json
 from collections.abc import Sequence
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -69,6 +70,24 @@ def _retryable(status: int) -> bool:
     return status == 429 or status >= 500
 
 
+def validate_base_url(value: str) -> str | None:
+    """`--base-url` 的形状检查：返回 `None` 表示可用，否则返回一句说明哪里不对。
+
+    放在本模块而不是 CLI 里：httpx 只允许出现在这里（design D1）。形状不合法的 URL
+    在 httpx 构造请求时抛 `ValueError` / `httpx.InvalidURL`，后者不是 `httpx.HTTPError`
+    的子类——先在这里挡住，CLI 才能把它当参数错误（退出码 2）处理。
+    """
+    try:
+        parts = urlsplit(value)
+    except ValueError as error:
+        return f"--base-url {value!r} 不是合法 URL：{error}"
+    if parts.scheme not in ("http", "https"):
+        return f"--base-url {value!r} 必须以 http:// 或 https:// 开头"
+    if parts.hostname is None:
+        return f"--base-url {value!r} 没有主机名"
+    return None
+
+
 async def _post(
     client: httpx.AsyncClient,
     base_url: str,
@@ -83,6 +102,9 @@ async def _post(
             code="PROVIDER_TIMEOUT", detail=f"{base_url} 超时", attempts=attempts
         )
     except httpx.HTTPError as error:
+        return ProviderFailure(code="PROVIDER_TRANSPORT", detail=str(error), attempts=attempts)
+    except (httpx.InvalidURL, ValueError) as error:
+        # URL 构造阶段的失败：不在 httpx.HTTPError 那一族里，不捕就是未捕获异常（不变量 B）。
         return ProviderFailure(code="PROVIDER_TRANSPORT", detail=str(error), attempts=attempts)
 
 
@@ -187,6 +209,8 @@ class OpenAICompatProvider:
             "model": self._model,
             "messages": _wire_messages(messages),
             "tools": _wire_tools(tools),
+            # 决策 23：显式要求允许一轮多个调用，不指望模型的心情。
+            "parallel_tool_calls": True,
         }
         attempts: list[ProviderAttempt] = []
 
@@ -203,6 +227,13 @@ class OpenAICompatProvider:
             response = first
             if _retryable(response.status_code):
                 attempts.append(ProviderAttempt(attempt=1, status=response.status_code))
+                if signal.is_set():
+                    # 规格：取消信号已置位时不得再发出新的请求——重试也是一次新的请求。
+                    return ProviderFailure(
+                        code="PROVIDER_ABORTED",
+                        detail="取消信号已置位，重试未发出",
+                        attempts=attempts,
+                    )
                 second = await _post(client, self._base_url, body, headers, attempts)
                 if isinstance(second, ProviderFailure):
                     return second

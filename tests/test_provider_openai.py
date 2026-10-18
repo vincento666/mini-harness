@@ -254,3 +254,41 @@ async def test_a_transport_failure_that_is_not_a_connect_error_is_still_a_result
 
     assert isinstance(outcome, ProviderFailure)
     assert outcome.code == "PROVIDER_TRANSPORT"
+
+
+async def test_a_malformed_base_url_is_a_transport_result_not_a_crash() -> None:
+    """形状不合法的 URL 在 httpx 构造请求时抛 `ValueError` / `httpx.InvalidURL`，
+    它们不是 `httpx.HTTPError` 的子类——必须塌成结果，不得打断进程（不变量 B）。"""
+    provider = OpenAICompatProvider(base_url="http://[::1", model="test-model", api_key=None)
+
+    outcome = await _generate(provider)
+
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_TRANSPORT"
+
+
+async def test_the_request_body_asks_for_parallel_tool_calls() -> None:
+    """决策 23：显式 `parallel_tool_calls = true`。一轮多个调用不该指望模型的心情。"""
+    provider, seen = _provider(handler=lambda request: httpx.Response(200, json=_OK_BODY))
+
+    await _generate(provider)
+
+    assert _body(seen[0])["parallel_tool_calls"] is True
+
+
+async def test_a_cancel_during_a_retry_stops_the_second_request() -> None:
+    """规格写「取消信号已置位时 MUST NOT 再发出新的请求」——重试也是一次新的请求。"""
+    signal = asyncio.Event()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        signal.set()
+        return httpx.Response(429, json={"error": "slow down"})
+
+    provider, seen = _provider(handler=handler)
+
+    outcome = await provider.generate([Message(role="user", content="任务")], [_READ_TOOL], signal)
+
+    assert len(seen) == 1, "重试不得在取消之后发出"
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_ABORTED"
+    assert [(attempt.attempt, attempt.status) for attempt in outcome.attempts] == [(1, 429)]

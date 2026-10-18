@@ -72,11 +72,19 @@ class _FakeEndpoint:
         return f"http://{host}:{port}/v1"
 
 
-def _run_openai(tmp_path: Path, base_url: str, *, key_env_value: str | None) -> Any:
+def _run_openai(
+    tmp_path: Path,
+    base_url: str,
+    *,
+    key_env_value: str | None,
+    extra_env: dict[str, str] | None = None,
+) -> Any:
     env = dict(os.environ)
     env.pop(_KEY_ENV, None)
     if key_env_value is not None:
         env[_KEY_ENV] = key_env_value
+    for name, value in (extra_env or {}).items():
+        env[name] = value
     return _cli(
         "run",
         "-p",
@@ -191,3 +199,47 @@ def test_a_dead_endpoint_collapses_into_a_transport_result(tmp_path: Path) -> No
     error = next(record for record in records if record["type"] == "error/model")
     assert error["payload"]["code"] == "PROVIDER_TRANSPORT"
     assert records[-1]["type"] == "session/end"
+
+
+def test_a_malformed_base_url_is_an_argument_error(tmp_path: Path) -> None:
+    """`--base-url` 形状不合法是参数错误：退出码 2、不建日志、不给 traceback。"""
+    result = _run_openai(tmp_path, "http://[::1", key_env_value=None)
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert list(tmp_path.glob("*.jsonl")) == []
+
+
+def test_a_hostile_no_proxy_does_not_stop_the_request(tmp_path: Path) -> None:
+    """规格 scenario「主机的 NO_PROXY 里带方括号 IPv6」：判据自己设这个变量，不靠本机恰好有。"""
+    with _FakeEndpoint(status=200, body=_STOP_BODY) as endpoint:
+        result = _run_openai(
+            tmp_path,
+            endpoint.base_url,
+            key_env_value=None,
+            extra_env={
+                "NO_PROXY": "localhost,127.0.0.1,::1,[::1]",
+                "HTTP_PROXY": "http://127.0.0.1:7897",
+            },
+        )
+
+    assert result.returncode == 0
+    assert "Traceback" not in result.stderr
+    assert len(endpoint.requests) == 1
+
+
+def test_a_200_without_choices_is_a_schema_error_at_the_cli(tmp_path: Path) -> None:
+    """规格 scenario「200 的响应体不是合法 chat completion」：日志与退出码那一层也要有判据。"""
+    with _FakeEndpoint(status=200, body={"id": "chatcmpl-4"}) as endpoint:
+        result = _run_openai(tmp_path, endpoint.base_url, key_env_value=None)
+
+    assert result.returncode == 1
+    assert "PROVIDER_SCHEMA_INVALID" in result.stderr
+    records = _session_records(tmp_path)
+    types = [record["type"] for record in records]
+    assert "model/retry" not in types
+    error = next(record for record in records if record["type"] == "error/model")
+    assert error["payload"]["code"] == "PROVIDER_SCHEMA_INVALID"
+    assert records[-1]["type"] == "session/end"
+    assert len(endpoint.requests) == 1

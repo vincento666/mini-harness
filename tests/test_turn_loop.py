@@ -9,9 +9,9 @@ from pathlib import Path
 
 import httpx
 
-from mini_harness.events import EventLog, read_events
-from mini_harness.loop import SessionSettings, run_session
-from mini_harness.provider import AssistantTurn, FixtureProvider
+from mini_harness.events import EventLog, EventRecord, read_events
+from mini_harness.loop import RunOutcome, SessionSettings, run_session
+from mini_harness.provider import AssistantTurn, FixtureProvider, Provider
 from mini_harness.provider.openai_compat import OpenAICompatProvider
 from mini_harness.tools import ToolRegistry
 from mini_harness.tools.file_tools import file_tool_definitions
@@ -603,3 +603,126 @@ async def test_a_timeout_is_a_provider_timeout_result(tmp_path: Path) -> None:
     assert "model/retry" not in types
     assert outcome.stop_reason == "PROVIDER_ERROR"
     assert outcome.failure_code == "PROVIDER_TIMEOUT"
+
+
+_SCENE_ENTRIES: list[dict[str, object]] = [
+    {
+        "content": "",
+        "finish_reason": "tool_calls",
+        "tool_calls": [{"id": "c1", "name": "read", "arguments": {"file_path": "a.md"}}],
+    },
+    {"content": "完成", "finish_reason": "stop"},
+]
+
+_SCENE_BODIES: list[dict[str, object]] = [
+    {
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "c1",
+                            "type": "function",
+                            "function": {
+                                "name": "read",
+                                "arguments": '{"file_path": "a.md"}',
+                            },
+                        }
+                    ],
+                },
+                "finish_reason": "tool_calls",
+            }
+        ]
+    },
+    _STOP_BODY,
+]
+
+
+async def _run_through(
+    tmp_path: Path, provider: Provider, session_id: str, workspace: Path, provider_name: str
+) -> tuple[list[EventRecord], RunOutcome]:
+    session_dir = tmp_path / session_id
+    session_dir.mkdir(parents=True)
+    log = EventLog.create(session_dir=session_dir, session_id=session_id)
+    outcome = await run_session(
+        prompt="任务",
+        provider=provider,
+        log=log,
+        registry=ToolRegistry(file_tool_definitions()),
+        settings=SessionSettings(
+            workspace=workspace, provider_name=provider_name, max_turns=8, approval="auto"
+        ),
+        cancel=asyncio.Event(),
+    )
+    records = read_events(log.path)
+    assert isinstance(records, list)
+    return records, outcome
+
+
+async def test_the_same_scene_through_both_providers_writes_the_same_log(
+    tmp_path: Path,
+) -> None:
+    """规格 scenario「两种 provider 走同一入口」：同一个场景各跑一遍，日志序列与关键 payload 一致。
+
+    `session/start` 比的是「除了 provider 与端点那三个字段之外」——那一处本来就该不同。
+    """
+    workspace = tmp_path / "workspace"
+    workspace.mkdir(parents=True)
+    (workspace / "a.md").write_text("文件内容", encoding="utf-8")
+
+    mock_records, mock_outcome = await _run_through(
+        tmp_path, FixtureProvider(entries=_SCENE_ENTRIES), "s-mock", workspace, "mock"
+    )
+    openai_records, openai_outcome = await _run_through(
+        tmp_path,
+        _scripted_provider([httpx.Response(200, json=body) for body in _SCENE_BODIES]),
+        "s-openai",
+        workspace,
+        "openai",
+    )
+
+    assert [record.type for record in mock_records] == [record.type for record in openai_records]
+    for key in ("tool/call", "tool/result", "model/response", "turn/end"):
+        mine = [record.payload for record in mock_records if record.type == key]
+        theirs = [record.payload for record in openai_records if record.type == key]
+        assert mine == theirs, key
+    mine_start = next(record.payload for record in mock_records if record.type == "session/start")
+    theirs_start = next(
+        record.payload for record in openai_records if record.type == "session/start"
+    )
+    # 只有「选了哪个 provider、指向哪儿」这一处允许不同；其余设置必须逐字一致。
+    chosen = {"provider", "base_url", "model", "api_key_env"}
+    assert {k: v for k, v in mine_start.items() if k not in chosen} == {
+        k: v for k, v in theirs_start.items() if k not in chosen
+    }
+    assert mine_start["provider"] == "mock"
+    assert theirs_start["provider"] == "openai"
+    assert mock_outcome.stop_reason == openai_outcome.stop_reason == "MODEL_COMPLETED"
+    assert mock_outcome.turns == openai_outcome.turns == 2
+
+
+async def test_a_fixture_cannot_invent_a_model_retry(tmp_path: Path) -> None:
+    """重试事实只能由真实适配器带回。fixture 里写 `attempts` 不得凭空造出 `model/retry`。"""
+    log = EventLog.create(session_dir=tmp_path, session_id="s-forge")
+    entries = [
+        {
+            "content": "done",
+            "finish_reason": "stop",
+            "attempts": [{"attempt": 1, "status": 429}],
+        }
+    ]
+
+    await run_session(
+        prompt="任务",
+        provider=FixtureProvider(entries=entries),
+        log=log,
+        registry=ToolRegistry(),
+        settings=_settings(tmp_path, max_turns=8),
+        cancel=asyncio.Event(),
+    )
+
+    types = [record.type for record in read_events(log.path)]
+    assert "model/retry" not in types

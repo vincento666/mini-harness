@@ -50,6 +50,15 @@
 - [x] 8.3 Learning Gate：可复用教训写进 `docs/lessons.md` 收件箱，没有信号就写 `NO-PROMOTION`。判据：`docs/lessons.md` 有本轮条目或 `NO-PROMOTION`。
 - [x] 8.4 用 `domain-modeling` 的 ADR-FORMAT 写 `docs/adr/0006-*.md`：mini 版相对 DSH 的 Provider 简化（单适配器、非流式、只重试一次、无 usage 预算）与「本地 8300 先跑通、DeepSeek 收尾」的顺序，并写明代价；同步更新 `docs/CURRENT.md` 的 ADR 计数与已知缺口。判据：文件存在、`docs/CURRENT.md` 的 ADR 计数与它一致。
 
+## 9. code-review 两轴的修复（人裁决：修四条硬的 + 补 `parallel_tool_calls`）
+
+- [x] 9.1 `--base-url` 形状校验（seam ⑥）：形状不合法是参数错误——退出码 2、stderr 含 `INVALID_ARGUMENT`、不建日志、没有 traceback；适配器侧补上捕获 `ValueError` / `httpx.InvalidURL`（它们不在 `httpx.HTTPError` 那一族里）塌成 `PROVIDER_TRANSPORT`。判据：两条新判据先红后绿（红的是 `--base-url http://[::1` 给出未捕获 `ValueError`）。
+- [x] 9.2 mock fixture 不得伪造 `model/retry`（seam ①）：`FixtureProvider` 剥掉 fixture 里的 `attempts`——重试事实只能由真实适配器带回。判据：先红后绿（红的是 fixture 写 `attempts` 就凭空产出一条 `model/retry`）。
+- [x] 9.3 三条规格 scenario 补上判据：同一场景 mock 与 openai 各跑一遍、日志序列与关键 payload 一致（seam ①）；`NO_PROXY` 带 `[::1]` 时请求照常（seam ⑥，判据自己设这个变量，不靠本机恰好有）；200 但缺 `choices` 在 CLI 层的 `error/model` 与退出码（seam ⑥）。诚实记账：这三条写完即绿——缺的是判据，不是实现。
+- [x] 9.4 取消信号在重试之前再查一次（seam ⑤）：429 之后信号置位 → 第二次请求不得发出，返回 `PROVIDER_ABORTED` 并带回已记的 429。判据：先红后绿。
+- [x] 9.5 请求体显式 `parallel_tool_calls: true`（决策 23，seam ⑤）。判据：先红后绿。
+- [ ] 9.6 记账：ADR-0006 补两条（决策 22 的指数退避没做；`AssistantTurn.attempts` 扩了决策 20 锁死的形状，mock 侧剥掉它）；ADR-0002 补本轮识别的味道欠账（`generate` 两段同形、`base_url`/`model`/`api_key_env` 三个 `str | None` 结伴、`provider_name == "openai"` 四处判断、seam ① 桩重复、一次回合两次 HTTP 只有一条 `model/request`）。
+
 ## Workflow follow-up
 
 - 分支 `change/m4-real-provider`；`/code-review` 两轴（Standards / Spec）后合入 `main`。

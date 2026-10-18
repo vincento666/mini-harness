@@ -30,7 +30,7 @@ from mini_harness.loop import (
 )
 from mini_harness.provider import FixtureLoadFailure, load_fixture_provider
 from mini_harness.provider.contract import Provider
-from mini_harness.provider.openai_compat import OpenAICompatProvider
+from mini_harness.provider.openai_compat import OpenAICompatProvider, validate_base_url
 from mini_harness.tools import ToolRegistry
 from mini_harness.tools.file_tools import file_tool_definitions
 
@@ -169,6 +169,9 @@ def _run(args: argparse.Namespace) -> int:
                 EXIT_INVALID_ARGUMENT,
             )
         # 密钥只从 --api-key-env 指定的环境变量读：它不进 argv、不进日志、不进 payload。
+        invalid = validate_base_url(args.base_url)
+        if invalid is not None:
+            return _report_failure("INVALID_ARGUMENT", invalid, EXIT_INVALID_ARGUMENT)
         provider = OpenAICompatProvider(
             base_url=args.base_url,
             model=args.model,
