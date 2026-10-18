@@ -86,7 +86,7 @@ uv run minihns replay <session-id>
 
 ## 技术选型（已定，不要重新讨论）
 
-Python **>= 3.12** · **uv** · `src/mini_harness/` 布局 · **mypy strict** · **pydantic v2** · **argparse** · **pytest + pytest-asyncio** · asyncio 单事件循环 · 包名 `mini_harness`，命令名 **`minihns`** · 密钥只走 `DEEPSEEK_API_KEY` 环境变量。
+Python **>= 3.12** · **uv** · `src/mini_harness/` 布局 · **mypy strict** · **pydantic v2** · **httpx** · **argparse** · **pytest + pytest-asyncio** · asyncio 单事件循环 · 包名 `mini_harness`，命令名 **`minihns`** · 密钥只走 `DEEPSEEK_API_KEY` 环境变量。
 
 ## MVP 明确不做
 

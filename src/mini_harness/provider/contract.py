@@ -36,10 +36,11 @@ class AssistantTurn(BaseModel):
 
 
 class ToolSpec(BaseModel):
-    """给模型看的工具描述。"""
+    """给模型看的工具描述。`parameters` 是参数 JSON Schema，由注册表从派发侧的参数模型派生。"""
 
     name: str
     description: str
+    parameters: dict[str, Any] = Field(default_factory=dict)
 
 
 class ProviderFailure:

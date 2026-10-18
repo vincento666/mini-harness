@@ -7,9 +7,9 @@
 
 ## 2. 依赖与工具面 schema（seam ②）
 
-- [ ] 2.1 `pyproject.toml` 加 `httpx` 依赖，`uv sync` 后 `uv run python -c "import httpx; print(httpx.__version__)"` 成功打印版本；同时把 `AGENTS.md` 技术选型那行补上 `httpx`。判据：命令退出码 0。
-- [ ] 2.2 red：断言送进 provider 的工具面里每个工具都带参数 JSON Schema，且字段名与必填项与该工具派发侧参数模型的 JSON Schema 一致（seam ②）→ green：`ToolSpec` 加 `parameters`，注册表从 `args_model` 派生。判据：该测试先红后绿，且 `mypy --strict src` 干净。
-- [ ] 2.3 确认既有 mock 路径不受影响：跑全量测试，既有 seam ⑤⑥ 判据全绿、没有一条被 2.2 改坏。判据：`uv run coverage run -m pytest -q` 退出码 0。
+- [x] 2.1 `pyproject.toml` 加 `httpx` 依赖，`uv sync` 后 `uv run python -c "import httpx; print(httpx.__version__)"` 成功打印版本；同时把 `AGENTS.md` 技术选型那行补上 `httpx`。判据：命令退出码 0。
+- [x] 2.2 red：断言送进 provider 的工具面里每个工具都带参数 JSON Schema，且字段名与必填项与该工具派发侧参数模型的 JSON Schema 一致（seam ②）→ green：`ToolSpec` 加 `parameters`，注册表从 `args_model` 派生。判据：该测试先红后绿，且 `mypy --strict src` 干净。
+- [x] 2.3 确认既有 mock 路径不受影响：跑全量测试，既有 seam ⑤⑥ 判据全绿、没有一条被 2.2 改坏。判据：`uv run coverage run -m pytest -q` 退出码 0。
 
 ## 3. 适配器骨架与请求形状（seam ⑤）
 
