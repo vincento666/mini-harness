@@ -40,7 +40,7 @@
 
 ## 7. 真实端点人手验收（不进 CI）
 
-- [ ] 7.1 用本地端点 `http://127.0.0.1:8300/v1`（`--api-key-env MINIHNS_STRATA_KEY --model qwen3.8-flash-next-iq3_xxs`）拿真实工作区办一件真事（例如把某目录里的 `TODO` 全部改掉），把命令、退出码、日志里 `tool_calls` 的真实形状、耗时、以及「哪儿别扭」记进 `docs/verification/m4-real-provider-manual.md`。判据：文档含至少一次成功的真实会话（session id + 退出码 + 被真实改动的文件）。
+- [x] 7.1 用本地端点 `http://127.0.0.1:8300/v1`（`--api-key-env MINIHNS_STRATA_KEY --model qwen3.8-flash-next-iq3_xxs`）拿真实工作区办一件真事（例如把某目录里的 `TODO` 全部改掉），把命令、退出码、日志里 `tool_calls` 的真实形状、耗时、以及「哪儿别扭」记进 `docs/verification/m4-real-provider-manual.md`。判据：文档含至少一次成功的真实会话（session id + 退出码 + 被真实改动的文件）。
 - [ ] 7.2 设好 `DEEPSEEK_API_KEY` 后跑同一条命令打到 DeepSeek，在同一文档里记下两个端点的差异（参数 schema 是否被遵守、一轮几个调用、耗时、`finish_reason` 用词）。判据：文档含两个端点各一次真实会话；若 DeepSeek key 尚未拿到，本条保持未勾并在 `docs/CURRENT.md` 记为 M4 的未收尾项。
 
 ## 8. 集成检查与收尾
