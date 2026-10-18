@@ -70,5 +70,10 @@ class ToolRegistry:
 
     def specs(self) -> list[ToolSpec]:
         return [
-            ToolSpec(name=tool.name, description=tool.description) for tool in self._tools.values()
+            ToolSpec(
+                name=tool.name,
+                description=tool.description,
+                parameters=tool.args_model.model_json_schema(),
+            )
+            for tool in self._tools.values()
         ]

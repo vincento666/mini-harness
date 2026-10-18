@@ -7,9 +7,12 @@ import os
 import stat
 from pathlib import Path
 
-from mini_harness.events import EventLog, read_events
-from mini_harness.loop import SessionSettings, run_session
-from mini_harness.provider import AssistantTurn, FixtureProvider
+import httpx
+
+from mini_harness.events import EventLog, EventRecord, read_events
+from mini_harness.loop import RunOutcome, SessionSettings, run_session
+from mini_harness.provider import AssistantTurn, FixtureProvider, Provider
+from mini_harness.provider.openai_compat import OpenAICompatProvider
 from mini_harness.tools import ToolRegistry
 from mini_harness.tools.file_tools import file_tool_definitions
 
@@ -378,3 +381,348 @@ async def test_no_m2_scenario_writes_tool_cancelled_or_model_retry(tmp_path: Pat
     assert "model/retry" not in unrecognized
     assert "error/abort" in types
     assert "error/fence" in types
+
+
+def _openai_provider(bodies: list[dict[str, object]]) -> OpenAICompatProvider:
+    """按顺序回放响应体的假 HTTP 层；最后一个体重复回放。"""
+    index = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal index
+        body = bodies[min(index, len(bodies) - 1)]
+        index += 1
+        return httpx.Response(200, json=body)
+
+    return OpenAICompatProvider(
+        base_url="http://127.0.0.1:9/v1",
+        model="test-model",
+        api_key=None,
+        transport=httpx.MockTransport(handler),
+    )
+
+
+_ONE_TURN_TWO_CALLS: list[dict[str, object]] = [
+    {
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "c1",
+                            "type": "function",
+                            "function": {
+                                "name": "read",
+                                "arguments": '{"file_path": "a.md"}',
+                            },
+                        },
+                        {
+                            "id": "c2",
+                            "type": "function",
+                            "function": {
+                                "name": "read",
+                                "arguments": '{"file_path": "b.md"}',
+                            },
+                        },
+                    ],
+                },
+                "finish_reason": "tool_calls",
+            }
+        ]
+    },
+    {
+        "choices": [
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": "完成", "tool_calls": []},
+                "finish_reason": "stop",
+            }
+        ]
+    },
+]
+
+
+async def test_one_turn_with_two_tool_calls_dispatches_both(tmp_path: Path) -> None:
+    """一轮里两个工具调用都要派发，第二个不许被吞掉。"""
+    (tmp_path / "a.md").write_text("甲", encoding="utf-8")
+    (tmp_path / "b.md").write_text("乙", encoding="utf-8")
+    log = EventLog.create(session_dir=tmp_path, session_id="s-two-calls")
+
+    outcome = await run_session(
+        prompt="读两个文件",
+        provider=_openai_provider(_ONE_TURN_TWO_CALLS),
+        log=log,
+        registry=ToolRegistry(file_tool_definitions()),
+        settings=_settings(tmp_path, max_turns=8),
+        cancel=asyncio.Event(),
+    )
+
+    records = read_events(log.path)
+    calls = [record for record in records if record.type == "tool/call"]
+    results = [record for record in records if record.type == "tool/result"]
+    first_turn_end = next(record for record in records if record.type == "turn/end")
+
+    assert [record.payload["tool_call_id"] for record in calls] == ["c1", "c2"]
+    assert [record.payload["tool_call_id"] for record in results] == ["c1", "c2"]
+    assert [record.payload["outcome"] for record in results] == ["OK", "OK"]
+    assert first_turn_end.payload["stop_reason"] == "TOOL_CALLS"
+    assert outcome.turns == 2
+    assert outcome.stop_reason == "MODEL_COMPLETED"
+
+
+_STOP_BODY: dict[str, object] = {
+    "choices": [
+        {
+            "index": 0,
+            "message": {"role": "assistant", "content": "完成", "tool_calls": []},
+            "finish_reason": "stop",
+        }
+    ]
+}
+
+
+def _scripted_provider(responses: list[httpx.Response]) -> OpenAICompatProvider:
+    """按顺序回放响应；最后一个重复回放。"""
+    state = {"index": 0}
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        response = responses[min(state["index"], len(responses) - 1)]
+        state["index"] += 1
+        return response
+
+    return OpenAICompatProvider(
+        base_url="http://127.0.0.1:9/v1",
+        model="test-model",
+        api_key=None,
+        transport=httpx.MockTransport(handle),
+    )
+
+
+async def _run_with_provider(tmp_path: Path, provider: OpenAICompatProvider):
+    log = EventLog.create(session_dir=tmp_path, session_id="s-retry")
+    outcome = await run_session(
+        prompt="任务",
+        provider=provider,
+        log=log,
+        registry=ToolRegistry(file_tool_definitions()),
+        settings=_settings(tmp_path, max_turns=8),
+        cancel=asyncio.Event(),
+    )
+    records = read_events(log.path)
+    assert isinstance(records, list)
+    return records, outcome
+
+
+async def test_a_429_then_200_retries_once_and_writes_one_model_retry(tmp_path: Path) -> None:
+    provider = _scripted_provider(
+        [httpx.Response(429, json={"error": "slow down"}), httpx.Response(200, json=_STOP_BODY)]
+    )
+
+    records, outcome = await _run_with_provider(tmp_path, provider)
+    types = [record.type for record in records]
+
+    assert types == [
+        "session/start",
+        "turn/start",
+        "context/assembled",
+        "model/request",
+        "model/retry",
+        "model/response",
+        "turn/end",
+        "session/end",
+    ]
+    retries = [record.payload for record in records if record.type == "model/retry"]
+    assert len(retries) == 1
+    assert retries[0]["attempt"] == 1
+    assert retries[0]["status"] == 429
+    assert retries[0]["turn_id"] == records[1].payload["turn_id"]
+    assert outcome.stop_reason == "MODEL_COMPLETED"
+    assert outcome.failure_code is None
+
+
+async def test_two_500s_write_one_model_retry_then_error_model(tmp_path: Path) -> None:
+    provider = _scripted_provider(
+        [httpx.Response(500, json={"error": "boom"}), httpx.Response(500, json={"error": "boom"})]
+    )
+
+    records, outcome = await _run_with_provider(tmp_path, provider)
+    types = [record.type for record in records]
+
+    assert types == [
+        "session/start",
+        "turn/start",
+        "context/assembled",
+        "model/request",
+        "model/retry",
+        "error/model",
+        "turn/end",
+        "session/end",
+    ]
+    retries = [record.payload for record in records if record.type == "model/retry"]
+    assert len(retries) == 1
+    assert retries[0]["status"] == 500
+    assert outcome.stop_reason == "PROVIDER_ERROR"
+    assert outcome.failure_code == "PROVIDER_HTTP_STATUS"
+
+
+async def test_a_400_is_not_retried(tmp_path: Path) -> None:
+    provider = _scripted_provider([httpx.Response(400, json={"error": "bad request"})])
+
+    records, outcome = await _run_with_provider(tmp_path, provider)
+    types = [record.type for record in records]
+
+    assert types == [
+        "session/start",
+        "turn/start",
+        "context/assembled",
+        "model/request",
+        "error/model",
+        "turn/end",
+        "session/end",
+    ]
+    assert outcome.failure_code == "PROVIDER_HTTP_STATUS"
+
+
+async def test_a_timeout_is_a_provider_timeout_result(tmp_path: Path) -> None:
+    def handle(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectTimeout("连接超时")
+
+    provider = OpenAICompatProvider(
+        base_url="http://127.0.0.1:9/v1",
+        model="test-model",
+        api_key=None,
+        timeout_s=0.05,
+        transport=httpx.MockTransport(handle),
+    )
+
+    records, outcome = await _run_with_provider(tmp_path, provider)
+    types = [record.type for record in records]
+
+    assert "model/retry" not in types
+    assert outcome.stop_reason == "PROVIDER_ERROR"
+    assert outcome.failure_code == "PROVIDER_TIMEOUT"
+
+
+_SCENE_ENTRIES: list[dict[str, object]] = [
+    {
+        "content": "",
+        "finish_reason": "tool_calls",
+        "tool_calls": [{"id": "c1", "name": "read", "arguments": {"file_path": "a.md"}}],
+    },
+    {"content": "完成", "finish_reason": "stop"},
+]
+
+_SCENE_BODIES: list[dict[str, object]] = [
+    {
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "c1",
+                            "type": "function",
+                            "function": {
+                                "name": "read",
+                                "arguments": '{"file_path": "a.md"}',
+                            },
+                        }
+                    ],
+                },
+                "finish_reason": "tool_calls",
+            }
+        ]
+    },
+    _STOP_BODY,
+]
+
+
+async def _run_through(
+    tmp_path: Path, provider: Provider, session_id: str, workspace: Path, provider_name: str
+) -> tuple[list[EventRecord], RunOutcome]:
+    session_dir = tmp_path / session_id
+    session_dir.mkdir(parents=True)
+    log = EventLog.create(session_dir=session_dir, session_id=session_id)
+    outcome = await run_session(
+        prompt="任务",
+        provider=provider,
+        log=log,
+        registry=ToolRegistry(file_tool_definitions()),
+        settings=SessionSettings(
+            workspace=workspace, provider_name=provider_name, max_turns=8, approval="auto"
+        ),
+        cancel=asyncio.Event(),
+    )
+    records = read_events(log.path)
+    assert isinstance(records, list)
+    return records, outcome
+
+
+async def test_the_same_scene_through_both_providers_writes_the_same_log(
+    tmp_path: Path,
+) -> None:
+    """规格 scenario「两种 provider 走同一入口」：同一个场景各跑一遍，日志序列与关键 payload 一致。
+
+    `session/start` 比的是「除了 provider 与端点那三个字段之外」——那一处本来就该不同。
+    """
+    workspace = tmp_path / "workspace"
+    workspace.mkdir(parents=True)
+    (workspace / "a.md").write_text("文件内容", encoding="utf-8")
+
+    mock_records, mock_outcome = await _run_through(
+        tmp_path, FixtureProvider(entries=_SCENE_ENTRIES), "s-mock", workspace, "mock"
+    )
+    openai_records, openai_outcome = await _run_through(
+        tmp_path,
+        _scripted_provider([httpx.Response(200, json=body) for body in _SCENE_BODIES]),
+        "s-openai",
+        workspace,
+        "openai",
+    )
+
+    assert [record.type for record in mock_records] == [record.type for record in openai_records]
+    for key in ("tool/call", "tool/result", "model/response", "turn/end"):
+        mine = [record.payload for record in mock_records if record.type == key]
+        theirs = [record.payload for record in openai_records if record.type == key]
+        assert mine == theirs, key
+    mine_start = next(record.payload for record in mock_records if record.type == "session/start")
+    theirs_start = next(
+        record.payload for record in openai_records if record.type == "session/start"
+    )
+    # 只有「选了哪个 provider、指向哪儿」这一处允许不同；其余设置必须逐字一致。
+    chosen = {"provider", "base_url", "model", "api_key_env"}
+    assert {k: v for k, v in mine_start.items() if k not in chosen} == {
+        k: v for k, v in theirs_start.items() if k not in chosen
+    }
+    assert mine_start["provider"] == "mock"
+    assert theirs_start["provider"] == "openai"
+    assert mock_outcome.stop_reason == openai_outcome.stop_reason == "MODEL_COMPLETED"
+    assert mock_outcome.turns == openai_outcome.turns == 2
+
+
+async def test_a_fixture_cannot_invent_a_model_retry(tmp_path: Path) -> None:
+    """重试事实只能由真实适配器带回。fixture 里写 `attempts` 不得凭空造出 `model/retry`。"""
+    log = EventLog.create(session_dir=tmp_path, session_id="s-forge")
+    entries = [
+        {
+            "content": "done",
+            "finish_reason": "stop",
+            "attempts": [{"attempt": 1, "status": 429}],
+        }
+    ]
+
+    await run_session(
+        prompt="任务",
+        provider=FixtureProvider(entries=entries),
+        log=log,
+        registry=ToolRegistry(),
+        settings=_settings(tmp_path, max_turns=8),
+        cancel=asyncio.Event(),
+    )
+
+    types = [record.type for record in read_events(log.path)]
+    assert "model/retry" not in types

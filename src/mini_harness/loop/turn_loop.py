@@ -88,22 +88,26 @@ async def run_session(
     approval_gate: ApprovalGate = STDIN_APPROVAL_GATE,
 ) -> RunOutcome:
     """跑完一个 session 的全部回合。"""
+    start_payload: dict[str, Any] = {
+        "workspace": str(Path(settings.workspace).resolve()),
+        "provider": settings.provider_name,
+        "max_turns": settings.max_turns,
+        "append_system_prompt": settings.append_system_prompt,
+        "prompt": prompt,
+        "sandbox": settings.sandbox,
+        "approval": settings.approval,
+        "tools": [spec.name for spec in registry.specs()],
+    }
+    if settings.provider_name == "openai":
+        # 记的是密钥环境变量的名字，不是它的值（cli spec：密钥 MUST NOT 进 payload）。
+        start_payload["base_url"] = settings.base_url
+        start_payload["model"] = settings.model
+        start_payload["api_key_env"] = settings.api_key_env
+
     failure = _append_all(
         log,
         [
-            (
-                "session/start",
-                {
-                    "workspace": str(Path(settings.workspace).resolve()),
-                    "provider": settings.provider_name,
-                    "max_turns": settings.max_turns,
-                    "append_system_prompt": settings.append_system_prompt,
-                    "prompt": prompt,
-                    "sandbox": settings.sandbox,
-                    "approval": settings.approval,
-                    "tools": [spec.name for spec in registry.specs()],
-                },
-            ),
+            ("session/start", start_payload),
         ],
     )
     if failure is not None:
@@ -137,10 +141,19 @@ async def run_session(
             return _kernel_failure(log, failure, turns)
 
         generated = await provider.generate(context.messages, registry.specs(), cancel)
+        # 重试事实由 provider 带回、由循环写进日志：provider 不碰日志（不变量 A）。
+        retry_events: list[tuple[str, dict[str, Any]]] = [
+            (
+                "model/retry",
+                {"turn_id": turn_id, "attempt": attempt.attempt, "status": attempt.status},
+            )
+            for attempt in generated.attempts
+        ]
         if isinstance(generated, ProviderFailure):
             failure = _append_all(
                 log,
                 [
+                    *retry_events,
                     (
                         "error/model",
                         {"turn_id": turn_id, "code": generated.code, "detail": generated.detail},
@@ -162,6 +175,7 @@ async def run_session(
         failure = _append_all(
             log,
             [
+                *retry_events,
                 (
                     "model/response",
                     {

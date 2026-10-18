@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import io
 import json
+import os
 import signal
 import sys
 from collections.abc import Callable, Sequence
@@ -29,6 +30,7 @@ from mini_harness.loop import (
 )
 from mini_harness.provider import FixtureLoadFailure, load_fixture_provider
 from mini_harness.provider.contract import Provider
+from mini_harness.provider.openai_compat import OpenAICompatProvider, validate_base_url
 from mini_harness.tools import ToolRegistry
 from mini_harness.tools.file_tools import file_tool_definitions
 
@@ -75,6 +77,9 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--session-dir", default=None)
     run.add_argument("--provider", default="mock")
     run.add_argument("--fixture", default=None)
+    run.add_argument("--base-url", default="https://api.deepseek.com")
+    run.add_argument("--model", default="deepseek-chat")
+    run.add_argument("--api-key-env", default="DEEPSEEK_API_KEY")
     run.add_argument("--max-turns", type=int, default=8)
     run.add_argument("--append-system-prompt", default="")
     run.add_argument("--events", choices=("jsonl",), default=None)
@@ -148,28 +153,48 @@ def _run(args: argparse.Namespace) -> int:
         return _report_failure(
             "INVALID_ARGUMENT", f"--max-turns 至少为 1，收到 {max_turns}", EXIT_INVALID_ARGUMENT
         )
-    if provider_name != "mock":
+    if provider_name not in ("mock", "openai"):
         return _report_failure(
             "UNKNOWN_PROVIDER",
-            f"M1 只支持 --provider mock，收到 {provider_name}",
-            EXIT_INVALID_ARGUMENT,
-        )
-    if fixture is None:
-        return _report_failure(
-            "INVALID_ARGUMENT",
-            "--provider mock 需要 --fixture 指向 JSON 数组",
+            f"--provider 只接受 mock 或 openai，收到 {provider_name}",
             EXIT_INVALID_ARGUMENT,
         )
 
-    loaded = load_fixture_provider(Path(fixture))
-    if isinstance(loaded, FixtureLoadFailure):
-        return _report_failure(loaded.code, loaded.detail, EXIT_INVALID_ARGUMENT)
+    provider: Provider
+    if provider_name == "openai":
+        if fixture is not None:
+            return _report_failure(
+                "INVALID_ARGUMENT",
+                "--provider openai 不使用 --fixture",
+                EXIT_INVALID_ARGUMENT,
+            )
+        # 密钥只从 --api-key-env 指定的环境变量读：它不进 argv、不进日志、不进 payload。
+        invalid = validate_base_url(args.base_url)
+        if invalid is not None:
+            return _report_failure("INVALID_ARGUMENT", invalid, EXIT_INVALID_ARGUMENT)
+        provider = OpenAICompatProvider(
+            base_url=args.base_url,
+            model=args.model,
+            api_key=os.environ.get(args.api_key_env),
+        )
+    else:
+        if fixture is None:
+            return _report_failure(
+                "INVALID_ARGUMENT",
+                "--provider mock 需要 --fixture 指向 JSON 数组",
+                EXIT_INVALID_ARGUMENT,
+            )
+        loaded = load_fixture_provider(Path(fixture))
+        if isinstance(loaded, FixtureLoadFailure):
+            return _report_failure(loaded.code, loaded.detail, EXIT_INVALID_ARGUMENT)
+        provider = loaded
 
     log = EventLog.start(_session_dir(args.session_dir))
     if isinstance(log, LogWriteFailure):
         return _report_failure(log.code, log.detail, EXIT_INTERNAL_ERROR)
 
     workspace: str | None = args.workspace
+    openai = provider_name == "openai"
     settings = SessionSettings(
         workspace=Path(workspace) if workspace is not None else Path.cwd(),
         provider_name=provider_name,
@@ -177,9 +202,12 @@ def _run(args: argparse.Namespace) -> int:
         sandbox=args.sandbox,
         approval="auto" if args.yes else "ask",
         append_system_prompt=args.append_system_prompt,
+        base_url=args.base_url if openai else None,
+        model=args.model if openai else None,
+        api_key_env=args.api_key_env if openai else None,
     )
     outcome = asyncio.run(
-        _await_session(prompt=prompt, provider=loaded, settings=settings, log=log)
+        _await_session(prompt=prompt, provider=provider, settings=settings, log=log)
     )
 
     exit_code = exit_code_for(outcome)

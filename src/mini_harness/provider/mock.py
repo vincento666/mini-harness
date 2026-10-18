@@ -49,9 +49,12 @@ class FixtureProvider:
         raw = self._entries[self._index]
         self._index += 1
         try:
-            return AssistantTurn.model_validate(raw)
+            turn = AssistantTurn.model_validate(raw)
         except ValidationError as exc:
             return ProviderFailure("PROVIDER_SCHEMA_INVALID", str(exc))
+        # 重试事实只能由真实适配器带回：fixture 是外部输入，它写 `attempts`
+        # 不得凭空造出 `model/retry`（event-log delta：没有 429 与 5xx 的 run 不得有该记录）。
+        return turn.model_copy(update={"attempts": []})
 
 
 def load_fixture_provider(path: Path) -> FixtureProvider | FixtureLoadFailure:

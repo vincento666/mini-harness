@@ -67,7 +67,23 @@ def test_the_registry_holds_exactly_the_five_file_tools() -> None:
     assert [(spec.name, spec.description) for spec in registry.specs()] == [
         (tool.name, tool.description) for tool in definitions
     ]
-    assert all(set(spec.model_fields) == {"name", "description"} for spec in registry.specs())
+    assert all(
+        set(spec.model_dump()) == {"name", "description", "parameters"} for spec in registry.specs()
+    )
+
+
+def test_the_parameter_schema_a_model_sees_comes_from_the_dispatch_side_model() -> None:
+    """工具面的参数 schema 由派发侧的 `args_model` 派生，不是手搓的第二份描述。"""
+    definitions = file_tool_definitions()
+    registry = ToolRegistry(definitions)
+    by_name = {spec.name: spec for spec in registry.specs()}
+
+    for tool in definitions:
+        parameters = by_name[tool.name].parameters
+        assert parameters == tool.args_model.model_json_schema()
+        assert parameters["type"] == "object"
+        assert parameters["properties"]
+        assert tool.name in {"read", "write", "edit", "glob", "grep"}
 
 
 def test_the_outcome_vocabulary_has_fourteen_values_and_no_not_implemented() -> None:
