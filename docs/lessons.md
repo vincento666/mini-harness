@@ -12,7 +12,7 @@
 2. **写新 Requirement 时成对检查它跟已有 Requirement 是否互斥**。「每个非零退出都有 `error/*` 事件」与「重放不追加事件」各自正确、合起来不可满足，最后靠 ADR-0001 开一个显式例外收场。
 3. **测试写下即绿就是危险信号**。M1 有约 24 个切片没有红。判据不是测试数量，是变异测试：15 个变异 14 个被杀，存活的 `P` 证明当时没有任何 CLI 测试守 `LOG_WRITE_FAILED`。
 4. **接手前先核实时状态，不要相信上一段的叙事**。M1 期间 `git checkout --` 误回滚了未提交的改动，导致一次 `ImportError`。跑 `git status --short` 与 `git log --oneline -3` 再动手。
-5. **文本文件绝不经 PowerShell 往返，读也要显式 `-Encoding UTF8`**。`Set-Content` 毁 UTF-8（真毁过一次测试文件），`Out-File -Encoding utf8` 带 BOM，`>` 产生 UTF-16LE；不带 `-Encoding UTF8` 的 `Get-Content` 连行数都会数错（见 L-013）。改文件用编辑工具；要读命令的 stderr 就 `2> 文件` 再读。
+5. **文本文件绝不经 PowerShell 往返，读也要显式 `-Encoding UTF8`**。`Set-Content` 毁 UTF-8（真毁过一次测试文件），`Out-File -Encoding utf8` 带 BOM，`>` 产生 UTF-16LE；不带 `-Encoding UTF8` 的 `Get-Content` 连行数都会数错（见 L-013），还会把中文注释行与紧随其后的代码行粘成一行（见 L-022）。改文件用编辑工具；要读命令的 stderr 就 `2> 文件` 再读。
 
 ## Candidate Inbox
 
@@ -200,6 +200,24 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Evidence: tasks 12.3 的变异记录；`docs/verification/m2-file-tools-and-fences-mutation.md` 方法论注 3
 - Next use: 断言「某事件类型不该出现」时同时断言 `payload["unrecognized_type"]` 里没有那个词
 - Promotion candidate: 无需进 AGENTS.md（本仓 `EventLog` 的具体行为，规格与测试已自证）
+- Status: inbox
+
+### L-021
+- Date: 2026-10-18
+- Context: 写 M1–M2 的 CLI 手测清单（`docs/verification/m1-m2-manual-smoke.md`）
+- Observation: 手测脚手架有三条硬要求，缺一条就得到假结果：① **每个场景一个干净工作区**——上一轮把 `TODO: one` 改成 `DONE: one`，下一轮的 `old_string` 就变成 `EDIT_TARGET_NOT_FOUND`，看起来像 CAS 坏了；② **带工具调用的 fixture 必须有收尾回合**——只有一条 `finish_reason: tool_calls` 的条目会让下一跳 `generate` 撞上 `PROVIDER_EXHAUSTED`，本该 0 的场景报 1；③ **判据写成「退出码 + 日志里的词」两列并当场对照**，只写「应该成功」的清单会在第一次跑时就分不清是谁的错
+- Evidence: 同一份脚手架三次返工：共用工作区时 `stale-edit` 报 `EDIT_TARGET_NOT_FOUND, EDIT_TARGET_NOT_FOUND`；缺收尾回合时 `io-failure` 报 exit 1；修完 11 个场景 `mismatches=0`
+- Next use: M3 的手测清单直接沿用这份的形状（场景表 + 一键脚本 + `mismatches=0`），别新写一套
+- Promotion candidate: 无需进 AGENTS.md（写验证文档的做法，细节已在 `docs/verification/`）
+- Status: inbox
+
+### L-022
+- Date: 2026-10-18
+- Context: 从 markdown 里抠出代码块逐字执行，用来证明文档里的脚本真能跑
+- Observation: 不带 `-Encoding utf8` 的 `Get-Content` 按本机 ANSI 代码页解码 UTF-8 中文，**行尾字节会被并入前一个多字节字符**——中文注释行与紧随其后的代码行粘成一行，脚本当场语法错误。症状看起来像「文档里的脚本是坏的」，实际是读取端的解码问题
+- Evidence: 第一次抽取报「位置 行:13 字符:1 意外的标记 `}`」；加 `-Encoding utf8` 后同一份脚本 11 个场景全对
+- Next use: 任何「读文件内容再执行/计数」的 PowerShell 都显式 `-Encoding utf8`（Active 5 的加强版：不只是行数数错，还会粘行）
+- Promotion candidate: 已并入 Active 5 的证据，不占 AGENTS.md 额度
 - Status: inbox
 
 ### M2 收尾轮的消化记录（2026-10-17，tasks 15.2）
