@@ -24,6 +24,7 @@
 
 - 现在不动的理由：M1 只有 replay 一个消费者，且这段逻辑与它的判据（逐点相等）在同一个测试文件里最好读。
 - M2 的处理：下沉成 events 层的 `assembly_points(records)`（返回 `(前缀, turn_id, 记录)`），CLI 只负责打印与退出码。
+- **未处理（2026-10-18 的 M3 分流核实）**：上面那条「M2 的处理」没有执行——`cli/main.py::_replay` 仍自己扫 `records` 找 `turn/start`、按 `context/assembled` 的下标切前缀。这条账本记录与实况不符，已在此处更正而不是悄悄删掉。改判：第二个消费者是 M6 的 chat REPL 与 M7 的 serve SSE，**推到 M6**；M3 加 `bash` 不改 replay 的输入形状（工具名列表已在 `session/start.payload.tools`，`fold()` 从它派生），所以它不会变得更坏。
 
 ## 4. 三个测试文件各自有一份 `_cli` 黑盒 helper
 
@@ -72,7 +73,7 @@
 
 ## 10. 取消信号只在回合边界被看到
 
-`cancel.is_set()` 只出现在回合边界（`turn_loop` 的 267 / 279 / 293 三处），派发一批 `tool_calls` 的循环里没有检查。实测：第一个调用置位 cancel 后，同一批里的第二个 `write` 仍被派发。规格 turn-loop 那条「当运行期间收到取消信号时…」读起来像随时生效。
+`cancel.is_set()` 只出现在回合边界（`turn_loop` 的 281 / 293 / 307 三处，行号在 2026-10-18 的 M3 分流里更正过；原来写的 267 / 279 / 293 是 M2 时的位置），派发一批 `tool_calls` 的循环里没有检查。实测：第一个调用置位 cancel 后，同一批里的第二个 `write` 仍被派发。规格 turn-loop 那条「当运行期间收到取消信号时…」读起来像随时生效。
 
 - 现在不动的理由：M2 的取消判据覆盖的是 `generate` 期间与回合边界；「一批工具中途取消」需要决定剩下几个算不算执行过、要不要写 `tool/cancelled`（这个词在 M2 词表之外，见 ADR-0003 第 3 条）。
 - M3 的处理：决定「取消发生在派发段时剩下未执行的调用怎么写」——要么加 `tool/cancelled` 词表项，要么在 `turn/end.payload` 里记下「未执行的 `tool_call_id` 列表」。两者都是扩词表，与第 3 条同源。
