@@ -8,7 +8,7 @@
 |---|---|---|---|
 | M1 ✅ | `m1-event-log-and-turn-loop` | JSONL 只追加 + 折叠 + 回合循环 + mock Provider + `minihns run` + `minihns replay` | mock 场景跑通；replay 与实时折叠一致 |
 | M2 ✅ | `m2-file-tools-and-fences` | `read`/`write`/`edit`(CAS)/`glob`/`grep` + 工作区边界 + 写前必读 + 两轴 | 批量改文件成功（fixture 仓库一轮 10 次 read+edit 全 `OK`）；越界写被拒并写 `error/fence`、退出码 3；真实 tty 的 `y` / `n` 两次 smoke 分别是 0 与 3。**判据全部复现，收尾门禁跑完（变异 19 条 + 审查后抽查 4 条、Learning Gate 收 5 条、`code-review` 两轴修掉两条最重的发现）；已合入 `main`、归档为 `2026-10-18-m2-file-tools-and-fences`、tag `m2`** |
-| M4 ⬅ 下一个 | `m4-real-provider-deepseek` | OpenAI 兼容适配器 + `parallel_tool_calls` + 429/5xx 重试一次 | 真实调用 smoke 通过；mock 与真实同一接口；`ToolSpec` 带上参数 schema（否则模型只能猜参数——ADR-0005 第 4 条，M4 的阻塞项）；真实 smoke 不进 CI，走下面那条人手验收 |
+| M4 ⬅ 下一个 | `m4-real-provider`（原名 `m4-real-provider-deepseek`，因先跑本地端点而改名） | OpenAI 兼容适配器 + `parallel_tool_calls` + 429/5xx 重试一次 | **两个端点各一次真实 smoke**：本地 `http://127.0.0.1:8300/v1`（Strata server，模型 `qwen3.8-flash-next-iq3_xxs`）先跑通，DeepSeek 官方端点收尾；mock 与真实同一接口；`ToolSpec` 带上参数 schema（否则模型只能猜参数——ADR-0005 第 4 条，M4 的阻塞项）；真实 smoke 不进 CI，走下面那条人手验收 |
 | M3 | `m3-bash-concurrency-timeout` | `bash` + 只读并发（max 8）+ 超时与取消事件 + **平台适配层（路径规范化 / tty / 进程树与信号）+ CI 矩阵（Windows + Linux）** | 一轮内并发读 ≥2；超时写 `tool/cancelled` 且回合继续；同一套判据在 Windows 与 Linux 各跑一遍全绿，门禁由 CI 跑 |
 | M5 | `m5-context-budget-compaction` | 窗口预算 + 触发线公式 + 剪枝 + 摘要 + 遮蔽 + 标记对 | 小 W 下触发压缩；原文事件仍在日志里 |
 | M6 | `m6-chat-repl` | `minihns chat` REPL，复用同一内核入口 | REPL 续跑同一会话内核 |

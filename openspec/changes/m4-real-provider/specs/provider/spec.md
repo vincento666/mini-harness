@@ -35,6 +35,10 @@
 - **WHEN** 请求返回 400
 - **THEN** 日志里没有 `model/retry`，`error/model` 的 `code` 为 `PROVIDER_HTTP_STATUS`，退出码为 1
 
+#### Scenario: 缺密钥的 401 不重试
+- **WHEN** 密钥环境变量未设因而请求不带鉴权头，服务端返回 401
+- **THEN** 日志里没有 `model/retry`，`error/model` 的 `code` 为 `PROVIDER_HTTP_STATUS`，退出码为 1
+
 ### Requirement: 超时与取消是失败结果
 系统 SHALL 在请求超时或取消信号已置位时停止请求：超时 SHALL 塌成 `error/model`（`code: PROVIDER_TIMEOUT`）；取消信号已置位时 MUST NOT 再发出新的请求。
 
