@@ -32,11 +32,11 @@
 
 ## 6. CLI 的 provider 选择与密钥（seam ⑥）
 
-- [ ] 6.1 red：`--provider claude` → 退出码 2、stderr 含 `UNKNOWN_PROVIDER`、没有 session 日志 → green。判据：该黑盒测试先红后绿。
-- [ ] 6.2 red：`--provider openai --fixture <f>` → 退出码 2、stderr 含 `INVALID_ARGUMENT`、没有 session 日志 → green。判据：该黑盒测试先红后绿。
-- [ ] 6.3 red：`--api-key-env` 指向未设的变量 → 请求被发出（不带鉴权头）、假 server 返回 401 → 退出码 1、`error/model`（`code: PROVIDER_HTTP_STATUS`）、没有 `model/retry`、退出码不是 2 → green。判据：该黑盒测试先红后绿，且不依赖 8300。
-- [ ] 6.4 red：`--api-key-env` 指向已设的变量 → loopback 假 server 收到带密钥的请求，而 stdout、stderr 与该 session 的日志里都搜不到该值 → green。判据：该黑盒测试先红后绿。
-- [ ] 6.5 red：`--provider openai` 的 `session/start` payload 含 `base_url`、`model`、`api_key_env`（变量名），且整份日志里没有密钥的值 → green。判据：该黑盒测试先红后绿。
+- [x] 6.1 red：`--provider claude` → 退出码 2、stderr 含 `UNKNOWN_PROVIDER`、没有 session 日志 → green。判据：该黑盒测试先红后绿。
+- [x] 6.2 red：`--provider openai --fixture <f>` → 退出码 2、stderr 含 `INVALID_ARGUMENT`、没有 session 日志 → green。判据：该黑盒测试先红后绿。
+- [x] 6.3 red：`--api-key-env` 指向未设的变量 → 请求被发出（不带鉴权头）、假 server 返回 401 → 退出码 1、`error/model`（`code: PROVIDER_HTTP_STATUS`）、没有 `model/retry`、退出码不是 2 → green。判据：该黑盒测试先红后绿，且不依赖 8300。
+- [x] 6.4 red：`--api-key-env` 指向已设的变量 → loopback 假 server 收到带密钥的请求，而 stdout、stderr 与该 session 的日志里都搜不到该值 → green。判据：该黑盒测试先红后绿。
+- [x] 6.5 red：`--provider openai` 的 `session/start` payload 含 `base_url`、`model`、`api_key_env`（变量名），且整份日志里没有密钥的值 → green。判据：该黑盒测试先红后绿。
 
 ## 7. 真实端点人手验收（不进 CI）
 

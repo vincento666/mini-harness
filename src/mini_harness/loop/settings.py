@@ -21,3 +21,7 @@ class SessionSettings:
     sandbox: SandboxLevel = "workspace-write"
     approval: ApprovalMode = "ask"
     append_system_prompt: str = ""
+    # 只有 openai 路径带这三条；`api_key_env` 记的是环境变量的名字，不是它的值。
+    base_url: str | None = None
+    model: str | None = None
+    api_key_env: str | None = None

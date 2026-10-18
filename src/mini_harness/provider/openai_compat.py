@@ -190,7 +190,13 @@ class OpenAICompatProvider:
         }
         attempts: list[ProviderAttempt] = []
 
-        async with httpx.AsyncClient(transport=self._transport, timeout=self._timeout_s) as client:
+        # trust_env=False：不继承 HTTP_PROXY / NO_PROXY / netrc。
+        # 本机实测 `NO_PROXY=localhost,127.0.0.1,::1,[::1]` 会让 httpx 在构造客户端时抛
+        # `InvalidURL: Invalid port: ':1]'`——它不是 `httpx.HTTPError` 的子类，会绕过下面
+        # 的失败捕获、直接打断进程（违反不变量 B）。见 ADR-0006 的简化清单。
+        async with httpx.AsyncClient(
+            transport=self._transport, timeout=self._timeout_s, trust_env=False
+        ) as client:
             first = await _post(client, self._base_url, body, headers, attempts)
             if isinstance(first, ProviderFailure):
                 return first
