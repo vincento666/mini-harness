@@ -13,9 +13,9 @@
 
 ## 3. 适配器骨架与请求形状（seam ⑤）
 
-- [ ] 3.1 red：用注入的假 HTTP 层断言请求形状——URL 是 `<base-url>/chat/completions`、请求体含 `model`、`messages`、`tools`（每个工具带 `parameters`）、密钥存在才带鉴权头、未设不带（seam ⑤）→ green：`provider/openai_compat.py` 的 `generate` 最小实现。判据：该测试先红后绿。
-- [ ] 3.2 red：200 响应转成 `AssistantTurn`（`content`、`finish_reason`、`tool_calls`、`usage` 四个字段各断言）→ green。判据：该测试先红后绿。
-- [ ] 3.3 red：200 但响应体缺 `choices` → `error/model`（`code: PROVIDER_SCHEMA_INVALID`）、`stop_reason: PROVIDER_ERROR`、退出码 1、没有未捕获异常（seam ⑤ + seam ①）→ green。判据：该测试先红后绿。
+- [x] 3.1 red：用注入的假 HTTP 层断言请求形状——URL 是 `<base-url>/chat/completions`、请求体含 `model`、`messages`、`tools`（每个工具带 `parameters`）、密钥存在才带鉴权头、未设不带（seam ⑤）→ green：`provider/openai_compat.py` 的 `generate` 最小实现。判据：该测试先红后绿。
+- [x] 3.2 red：200 响应转成 `AssistantTurn`（`content`、`finish_reason`、`tool_calls`、`usage` 四个字段各断言）→ green。判据：该测试先红后绿。
+- [x] 3.3 red：200 但响应体缺 `choices` → `error/model`（`code: PROVIDER_SCHEMA_INVALID`）、`stop_reason: PROVIDER_ERROR`、退出码 1、没有未捕获异常（seam ⑤ + seam ①）→ green。判据：该测试先红后绿。
 
 ## 4. 一轮多调用（seam ①⑤）
 
