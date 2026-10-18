@@ -216,3 +216,15 @@ async def test_a_200_response_that_is_not_json_is_a_schema_failure() -> None:
 
     assert isinstance(outcome, ProviderFailure)
     assert outcome.code == "PROVIDER_SCHEMA_INVALID"
+
+
+async def test_a_set_cancel_signal_sends_no_request() -> None:
+    provider, seen = _provider(handler=lambda request: httpx.Response(200, json=_OK_BODY))
+    signal = asyncio.Event()
+    signal.set()
+
+    outcome = await provider.generate([Message(role="user", content="任务")], [_READ_TOOL], signal)
+
+    assert seen == []
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_ABORTED"

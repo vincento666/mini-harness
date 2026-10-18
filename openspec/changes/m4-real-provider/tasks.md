@@ -23,12 +23,12 @@
 
 ## 5. 重试、状态码与超时（seam ⑤①④）
 
-- [ ] 5.1 red：第一次 429、第二次 200 → 日志恰好一条 `model/retry`（含 `turn_id`、`attempt`、`status`）、退出码 0（seam ⑤ + seam ①）→ green：重试一次，`ProviderFailure` 带回重试事实，回合循环写 `model/retry`（provider 不碰日志）。判据：该测试先红后绿。
-- [ ] 5.2 red：两次都 500 → 一条 `model/retry` + 一条 `error/model`（`code: PROVIDER_HTTP_STATUS`）+ 退出码 1 → green。判据：该测试先红后绿。
-- [ ] 5.3 red：400 → 没有 `model/retry`、`error/model` 的 `code` 为 `PROVIDER_HTTP_STATUS`、退出码 1 → green。判据：该测试先红后绿。
-- [ ] 5.4 red：请求超时 → `error/model`（`code: PROVIDER_TIMEOUT`）、退出码 1、没有未捕获异常 → green。判据：该测试先红后绿。
-- [ ] 5.5 red：取消信号已置位时 `generate` 不再发出新请求（假 HTTP 层计数为 0）→ green。判据：该测试先红后绿。
-- [ ] 5.6 red：一条含 `model/retry` 的日志被 replay 时每条 `context/assembled` 仍与前缀重算逐字段相等（seam ④）→ green（折叠把 `model/retry` 当事实、不进上下文）。判据：该测试先红后绿。
+- [x] 5.1 red：第一次 429、第二次 200 → 日志恰好一条 `model/retry`（含 `turn_id`、`attempt`、`status`）、退出码 0（seam ⑤ + seam ①）→ green：重试一次，`ProviderFailure` 带回重试事实，回合循环写 `model/retry`（provider 不碰日志）。判据：该测试先红后绿。
+- [x] 5.2 red：两次都 500 → 一条 `model/retry` + 一条 `error/model`（`code: PROVIDER_HTTP_STATUS`）+ 退出码 1 → green。判据：该测试先红后绿。
+- [x] 5.3 red：400 → 没有 `model/retry`、`error/model` 的 `code` 为 `PROVIDER_HTTP_STATUS`、退出码 1 → green。判据：该测试先红后绿。
+- [x] 5.4 red：请求超时 → `error/model`（`code: PROVIDER_TIMEOUT`）、退出码 1、没有未捕获异常 → green。判据：该测试先红后绿。
+- [x] 5.5 red：取消信号已置位时 `generate` 不再发出新请求（假 HTTP 层计数为 0）→ green。判据：该测试先红后绿。
+- [x] 5.6 red：一条含 `model/retry` 的日志被 replay 时每条 `context/assembled` 仍与前缀重算逐字段相等（seam ④）→ green（折叠把 `model/retry` 当事实、不进上下文）。判据：该测试先红后绿。
 
 ## 6. CLI 的 provider 选择与密钥（seam ⑥）
 

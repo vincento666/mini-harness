@@ -209,3 +209,30 @@ def test_cold_start_fold_matches_the_recorded_context_assembled(tmp_path: Path) 
         if json.loads(line)["type"] == "context/assembled"
     )
     assert replayed.model_dump(mode="json") == recorded
+
+
+def test_model_retry_is_a_fact_that_does_not_enter_the_context(tmp_path: Path) -> None:
+    """`model/retry` 进词表、进日志，但不进上下文：重算前缀必须逐字段相等。"""
+    log = EventLog.create(session_dir=tmp_path, session_id="s-retry-fold")
+    log.append("session/start", {})
+    log.append("turn/start", {"turn_id": "t1"})
+    prefix = fold(read_events(log.path))
+    log.append("context/assembled", prefix.model_dump(mode="json"))
+    log.append("model/request", {"turn_id": "t1"})
+    log.append("model/retry", {"turn_id": "t1", "attempt": 1, "status": 429})
+    log.append(
+        "model/response",
+        {"turn_id": "t1", "content": "hi", "tool_calls": [], "finish_reason": "stop"},
+    )
+    log.append("turn/end", {"turn_id": "t1", "stop_reason": "MODEL_COMPLETED"})
+    log.append("session/end", {"stop_reason": "MODEL_COMPLETED"})
+
+    records = read_events(log.path)
+    assert isinstance(records, list)
+    index = next(i for i, record in enumerate(records) if record.type == "context/assembled")
+
+    recomputed = fold(records[:index])
+    assert recomputed.model_dump(mode="json") == records[index].payload
+
+    without_retry = [record for record in records if record.type != "model/retry"]
+    assert fold(without_retry).model_dump(mode="json") == fold(records).model_dump(mode="json")

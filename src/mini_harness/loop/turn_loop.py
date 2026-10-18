@@ -137,10 +137,19 @@ async def run_session(
             return _kernel_failure(log, failure, turns)
 
         generated = await provider.generate(context.messages, registry.specs(), cancel)
+        # 重试事实由 provider 带回、由循环写进日志：provider 不碰日志（不变量 A）。
+        retry_events: list[tuple[str, dict[str, Any]]] = [
+            (
+                "model/retry",
+                {"turn_id": turn_id, "attempt": attempt.attempt, "status": attempt.status},
+            )
+            for attempt in generated.attempts
+        ]
         if isinstance(generated, ProviderFailure):
             failure = _append_all(
                 log,
                 [
+                    *retry_events,
                     (
                         "error/model",
                         {"turn_id": turn_id, "code": generated.code, "detail": generated.detail},
@@ -162,6 +171,7 @@ async def run_session(
         failure = _append_all(
             log,
             [
+                *retry_events,
                 (
                     "model/response",
                     {

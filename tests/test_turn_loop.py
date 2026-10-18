@@ -470,3 +470,136 @@ async def test_one_turn_with_two_tool_calls_dispatches_both(tmp_path: Path) -> N
     assert first_turn_end.payload["stop_reason"] == "TOOL_CALLS"
     assert outcome.turns == 2
     assert outcome.stop_reason == "MODEL_COMPLETED"
+
+
+_STOP_BODY: dict[str, object] = {
+    "choices": [
+        {
+            "index": 0,
+            "message": {"role": "assistant", "content": "完成", "tool_calls": []},
+            "finish_reason": "stop",
+        }
+    ]
+}
+
+
+def _scripted_provider(responses: list[httpx.Response]) -> OpenAICompatProvider:
+    """按顺序回放响应；最后一个重复回放。"""
+    state = {"index": 0}
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        response = responses[min(state["index"], len(responses) - 1)]
+        state["index"] += 1
+        return response
+
+    return OpenAICompatProvider(
+        base_url="http://127.0.0.1:9/v1",
+        model="test-model",
+        api_key=None,
+        transport=httpx.MockTransport(handle),
+    )
+
+
+async def _run_with_provider(tmp_path: Path, provider: OpenAICompatProvider):
+    log = EventLog.create(session_dir=tmp_path, session_id="s-retry")
+    outcome = await run_session(
+        prompt="任务",
+        provider=provider,
+        log=log,
+        registry=ToolRegistry(file_tool_definitions()),
+        settings=_settings(tmp_path, max_turns=8),
+        cancel=asyncio.Event(),
+    )
+    records = read_events(log.path)
+    assert isinstance(records, list)
+    return records, outcome
+
+
+async def test_a_429_then_200_retries_once_and_writes_one_model_retry(tmp_path: Path) -> None:
+    provider = _scripted_provider(
+        [httpx.Response(429, json={"error": "slow down"}), httpx.Response(200, json=_STOP_BODY)]
+    )
+
+    records, outcome = await _run_with_provider(tmp_path, provider)
+    types = [record.type for record in records]
+
+    assert types == [
+        "session/start",
+        "turn/start",
+        "context/assembled",
+        "model/request",
+        "model/retry",
+        "model/response",
+        "turn/end",
+        "session/end",
+    ]
+    retries = [record.payload for record in records if record.type == "model/retry"]
+    assert len(retries) == 1
+    assert retries[0]["attempt"] == 1
+    assert retries[0]["status"] == 429
+    assert retries[0]["turn_id"] == records[1].payload["turn_id"]
+    assert outcome.stop_reason == "MODEL_COMPLETED"
+    assert outcome.failure_code is None
+
+
+async def test_two_500s_write_one_model_retry_then_error_model(tmp_path: Path) -> None:
+    provider = _scripted_provider(
+        [httpx.Response(500, json={"error": "boom"}), httpx.Response(500, json={"error": "boom"})]
+    )
+
+    records, outcome = await _run_with_provider(tmp_path, provider)
+    types = [record.type for record in records]
+
+    assert types == [
+        "session/start",
+        "turn/start",
+        "context/assembled",
+        "model/request",
+        "model/retry",
+        "error/model",
+        "turn/end",
+        "session/end",
+    ]
+    retries = [record.payload for record in records if record.type == "model/retry"]
+    assert len(retries) == 1
+    assert retries[0]["status"] == 500
+    assert outcome.stop_reason == "PROVIDER_ERROR"
+    assert outcome.failure_code == "PROVIDER_HTTP_STATUS"
+
+
+async def test_a_400_is_not_retried(tmp_path: Path) -> None:
+    provider = _scripted_provider([httpx.Response(400, json={"error": "bad request"})])
+
+    records, outcome = await _run_with_provider(tmp_path, provider)
+    types = [record.type for record in records]
+
+    assert types == [
+        "session/start",
+        "turn/start",
+        "context/assembled",
+        "model/request",
+        "error/model",
+        "turn/end",
+        "session/end",
+    ]
+    assert outcome.failure_code == "PROVIDER_HTTP_STATUS"
+
+
+async def test_a_timeout_is_a_provider_timeout_result(tmp_path: Path) -> None:
+    def handle(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectTimeout("连接超时")
+
+    provider = OpenAICompatProvider(
+        base_url="http://127.0.0.1:9/v1",
+        model="test-model",
+        api_key=None,
+        timeout_s=0.05,
+        transport=httpx.MockTransport(handle),
+    )
+
+    records, outcome = await _run_with_provider(tmp_path, provider)
+    types = [record.type for record in records]
+
+    assert "model/retry" not in types
+    assert outcome.stop_reason == "PROVIDER_ERROR"
+    assert outcome.failure_code == "PROVIDER_TIMEOUT"

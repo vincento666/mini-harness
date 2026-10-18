@@ -2,6 +2,7 @@
 
 **httpx 只允许出现在这个模块**（design D1）：其它模块 import httpx 就是把外部依赖漏进内核。
 HTTP 层由构造入参注入，seam ⑤ 的判据因此不跑网络、不需要密钥。
+重试事实（429 / 5xx）随结果回到回合循环——provider 不写日志（不变量 A）。
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ import httpx
 from mini_harness.events.fold import Message
 from mini_harness.provider.contract import (
     AssistantTurn,
+    ProviderAttempt,
     ProviderFailure,
     ToolCall,
     ToolSpec,
@@ -62,49 +64,73 @@ def _wire_tools(tools: Sequence[ToolSpec]) -> list[dict[str, Any]]:
     ]
 
 
-def _schema_failure(detail: str) -> ProviderFailure:
-    return ProviderFailure(code="PROVIDER_SCHEMA_INVALID", detail=detail)
+def _retryable(status: int) -> bool:
+    """429 与 5xx 可重试一次；其余 4xx（含 401）不是重试的理由。"""
+    return status == 429 or status >= 500
 
 
-def _parse_response(response: httpx.Response) -> AssistantTurn | ProviderFailure:
+async def _post(
+    client: httpx.AsyncClient,
+    base_url: str,
+    body: dict[str, Any],
+    headers: dict[str, str],
+    attempts: Sequence[ProviderAttempt],
+) -> httpx.Response | ProviderFailure:
+    try:
+        return await client.post(f"{base_url}/chat/completions", json=body, headers=headers)
+    except httpx.TimeoutException:
+        return ProviderFailure(
+            code="PROVIDER_TIMEOUT", detail=f"{base_url} 超时", attempts=attempts
+        )
+    except httpx.HTTPError as error:
+        return ProviderFailure(code="PROVIDER_TRANSPORT", detail=str(error), attempts=attempts)
+
+
+def _schema_failure(detail: str, attempts: Sequence[ProviderAttempt]) -> ProviderFailure:
+    return ProviderFailure(code="PROVIDER_SCHEMA_INVALID", detail=detail, attempts=attempts)
+
+
+def _parse_response(
+    response: httpx.Response, attempts: Sequence[ProviderAttempt]
+) -> AssistantTurn | ProviderFailure:
     try:
         payload = response.json()
     except ValueError:
-        return _schema_failure("响应体不是合法 JSON")
+        return _schema_failure("响应体不是合法 JSON", attempts)
     if not isinstance(payload, dict):
-        return _schema_failure("响应体不是对象")
+        return _schema_failure("响应体不是对象", attempts)
 
     choices = payload.get("choices")
     if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
-        return _schema_failure("响应缺少 choices")
+        return _schema_failure("响应缺少 choices", attempts)
     first = choices[0]
     message = first.get("message")
     if not isinstance(message, dict):
-        return _schema_failure("choices[0] 缺少 message")
+        return _schema_failure("choices[0] 缺少 message", attempts)
     finish_reason = first.get("finish_reason")
     if not isinstance(finish_reason, str):
-        return _schema_failure("响应缺少 finish_reason")
+        return _schema_failure("响应缺少 finish_reason", attempts)
 
     raw_calls = message.get("tool_calls") or []
     if not isinstance(raw_calls, list):
-        return _schema_failure("message.tool_calls 不是数组")
+        return _schema_failure("message.tool_calls 不是数组", attempts)
     tool_calls: list[ToolCall] = []
     for raw in raw_calls:
         if not isinstance(raw, dict):
-            return _schema_failure("tool_calls 里有一条不是对象")
+            return _schema_failure("tool_calls 里有一条不是对象", attempts)
         function = raw.get("function")
         if not isinstance(function, dict):
-            return _schema_failure("tool_calls 里有一条缺少 function")
+            return _schema_failure("tool_calls 里有一条缺少 function", attempts)
         arguments = function.get("arguments", "{}")
         if isinstance(arguments, str):
             try:
                 parsed = json.loads(arguments)
             except json.JSONDecodeError:
-                return _schema_failure("tool_calls 的 arguments 不是合法 JSON")
+                return _schema_failure("tool_calls 的 arguments 不是合法 JSON", attempts)
         else:
             parsed = arguments
         if not isinstance(parsed, dict):
-            return _schema_failure("tool_calls 的 arguments 不是对象")
+            return _schema_failure("tool_calls 的 arguments 不是对象", attempts)
         tool_calls.append(
             ToolCall(
                 id=str(raw.get("id", "")),
@@ -123,6 +149,7 @@ def _parse_response(response: httpx.Response) -> AssistantTurn | ProviderFailure
             input_tokens=int(usage.get("prompt_tokens", 0) or 0),
             output_tokens=int(usage.get("completion_tokens", 0) or 0),
         ),
+        attempts=list(attempts),
     )
 
 
@@ -161,15 +188,30 @@ class OpenAICompatProvider:
             "messages": _wire_messages(messages),
             "tools": _wire_tools(tools),
         }
+        attempts: list[ProviderAttempt] = []
 
         async with httpx.AsyncClient(transport=self._transport, timeout=self._timeout_s) as client:
-            try:
-                response = await client.post(
-                    f"{self._base_url}/chat/completions", json=body, headers=headers
-                )
-            except httpx.TimeoutException:
-                return ProviderFailure(code="PROVIDER_TIMEOUT", detail=f"{self._base_url} 超时")
-            except httpx.HTTPError as error:
-                return ProviderFailure(code="PROVIDER_TRANSPORT", detail=str(error))
+            first = await _post(client, self._base_url, body, headers, attempts)
+            if isinstance(first, ProviderFailure):
+                return first
+            response = first
+            if _retryable(response.status_code):
+                attempts.append(ProviderAttempt(attempt=1, status=response.status_code))
+                second = await _post(client, self._base_url, body, headers, attempts)
+                if isinstance(second, ProviderFailure):
+                    return second
+                response = second
+                if _retryable(response.status_code):
+                    return ProviderFailure(
+                        code="PROVIDER_HTTP_STATUS",
+                        detail=f"HTTP {response.status_code}",
+                        attempts=attempts,
+                    )
 
-        return _parse_response(response)
+        if response.status_code >= 400:
+            return ProviderFailure(
+                code="PROVIDER_HTTP_STATUS",
+                detail=f"HTTP {response.status_code}",
+                attempts=attempts,
+            )
+        return _parse_response(response, attempts)

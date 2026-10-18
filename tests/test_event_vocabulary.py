@@ -30,9 +30,10 @@ def test_approval_types_can_be_written_to_the_log(tmp_path: Path) -> None:
     assert types == ["approval/request", "approval/response"]
 
 
-def test_m3_types_are_outside_the_m2_vocabulary(tmp_path: Path) -> None:
+def test_model_retry_is_in_the_vocabulary_and_tool_cancelled_is_not(tmp_path: Path) -> None:
+    """M4 把 `model/retry` 收进词表；`tool/cancelled` 属于 M3，仍留在表外。"""
+    assert is_known_type("model/retry")
     assert not is_known_type("tool/cancelled")
-    assert not is_known_type("model/retry")
 
     log = EventLog.create(session_dir=tmp_path, session_id="sess-v2")
     log.append("tool/cancelled", {"turn_id": "t1"})

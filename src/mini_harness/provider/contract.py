@@ -26,6 +26,13 @@ class Usage(BaseModel):
     output_tokens: int = 0
 
 
+class ProviderAttempt(BaseModel):
+    """一次被重试掉的失败尝试。重试事实随结果回到回合循环，由循环写进日志。"""
+
+    attempt: int
+    status: int
+
+
 class AssistantTurn(BaseModel):
     """Provider 成功时的返回值。"""
 
@@ -33,6 +40,7 @@ class AssistantTurn(BaseModel):
     finish_reason: str
     tool_calls: list[ToolCall] = Field(default_factory=list)
     usage: Usage = Field(default_factory=Usage)
+    attempts: list[ProviderAttempt] = Field(default_factory=list)
 
 
 class ToolSpec(BaseModel):
@@ -44,11 +52,18 @@ class ToolSpec(BaseModel):
 
 
 class ProviderFailure:
-    """Provider 失败也是结果：`PROVIDER_EXHAUSTED` / `PROVIDER_SCHEMA_INVALID`。"""
+    """Provider 失败也是结果：`PROVIDER_EXHAUSTED` / `PROVIDER_SCHEMA_INVALID` /
+    `PROVIDER_HTTP_STATUS` / `PROVIDER_TIMEOUT`。"""
 
-    def __init__(self, code: str, detail: str = "") -> None:
+    def __init__(
+        self,
+        code: str,
+        detail: str = "",
+        attempts: Sequence[ProviderAttempt] = (),
+    ) -> None:
         self.code = code
         self.detail = detail
+        self.attempts = list(attempts)
 
 
 class Provider(Protocol):
