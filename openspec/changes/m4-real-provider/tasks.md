@@ -2,8 +2,8 @@
 
 ## 1. 端点事实核查（先探再写判据）
 
-- [ ] 1.1 确认本地端点事实：`GET http://127.0.0.1:8300/health`（免鉴权）拿到 `model` 与 `max_context`；用可用 key 发一条带 `tools` 的最小 `POST /v1/chat/completions`，确认响应里出现 `message.tool_calls` 与 `finish_reason: "tool_calls"`。把请求形状与真实响应样本记进 `docs/verification/m4-real-provider-endpoint-probe.md`。判据：文档存在，含一条真实响应原文与「产出 tool_calls」的结论行。
-- [ ] 1.2 在同一文档里记下鉴权事实：config 里两个 key 的实测差异（第一个 401、第二个通），可用那个只设进环境变量（约定名 `MINIHNS_STRATA_KEY`），MUST NOT 写进任何仓库文件。判据：文档含两条结论行，且 `git grep` 在仓库里搜不到该 key 的任何片段。
+- [x] 1.1 确认本地端点事实：`GET http://127.0.0.1:8300/health`（免鉴权）拿到 `model` 与 `max_context`；用可用 key 发一条带 `tools` 的最小 `POST /v1/chat/completions`，确认响应里出现 `message.tool_calls` 与 `finish_reason: "tool_calls"`。把请求形状与真实响应样本记进 `docs/verification/m4-real-provider-endpoint-probe.md`。判据：文档存在，含一条真实响应原文与「产出 tool_calls」的结论行。
+- [x] 1.2 在同一文档里记下鉴权事实：config 里两个 key 的实测差异（第一个 401、第二个通），可用那个只设进环境变量（约定名 `MINIHNS_STRATA_KEY`），MUST NOT 写进任何仓库文件。判据：文档含两条结论行，且 `git grep` 在仓库里搜不到该 key 的任何片段。
 
 ## 2. 依赖与工具面 schema（seam ②）
 
