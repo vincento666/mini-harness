@@ -34,9 +34,7 @@ uv run coverage combine                 # 把仓库根里的 partial 合并进 .
 uv run coverage report --fail-under=95 --show-missing   # 覆盖率地板
 uv run mypy --strict src      # 类型检查
 uv run ruff check src tests   # 风格门禁
-uv run ruff format --diff src tests   # 干净 = 退出码 0 且没有 diff 块（它会往 stderr 打「N files already formatted」）
-uv run minihns run -p "任务" --provider mock --fixture <turns.json> --workspace <dir> --events jsonl
-uv run minihns replay <session-id>
+uv run ruff format --diff src tests   # 干净 = 退出码 0
 ```
 
 ---
@@ -45,7 +43,7 @@ uv run minihns replay <session-id>
 
 一次提交算「完成」= **测试、覆盖率地板、`mypy --strict`、ruff** 四道全绿；规格结构（Requirement / Scenario 形状）、规格 ↔ 实现（`code-review` 两轴）、变异测试是里程碑收尾时跑的。每道的通过信号都是**退出码 0**，覆盖率那道额外看 `TOTAL` 不低于地板。地板数值与具体规则在 `pyproject.toml`，不在这里重复一遍。
 
-**覆盖率纪律**：seam ⑥ 是真实子进程，每个子进程各写一份 partial，所以三步走不可拆：`coverage erase` → `coverage run -m pytest` → `coverage combine`。combine 只认内容不认新旧，旧 partial 混进这一轮是**看不见的**。记账是无条件的，全量约 25 秒。要抬地板就补低覆盖处的判据，不要凑低价值测试。
+**覆盖率纪律**：seam ⑥ 是真实子进程，每个子进程各写一份 partial，所以上面那三步不可拆。combine 只认内容不认新旧，旧 partial 混进这一轮是**看不见的**。要抬地板就补低覆盖处的判据，不要凑低价值测试。
 
 **ruff 的例外只有两处**：`allowed-confusables` 放行中文全角标点（本项目的 docstring / 注释 / 用户可见字符串一律用中文全角标点，RUF001 一类规则会把它们当成「可疑的 ASCII 近似字符」报警）；`per-file-ignores` 放行 `docs/tools/` 下的文档与图表构建脚本，门禁只跑 `src` 与 `tests`。全仓没有一处 `# noqa`。
 
@@ -55,7 +53,7 @@ uv run minihns replay <session-id>
 
 **A** 日志唯一真源，只追加不改写 · **B** 工具是能力契约，失败也是结果 · **C** 回合主循环显式 · **D** 窗口预算与 `CONTEXT_WINDOW_EXCEEDED` · **E** 围栏两条独立轴 + 工作区边界 + 写前必读 CAS · **F** 全程可观测
 
-全文见 `openspec/config.yaml` 的 `context`（每个 OpenSpec 命令都会自动读到它）与 `docs/handoff-2026-10-15.md` §4.2。**写任何代码前先读**；违反任何一条必须在 `docs/adr/` 留 ADR 并由人裁决，规格与测试不得自行放宽它们。
+全文见 `openspec/config.yaml` 的 `context`（每个 OpenSpec 命令都会自动读到它）。**写任何代码前先读**；违反任何一条必须在 `docs/adr/` 留 ADR 并由人裁决，规格与测试不得自行放宽它们。
 
 ---
 
@@ -73,7 +71,7 @@ uv run minihns replay <session-id>
 
 **完成判据含一条人手验收**：拿它用真实工作区办一件真事（不是跑判据），观察记进 `docs/verification/<change-id>-manual.md`；不进 CI，也不替代门禁那四道。
 
-**提交粒度**：一个红绿循环一次提交，提交信息带 task 编号，让 `git log` 能对上 `tasks.md` 的复选框。**一个提交最多覆盖同一 seam 上相邻的 3 个 task**；超过就在提交信息里写明为什么打包（全量测试带覆盖率记账约 25 秒，没有理由为了省时间打包）。
+**提交粒度**：一个红绿循环一次提交，提交信息带 task 编号，让 `git log` 能对上 `tasks.md` 的复选框。**一个提交最多覆盖同一 seam 上相邻的 3 个 task**；超过就在提交信息里写明为什么打包（没有理由为了省时间打包）。
 
 **测试只写在下面六个 seam 上**（tdd 技能要求先约定再写，不许水平切片）：
 ① 回合循环 ② 工具注册与管线 ③ 文件工具契约 ④ 日志追加与折叠 ⑤ Provider 接口 ⑥ CLI 黑盒（subprocess 跑真实命令）
