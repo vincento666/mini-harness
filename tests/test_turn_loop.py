@@ -14,6 +14,7 @@ from mini_harness.loop import RunOutcome, SessionSettings, run_session
 from mini_harness.provider import AssistantTurn, FixtureProvider, Provider
 from mini_harness.provider.openai_compat import OpenAICompatProvider
 from mini_harness.tools import ToolRegistry
+from mini_harness.tools.fences import path_key
 from mini_harness.tools.file_tools import file_tool_definitions
 
 
@@ -342,6 +343,46 @@ async def test_a_fence_denial_ends_the_run_without_dispatching_the_rest(
     assert outcome.stop_reason == "FENCE_DENIED"
     assert not (tmp_path / "a.md").exists()
     assert not (tmp_path / "b.md").exists()
+    denied = next(record for record in records if record.type == "error/fence")
+    assert denied.payload["code"] == "SANDBOX_DENIES_WRITE"
+    assert denied.payload["raw_path"] == "a.md"
+    assert denied.payload["path"] is None
+
+
+async def test_the_fence_denial_record_carries_both_path_fields(tmp_path: Path) -> None:
+    """`error/fence` 的两个路径字段各有取值：判据不需要读自由文本 `detail`。"""
+    log = EventLog.create(session_dir=tmp_path, session_id="s-fence-paths")
+
+    await run_session(
+        prompt="任务",
+        provider=FixtureProvider(
+            entries=[
+                {
+                    "content": "写到工作区外",
+                    "finish_reason": "tool_calls",
+                    "tool_calls": [
+                        {
+                            "id": "c1",
+                            "name": "write",
+                            "arguments": {"file_path": "../outside.md", "content": "x\n"},
+                        }
+                    ],
+                },
+                {"content": "算了", "finish_reason": "stop"},
+            ]
+        ),
+        log=log,
+        registry=ToolRegistry(file_tool_definitions()),
+        settings=_settings(tmp_path, max_turns=8),
+        cancel=asyncio.Event(),
+    )
+
+    records = read_events(log.path)
+    fence = next(record for record in records if record.type == "error/fence")
+    assert fence.payload["code"] == "OUTSIDE_WORKSPACE"
+    assert fence.payload["raw_path"] == "../outside.md"
+    assert fence.payload["path"] == path_key(tmp_path, "../outside.md")
+    assert not (tmp_path.parent / "outside.md").exists()
 
 
 async def test_no_m2_scenario_writes_tool_cancelled_or_model_retry(tmp_path: Path) -> None:

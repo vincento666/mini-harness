@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, get_args
 
-from mini_harness.tools.fences import ApprovalDecision, DispatchContext
+from mini_harness.tools.fences import ApprovalDecision, DispatchContext, path_key
 from mini_harness.tools.file_tools import file_tool_definitions
 from mini_harness.tools.registry import (
     ToolArgs,
@@ -131,6 +131,8 @@ async def test_a_fence_denial_skips_the_execution(tmp_path: Path) -> None:
 
     assert outcome.result.outcome == "DENIED_BY_FENCE"
     assert outcome.fence_code == "OUTSIDE_WORKSPACE"
+    assert outcome.raw_path == "../outside.md"
+    assert outcome.path == path_key(tmp_path, "../outside.md")
     assert _RAN == []
 
 

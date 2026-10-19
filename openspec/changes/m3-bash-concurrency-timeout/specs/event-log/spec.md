@@ -45,7 +45,7 @@
 - **THEN** 日志以 `error/abort` 收尾且允许那条 `approval/request` 没有配对；非取消收尾的 run 里不存在这种半对
 
 ### Requirement: 围栏拒绝写 error/fence
-系统 SHALL 在围栏或审批拒绝终止 run 时写一条 `error/fence`，payload 含 `turn_id`、`code`、`path`、`raw_path`、`detail`：`path` 是围栏判定实际使用的解析后键，`raw_path` 是调用里写的原始路径，`detail` 只面向人。没有目标路径的调用（`bash`）两者 SHALL 是 `null`。该记录 MUST 在配对的 `tool/result` 之后、`turn/end` 之前写入。
+系统 SHALL 在围栏或审批拒绝终止 run 时写一条 `error/fence`，payload 含 `turn_id`、`code`、`path`、`raw_path`、`detail`：`path` 是围栏判定实际使用的解析后键（档位轴先拒、或调用没有目标路径时是 `null`），`raw_path` 是调用里写的原始路径，`detail` 只面向人。没有目标路径的调用（`bash`）两者 SHALL 是 `null`。该记录 MUST 在配对的 `tool/result` 之后、`turn/end` 之前写入。
 
 #### Scenario: error/fence 的位置可断言
 - **WHEN** 一次 run 因越界写终止

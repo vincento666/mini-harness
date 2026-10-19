@@ -7,6 +7,7 @@
 - [ ] 1.3 `tool/cancelled` 的 payload 形状判据：含 `turn_id` 与 `tool_call_id`、不含命令输出或文件内容。seam ④
 - [ ] 1.4 `tests/test_turn_loop.py` 里「M2 场景不写 tool/cancelled」那条判据拆成两条：取消发生在回合边界时仍不写、取消打断执行中的调用时必写。seam ①
 - [ ] 1.5 `error/fence` 的 payload 加 `path` 与 `raw_path`（`detail` 只面向人）：越界写那条判据断言两个字段各有取值，`read-only` 下的 `bash` 那条断言两者都是 `null`。ADR-0002 第 11 条。seam ②④
+  - 前半已落（提交里写明）；「`read-only` 下的 `bash` 两者都是 `null`」这一半要等 3.1 注册 `bash` 才写得出来，届时一起勾。
 
 ## 2. 测试 helper 收口（判据①的前置）
 

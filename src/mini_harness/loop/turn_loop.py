@@ -263,6 +263,8 @@ async def run_session(
                             "turn_id": turn_id,
                             "tool_call_id": call.id,
                             "code": dispatched.fence_code,
+                            "path": dispatched.path,
+                            "raw_path": dispatched.raw_path,
                             "detail": dispatched.result.content,
                         },
                     )

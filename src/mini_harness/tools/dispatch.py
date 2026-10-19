@@ -20,11 +20,16 @@ from mini_harness.tools.registry import ToolRegistry, ToolResult
 
 @dataclass(frozen=True)
 class DispatchOutcome:
-    """一次派发的全部结论：给 `tool/result` 的结果，加上要不要写 `approval/*` 与 `error/fence`。"""
+    """一次派发的全部结论：给 `tool/result` 的结果，加上要不要写 `approval/*` 与 `error/fence`。
+
+    `path` 与 `raw_path` 是围栏拒绝时写进 `error/fence` 的两个路径字段。
+    """
 
     result: ToolResult
     approval: ApprovalDecision | None = None
     fence_code: FenceCode | None = None
+    path: str | None = None
+    raw_path: str | None = None
 
 
 async def dispatch_tool_call(
@@ -47,11 +52,13 @@ async def dispatch_tool_call(
             ToolResult(outcome="TOOL_ARGS_INVALID", content=f"工具 {call.name} 的入参不合法：{exc}")
         )
 
-    decision = judge_fence(context, raw_path=args.target_path() or "", mutates=definition.mutates)
+    decision = judge_fence(context, raw_path=args.target_path(), mutates=definition.mutates)
     if decision.outcome == "DENIED":
         return DispatchOutcome(
             ToolResult(outcome="DENIED_BY_FENCE", content=decision.detail),
             fence_code=decision.code,
+            path=decision.path,
+            raw_path=decision.raw_path,
         )
 
     approval: ApprovalDecision | None = None
@@ -65,6 +72,8 @@ async def dispatch_tool_call(
                 ),
                 approval=approval,
                 fence_code=_approval_denial_code(approval),
+                path=decision.path,
+                raw_path=decision.raw_path,
             )
 
     try:

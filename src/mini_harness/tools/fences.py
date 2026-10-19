@@ -57,11 +57,17 @@ class DispatchContext:
 
 @dataclass(frozen=True)
 class FenceDecision:
-    """围栏段的结论。被拒也是结果，不是异常。"""
+    """围栏段的结论。被拒也是结果，不是异常。
+
+    `path` 是判定实际使用的解析后键（档位轴先拒、或调用没有目标路径时是 `None`）；
+    `raw_path` 是调用里写的原始写法。两者进 `error/fence` 的 payload。
+    """
 
     outcome: FenceOutcome
     code: FenceCode | None = None
     detail: str = ""
+    path: str | None = None
+    raw_path: str | None = None
 
 
 def path_key(workspace: Path, raw_path: str) -> str:
@@ -158,20 +164,29 @@ def reads_from_records(records: Iterable[EventRecord], workspace: Path) -> dict[
     return reads
 
 
-def judge_fence(context: DispatchContext, *, raw_path: str, mutates: bool) -> FenceDecision:
+def judge_fence(context: DispatchContext, *, raw_path: str | None, mutates: bool) -> FenceDecision:
     """三段判定里的围栏段：档位 → 工作区边界 → 要不要问人。
 
     边界只约束会改动的操作；`danger-full-access` 解除边界，但写前必读与 CAS 不在这里判。
+    没有目标路径的会改动工具（`bash`）不受边界轴判定，只受档位轴判定（ADR-0008）。
     """
     if not mutates:
-        return FenceDecision(outcome="ALLOWED")
+        return FenceDecision(outcome="ALLOWED", raw_path=raw_path)
 
     if context.sandbox == "read-only":
+        target = f"：{raw_path}" if raw_path is not None else ""
         return FenceDecision(
             outcome="DENIED",
             code="SANDBOX_DENIES_WRITE",
-            detail=f"{context.sandbox} 档位不许可会改动的操作：{raw_path}",
+            detail=f"{context.sandbox} 档位不许可会改动的操作{target}",
+            raw_path=raw_path,
         )
+
+    if raw_path is None:
+        # 没有路径可判：边界轴无从生效，档位轴已经放行。
+        if context.approval == "ask":
+            return FenceDecision(outcome="NEEDS_APPROVAL")
+        return FenceDecision(outcome="ALLOWED")
 
     key = path_key(context.workspace, raw_path)
     if context.sandbox == "workspace-write" and not _is_inside_workspace(context.workspace, key):
@@ -179,9 +194,11 @@ def judge_fence(context: DispatchContext, *, raw_path: str, mutates: bool) -> Fe
             outcome="DENIED",
             code="OUTSIDE_WORKSPACE",
             detail=f"解析后在工作区之外：{key}",
+            path=key,
+            raw_path=raw_path,
         )
 
     if context.approval == "ask":
-        return FenceDecision(outcome="NEEDS_APPROVAL", detail=key)
+        return FenceDecision(outcome="NEEDS_APPROVAL", detail=key, path=key, raw_path=raw_path)
 
-    return FenceDecision(outcome="ALLOWED", detail=key)
+    return FenceDecision(outcome="ALLOWED", detail=key, path=key, raw_path=raw_path)
