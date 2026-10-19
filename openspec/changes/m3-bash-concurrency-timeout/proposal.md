@@ -13,6 +13,8 @@ M2 有五个文件工具，但派发是逐个串行的、没有任何超时；M4
 - 平台差异第一次成为规格对象：路径规范化与大小写敏感性、tty 检测、进程树终止、Ctrl-C 接线。同一套判据在 Windows 与 Linux 各跑一遍。
 - 门禁由 CI 跑：Windows + Linux 矩阵，不持 API key（ADR-0005 第 3 条），真实 Provider 的 smoke 走人手验收。
 - 模型调用超时从实现的 30 s 改回决策 15 锁定的 120 s，并把数值写进 provider 规格。
+- `error/fence` 的 payload 加 `path` 与 `raw_path` 两个结构化字段，判据不再只能读自由文本（ADR-0002 第 11 条，分流里列在「M3 必须裁决」）。
+- `approval/request` 改成**提问之前**落盘；半对只在 `ABORTED` 收尾的 session 里成立（ADR-0002 第 9 条——M3 让「提问被打断」成为真实路径，不再是理论差异）。
 
 **M3 明确不做**：窗口预算与 `CONTEXT_WINDOW_EXCEEDED`（M5）、OS 级沙箱与提权、流式与「一个回合多次模型请求」、`--bash-timeout` 这类没被要求过的可配置性、REPL 里「打断但不退出」（M6）、`_replay` 的扫描逻辑下沉（ADR-0002 第 3 条，改判推到 M6）。
 
@@ -25,7 +27,7 @@ M2 有五个文件工具，但派发是逐个串行的、没有任何超时；M4
 ### Modified Capabilities
 
 - `turn-loop`：派发段的并发调度（只读并发上限 8、会改动的串行、落盘顺序确定、同一批次共享同一份日志前缀）；超时与取消作为结果词；MODIFIED「用户取消是 ABORTED 结果」按 ADR-0007 的形状。
-- `event-log`：MODIFIED「事件类型只取自当前事件词表」，把 `tool/cancelled` 收进词表。
+- `event-log`：MODIFIED「事件类型只取自当前事件词表」，把 `tool/cancelled` 收进词表；ADDED `tool/cancelled` 的记录形状；MODIFIED「approval 事件记录问与答」（提问前落盘 + 半对规则）与「围栏拒绝写 error/fence」（`path` / `raw_path`）。
 - `fences`：MODIFIED「工作区边界只约束会改动的操作」与「read-only 档位拒绝一切会改动的工具」，写明 bash 只受档位轴约束（ADR-0008）；MODIFIED「围栏拒绝是终止结果」在并发批次里的含义。
 - `provider`：模型调用超时数值进规格。
 

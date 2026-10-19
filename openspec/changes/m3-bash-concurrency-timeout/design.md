@@ -50,6 +50,10 @@
 
 **D11 CI 是 GitHub Actions 矩阵 `windows-latest` + `ubuntu-latest`，不持 API key。** 跑 pytest + coverage + `mypy --strict` + ruff；真实 Provider 的 smoke 不进 CI（ADR-0005 第 3 条），走人手验收。seam ⑥ 的子进程 partial 记账沿用 `pyproject.toml` 里已有的 rcfile 与 `COVERAGE_FILE` 形状。
 
+**D12 `approval/request` 在提问之前落盘，半对只在 `ABORTED` 收尾的 session 里成立。** 替代：加一个 `UNANSWERED` 取值——否，词表已经有 `UNAVAILABLE`，再加一个会让「没问到」与「问到没答」在折叠里要分别处理；替代：保持问完才写——否，M3 之后 Ctrl-C 可以打断正在等人回答的提问，那时日志里连「问过」这条事实都没有。代价：日志里第一次可能出现半对，折叠与 `replay` 必须容忍它。
+
+**D13 `error/fence` 的 payload 加 `path` 与 `raw_path`，`detail` 只面向人。** `path` 是围栏判定实际使用的解析后键，`raw_path` 是调用里写的原始写法，没有目标路径的调用（`bash`）两者都是 `null`。替代：只加一个 `target` 对象——否，两个平台的解析结果与模型写的写法本来就不同，合成一个字段就又回到自由文本。这条同时统一 M2 留下的形态不一致（`OUTSIDE_WORKSPACE` 放解析后键、`SANDBOX_DENIES_WRITE` 放 `raw_path`）。
+
 ## Seam 边界与测试策略
 
 - **seam ①（回合循环）**：并发调度、前缀快照、落盘顺序、超时后回合继续、取消打断的落盘形状。桩沿用现有的 `_scripted_provider` / `_run_with_provider`，D10 之后只留一份。

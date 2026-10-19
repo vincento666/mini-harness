@@ -33,7 +33,7 @@
 - **THEN** 结果是 `DENIED_BY_FENCE`，`error/fence` 的 `code` 是 `SANDBOX_DENIES_WRITE`，且命令的副作用没有发生
 
 ### Requirement: 围栏拒绝是终止结果
-围栏或审批拒绝时，系统 SHALL 先写与该 `tool/call` 配对的 `tool/result`（`outcome` 为 `DENIED_BY_FENCE` 或 `DENIED_BY_APPROVAL`），再写 `error/fence`（含 `turn_id`、`code`、被拒路径或工具名）与 `session/end`，并以退出码 3 结束。MUST NOT 抛出未捕获异常，也 MUST NOT 继续派发同一回合里尚未开始的工具调用。同一批次里已经开始执行的调用 SHALL 照常写出它自己的 `tool/result`，MUST NOT 因终止而被吞掉。
+围栏或审批拒绝时，系统 SHALL 先写与该 `tool/call` 配对的 `tool/result`（`outcome` 为 `DENIED_BY_FENCE` 或 `DENIED_BY_APPROVAL`），再写 `error/fence`（payload 字段表由 `event-log` 的「围栏拒绝写 error/fence」规定）与 `session/end`，并以退出码 3 结束。MUST NOT 抛出未捕获异常，也 MUST NOT 继续派发同一回合里尚未开始的工具调用。同一批次里已经开始执行的调用 SHALL 照常写出它自己的 `tool/result`，MUST NOT 因终止而被吞掉。
 
 #### Scenario: 每个 tool/call 仍有配对结果
 - **WHEN** 一次 run 因越界写终止

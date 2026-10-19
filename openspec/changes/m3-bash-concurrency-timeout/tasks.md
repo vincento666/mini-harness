@@ -6,6 +6,7 @@
 - [ ] 1.2 `ToolOutcome` 加 `TOOL_TIMEOUT` 与 `TOOL_CANCELLED`；`tests/test_vocabulary_reachability.py` 先加两条可达判据（先红）。seam ②
 - [ ] 1.3 `tool/cancelled` 的 payload 形状判据：含 `turn_id` 与 `tool_call_id`、不含命令输出或文件内容。seam ④
 - [ ] 1.4 `tests/test_turn_loop.py` 里「M2 场景不写 tool/cancelled」那条判据拆成两条：取消发生在回合边界时仍不写、取消打断执行中的调用时必写。seam ①
+- [ ] 1.5 `error/fence` 的 payload 加 `path` 与 `raw_path`（`detail` 只面向人）：越界写那条判据断言两个字段各有取值，`read-only` 下的 `bash` 那条断言两者都是 `null`。ADR-0002 第 11 条。seam ②④
 
 ## 2. 测试 helper 收口（判据①的前置）
 
@@ -42,6 +43,7 @@
 - [ ] 5.3 取消之后没有「有 `tool/call` 没 `tool/result`」的记录。seam ①
 - [ ] 5.4 Linux 上 SIGINT 的 CLI 黑盒：真实子进程 + SIGINT → 退出码 5 与上述日志形状。seam ⑥
 - [ ] 5.5 模型请求超时数值 120 s：seam ⑤ 断言 provider 的超时配置是 120 s，seam ⑥ 断言 `minihns run` 没有改变它的参数。seam ⑤⑥
+- [ ] 5.6 `approval/request` 改成提问之前落盘：两条判据——非 `ABORTED` 收尾的 run 里每条 `approval/request` 都有配对 `approval/response`；提问被取消打断时允许半对且日志以 `error/abort` 收尾。ADR-0002 第 9 条。seam ①④
 
 ## 6. 平台适配层与两端同一套判据
 
