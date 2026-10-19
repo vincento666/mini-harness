@@ -7,7 +7,14 @@ from pathlib import Path
 
 from mini_harness.events import read_events
 from mini_harness.tools import ToolRegistry
-from mini_harness.tools.bash_tools import OUTPUT_LIMIT_BYTES, TRUNCATION_MARK, bash_tool_definitions
+from mini_harness.tools.bash_tools import (
+    DEFAULT_TIMEOUT_SECONDS,
+    MAX_TIMEOUT_SECONDS,
+    OUTPUT_LIMIT_BYTES,
+    TRUNCATION_MARK,
+    BashArgs,
+    bash_tool_definitions,
+)
 from mini_harness.tools.fences import ApprovalDecision
 from mini_harness.tools.file_tools import file_tool_definitions
 from tool_harness import DONE, dispatch_call, run_fixture_session, tool_call_entry
@@ -199,6 +206,38 @@ async def test_oversized_output_is_truncated_and_marked(tmp_path: Path) -> None:
     assert len(outcome.result.content.encode("utf-8")) <= limit
 
 
+async def test_the_output_limit_is_a_boundary_not_a_threshold(tmp_path: Path) -> None:
+    """上限判的是边界：正好等于上限的内容原样进日志，多一个字节才截。
+
+    先跑一条什么都不写的命令，量出「退出码 …」那行前缀占多少字节，再让脚本正好写那么多字节。
+    只断言「超限会被截」的判据抓不到把 `<=` 写成 `<` 这种改法——等于上限的那条也被截了。
+    """
+    quiet = _script(tmp_path, "quiet.py", "pass\n")
+    prefix_result = await dispatch_call(tmp_path, "bash", {"command": quiet}, registry=_registry())
+    assert prefix_result.result.outcome == "OK"
+    prefix = len(prefix_result.result.content.encode("utf-8"))
+
+    def echo(name: str, count: int) -> str:
+        return _script(tmp_path, name, f"import sys\n\nsys.stdout.write('x' * {count})\n")
+
+    at_limit = await dispatch_call(
+        tmp_path,
+        "bash",
+        {"command": echo("at_limit.py", OUTPUT_LIMIT_BYTES - prefix)},
+        registry=_registry(),
+    )
+    one_over = await dispatch_call(
+        tmp_path,
+        "bash",
+        {"command": echo("one_over.py", OUTPUT_LIMIT_BYTES - prefix + 1)},
+        registry=_registry(),
+    )
+
+    assert len(at_limit.result.content.encode("utf-8")) == OUTPUT_LIMIT_BYTES
+    assert TRUNCATION_MARK not in at_limit.result.content
+    assert TRUNCATION_MARK in one_over.result.content
+
+
 async def test_a_timed_out_command_leaves_no_descendant_still_writing(tmp_path: Path) -> None:
     """判据只看后果：超时之后那个后代进程不再往工作区写。终止手段是实现细节。"""
     _script(tmp_path, "child.py", _TICKER)
@@ -213,3 +252,14 @@ async def test_a_timed_out_command_leaves_no_descendant_still_writing(tmp_path: 
     first = ticking.read_text(encoding="utf-8")
     await asyncio.sleep(1.5)
     assert ticking.read_text(encoding="utf-8") == first
+
+
+def test_the_timeout_numbers_are_the_ones_the_spec_names() -> None:
+    """默认 30 秒与上限 600 秒是规格里的数值，不是实现可自由改的常数。
+
+    上限那半边早就被 `timeout_seconds: 601` 那条判据钉住了；默认值没人钉——变异把它改成 45，
+    全量测试一条都不红。省略 `timeout_seconds` 的调用实际拿到什么，也判一次。
+    """
+    assert DEFAULT_TIMEOUT_SECONDS == 30
+    assert MAX_TIMEOUT_SECONDS == 600
+    assert BashArgs(command="true").timeout_seconds == 30
