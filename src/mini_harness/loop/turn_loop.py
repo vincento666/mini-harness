@@ -69,11 +69,23 @@ def _append_all(
     return None
 
 
+@dataclass(frozen=True)
+class InternalFailure:
+    """执行段逃出来的异常：不是工具的结果，是内核自己的故障。
+
+    `code` 故意在 `StopReason` 词表外——写不出 `turn/end`，也就不写；它走 `error/internal`。
+    """
+
+    code: str
+    detail: str
+    tool_call_id: str | None = None
+
+
 def _kernel_failure(
-    log: EventLog, failure: LogWriteFailure | LogReadFailure, turns: int
+    log: EventLog, failure: LogWriteFailure | LogReadFailure | InternalFailure, turns: int
 ) -> RunOutcome:
-    """日志层失败作为结果结束。`stop_reason` 取失败码，它不是 `turn/end` 的词表值：
-    日志层坏了就写不出 `turn/end`。"""
+    """内核失败作为结果结束。`stop_reason` 取失败码，它不是 `turn/end` 的词表值：
+    内核坏了就写不出 `turn/end`。"""
     return RunOutcome(
         session_id=log.session_id,
         stop_reason=failure.code,
@@ -85,9 +97,9 @@ def _kernel_failure(
 
 @dataclass
 class _BatchOutcome:
-    """一个派发批次的结果：日志层失败，或第一个围栏拒绝。"""
+    """一个派发批次的结果：内核失败（日志层坏了，或执行段逃出了异常），或第一个围栏拒绝。"""
 
-    failure: LogWriteFailure | LogReadFailure | None = None
+    failure: LogWriteFailure | LogReadFailure | InternalFailure | None = None
     denial_code: str | None = None
     denial_detail: str = ""
 
@@ -103,7 +115,8 @@ async def _race_with_cancel(
     """取消置位时打断正在执行的调用：被打断的那一条塌成 `TOOL_CANCELLED`。
 
     `dispatch_tool_call` 自己会把 `CancelledError` 塌成结果词；拿不到那个结果时这里补一条，
-    于是「有 `tool/call` 必有 `tool/result`」不依赖工具配合。
+    于是「有 `tool/call` 必有 `tool/result`」不依赖工具配合。**只有 `CancelledError` 有这个兜底**：
+    从执行段逃出来的其它异常是内核故障，改名成取消就是往日志里写一件没发生过的事。
     """
     running = asyncio.create_task(
         dispatch_tool_call(call, registry, context, approval_gate, on_approval_request)
@@ -115,7 +128,11 @@ async def _race_with_cancel(
     settled = await asyncio.gather(running, watcher, return_exceptions=True)
     if isinstance(settled[0], DispatchOutcome):
         return settled[0]
-    return DispatchOutcome(ToolResult("TOOL_CANCELLED", f"取消打断了正在执行的调用：{call.name}"))
+    if isinstance(settled[0], asyncio.CancelledError):
+        return DispatchOutcome(
+            ToolResult("TOOL_CANCELLED", f"取消打断了正在执行的调用：{call.name}")
+        )
+    raise settled[0]
 
 
 async def _dispatch_batch(
@@ -203,9 +220,28 @@ async def _dispatch_batch(
             return False
         return True
 
+    def escaped(call: ToolCall, error: BaseException) -> None:
+        """执行段逃出来的异常不是结果：写 `error/internal`，让 run 以内部错误收尾。"""
+        detail = f"{call.name}：{type(error).__name__}: {error}"
+        written = _append_all(
+            log,
+            [
+                (
+                    "error/internal",
+                    {"turn_id": turn_id, "tool_call_id": call.id, "detail": detail},
+                )
+            ],
+        )
+        outcome.failure = (
+            written if written is not None else InternalFailure("INTERNAL_ERROR", detail, call.id)
+        )
+        stop.set()
+
     async def one(index: int, call: ToolCall) -> None:
         try:
             await dispatch_one(index, call)
+        except Exception as error:
+            escaped(call, error)
         finally:
             # 放弃派发也要把这两条链传下去：否则排在它后面的调用会永远等一个不会开始的调用。
             started[index].set()
@@ -245,7 +281,8 @@ async def _dispatch_batch(
             stop.set()
 
     await asyncio.gather(*(one(index, call) for index, call in enumerate(calls)))
-    if outcome.failure is not None:
+    if outcome.failure is not None and not isinstance(outcome.failure, InternalFailure):
+        # 日志层坏了：后面的事件都写不出去。
         return outcome
 
     written: list[tuple[str, dict[str, Any]]] = []
@@ -301,6 +338,9 @@ async def _dispatch_batch(
     failure = _append_all(log, written)
     if failure is not None:
         return _BatchOutcome(failure=failure)
+    if outcome.failure is not None:
+        # 执行段逃出来的异常：已经跑完的调用照常落结果，run 以内部错误收尾。
+        return outcome
 
     for dispatched in outcomes:
         if dispatched is not None and dispatched.fence_code is not None:

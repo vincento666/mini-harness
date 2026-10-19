@@ -70,6 +70,17 @@
 - [x] 9.2 Learning Gate：扫本轮证据（红过的测试、存活的变异、返工过的规格、踩过的工具坑），可复用教训进 `docs/lessons.md` 收件箱，没有可复用信号就写 `NO-PROMOTION`。—— 收 L-027 至 L-030 四条，关闭 L-018、补 L-019；**AGENTS.md 不晋升**（三条最值钱的信号分别已被 AGENTS.md 变异段、L-005 / L-017 同族、L-004 覆盖）
 - [x] 9.3 改判 `docs/adr/0002-deferred-refactors.md` 的第 1 条剩一半、第 12、16 条为「已处理」，并把 `docs/CURRENT.md` 的门禁实测与缺口更新到 M3 实况。—— 逐条改判：已处理 1（含剩的一半，helper 收 `registry`/`gate` + run 形状收成一份）、6、9、10、11；改判为长期形态 8、12、16（桩留在各文件的理由成立）；未处理推到 M5 的 14、15；未触发的 17。`docs/CURRENT.md` 已刷新到 Windows 侧实况；两端 `TOTAL` 那一半要等 CI 首绿（7.3）。
 
+## 10. `code-review` 修复轮（两轴审查之后）
+
+- [x] 10.1 `_race_with_cancel` 的兜底塌词只对 `asyncio.CancelledError` 生效；从执行段逃出来的其它异常不得改名成 `TOOL_CANCELLED`，要落 `error/internal` 并作为内核失败收尾。seam ① —— 判据 `test_an_escaped_exception_is_not_renamed_to_a_cancellation`；逃出来的异常由 `one()` 接住、写 `error/internal`（含 `tool_call_id`）、置 `stop`，已跑完的调用照常落结果，run 以词表外的 `INTERNAL_ERROR` 收尾（退出码 1）
+- [ ] 10.2 `bash` 在两个档位下各跑一次：结果与日志形状没有可观察差别，且日志里没有 `error/fence`。seam ③
+- [ ] 10.3 「围栏拒绝时已在跑的并发调用不被吞」换成真实可达形状：一个还在跑的只读调用 + 一个被拒的调用。seam ①
+- [ ] 10.4 event-log 的「成组出现」改成实现实际保证的东西（每个调用的四类事件按此相对顺序；不同调用的组可交错，`tool/result` 按声明顺序），并补一条判据钉住这个相对顺序。seam ④
+- [ ] 10.5 提问可被取消打断：approval 门改成 awaitable，提问期间取消置位则这一对允许半对、这一条塌成 `TOOL_CANCELLED`。seam ① ②
+- [ ] 10.6 补一条 Windows 也跑得动的 `bash` 超时 CLI 黑盒（seam ⑥），并把 `docs/CURRENT.md` 里「Windows 侧超时黑盒都有」那句改到与实况一致
+- [ ] 10.7 「数值不暴露成命令行开关」补参数表判据：`bash` 的 30 / 600、并发上限 8、模型超时 120 都没有对应开关。seam ⑥
+- [ ] 10.8 记账：Standards 轴的 9 条判断项进 `docs/adr/0002-deferred-refactors.md`；「结果 durability 缓冲到批次结束」这个取舍（硬杀会吞已完成的结果）记进 `design.md` 与 `docs/CURRENT.md` 的缺口
+
 ## Workflow follow-up
 
 - `/openspec-apply-change` 按上面的顺序 red → green，一个循环一次提交，提交信息带 task 编号，一个提交最多覆盖同一 seam 上相邻 3 个 task

@@ -13,9 +13,9 @@ from mini_harness.events import EventLog, EventRecord, read_events
 from mini_harness.loop import RunOutcome, SessionSettings, run_session
 from mini_harness.provider import AssistantTurn, FixtureProvider, Provider
 from mini_harness.provider.openai_compat import OpenAICompatProvider
-from mini_harness.tools import ToolRegistry
-from mini_harness.tools.fences import path_key
-from tool_harness import run_session_fixture
+from mini_harness.tools import ToolArgs, ToolDefinition, ToolRegistry, ToolResult
+from mini_harness.tools.fences import DispatchContext, path_key
+from tool_harness import DONE, result_outcomes, run_session_fixture, tool_call, turn_entry
 
 
 async def test_single_turn_writes_the_expected_event_sequence(tmp_path: Path) -> None:
@@ -91,6 +91,52 @@ async def test_a_log_that_becomes_unwritable_ends_the_run_as_a_failure_result(
     assert outcome.stop_reason == "LOG_WRITE_FAILED"
     assert outcome.failure_code == "LOG_WRITE_FAILED"
     assert log.path.read_text(encoding="utf-8") == ""
+
+
+class _BoomArgs(ToolArgs):
+    """没有参数：这条判据只关心执行段里逃出来的异常。"""
+
+
+async def _boom(_: _BoomArgs, __: DispatchContext) -> ToolResult:
+    raise RuntimeError("执行段里逃出来的内核 bug")
+
+
+_BUGGY_REGISTRY = ToolRegistry(
+    [
+        ToolDefinition(
+            name="boom",
+            description="执行段里抛出一个不属于任何异常族的异常",
+            args_model=_BoomArgs,
+            mutates=False,
+            run=_boom,
+        )
+    ]
+)
+
+
+async def test_an_escaped_exception_is_not_renamed_to_a_cancellation(tmp_path: Path) -> None:
+    """执行段逃出来的异常走 `error/internal`，run 以内部错误收尾。
+
+    不变量 F：日志说的是真相。把真 bug 改名成 `TOOL_CANCELLED`，读日志的人会去找一次
+    没有发生过的取消。规格里那条「无法归类的内部故障仍走 error 命名空间」在 seam ① 也得成立。
+    """
+    log, outcome = await run_session_fixture(
+        tmp_path,
+        "s-escaped-exception",
+        FixtureProvider(entries=[turn_entry(tool_call("boom", "c1")), DONE]),
+        registry=_BUGGY_REGISTRY,
+        max_turns=4,
+    )
+
+    records = read_events(log.path)
+    internal = [record for record in records if record.type == "error/internal"]
+    assert len(internal) == 1
+    assert internal[0].payload["tool_call_id"] == "c1"
+    assert "RuntimeError" in internal[0].payload["detail"]
+    assert "tool/cancelled" not in [record.type for record in records]
+    assert ("c1", "TOOL_CANCELLED") not in result_outcomes(records)
+    assert outcome.stop_reason == "INTERNAL_ERROR"
+    assert outcome.failure_code == "INTERNAL_ERROR"
 
 
 async def test_context_assembled_carries_the_turn_id_it_belongs_to(tmp_path: Path) -> None:
