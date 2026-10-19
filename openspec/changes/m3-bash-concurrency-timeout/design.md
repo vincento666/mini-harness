@@ -38,6 +38,8 @@
 
 **D4 每回合取样一次前缀，整批共用。** 替代：保持每调用重读——否，并发时先完成的结果会进入后派发者的前缀，「同一份日志前缀得到同一判定」这条 Scenario 字面不成立。副带好处：消掉 O(n²) 重读。
 
+**D1 的落地修正（实现期发现 2026-10-19）。** 派发链用两个事件：`started`（轮到过：开始派发或放弃）与 `finished`（整个跑完）。规则是**只有一对相邻的只读调用允许同时在跑**，沾上「要改动」的调用都排队。两处原因：① 放弃派发的调用必须把链传下去，否则排在它后面的调用永远等一个不会开始的调用（红过，判据是 `asyncio.wait_for` 的 TimeoutError）；② 只等「前一个已经开始」时，被拒绝之后的调用可能在拒绝判定完成之前就开始——那条保证变成了碰巧的调度顺序。已知边角：相邻两个只读调用里前一个被围栏拒绝时，后一个可能已经开始，它落进「已经开始的照常落结果」那一类；M2 的两次 `write` 判据与 4.6 的判据都由这条规则保证。代价：`read` 与写调用不再重叠，只读并发仍然成立。
+
 **D5 超时塌成结果词，异常不逃逸出执行段。** `TimeoutError` → `TOOL_TIMEOUT`，`CancelledError` → `TOOL_CANCELLED`，两条都在 `dispatch_tool_call` 的执行段内塌（任务 1.2 已落）。超时的**数值**由工具自己执行：`bash` 用 `asyncio.wait_for` 包住自己的执行段，因为只有它知道入参里的 `timeout_seconds`。替代：给每个工具传 deadline 参数、或在 `ToolDefinition` 上加超时字段——否，那是把超时散进六个工具契约里，且 M3 只有 `bash` 需要它。事实更正（实现时核实）：`TimeoutError` **是** `OSError` 的子类，所以 `except TimeoutError` MUST 排在 `except OSError` 之前，否则超时读成 `TOOL_IO_FAILED`；`CancelledError` 是 `BaseException`。按 AGENTS.md 的变异纪律，执行段的判据要用族里不显眼的成员，不能只用 `TimeoutError`。
 
 **D6 approval 门保持同步，靠「会改动的工具串行」保证它不卡事件循环。** 决策 14 的写串行从性能优化升格为正确性前提，因此写进规格（turn-loop 的并发那条）。替代：把 `ApprovalGate` 改成 async——否，不加没被要求过的复杂度，且提问本来就该是唯一串行段。

@@ -20,7 +20,7 @@ from mini_harness.tools.fences import (
     DispatchContext,
     reads_from_records,
 )
-from mini_harness.tools.registry import ToolRegistry
+from mini_harness.tools.registry import ToolRegistry, ToolResult
 
 # `turn/end.stop_reason` 的词表：常量与 `Literal` 同源，加一个值只改这一处。
 StopReason = Literal[
@@ -92,6 +92,29 @@ class _BatchOutcome:
     denial_detail: str = ""
 
 
+async def _race_with_cancel(
+    call: ToolCall,
+    registry: ToolRegistry,
+    context: DispatchContext,
+    approval_gate: ApprovalGate,
+    cancel: asyncio.Event,
+) -> DispatchOutcome:
+    """取消置位时打断正在执行的调用：被打断的那一条塌成 `TOOL_CANCELLED`。
+
+    `dispatch_tool_call` 自己会把 `CancelledError` 塌成结果词；拿不到那个结果时这里补一条，
+    于是「有 `tool/call` 必有 `tool/result`」不依赖工具配合。
+    """
+    running = asyncio.create_task(dispatch_tool_call(call, registry, context, approval_gate))
+    watcher = asyncio.create_task(cancel.wait())
+    _, pending = await asyncio.wait({running, watcher}, return_when=asyncio.FIRST_COMPLETED)
+    for task in pending:
+        task.cancel()
+    settled = await asyncio.gather(running, watcher, return_exceptions=True)
+    if isinstance(settled[0], DispatchOutcome):
+        return settled[0]
+    return DispatchOutcome(ToolResult("TOOL_CANCELLED", f"取消打断了正在执行的调用：{call.name}"))
+
+
 async def _dispatch_batch(
     *,
     log: EventLog,
@@ -100,12 +123,14 @@ async def _dispatch_batch(
     registry: ToolRegistry,
     settings: SessionSettings,
     approval_gate: ApprovalGate,
+    cancel: asyncio.Event,
 ) -> _BatchOutcome:
     """派发一个回合声明的工具调用批次：只读的并发、会改动文件的串行。
 
     `tool/call` 由「前一个已经轮到过——开始派发或放弃」这条链保证按声明顺序落盘；结果缓冲到批次结束，
     仍按声明顺序落盘。围栏拒绝之后，还没开始的调用不再派发（连 `tool/call` 都不写），
-    已经开始的照常跑完并落结果。前缀只在本批次开始时取样一次，整批共用。
+    已经开始的照常跑完并落结果。取消置位之后同样不再派发，已经开始的被打断并落 `TOOL_CANCELLED`。
+    前缀只在本批次开始时取样一次，整批共用。
     """
     prefix = read_events(log.path)
     if isinstance(prefix, LogReadFailure):
@@ -116,7 +141,13 @@ async def _dispatch_batch(
     )
 
     outcomes: list[DispatchOutcome | None] = [None] * len(calls)
+    # `started` 是「轮到过：开始派发或放弃」；`finished` 是「整个跑完」。
     started: list[asyncio.Event] = [asyncio.Event() for _ in calls]
+    finished: list[asyncio.Event] = [asyncio.Event() for _ in calls]
+    mutating: list[bool] = []
+    for call in calls:
+        definition = registry.lookup(call.name)
+        mutating.append(definition is not None and definition.mutates)
     stop = asyncio.Event()
     read_slots = asyncio.Semaphore(MAX_PARALLEL_TOOLS)
     mutating_slot = asyncio.Lock()
@@ -148,31 +179,39 @@ async def _dispatch_batch(
         try:
             await dispatch_one(index, call)
         finally:
-            # 放弃派发也要把这条链传下去：否则排在它后面的调用会永远等一个不会开始的调用。
+            # 放弃派发也要把这两条链传下去：否则排在它后面的调用会永远等一个不会开始的调用。
             started[index].set()
+            finished[index].set()
 
     async def dispatch_one(index: int, call: ToolCall) -> None:
         if index > 0:
             await started[index - 1].wait()
-        definition = registry.lookup(call.name)
-        if definition is not None and definition.mutates:
+            if mutating[index] or mutating[index - 1]:
+                # 只有一对相邻的只读调用允许同时在跑；沾上「要改动」的都排队。
+                # 于是「拒绝之后的调用不再派发」是这条规则保证的，不是碰巧的调度顺序。
+                await finished[index - 1].wait()
+        if mutating[index]:
             async with mutating_slot:
                 # 拿到独占权之后才决定要不要开始：串行链上「已声明」不等于「已派发」。
-                if stop.is_set():
+                if stop.is_set() or cancel.is_set():
                     return
                 if not begin(index, call):
                     return
-                outcomes[index] = await dispatch_tool_call(call, registry, context, approval_gate)
+                outcomes[index] = await _race_with_cancel(
+                    call, registry, context, approval_gate, cancel
+                )
             dispatched = outcomes[index]
             if dispatched is not None and dispatched.fence_code is not None:
                 stop.set()
             return
-        if stop.is_set():
+        if stop.is_set() or cancel.is_set():
             return
         if not begin(index, call):
             return
         async with read_slots:
-            outcomes[index] = await dispatch_tool_call(call, registry, context, approval_gate)
+            outcomes[index] = await _race_with_cancel(
+                call, registry, context, approval_gate, cancel
+            )
         dispatched = outcomes[index]
         if dispatched is not None and dispatched.fence_code is not None:
             stop.set()
@@ -377,6 +416,7 @@ async def run_session(
             registry=registry,
             settings=settings,
             approval_gate=approval_gate,
+            cancel=cancel,
         )
         if batch.failure is not None:
             return _kernel_failure(log, batch.failure, turns)

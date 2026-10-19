@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,13 @@ from mini_harness.tools.fences import (
     reads_from_records,
 )
 from mini_harness.tools.file_tools import file_tool_definitions
+from mini_harness.tools.registry import ToolDefinition, ToolResult
+
+# 一次工具执行的区间：(它操作的相对路径, 开始时刻, 结束时刻)。
+Intervals = list[tuple[str, float, float]]
+
+# 被包装的工具默认跑这么久：够长到能看出「同时在跑」，够短到测试不慢。
+STEP_SECONDS = 0.05
 
 
 class _ApprovingGate:
@@ -40,6 +48,56 @@ def file_registry() -> ToolRegistry:
 def full_registry() -> ToolRegistry:
     """六个工具的注册表：文件工具加 `bash`。"""
     return ToolRegistry([*file_tool_definitions(), *bash_tool_definitions()])
+
+
+def timed_registry(observed: Intervals, delays: dict[str, float] | None = None) -> ToolRegistry:
+    """文件工具的契约原样保留，只把 `run` 包一层：先睡一小段，再记录执行区间。
+
+    `delays` 按被操作的路径定制睡眠长度，用来让「谁先完成」与「谁还在跑」可控。
+    """
+
+    def wrap(definition: ToolDefinition) -> ToolDefinition:
+        async def run(args: Any, context: DispatchContext) -> ToolResult:
+            key = getattr(args, "file_path", definition.name)
+            started = time.monotonic()
+            await asyncio.sleep(STEP_SECONDS if delays is None else delays.get(key, STEP_SECONDS))
+            result = await definition.run(args, context)
+            observed.append((key, started, time.monotonic()))
+            return result
+
+        return ToolDefinition(
+            name=definition.name,
+            description=definition.description,
+            args_model=definition.args_model,
+            mutates=definition.mutates,
+            run=run,
+        )
+
+    return ToolRegistry([wrap(definition) for definition in file_tool_definitions()])
+
+
+def serialized_registry(observed: Intervals) -> ToolRegistry:
+    """同一批调用被强制排队：并发跑与串行跑的对照组。"""
+    gate = asyncio.Lock()
+
+    def wrap(definition: ToolDefinition) -> ToolDefinition:
+        async def run(args: Any, context: DispatchContext) -> ToolResult:
+            key = getattr(args, "file_path", definition.name)
+            async with gate:
+                started = time.monotonic()
+                result = await definition.run(args, context)
+                observed.append((key, started, time.monotonic()))
+            return result
+
+        return ToolDefinition(
+            name=definition.name,
+            description=definition.description,
+            args_model=definition.args_model,
+            mutates=definition.mutates,
+            run=run,
+        )
+
+    return ToolRegistry([wrap(definition) for definition in file_tool_definitions()])
 
 
 def dispatch_context(

@@ -7,80 +7,22 @@
 from __future__ import annotations
 
 import asyncio
-import time
 from pathlib import Path
-from typing import Any
 
 from mini_harness.events import read_events
 from mini_harness.events.fold import fold
 from mini_harness.provider import FixtureProvider
-from mini_harness.tools import ToolRegistry
-from mini_harness.tools.fences import DispatchContext
-from mini_harness.tools.file_tools import file_tool_definitions
-from mini_harness.tools.registry import ToolDefinition, ToolResult
 from tool_harness import (
     DONE,
+    Intervals,
     call_ids,
     result_outcomes,
     run_session_fixture,
+    serialized_registry,
+    timed_registry,
     tool_call,
     turn_entry,
 )
-
-_STEP_SECONDS = 0.05
-
-# 一次工具执行的区间：(它操作的相对路径, 开始时刻, 结束时刻)。
-Intervals = list[tuple[str, float, float]]
-
-
-def _instrumented(observed: Intervals, delays: dict[str, float] | None = None) -> ToolRegistry:
-    """真实文件工具的契约原样保留，只把 `run` 包一层：先睡一小段，再记录执行区间。
-
-    `delays` 按被操作的路径定制睡眠长度，用来让「谁先完成」可控。
-    """
-
-    def wrap(definition: ToolDefinition) -> ToolDefinition:
-        async def run(args: Any, context: DispatchContext) -> ToolResult:
-            key = getattr(args, "file_path", definition.name)
-            started = time.monotonic()
-            await asyncio.sleep(_STEP_SECONDS if delays is None else delays.get(key, _STEP_SECONDS))
-            result = await definition.run(args, context)
-            observed.append((key, started, time.monotonic()))
-            return result
-
-        return ToolDefinition(
-            name=definition.name,
-            description=definition.description,
-            args_model=definition.args_model,
-            mutates=definition.mutates,
-            run=run,
-        )
-
-    return ToolRegistry([wrap(definition) for definition in file_tool_definitions()])
-
-
-def _serialized(observed: Intervals) -> ToolRegistry:
-    """同一批调用被强制排队：并发跑与串行跑的对照组。"""
-    gate = asyncio.Lock()
-
-    def wrap(definition: ToolDefinition) -> ToolDefinition:
-        async def run(args: Any, context: DispatchContext) -> ToolResult:
-            key = getattr(args, "file_path", definition.name)
-            async with gate:
-                started = time.monotonic()
-                result = await definition.run(args, context)
-                observed.append((key, started, time.monotonic()))
-            return result
-
-        return ToolDefinition(
-            name=definition.name,
-            description=definition.description,
-            args_model=definition.args_model,
-            mutates=definition.mutates,
-            run=run,
-        )
-
-    return ToolRegistry([wrap(definition) for definition in file_tool_definitions()])
 
 
 def _spans(observed: Intervals) -> dict[str, tuple[float, float]]:
@@ -119,7 +61,7 @@ async def test_two_reads_in_one_turn_overlap_in_time(tmp_path: Path) -> None:
                 DONE,
             ]
         ),
-        registry=_instrumented(observed),
+        registry=timed_registry(observed),
         max_turns=4,
     )
 
@@ -161,7 +103,7 @@ async def test_two_edits_in_one_turn_run_one_after_the_other(tmp_path: Path) -> 
                 DONE,
             ]
         ),
-        registry=_instrumented(observed),
+        registry=timed_registry(observed),
         max_turns=4,
     )
 
@@ -186,7 +128,7 @@ async def test_ten_reads_in_one_turn_never_exceed_the_limit(tmp_path: Path) -> N
         tmp_path,
         "s-limit",
         FixtureProvider(entries=[batch, DONE]),
-        registry=_instrumented(observed),
+        registry=timed_registry(observed),
         max_turns=4,
     )
 
@@ -218,7 +160,7 @@ async def test_a_read_in_the_same_batch_does_not_unlock_a_write(tmp_path: Path) 
                 DONE,
             ]
         ),
-        registry=_instrumented(observed),
+        registry=timed_registry(observed),
         max_turns=4,
     )
 
@@ -249,7 +191,7 @@ async def test_results_land_in_declared_order_when_the_second_finishes_first(
                 DONE,
             ]
         ),
-        registry=_instrumented(observed, delays={"a.md": 0.2, "b.md": 0.02}),
+        registry=timed_registry(observed, delays={"a.md": 0.2, "b.md": 0.02}),
         max_turns=4,
     )
 
@@ -285,7 +227,7 @@ async def test_a_fence_denial_does_not_swallow_the_calls_already_running(tmp_pat
                 DONE,
             ]
         ),
-        registry=_instrumented(observed),
+        registry=timed_registry(observed),
         sandbox="read-only",
         max_turns=4,
     )
@@ -325,7 +267,7 @@ async def test_calls_declared_after_a_denied_one_are_all_skipped(tmp_path: Path)
                     DONE,
                 ]
             ),
-            registry=_instrumented(observed),
+            registry=timed_registry(observed),
             sandbox="read-only",
             max_turns=4,
         ),
@@ -367,7 +309,7 @@ async def test_the_same_batch_gives_the_same_outcomes_concurrently_and_serially(
         "s-replay-concurrent",
         FixtureProvider(entries=entries),
         workspace=workspace_a,
-        registry=_instrumented(concurrent),
+        registry=timed_registry(concurrent),
         max_turns=4,
     )
     serial: Intervals = []
@@ -376,7 +318,7 @@ async def test_the_same_batch_gives_the_same_outcomes_concurrently_and_serially(
         "s-replay-serial",
         FixtureProvider(entries=entries),
         workspace=workspace_b,
-        registry=_serialized(serial),
+        registry=serialized_registry(serial),
         max_turns=4,
     )
 

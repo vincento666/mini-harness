@@ -76,6 +76,10 @@ async def run_bash(args: BashArgs, context: DispatchContext) -> ToolResult:
             outcome="TOOL_TIMEOUT",
             content=f"命令超过 {args.timeout_seconds} 秒没有结束：{args.command}",
         )
+    except asyncio.CancelledError:
+        # 取消打断的是执行段：命令的进程树同样收掉，再把取消传出去，由派发段塌成结果词。
+        await _terminate_tree(process)
+        raise
     output = stdout.decode("utf-8", errors="replace") + stderr.decode("utf-8", errors="replace")
     return ToolResult(
         outcome="OK",
