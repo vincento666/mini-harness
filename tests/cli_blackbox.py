@@ -34,7 +34,10 @@ def _child_env(env: dict[str, str] | None) -> dict[str, str]:
 
 
 def _cli(
-    *args: str, cwd: Path, env: dict[str, str] | None = None
+    *args: str,
+    cwd: Path,
+    env: dict[str, str] | None = None,
+    stdin_text: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """跑一次 `python -m mini_harness.cli.main`，返回 CompletedProcess（UTF-8 文本）。
 
@@ -42,6 +45,10 @@ def _cli(
     测试的 `cwd` 是 tmp_path（在仓库外），coverage 找不到配置文件，所以显式 `--rcfile` 指回
     仓库根的 pyproject.toml；partial 数据文件默认落在 cwd，`coverage combine` 扫不到，所以
     用 `COVERAGE_FILE` 把它写进仓库根，配合 `-p` 让每个子进程各写一份 `.coverage.<pid>`。
+
+    `stdin_text` 只给一条判据用：把 stdin 换成**管道**（仍然不是 tty），看门会不会把喂进来的
+    `y` 当成人的回答。默认那条路径固定成「非 tty 且立刻 EOF」，黑盒因此拿到确定的 UNAVAILABLE，
+    不看运行环境脸色。
     """
     return subprocess.run(
         _command(*args),
@@ -50,9 +57,8 @@ def _cli(
         text=True,
         encoding="utf-8",
         env=_child_env(env),
-        # 子进程的 stdin 固定成「非 tty 且立刻 EOF」：approval 门因此不会挂在真实终端上，
-        # 黑盒测试拿到的是确定的 UNAVAILABLE，而不是看运行环境脸色。
-        stdin=subprocess.DEVNULL,
+        stdin=None if stdin_text is not None else subprocess.DEVNULL,
+        input=stdin_text,
     )
 
 

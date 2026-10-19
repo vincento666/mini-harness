@@ -102,6 +102,38 @@ async def test_the_command_runs_in_the_workspace_root(tmp_path: Path) -> None:
     assert read_back.result.outcome == "OK"
 
 
+async def test_the_command_runs_through_a_shell(tmp_path: Path) -> None:
+    """seam ③：命令经平台 shell——`cmd.exe /c` 与 `/bin/sh -c` 各跑各的，判据只用两端同形的写法。
+
+    `&&` 是 shell 的运算符而不是某个平台的方言：直接 exec 一条命令做不到「前一条成了才跑后一条」。
+    """
+    first = _script(tmp_path, "first.py", "open('first.md', 'w').close()\n")
+    second = _script(tmp_path, "second.py", "open('second.md', 'w').close()\n")
+
+    outcome = await dispatch_call(
+        tmp_path, "bash", {"command": f"{first} && {second}"}, registry=_registry()
+    )
+
+    assert outcome.result.outcome == "OK"
+    assert outcome.result.content.startswith("退出码 0")
+    assert (tmp_path / "first.md").exists()
+    assert (tmp_path / "second.md").exists()
+
+
+async def test_a_failing_first_command_short_circuits_the_chain(tmp_path: Path) -> None:
+    """`&&` 是短路，不是把两段拼起来一起跑：前一条退出码非 0，后一条不该执行。"""
+    first = _script(tmp_path, "first.py", "import sys\n\nsys.exit(4)\n")
+    second = _script(tmp_path, "second.py", "open('second.md', 'w').close()\n")
+
+    outcome = await dispatch_call(
+        tmp_path, "bash", {"command": f"{first} && {second}"}, registry=_registry()
+    )
+
+    assert outcome.result.outcome == "OK"
+    assert outcome.result.content.startswith("退出码 4")
+    assert not (tmp_path / "second.md").exists()
+
+
 async def test_timeout_seconds_above_the_cap_is_an_invalid_args_result(tmp_path: Path) -> None:
     command = _script(tmp_path, "make_marker.py", _MARKER)
     outcome = await dispatch_call(

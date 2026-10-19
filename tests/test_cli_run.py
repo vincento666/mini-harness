@@ -304,6 +304,57 @@ def test_run_has_no_switch_that_changes_the_model_timeout(tmp_path: Path) -> Non
     assert "unrecognized arguments: --timeout" in result.stderr
 
 
+def test_a_bash_command_runs_end_to_end_in_the_cli(tmp_path: Path) -> None:
+    """seam ⑥：`bash` 在真实 CLI 里跑通——命令在工作区根起、结果进日志、退出码 0。
+
+    命令写成 `python <文件>`：`-c` 的引号在 `cmd.exe` 与 `/bin/sh` 里语义不同，用它判到的是
+    shell 方言而不是 CLI 契约。`--yes` 是因为黑盒的 stdin 不是 tty，没有人可问。
+    """
+    (tmp_path / "make_marker.py").write_text("open('made.md', 'w').close()\n", encoding="utf-8")
+    fixture = tmp_path / "bash.json"
+    fixture.write_text(
+        json.dumps(
+            [
+                {
+                    "content": "跑一条真实检查命令",
+                    "finish_reason": "tool_calls",
+                    "tool_calls": [
+                        {
+                            "id": "c1",
+                            "name": "bash",
+                            "arguments": {"command": "python make_marker.py"},
+                        }
+                    ],
+                },
+                {
+                    "content": "再读它留下的文件",
+                    "finish_reason": "tool_calls",
+                    "tool_calls": [
+                        {"id": "c2", "name": "read", "arguments": {"file_path": "made.md"}}
+                    ],
+                },
+                {"content": "完了", "finish_reason": "stop"},
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    result = _cli(
+        "run", "-p", "任务", "--provider", "mock", "--fixture", str(fixture), "--yes", cwd=tmp_path
+    )
+
+    assert result.returncode == 0
+    logs = _log_files(tmp_path)
+    assert logs
+    events = [json.loads(line) for line in logs[0].read_text(encoding="utf-8").splitlines()]
+    outcomes = [
+        str(event["payload"]["outcome"]) for event in events if event["type"] == "tool/result"
+    ]
+    assert outcomes == ["OK", "OK"]
+    assert (tmp_path / "made.md").exists()
+
+
 @pytest.mark.skipif(
     sys.platform == "win32",
     reason=(

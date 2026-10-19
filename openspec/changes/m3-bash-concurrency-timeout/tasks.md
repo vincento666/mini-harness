@@ -47,10 +47,10 @@
 
 ## 6. 平台适配层与两端同一套判据
 
-- [ ] 6.1 路径大小写折叠的两端判据：Windows 上折叠、Linux 上区分（同一测试两端各有断言，复制 `tests/test_fences.py:30-40` 的形状）。seam ②⑥
-- [ ] 6.2 符号链接判据在 Linux 真跑；Windows 侧换成不要求特权的 junction 形式跑。seam ②
-- [ ] 6.3 tty 检测的两端判据：非 tty 且未 `--yes` 时 `UNAVAILABLE` 在两端都成立。seam ②⑥
-- [ ] 6.4 bash 的两端执行形状（`cmd.exe /c` 与 `/bin/sh -c`）落地，判据只用平台中立命令。seam ③⑥
+- [x] 6.1 路径大小写折叠的两端判据：Windows 上折叠、Linux 上区分（同一测试两端各有断言，复制 `tests/test_fences.py:30-40` 的形状）。seam ②⑥ —— 键本身那条早就在；补的是**后果**：换写法读过的文件能不能满足写前必读，两端各断言一支
+- [x] 6.2 符号链接判据在 Linux 真跑；Windows 侧换成不要求特权的 junction 形式跑。seam ② —— junction 判据本机真跑，符号链接那条在这台机器上 skip、由 CI 的 Linux 跑
+- [x] 6.3 tty 检测的两端判据：非 tty 且未 `--yes` 时 `UNAVAILABLE` 在两端都成立。seam ②⑥ —— 已有的 DEVNULL 黑盒 + 桩门两条照跑；补一条「管道里喂进来的 `y` 不是人」，把 stdin 换成管道仍然 `UNAVAILABLE`
+- [x] 6.4 bash 的两端执行形状（`cmd.exe /c` 与 `/bin/sh -c`）落地，判据只用平台中立命令。seam ③⑥ —— 判据只用 `python <文件>` 与 `&&`：一条跑通、一条短路；再加 CLI 黑盒跑通 `bash` → `read`
 
 ## 7. CI 矩阵
 
