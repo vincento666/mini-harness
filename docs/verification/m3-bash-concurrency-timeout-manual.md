@@ -15,4 +15,80 @@ change `m3-bash-concurrency-timeout`。这份记录分两半：**本机（Window
 
 ## 人手验收（tasks 8.1–8.2）
 
-待跑。形状沿用 `docs/verification/m1-m2-manual-smoke.md`：场景表 + 一键脚本 + `mismatches=0`，外加只有真终端能做的按键与 Ctrl-C 两条。
+**状态：待跑，清单已备好（2026-10-19）。** 形状沿用 `docs/verification/m1-m2-manual-smoke.md`：场景表 + 可粘贴命令 + 观察点；实际列留空，跑完贴回来由我按 `docs/verification/m4-real-provider-manual.md` 的写法记进本节。不进 CI，也不替代门禁那四道。
+
+**前提**：真终端（Windows PowerShell，仓库根 `S:\Develop\mini-harness`）。端点 `http://127.0.0.1:8300/v1`、模型 `qwen3.8-flash-next-iq3_xxs`，密钥走 `--api-key-env MINIHNS_STRATA_KEY`（值不落进任何记录）。8300 是单流 FIFO 且与 DSH 共用，prompt 短、`--max-turns 6`、一次只跑一个 session。
+
+**工作区**：`.tmp/m3-manual/`（gitignored，已备好）——`notes/a.md` 与 `notes/b.md` 各 3 行、`count_lines.py`（真实检查命令，产出 `counts.txt`）、`slow.py`（睡 45 秒并拉一个同样睡 45 秒的子进程）、`README.md`。跑之前 `counts.txt` 不存在。
+
+### 场景 A（8.1）：真事 + 并发派发 + 落盘顺序
+
+不带 `--yes`：`bash` 算会改动的工具，真 tty 下它会停在人跟前。
+
+```
+uv run python -m mini_harness.cli.main run `
+  -p "用 bash 跑 python count_lines.py，然后读 counts.txt；再同时读 notes/a.md 与 notes/b.md，核对 counts.txt 里的行数与两个文件各自的行数是否一致，不一致就说出来。" `
+  --provider openai --base-url http://127.0.0.1:8300/v1 `
+  --model qwen3.8-flash-next-iq3_xxs --api-key-env MINIHNS_STRATA_KEY `
+  --workspace .tmp/m3-manual --session-dir .tmp/m3-manual/sessions `
+  --max-turns 6
+```
+
+| 观察点 | 期望 | 实际 |
+|---|---|---|
+| 提问 | 跑到 `bash` 前停在终端前，一行「允许 bash 跑 python count_lines.py，输入 y 或 n：」；答 `y` 之后进程才起 | |
+| 退出码 / 墙钟 / session id | 0 | |
+| `bash` 的结果 | `tool/result` 的 `outcome=OK`，content 第一行「退出码 0」，后面是 `wrote counts.txt` 与两行计数 | |
+| cwd 固定在工作区根 | `.tmp/m3-manual/counts.txt` 出现（命令里的相对路径落在工作区根，不是仓库根） | |
+| 并发派发 | 同一回合两个 `read`：两条 `tool/call` 按声明顺序、两条 `tool/result` 按声明顺序 | |
+| 成组 | 每个 `tool_call_id` 自己的 `tool/call` →（`approval/request` → `approval/response` →）`tool/result` 相对顺序成立；不同调用的组可以交错，不要求连续 | |
+| 截断标记 | 不出现 `[输出已截断]`（输出远小于 16384 字节） | |
+| 收尾 | 末回合 `turn/end` 与 `session/end` 都是 `MODEL_COMPLETED` | |
+
+看顺序的那条命令（跑完贴输出）：
+
+```
+$log = Get-ChildItem .tmp/m3-manual/sessions/*.jsonl | Sort-Object LastWriteTime | Select-Object -Last 1
+Get-Content $log -Encoding UTF8 | ForEach-Object { $e = $_ | ConvertFrom-Json; '{0,18}  {1}  {2}' -f $e.type, $e.payload.tool_call_id, $e.payload.outcome }
+```
+
+`-Encoding UTF8` 不能省：Windows PowerShell 默认按 ANSI 读，日志里的中文会碎成无效 JSON，`ConvertFrom-Json` 报错之后 `$e` 还是上一条，输出看起来正常其实少了几行（备清单时实测过）。日志本身是 UTF-8。
+
+另一条路是 `uv run python -m mini_harness.cli.main replay <session_id> --session-dir .tmp/m3-manual/sessions`：它打 `verified seq=…: OK` 与每回合的 `stop_reason`，不打工具顺序。
+
+### 场景 B（8.2 之一）：一条故意超时的命令
+
+```
+uv run python -m mini_harness.cli.main run `
+  -p "用 bash 跑 python slow.py，然后告诉我它发生了什么。" `
+  --provider openai --base-url http://127.0.0.1:8300/v1 `
+  --model qwen3.8-flash-next-iq3_xxs --api-key-env MINIHNS_STRATA_KEY `
+  --workspace .tmp/m3-manual --session-dir .tmp/m3-manual/sessions `
+  --max-turns 6 --yes
+```
+
+| 观察点 | 期望 | 实际 |
+|---|---|---|
+| 墙钟 | 约 30 秒就出结果，不是 45 秒 | |
+| 日志 | `tool/cancelled`（payload 只有 `turn_id` 与 `tool_call_id`，没有命令输出）紧跟一条 `tool/result`，`outcome=TOOL_TIMEOUT` | |
+| 回合继续 | 超时之后模型还有回合，`session/end` 不是 `ABORTED`，退出码 0 | |
+| 进程树收干净 | 跑完立刻 `Get-CimInstance Win32_Process -Filter "Name like 'python%'" \| Select-Object ProcessId, CommandLine`：只剩 harness 自己那一条（`-m mini_harness.cli.main`），没有 `slow.py`、也没有它打印出来的那个 child pid 对应的 `-c "import time…"` | |
+| 默认值与开关 | 不给 `timeout_seconds` 时是 30 秒；`minihns run --help` 里没有改变它的开关 | |
+
+### 场景 C（8.2 之二）：一次 Ctrl-C
+
+同一条命令，在 `bash` 正在跑的时候按 Ctrl-C。
+
+| 观察点 | 期望 | 实际 |
+|---|---|---|
+| 退出码 | `$LASTEXITCODE` 是 5 | |
+| 日志尾部 | `tool/cancelled` → `tool/result`（`TOOL_CANCELLED`）→ `error/abort` → `turn/end`（`ABORTED`）→ `session/end`（`ABORTED`）；被打断的那条 `tool/call` 有配对的结果 | |
+| 没开始的调用 | 同一回合里还没派发的调用也各有一条结果（`TOOL_CANCELLED`），日志里没有只有 `tool/call` 没有 `tool/result` 的调用 | |
+| 进程树收干净 | 同场景 B | |
+| 文件没被改 | `slow.py` 没跑完；`counts.txt` 不因这条变化 | |
+
+这条只有真终端能做：本机 ConPTY 路线走不通（`UpdateProcThreadAttribute` 恒返回 87），所以 seam ⑥ 的 Windows Ctrl-C 黑盒不在 M3（见上一节「本机跑不到的判据」）。
+
+### 要贴回来的东西
+
+场景 A / B / C 各一份：session id、退出码、墙钟、上面各表「实际」列的内容，外加「哪儿别扭」一两句真实观察（不是期望）。

@@ -32,7 +32,7 @@
 
 ## 待办与已知缺口
 
-- **M3 的人手验收待跑**（tasks 8.1–8.2）：拿真工作区办一件真事（`bash` 生成产物、`read` 读回），再观察两件打断——一条故意超时的命令（跑过 30 s）看 `tool/cancelled` 与回合继续；一次 Ctrl-C 看退出码 5 与 `error/abort`。记录写进 `docs/verification/m3-bash-concurrency-timeout-manual.md` 的空着的那节。不进 CI。
+- **M3 的人手验收待跑**（tasks 8.1–8.2）：清单已备好，等人在真终端跑。三个场景（真事 + 并发派发与落盘顺序 / 一条故意超时的命令 / 一次 Ctrl-C）、可粘贴的命令、要贴回来的东西都在 `docs/verification/m3-bash-concurrency-timeout-manual.md`；工作区 `.tmp/m3-manual/`（gitignored）已备好 `notes/a.md`、`notes/b.md`、`count_lines.py`、`slow.py`，`counts.txt` 与日志目录已清空。不进 CI。
 - **Windows 的 Ctrl-C 黑盒不在 M3**：seam ① 注入 cancel 判据、seam ⑥ Linux 真实 SIGINT 黑盒、两端都跑得动的 seam ⑥ `bash` 超时黑盒（`test_a_bash_timeout_in_the_cli_is_a_result_word_and_the_run_continues`，`timeout_seconds: 1` + 一条不会自己停的命令）都有；Windows 真实控制台 Ctrl-C 没有判据，缺口与边界记在 `docs/verification/m3-bash-concurrency-timeout-manual.md`。ConPTY 路线本机走不通（`UpdateProcThreadAttribute` 恒返回 87），可用的替代形状是 `WriteConsoleInput` 投递 KEY_EVENT（M2 的 approval smoke 用过）。
 - **Linux 侧的判据本机从没跑过**：符号链接键规范化、真实 SIGINT 黑盒、`tests/test_turn_cancel.py` 的 POSIX `killpg` 那一半。CI 首绿之前它们是未验证的；junction 那一半本机跑过（`test_a_junction_key_resolves_to_its_target_without_privileges`），符号链接那一半在 Linux runner 上跑。
 - **硬杀会吞掉已经完成的结果**：`tool/result` 缓冲到批次结束才落盘（design.md 的 D3），所以 SIGKILL 落在批次中间时，已经跑完的那几条结果不在盘上，日志留下「有 `tool/call` 没 `tool/result`」的前缀。取消路径不受影响——`TOOL_CANCELLED` 是合成出来的结果，每条 `tool/call` 都有配对。append-only 日志里「立刻落盘」与「按声明顺序」只能要一样，M3 要的是顺序。pi 的 issue #7053 是同一形状。这条没有判据（判它要在判据里可靠地硬杀子进程再读日志，seam ⑥ 本机做不到），记为已知缺口。
