@@ -30,7 +30,7 @@ class _StubArgs(ToolArgs):
 
 
 class _ApprovingGate:
-    def request(self, *, tool_name: str, detail: str) -> ApprovalDecision:
+    async def request(self, *, tool_name: str, detail: str) -> ApprovalDecision:
         return "APPROVED"
 
 

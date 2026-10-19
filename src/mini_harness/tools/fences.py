@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
+import threading
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -95,9 +97,42 @@ ApprovalDecision = Literal["APPROVED", "DENIED", "UNAVAILABLE"]
 
 
 class ApprovalGate(Protocol):
-    """问一次 → 结论。内核只认这个接口：CLI 层接真实 stdin，测试注入固定结论。"""
+    """问一次 → 结论。内核只认这个接口：CLI 层接真实 stdin，测试注入固定结论。
 
-    def request(self, *, tool_name: str, detail: str) -> ApprovalDecision: ...
+    它是 awaitable：M3 之后提问可以被取消打断（ADR-0007）。挂在「等人回答」里的调用
+    必须能被中断，否则取消只能等人先答完。
+    """
+
+    async def request(self, *, tool_name: str, detail: str) -> ApprovalDecision: ...
+
+
+def _settle(target: asyncio.Future[str], text: str) -> None:
+    """回答回来了，但等它的人可能已经被取消：已经定论的 future 不再写。"""
+    if not target.done():
+        target.set_result(text)
+
+
+async def _await_readline(source: TextIO) -> str:
+    """在一行回答上等待，同时允许等它的人被取消。
+
+    `readline()` 是阻塞调用，放在 daemon 线程里等：事件循环不被一行回答钉住，取消才插得进来。
+    用 daemon 线程而不是 `asyncio.to_thread`——后者的工作线程不是 daemon，解释器退出时要 join，
+    一条永远等不到回答的 `readline` 会把退出一起挂住。
+    """
+    loop = asyncio.get_running_loop()
+    answer: asyncio.Future[str] = loop.create_future()
+
+    def read() -> None:
+        try:
+            text = source.readline()
+        except OSError:
+            # 流被关掉：读到的是 EOF，不是「人说了不」。
+            text = ""
+        if not loop.is_closed():
+            loop.call_soon_threadsafe(_settle, answer, text)
+
+    threading.Thread(target=read, name="approval-ask", daemon=True).start()
+    return await answer
 
 
 class StdinApprovalGate:
@@ -116,14 +151,14 @@ class StdinApprovalGate:
         self._stream = stream
         self._prompt_stream = prompt_stream
 
-    def request(self, *, tool_name: str, detail: str) -> ApprovalDecision:
+    async def request(self, *, tool_name: str, detail: str) -> ApprovalDecision:
         answers = sys.stdin if self._stream is None else self._stream
         if not answers.isatty():
             return "UNAVAILABLE"
         prompt = sys.stderr if self._prompt_stream is None else self._prompt_stream
         prompt.write(f"允许 {tool_name} 改动 {detail}，输入 y 或 n：")
         prompt.flush()
-        answer = answers.readline()
+        answer = await _await_readline(answers)
         if answer == "":
             # 读到 EOF：没有人在回答，不是「人说了不」。Windows 上 NUL 设备也算 tty。
             return "UNAVAILABLE"

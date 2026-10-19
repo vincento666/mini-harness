@@ -7,6 +7,7 @@ from pathlib import Path
 
 from mini_harness.events import EventRecord, read_events
 from mini_harness.provider import FixtureProvider
+from mini_harness.tools.fences import ApprovalDecision
 from tool_harness import (
     DONE,
     Intervals,
@@ -170,3 +171,52 @@ async def test_a_run_without_interruption_writes_no_tool_cancelled(tmp_path: Pat
     records = read_events(log.path)
     assert isinstance(records, list)
     assert _cancelled(records) == []
+
+
+class _CancelWhileAskingGate:
+    """人还没答，取消先到：提问挂在门里，事件循环照跑得动。"""
+
+    def __init__(self, cancel: asyncio.Event) -> None:
+        self._cancel = cancel
+        self.asked: list[str] = []
+
+    async def request(self, *, tool_name: str, detail: str) -> ApprovalDecision:
+        self.asked.append(tool_name)
+        self._cancel.set()
+        await asyncio.sleep(30)
+        return "APPROVED"
+
+
+async def test_a_cancel_arrives_while_the_human_is_being_asked(tmp_path: Path) -> None:
+    """规格 scenario「半对只在取消收尾的 session 里成立」：提问期间取消。
+
+    提问之前 `approval/request` 已经在盘上；取消打断挂在门里的提问，这一对就停在半对。
+    这一条塌成 `TOOL_CANCELLED`，session 以 `error/abort` 收尾，工具没有执行。
+    """
+    cancel = asyncio.Event()
+    gate = _CancelWhileAskingGate(cancel)
+
+    log, outcome = await run_session_fixture(
+        tmp_path,
+        "s-cancel-while-asking",
+        FixtureProvider(
+            entries=[turn_entry(tool_call("write", "c1", file_path="a.md", content="A\n")), DONE]
+        ),
+        registry=full_registry(),
+        approval="ask",
+        approval_gate=gate,
+        cancel=cancel,
+        max_turns=4,
+    )
+
+    records = read_events(log.path)
+    assert isinstance(records, list)
+    assert gate.asked == ["write"]
+    assert call_ids(records, "tool/call") == ["c1"]
+    assert call_ids(records, "approval/request") == ["c1"]
+    assert call_ids(records, "approval/response") == []
+    assert result_outcomes(records) == [("c1", "TOOL_CANCELLED")]
+    assert [record.payload["tool_call_id"] for record in _cancelled(records)] == ["c1"]
+    assert [record.type for record in records][-3:] == ["error/abort", "turn/end", "session/end"]
+    assert outcome.stop_reason == "ABORTED"
+    assert not (tmp_path / "a.md").exists()

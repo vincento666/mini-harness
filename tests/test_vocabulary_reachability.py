@@ -40,7 +40,7 @@ class _Gate:
     def __init__(self, decision: ApprovalDecision) -> None:
         self._decision = decision
 
-    def request(self, *, tool_name: str, detail: str) -> ApprovalDecision:
+    async def request(self, *, tool_name: str, detail: str) -> ApprovalDecision:
         return self._decision
 
 
@@ -217,13 +217,13 @@ async def test_every_fence_code_is_reachable(tmp_path: Path) -> None:
     assert outcomes == {"DENIED_BY_FENCE", "DENIED_BY_APPROVAL"}
 
 
-def test_every_approval_decision_is_reachable() -> None:
+async def test_every_approval_decision_is_reachable() -> None:
     observed: set[str] = set()
     for answer in ("y\n", "n\n"):
         gate = StdinApprovalGate(stream=_Tty(answer), prompt_stream=io.StringIO())
-        observed.add(gate.request(tool_name="write", detail="a.md"))
+        observed.add(await gate.request(tool_name="write", detail="a.md"))
     silent = StdinApprovalGate(stream=io.StringIO("y\n"), prompt_stream=io.StringIO())
-    observed.add(silent.request(tool_name="write", detail="a.md"))
+    observed.add(await silent.request(tool_name="write", detail="a.md"))
 
     assert observed == set(get_args(ApprovalDecision))
 

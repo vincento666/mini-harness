@@ -48,6 +48,8 @@
 
 **D6 approval 门保持同步，靠「会改动的工具串行」保证它不卡事件循环。** 决策 14 的写串行从性能优化升格为正确性前提，因此写进规格（turn-loop 的并发那条）。替代：把 `ApprovalGate` 改成 async——否，不加没被要求过的复杂度，且提问本来就该是唯一串行段。
 
+**D6 的重新裁决（`code-review` 之后，2026-10-19）。** 「提问是唯一串行段」不等于「提问可被中断」：`ApprovalGate.request` 是同步 `readline()` 时，取消只能等人先答完——`_race_with_cancel` 要等协程走到 await 点，挂在 `readline()` 里的协程没有 await 点。规格那条「半对只在取消收尾的 session 里成立」因此没有可达的判据。改判：`ApprovalGate.request` 是 awaitable，`StdinApprovalGate` 把 `readline()` 放进一条 daemon 线程里等。用 daemon 线程而不是 `asyncio.to_thread`——后者自 3.9 起工作线程不是 daemon、解释器退出时由 atexit join，一条永远等不到回答的 `readline` 会把进程退出一起挂住。代价写明白：被取消的提问在后台还挂着（daemon 线程随进程结束消失，那一行回答没人再读），`ApprovalGate` 的测试桩全部改成 async。会改动的工具仍然串行——那条不变，它保证的是整批共用同一前缀，不再被拿来当「不卡循环」的理由。
+
 **D7 `bash` 经平台 shell 执行：Windows `cmd.exe /c`、POSIX `/bin/sh -c`，cwd 固定工作区根。** 替代：不经 shell 的 `create_subprocess_exec` + `shlex.split`——否，模型写的命令带管道与重定向，不经 shell 就不可用；而 `shlex` 的 POSIX 语义在 Windows 上不对。代价：两端 shell 语义不同，因此**每条 bash 判据只用平台中立命令**（`python -c "..."` 一类），ADR 里写明「模型在 Windows 上写 POSIX 语法会得到命令失败，那是内容不是 harness 失败」。
 
 **D8 超时之后终止进程树：POSIX 用 `start_new_session=True` + 终止整个进程组，Windows 用 `taskkill /T /PID`。** 判据断言「后代进程不再运行」，不断言手段。与 fences 主规格「MUST NOT 依赖 job object」的关系要写清：那条禁止的是**用 OS 机制实施围栏**，不是终止自己启动的进程——这个区分要立 ADR（下一号 0009），因为字面读起来像冲突。

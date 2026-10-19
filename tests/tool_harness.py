@@ -36,7 +36,7 @@ STEP_SECONDS = 0.05
 class _ApprovingGate:
     """seam ③ 判的是工具契约，approval 在这里不是被测对象。"""
 
-    def request(self, *, tool_name: str, detail: str) -> ApprovalDecision:
+    async def request(self, *, tool_name: str, detail: str) -> ApprovalDecision:
         return "APPROVED"
 
 

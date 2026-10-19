@@ -77,7 +77,7 @@ async def dispatch_tool_call(
                     content=f"工具 {call.name} 的 approval 记录写不进日志",
                 )
             )
-        approval = approval_gate.request(tool_name=definition.name, detail=question)
+        approval = await approval_gate.request(tool_name=definition.name, detail=question)
         if approval != "APPROVED":
             return DispatchOutcome(
                 ToolResult(

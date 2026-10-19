@@ -45,7 +45,7 @@ class _RecordingGate:
     def __init__(self) -> None:
         self.details: list[str] = []
 
-    def request(self, *, tool_name: str, detail: str) -> ApprovalDecision:
+    async def request(self, *, tool_name: str, detail: str) -> ApprovalDecision:
         self.details.append(detail)
         return "DENIED"
 
