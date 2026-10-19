@@ -292,3 +292,17 @@ async def test_a_cancel_during_a_retry_stops_the_second_request() -> None:
     assert isinstance(outcome, ProviderFailure)
     assert outcome.code == "PROVIDER_ABORTED"
     assert [(attempt.attempt, attempt.status) for attempt in outcome.attempts] == [(1, 429)]
+
+
+async def test_the_model_request_carries_a_120_second_timeout() -> None:
+    """决策 15：模型请求的超时是 120 秒。判据看请求本身带走的超时，不看实现里的常量名。"""
+    provider, seen = _provider(handler=lambda request: httpx.Response(200, json=_OK_BODY))
+
+    await _generate(provider)
+
+    assert seen[0].extensions["timeout"] == {
+        "connect": 120.0,
+        "read": 120.0,
+        "write": 120.0,
+        "pool": 120.0,
+    }

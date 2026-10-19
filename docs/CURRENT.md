@@ -37,7 +37,7 @@
 - 手测清单：`docs/verification/m1-m2-manual-smoke.md`。11 个 CLI 黑盒场景一键跑完（实测 `mismatches=0`：退出码 0/1/2/3 各有场景）、`replay` 两条、外加只有真终端能做的 approval 按键与 Ctrl-C 两条。M3 的手测沿用它的形状（场景表 + 一键脚本 + `mismatches=0`）。M4 的人手验收是另一形状：`docs/verification/m4-real-provider-manual.md`，不进 CI。
 - 已知缺口：
   - **符号链接 / junction 的键规范化在本机没跑过**：`tests/test_fences.py::test_a_symlink_key_resolves_to_its_target` 因「不允许创建符号链接」skip。大小写折叠与 `..` 折叠那两半有判据，符号链接这一半没有。
-  - **Ctrl-C 只在进程内测过**：Windows 上没有 CTRL_C_EVENT 黑盒，`ABORTED` → 退出码 5 的真实信号路径没有黑盒覆盖。
+  - **Ctrl-C 的真实信号路径只在 Linux 侧有黑盒**：M3 的 `tests/test_cli_run.py::test_sigint_in_a_real_subprocess_exits_with_five` 是 `skipif win32` 的 seam ⑥ 判据，本机跑不到、CI 的 `ubuntu-latest` 跑；Windows 侧仍只有 `sigint_handler` 的安装与恢复判据。裁决与边界见 `docs/verification/m3-bash-concurrency-timeout-manual.md`。
   - **approval 的真实 tty smoke 跑通了，但按键是投递的**：`docs/verification/m2-file-tools-and-fences-approval-smoke.md` 记了两次退出码（`y` → 0、`n` → 3）；按键来自 `WriteConsoleInput` 的 KEY_EVENT，不是人手敲的键盘。ConPTY 路线在本机 `UpdateProcThreadAttribute` 恒返回 87，走不通。
   - **围栏不是安全边界**：没有 OS 级强制（ADR-0003 第 1 条），它防的是「模型不小心」与「路径写法绕过 CAS」，不防恶意进程。
   - **适配器只认 OpenAI 兼容的拼写**：`ToolSpec.parameters` 现在带 JSON Schema（M4 补的），但 `openai_compat.py` 只认 `choices[].message.tool_calls` 与 `usage.prompt_tokens` / `completion_tokens` 这套形状，也不读流式 SSE。只发 Anthropic 拼写或只支持流式的端点要新写一个适配器（ADR-0006 第 1 条）。

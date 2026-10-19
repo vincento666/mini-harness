@@ -25,7 +25,8 @@ from mini_harness.provider.contract import (
     Usage,
 )
 
-_TIMEOUT_S = 30.0
+# 决策 15：模型请求的超时是实现常量 120 秒，`minihns run` 没有改变它的开关。
+_TIMEOUT_S = 120.0
 
 
 def _wire_messages(messages: Sequence[Message]) -> list[dict[str, Any]]:

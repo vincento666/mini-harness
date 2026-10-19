@@ -41,8 +41,8 @@
 - [x] 5.1 超时后回合继续：`TOOL_TIMEOUT` 之后同批剩余调用照常派发，`turn/end` 的 `stop_reason` 不是 `ABORTED`。seam ①
 - [x] 5.2 取消打断正在执行的调用：`tool/cancelled` + `TOOL_CANCELLED` + `error/abort` + `turn/end(ABORTED)` + 退出码 5（seam ① 注入 cancel）。seam ①
 - [x] 5.3 取消之后没有「有 `tool/call` 没 `tool/result`」的记录。seam ①
-- [ ] 5.4 Linux 上 SIGINT 的 CLI 黑盒：真实子进程 + SIGINT → 退出码 5 与上述日志形状。seam ⑥
-- [ ] 5.5 模型请求超时数值 120 s：seam ⑤ 断言 provider 的超时配置是 120 s，seam ⑥ 断言 `minihns run` 没有改变它的参数。seam ⑤⑥
+- [x] 5.4 Linux 上 SIGINT 的 CLI 黑盒：真实子进程 + SIGINT → 退出码 5 与上述日志形状。seam ⑥
+- [x] 5.5 模型请求超时数值 120 s：seam ⑤ 断言 provider 的超时配置是 120 s，seam ⑥ 断言 `minihns run` 没有改变它的参数。seam ⑤⑥
 - [ ] 5.6 `approval/request` 改成提问之前落盘：两条判据——非 `ABORTED` 收尾的 run 里每条 `approval/request` 都有配对 `approval/response`；提问被取消打断时允许半对且日志以 `error/abort` 收尾。ADR-0002 第 9 条。seam ①④
 
 ## 6. 平台适配层与两端同一套判据

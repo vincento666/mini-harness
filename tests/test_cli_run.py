@@ -7,9 +7,13 @@ import codecs
 import json
 import os
 import signal
+import sys
+import time
 from pathlib import Path
 
-from cli_blackbox import _cli
+import pytest
+
+from cli_blackbox import _cli, _cli_process
 from mini_harness.cli import main as cli_main
 from mini_harness.cli.main import STOP_REASONS_TO_EXIT_CODES, exit_code_for, sigint_handler
 from mini_harness.events import EventLog
@@ -290,6 +294,76 @@ async def test_the_cli_installs_and_restores_the_sigint_handler(tmp_path: Path) 
     installed = spy.seen_handlers[0]
     assert callable(installed) and installed is not before
     assert signal.getsignal(signal.SIGINT) is before
+
+
+def test_run_has_no_switch_that_changes_the_model_timeout(tmp_path: Path) -> None:
+    """120 秒是实现常量：`minihns run` 的参数表里没有改变它的开关。"""
+    result = _cli("run", "-p", "任务", "--provider", "mock", "--timeout", "5", cwd=tmp_path)
+
+    assert result.returncode == 2
+    assert "unrecognized arguments: --timeout" in result.stderr
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason=(
+        "Windows 的 Ctrl-C 黑盒不在 M3："
+        "缺口记进 docs/verification/m3-bash-concurrency-timeout-manual.md"
+    ),
+)
+def test_sigint_in_a_real_subprocess_exits_with_five(tmp_path: Path) -> None:
+    """seam ⑥：真实子进程里的 SIGINT → 退出码 5，日志以 `error/abort` 与 ABORTED 收尾。
+
+    被打断的是一条正在执行的 `bash`：`sleep 30` 在 POSIX 下待在自己的进程组里，
+    SIGINT 只发给 harness 那个进程，命令本身要靠 harness 收掉。
+    """
+    fixture = tmp_path / "sleep.json"
+    fixture.write_text(
+        json.dumps(
+            [
+                {
+                    "content": "跑一条挂很久的命令",
+                    "finish_reason": "tool_calls",
+                    "tool_calls": [
+                        {
+                            "id": "c1",
+                            "name": "bash",
+                            "arguments": {"command": "sleep 30", "timeout_seconds": 30},
+                        }
+                    ],
+                },
+                {"content": "不该走到这里", "finish_reason": "stop"},
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    process = _cli_process(
+        "run", "-p", "任务", "--provider", "mock", "--fixture", str(fixture), "--yes", cwd=tmp_path
+    )
+    for _ in range(200):
+        logs = _log_files(tmp_path)
+        if logs and '"tool/call"' in logs[0].read_text(encoding="utf-8"):
+            break
+        time.sleep(0.1)
+    else:
+        process.kill()
+        pytest.fail("子进程没有进入工具执行段")
+
+    process.send_signal(signal.SIGINT)
+    _, stderr = process.communicate(timeout=30)
+
+    assert process.returncode == 5
+    assert "ABORTED" in stderr
+    records = [json.loads(line) for line in _log_files(tmp_path)[0].read_text("utf-8").splitlines()]
+    types = [record["type"] for record in records]
+    assert types.count("tool/call") == 1
+    assert types.count("tool/cancelled") == 1
+    outcomes = [r["payload"]["outcome"] for r in records if r["type"] == "tool/result"]
+    assert outcomes == ["TOOL_CANCELLED"]
+    assert types[-3:] == ["error/abort", "turn/end", "session/end"]
+    assert records[-1]["payload"]["stop_reason"] == "ABORTED"
 
 
 class _SigintSpyProvider:

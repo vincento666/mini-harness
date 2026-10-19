@@ -9,7 +9,28 @@ from pathlib import Path
 
 from paths import PYPROJECT_TOML, REPO_ROOT
 
-__all__ = ["_cli"]
+__all__ = ["_cli", "_cli_process"]
+
+
+def _command(*args: str) -> list[str]:
+    return [
+        sys.executable,
+        "-m",
+        "coverage",
+        "run",
+        "--rcfile",
+        str(PYPROJECT_TOML),
+        "-p",
+        "-m",
+        "mini_harness.cli.main",
+        *args,
+    ]
+
+
+def _child_env(env: dict[str, str] | None) -> dict[str, str]:
+    child_env = dict(os.environ if env is None else env)
+    child_env["COVERAGE_FILE"] = str(REPO_ROOT / ".coverage")
+    return child_env
 
 
 def _cli(
@@ -22,28 +43,28 @@ def _cli(
     仓库根的 pyproject.toml；partial 数据文件默认落在 cwd，`coverage combine` 扫不到，所以
     用 `COVERAGE_FILE` 把它写进仓库根，配合 `-p` 让每个子进程各写一份 `.coverage.<pid>`。
     """
-    child_env = dict(os.environ if env is None else env)
-    child_env["COVERAGE_FILE"] = str(REPO_ROOT / ".coverage")
-
     return subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "coverage",
-            "run",
-            "--rcfile",
-            str(PYPROJECT_TOML),
-            "-p",
-            "-m",
-            "mini_harness.cli.main",
-            *args,
-        ],
+        _command(*args),
         cwd=str(cwd),
         capture_output=True,
         text=True,
         encoding="utf-8",
-        env=child_env,
+        env=_child_env(env),
         # 子进程的 stdin 固定成「非 tty 且立刻 EOF」：approval 门因此不会挂在真实终端上，
         # 黑盒测试拿到的是确定的 UNAVAILABLE，而不是看运行环境脸色。
+        stdin=subprocess.DEVNULL,
+    )
+
+
+def _cli_process(*args: str, cwd: Path) -> subprocess.Popen[str]:
+    """同一条命令，但以 `Popen` 起：用来在 session 进行中给它发信号。"""
+    return subprocess.Popen(
+        _command(*args),
+        cwd=str(cwd),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        env=_child_env(None),
         stdin=subprocess.DEVNULL,
     )
