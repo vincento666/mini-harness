@@ -8,7 +8,7 @@
 
 ## 先读这三样，再动手
 
-1. **`docs/handoff-2026-10-15.md`** —— 已锁定的 **38 条编号决策 + 6 条不变量**，这就是规格输入。**不要重新 grill**，除非实现过程中出现新的设计分叉。
+1. **`docs/handoff-2026-10-15.md`** —— 已锁定的**编号决策与运行时不变量**，这就是规格输入。**不要重新 grill**，除非实现过程中出现新的设计分叉。
 2. **`docs/lessons.md`** —— 教训的收件箱与活跃区；Active Lessons 每次接手都读。
 3. **`docs/CURRENT.md`** —— 当前进度、门禁实测、已知缺口。
 
@@ -28,10 +28,10 @@
 ## 命令
 
 ```bash
-uv run coverage erase         # 先清空旧 partial，再开始记账
-uv run coverage run -m pytest -q        # 跑测试并记账：主进程 + seam ⑥ 的每个子进程各写一份 partial
-uv run coverage combine                 # 把仓库根里的 partial 合并进 .coverage
-uv run coverage report --fail-under=95 --show-missing   # 覆盖率地板
+uv run coverage erase
+uv run coverage run -m pytest -q
+uv run coverage combine
+uv run coverage report --fail-under=95 --show-missing   # 这三步不可拆，理由见下「覆盖率纪律」
 uv run mypy --strict src      # 类型检查
 uv run ruff check src tests   # 风格门禁
 uv run ruff format --diff src tests   # 干净 = 退出码 0
@@ -45,7 +45,7 @@ uv run ruff format --diff src tests   # 干净 = 退出码 0
 
 **覆盖率纪律**：seam ⑥ 是真实子进程，每个子进程各写一份 partial，所以上面那三步不可拆。combine 只认内容不认新旧，旧 partial 混进这一轮是**看不见的**。要抬地板就补低覆盖处的判据，不要凑低价值测试。
 
-**ruff 的例外只有两处**：`allowed-confusables` 放行中文全角标点（本项目的 docstring / 注释 / 用户可见字符串一律用中文全角标点，RUF001 一类规则会把它们当成「可疑的 ASCII 近似字符」报警）；`per-file-ignores` 放行 `docs/tools/` 下的文档与图表构建脚本，门禁只跑 `src` 与 `tests`。全仓没有一处 `# noqa`。
+**ruff 的例外只有两处**：中文全角标点（本项目的 docstring / 注释 / 用户可见字符串一律用中文全角标点）与 `docs/tools/` 下的文档与图表构建脚本——门禁只跑 `src` 与 `tests`。全仓没有一处 `# noqa`。
 
 ---
 
