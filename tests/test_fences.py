@@ -7,8 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from mini_harness.loop.settings import ApprovalMode, SandboxLevel, SessionSettings
+from mini_harness.loop.settings import ApprovalMode, SandboxLevel
 from mini_harness.tools.fences import DispatchContext, judge_fence, path_key
+from tool_harness import dispatch_context
 
 
 def _context(
@@ -17,14 +18,7 @@ def _context(
     sandbox: SandboxLevel = "workspace-write",
     approval: ApprovalMode = "ask",
 ) -> DispatchContext:
-    settings = SessionSettings(
-        workspace=workspace,
-        provider_name="mock",
-        max_turns=8,
-        sandbox=sandbox,
-        approval=approval,
-    )
-    return DispatchContext.from_settings(settings)
+    return dispatch_context(workspace, sandbox=sandbox, approval=approval)
 
 
 def test_the_same_file_written_two_ways_gets_one_path_key(tmp_path: Path) -> None:

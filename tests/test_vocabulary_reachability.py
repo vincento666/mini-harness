@@ -13,11 +13,9 @@ from typing import get_args
 from mini_harness.events import EventLog, read_events
 from mini_harness.loop import STOP_REASONS, SessionSettings, run_session
 from mini_harness.provider import AssistantTurn, FixtureProvider
-from mini_harness.provider.contract import ToolCall
-from mini_harness.tools import DispatchOutcome, ToolRegistry, dispatch_tool_call
+from mini_harness.tools import DispatchOutcome, ToolRegistry
 from mini_harness.tools.fences import (
     ApprovalDecision,
-    DispatchContext,
     FenceCode,
     StdinApprovalGate,
 )
@@ -62,13 +60,9 @@ async def _dispatch_with_gate(
     name: str = "write",
     **arguments: object,
 ) -> DispatchOutcome:
-    settings = SessionSettings(
-        workspace=workspace, provider_name="mock", max_turns=8, approval="ask"
+    return await dispatch_call(
+        workspace, name, dict(arguments), approval="ask", approval_gate=_Gate(decision)
     )
-    context = DispatchContext.from_settings(settings)
-    call = ToolCall(id="c1", name=name, arguments=dict(arguments))
-    registry = ToolRegistry(file_tool_definitions())
-    return await dispatch_tool_call(call, registry, context, _Gate(decision))
 
 
 def _workspace(tmp_path: Path) -> Path:

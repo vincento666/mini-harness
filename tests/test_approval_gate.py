@@ -5,19 +5,18 @@
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from typing import get_args
 
 import pytest
 
 from mini_harness.events import EventLog, read_events
-from mini_harness.loop import RunOutcome, SessionSettings, run_session
+from mini_harness.loop import RunOutcome
 from mini_harness.loop.settings import ApprovalMode
-from mini_harness.provider import FixtureProvider
 from mini_harness.tools import ToolArgs, ToolRegistry, ToolResult
 from mini_harness.tools.fences import ApprovalDecision, DispatchContext, StdinApprovalGate
 from mini_harness.tools.registry import ToolDefinition
+from tool_harness import run_fixture_session
 
 
 class _WriteArgs(ToolArgs):
@@ -94,20 +93,15 @@ async def _run(
     *,
     approval: ApprovalMode = "ask",
 ) -> tuple[EventLog, RunOutcome]:
-    log = EventLog.create(session_dir=tmp_path, session_id=session_id)
-    settings = SessionSettings(
-        workspace=tmp_path, provider_name="mock", max_turns=4, approval=approval
-    )
-    outcome = await run_session(
-        prompt="任务",
-        provider=FixtureProvider(entries=entries),
-        log=log,
+    return await run_fixture_session(
+        tmp_path,
+        session_id,
+        entries,
+        approval=approval,
+        max_turns=4,
         registry=registry,
-        settings=settings,
-        cancel=asyncio.Event(),
         approval_gate=gate,
     )
-    return log, outcome
 
 
 async def test_each_approved_write_asks_once_and_then_succeeds(tmp_path: Path) -> None:
