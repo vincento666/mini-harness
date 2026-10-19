@@ -45,14 +45,23 @@ uv run python -m mini_harness.cli.main run `
 | 截断标记 | 不出现 `[输出已截断]`（输出远小于 16384 字节） | |
 | 收尾 | 末回合 `turn/end` 与 `session/end` 都是 `MODEL_COMPLETED` | |
 
-看顺序的那条命令（跑完贴输出）：
+取证用这个脚本（一次给出 session id、记录数、由日志时间戳算出的墙钟、事件序列、尾部 6 条原文、还活着的 `python` 进程）：
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File docs/verification/m3-bash-manual-inspect.ps1
+```
+
+两条使用注意，都是实测踩到的：
+
+1. **先 `echo "exit=$LASTEXITCODE"` 再跑脚本**——脚本里的外部命令会覆盖退出码，而退出码正是场景 C 的判据。
+2. 脚本里的字符串一律 ASCII：Windows PowerShell 5.1 把没有 BOM 的 `.ps1` 当 ANSI 读，中文标题会碎成 `浜嬩欢搴忓垪` 这种样子。
+
+不想用脚本就用这一条（同样不能省 `-Encoding UTF8`：默认按 ANSI 读时日志里的中文碎成无效 JSON，`ConvertFrom-Json` 报错之后 `$e` 还是上一条，输出看着正常其实少了几行）：
 
 ```
 $log = Get-ChildItem .tmp/m3-manual/sessions/*.jsonl | Sort-Object LastWriteTime | Select-Object -Last 1
 Get-Content $log -Encoding UTF8 | ForEach-Object { $e = $_ | ConvertFrom-Json; '{0,18}  {1}  {2}' -f $e.type, $e.payload.tool_call_id, $e.payload.outcome }
 ```
-
-`-Encoding UTF8` 不能省：Windows PowerShell 默认按 ANSI 读，日志里的中文会碎成无效 JSON，`ConvertFrom-Json` 报错之后 `$e` 还是上一条，输出看起来正常其实少了几行（备清单时实测过）。日志本身是 UTF-8。
 
 另一条路是 `uv run python -m mini_harness.cli.main replay <session_id> --session-dir .tmp/m3-manual/sessions`：它打 `verified seq=…: OK` 与每回合的 `stop_reason`，不打工具顺序。
 
@@ -88,6 +97,29 @@ uv run python -m mini_harness.cli.main run `
 | 文件没被改 | `slow.py` 没跑完；`counts.txt` 不因这条变化 | |
 
 这条只有真终端能做：本机 ConPTY 路线走不通（`UpdateProcThreadAttribute` 恒返回 87），所以 seam ⑥ 的 Windows Ctrl-C 黑盒不在 M3（见上一节「本机跑不到的判据」）。
+
+### 参考样本（mock 干跑，不是人的运行）
+
+备清单时用 mock fixture 把场景 A 与场景 B 的命令形状干跑过一遍（`--provider mock --fixture`，超时那条给 `timeout_seconds: 1`）。场景 B 的日志形状：
+
+```
+session/start
+   turn/start      t1
+context/assembled  t1
+   model/request   t1
+  model/response   t1
+       tool/call   t1  c1
+     tool/result   t1  c1  TOOL_TIMEOUT
+  tool/cancelled   t1  c1            ← 结果在前、取消记录在后
+        turn/end   t1       TOOL_CALLS   ← 回合继续
+   turn/start      t2
+        ...
+       session/end          MODEL_COMPLETED
+```
+
+`tool/result` 的 content 是「命令超过 1 秒没有结束：python slow.py」；`tool/cancelled` 的 payload 只有 `turn_id` 与 `tool_call_id`。墙钟 1.11 s。场景 A 的干跑里三条 `tool/call` 后跟三条 `tool/result` 按声明顺序、`bash` 的 content 第一行是「退出码 0」、`counts.txt` 落在工作区根。
+
+样本的作用是**认形状**，不是判据：判据在 `tests/` 里，这一份是人眼对着真终端的输出比形状。
 
 ### 要贴回来的东西
 
