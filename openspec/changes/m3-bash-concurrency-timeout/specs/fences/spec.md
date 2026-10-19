@@ -43,6 +43,6 @@
 - **WHEN** 同一回合里模型先请求一次越界写、再请求一次合法读
 - **THEN** 只有越界那一次有 `tool/call` 与 `tool/result`，合法读没有被派发
 
-#### Scenario: 已在跑的并发调用不被吞掉
-- **WHEN** 同一回合里一个 `read` 已经开始执行、同批的另一个 `write` 被围栏拒绝
-- **THEN** 那个 `read` 仍有一条配对的 `tool/result`，日志仍以 `error/fence` 与 `session/end` 收尾，退出码为 3
+#### Scenario: 终止不吞掉已经派发过的调用
+- **WHEN** 同一回合里一个 `read` 先被派发并跑完、同批的另一个 `write` 被围栏拒绝
+- **THEN** 那个 `read` 仍有一条配对的 `tool/result`，它在 `error/fence` 之前落盘；日志以 `error/fence` 与 `session/end` 收尾，退出码为 3

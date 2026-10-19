@@ -40,6 +40,8 @@
 
 **D1 的落地修正（实现期发现 2026-10-19）。** 派发链用两个事件：`started`（轮到过：开始派发或放弃）与 `finished`（整个跑完）。规则是**只有一对相邻的只读调用允许同时在跑**，沾上「要改动」的调用都排队。两处原因：① 放弃派发的调用必须把链传下去，否则排在它后面的调用永远等一个不会开始的调用（红过，判据是 `asyncio.wait_for` 的 TimeoutError）；② 只等「前一个已经开始」时，被拒绝之后的调用可能在拒绝判定完成之前就开始——那条保证变成了碰巧的调度顺序。已知边角：相邻两个只读调用里前一个被围栏拒绝时，后一个可能已经开始，它落进「已经开始的照常落结果」那一类；M2 的两次 `write` 判据与 4.6 的判据都由这条规则保证。代价：`read` 与写调用不再重叠，只读并发仍然成立。
 
+**这条代价在 `code-review` 之后写清了后果（2026-10-19）。** 「拒绝时另一个调用还在跑」在同一批里**不可达**：被拒的调用要改动，它 MUST 等前一个调用跑完才轮到。于是 fences delta 那条 scenario 原来写的形状（一个 `read` 还在跑、同批的 `write` 被拒）判不了，已改成可达形状——先派发并跑完的调用不因终止被吞，它的 `tool/result` 在 `error/fence` 之前落盘。「还在跑就被打断」那一半由取消路径判（`tests/test_turn_cancel.py`），不由围栏判。
+
 **D5 超时塌成结果词，异常不逃逸出执行段。** `TimeoutError` → `TOOL_TIMEOUT`，`CancelledError` → `TOOL_CANCELLED`，两条都在 `dispatch_tool_call` 的执行段内塌（任务 1.2 已落）。超时的**数值**由工具自己执行：`bash` 用 `asyncio.wait_for` 包住自己的执行段，因为只有它知道入参里的 `timeout_seconds`。替代：给每个工具传 deadline 参数、或在 `ToolDefinition` 上加超时字段——否，那是把超时散进六个工具契约里，且 M3 只有 `bash` 需要它。事实更正（实现时核实）：`TimeoutError` **是** `OSError` 的子类，所以 `except TimeoutError` MUST 排在 `except OSError` 之前，否则超时读成 `TOOL_IO_FAILED`；`CancelledError` 是 `BaseException`。按 AGENTS.md 的变异纪律，执行段的判据要用族里不显眼的成员，不能只用 `TimeoutError`。
 
 **D6 approval 门保持同步，靠「会改动的工具串行」保证它不卡事件循环。** 决策 14 的写串行从性能优化升格为正确性前提，因此写进规格（turn-loop 的并发那条）。替代：把 `ApprovalGate` 改成 async——否，不加没被要求过的复杂度，且提问本来就该是唯一串行段。
@@ -61,7 +63,7 @@
 ## Seam 边界与测试策略
 
 - **seam ①（回合循环）**：并发调度、前缀快照、落盘顺序、超时后回合继续、取消打断的落盘形状。桩沿用现有的 `_scripted_provider` / `_run_with_provider`，D10 之后只留一份。
-- **seam ②（注册表与管线）**：`TOOL_TIMEOUT` / `TOOL_CANCELLED` 的可达判据、执行段异常族不逃逸、围栏拒绝时已在跑的并发调用不被吞。
+- **seam ②（注册表与管线）**：`TOOL_TIMEOUT` / `TOOL_CANCELLED` 的可达判据、执行段异常族不逃逸、围栏终止不吞掉已经派发过的调用。
 - **seam ③（工具契约）**：bash 的 cwd、超时数值边界（30 默认 / 601 拒绝）、退出码非 0 是 `OK`、输出截断标记、进程树终止。判据只用平台中立命令。
 - **seam ④（日志与折叠）**：`tool/cancelled` 进词表后折叠仍确定性；同一批并发派发两次折叠逐字段相等。
 - **seam ⑤（provider）**：只改超时数值常量与它的断言，不加新行为。

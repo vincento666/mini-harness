@@ -205,10 +205,15 @@ async def test_results_land_in_declared_order_when_the_second_finishes_first(
     ).model_dump(mode="json")
 
 
-async def test_a_fence_denial_does_not_swallow_the_calls_already_running(tmp_path: Path) -> None:
-    """规格 scenario「围栏拒绝时已开始的并发调用不被吞」：它仍有配对的 `tool/result`。
+async def test_a_fence_denial_does_not_swallow_the_calls_dispatched_before_it(
+    tmp_path: Path,
+) -> None:
+    """规格 scenario「终止不吞掉已经派发过的调用」：被拒之前派发过的每一条都有配对结果。
 
-    `c1` 是只读、先开始、还在跑；`c2` 是要改动的写、被档位轴拒绝；`c3` 声明在它之后，不派发。
+    形状要说清：落地的调度规则（只读并发、会改动串行）让「拒绝时另一个调用还在跑」在同一批里
+    不可达——`c2` 要改动，它 MUST 等 `c1` 跑完才轮到。所以这条判据钉的是配对与落盘顺序，不是并发；
+    「还在跑就被打断」那一半由取消路径判（`tests/test_turn_cancel.py`）。
+    `c3` 声明在被拒之后，连 `tool/call` 都不写。
     """
     (tmp_path / "a.md").write_text("甲\n", encoding="utf-8")
     (tmp_path / "b.md").write_text("乙\n", encoding="utf-8")
@@ -240,6 +245,18 @@ async def test_a_fence_denial_does_not_swallow_the_calls_already_running(tmp_pat
     assert len(fences) == 1
     assert fences[0].payload["code"] == "SANDBOX_DENIES_WRITE"
     assert fences[0].payload["tool_call_id"] == "c2"
+    # 档位轴先拒：没有「解析后键」可用，`path` 是 null；`raw_path` 仍是调用里写的写法。
+    assert fences[0].payload["path"] is None
+    assert fences[0].payload["raw_path"] == "a.md"
+    fence_at = next(index for index, record in enumerate(records) if record.type == "error/fence")
+    result_at = next(
+        index
+        for index, record in enumerate(records)
+        if record.type == "tool/result" and record.payload["tool_call_id"] == "c1"
+    )
+    assert result_at < fence_at
+    # 被拒的那一条没进执行段：`observed` 里只有 `c1`，它跑完之后才轮到 `c2`。
+    assert [key for key, _, _ in observed] == ["a.md"]
     assert records[-1].type == "session/end"
     assert outcome.stop_reason == "FENCE_DENIED"
     assert outcome.failure_code == "SANDBOX_DENIES_WRITE"
