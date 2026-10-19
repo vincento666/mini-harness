@@ -71,7 +71,7 @@
 - **THEN** stdout 的行数与日志行数相同，且逐行解析后的对象相等
 
 ### Requirement: minihns replay 逐点重算折叠并断言相等
-系统 SHALL 提供 `minihns replay <session-id>`：定位该 session 的日志，对日志里每一条 `context/assembled` 用它之前的日志前缀重算折叠结果，并与该记录的 payload 逐字段比对；重算的入参 MUST NOT 取自该点之后的事件，且 MUST 全部可从该前缀派生（含该装配点当时的工具名列表）。replay SHALL 打印逐回合序列与最后一次装配的上下文。replay MUST NOT 调用 Provider，MUST NOT 修改被重放的日志，也 MUST NOT 执行任何工具。重放失败是「重放不追加事件」的例外：`error/replay` 只写到 stderr，MUST NOT 被追加进被重放的日志（理由见 `docs/adr/0001-m1-simplifications.md`）。
+系统 SHALL 提供 `minihns replay <session-id>`：定位该 session 的日志，对日志里每一条 `context/assembled` 用它之前的日志前缀重算折叠结果，并与该记录的 payload 逐字段比对；重算的入参 MUST NOT 取自该点之后的事件，且 MUST 全部可从该前缀派生（含该装配点当时的工具名列表）。replay SHALL 打印逐回合序列与最后一次装配的上下文。replay MUST NOT 调用 Provider，MUST NOT 修改被重放的日志，也 MUST NOT 执行任何工具。重放不一致时系统 MUST NOT 往被重放的日志追加任何事件（含 `error/*`）：它只往 stderr 写一行 `REPLAY_MISMATCH: <detail>` 并以退出码 1 结束。`error/replay` **不是事件词表里的类型**、从不进任何日志；这条是「每个非零退出都有 `error/*` 事件」的例外之一（理由见 `docs/adr/0001-m1-simplifications.md`）。
 
 #### Scenario: 每个装配点都重算相等
 - **WHEN** 先跑一次带工具调用与审批记录的 run，再对同一 session id 执行 replay
@@ -79,7 +79,7 @@
 
 #### Scenario: 装配点不一致是失败结果
 - **WHEN** 被重放的日志里某条 `context/assembled` 与其前缀的重算结果不一致
-- **THEN** replay 产出一条 `error/replay`（`code: REPLAY_MISMATCH`，含该记录的 `seq`）并以退出码 1 结束；被重放的日志本身不被改写
+- **THEN** replay 往 stderr 写一行 `REPLAY_MISMATCH: <detail>`（含该记录的 `seq`）并以退出码 1 结束；被重放的日志既不被改写、也不被追加
 
 #### Scenario: replay 不重新调用模型
 - **WHEN** 对一个用 mock fixture 跑出的 session 执行 replay
@@ -93,7 +93,7 @@
 - **THEN** 退出码为 2，stderr 含 `SESSION_NOT_FOUND`
 
 ### Requirement: 退出码只取自固定表
-系统 SHALL 只用固定退出码：0 成功、1 模型或内部错误、2 参数错误、3 围栏拒绝或审批被拒、4 上下文预算溢出、5 用户取消。除参数错误（发生在 session 开始之前）与日志不可写这两种情况外，每个非零退出 SHALL 有对应的 `error/*` 事件。M2 中 3 是可达码（`stop_reason: FENCE_DENIED` 映射到 3）；4 仍是保留码，MUST NOT 被产生。
+系统 SHALL 只用固定退出码：0 成功、1 模型或内部错误、2 参数错误、3 围栏拒绝或审批被拒、4 上下文预算溢出、5 用户取消。除参数错误（发生在 session 开始之前）、日志不可写、以及 replay 不一致这三种情况外，每个非零退出 SHALL 有对应的 `error/*` 事件。M2 中 3 是可达码（`stop_reason: FENCE_DENIED` 映射到 3）；4 仍是保留码，MUST NOT 被产生。
 
 #### Scenario: 每个失败都落在表内
 - **WHEN** M2 的任一失败场景发生

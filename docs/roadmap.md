@@ -16,6 +16,8 @@
 
 **每个里程碑的完成判据里都含一条人手验收**（ADR-0005）：用真实工作区干一件真事——不是跑判据，是拿它办一件事——把观察记进 `docs/verification/<change-id>-manual.md`。它不进 CI、不替代上面任何一条判据；它记的是「用起来是什么样」和「哪儿别扭」。M1 与 M2 的这条补在 `docs/verification/m1-m2-manual-smoke.md`。
 
+**决策 33 预告的 `scripts/acceptance.py` 已被这条替代**（2026-10-19 更正）：仓库里没有 `scripts/` 目录、也没有那个脚本。验收口径换成了上面这条人手验收（ADR-0005 追加的裁决），逐里程碑的实测在 `docs/verification/`。读 `docs/handoff-2026-10-15.md` 时会读到旧口径，以本节为准。
+
 ## 尚未实现的命令
 
 ```bash
@@ -30,3 +32,7 @@ uv run minihns serve --http   # M7 之后
 代价：M2 与 M3 期间的实现按 Windows 语义写（路径大小写、junction、tty、SIGINT），到 M3 才在 Linux 上验证并补齐。MVP 不做 web / Electron 外壳实现（见 AGENTS.md），「其他端」的接缝只在 M7 的 SSE 事件流上，外壳本身属 MVP 之外。
 
 **2026-10-18 追加裁决（ADR-0005）**：M4 换到 M3 之前，于是「两端各跑绿」与 CI 矩阵整体后移一个里程碑，Windows 绑定点的欠账多攒一个里程碑（M4 的 HTTP 与 JSON 本身跨平台，路径 / tty / SIGINT 那三处照旧欠着）。CI 不持 API key：门禁那道必须离线可跑，所以 CI 只跑 mock 判据，真实 Provider 的 smoke 归人手验收。
+
+## 与 DSH 的对齐走查（2026-10-19）
+
+`docs/dsh-alignment.md` 记着 main（tag `m3`）与 DSH 运行时设计的逐支柱对照、三处真走岔、未落地与错位的分类，以及一份**待裁决**的排期提案：M5–M7 各补原判据没覆盖的那一半，M8–M13 是把九层做齐的新排（围栏层做薄但立缝），M14 的 OS 级强制排在 MVP 之外。**本表的里程碑没有因此改动**——要改要先裁决、开 ADR、改 AGENTS.md 的「MVP 明确不做」与 seam 清单。
