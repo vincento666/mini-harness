@@ -36,7 +36,7 @@
 
 **D4 每回合取样一次前缀，整批共用。** 替代：保持每调用重读——否，并发时先完成的结果会进入后派发者的前缀，「同一份日志前缀得到同一判定」这条 Scenario 字面不成立。副带好处：消掉 O(n²) 重读。
 
-**D5 超时用 `asyncio.wait_for` 包住执行段，异常在执行段内塌成结果。** `TimeoutError` → `TOOL_TIMEOUT`，`CancelledError` → `TOOL_CANCELLED`。替代：给每个工具传 deadline 参数——否，那是把超时散进六个工具契约里。这条直接修不变量 B 的逃逸路径（`TimeoutError` 不是 `OSError` 子类、`CancelledError` 是 `BaseException`）。按 AGENTS.md 的变异纪律，执行段的判据要用族里不显眼的成员，不能只用 `TimeoutError`。
+**D5 超时塌成结果词，异常不逃逸出执行段。** `TimeoutError` → `TOOL_TIMEOUT`，`CancelledError` → `TOOL_CANCELLED`，两条都在 `dispatch_tool_call` 的执行段内塌（任务 1.2 已落）。超时的**数值**由工具自己执行：`bash` 用 `asyncio.wait_for` 包住自己的执行段，因为只有它知道入参里的 `timeout_seconds`。替代：给每个工具传 deadline 参数、或在 `ToolDefinition` 上加超时字段——否，那是把超时散进六个工具契约里，且 M3 只有 `bash` 需要它。事实更正（实现时核实）：`TimeoutError` **是** `OSError` 的子类，所以 `except TimeoutError` MUST 排在 `except OSError` 之前，否则超时读成 `TOOL_IO_FAILED`；`CancelledError` 是 `BaseException`。按 AGENTS.md 的变异纪律，执行段的判据要用族里不显眼的成员，不能只用 `TimeoutError`。
 
 **D6 approval 门保持同步，靠「会改动的工具串行」保证它不卡事件循环。** 决策 14 的写串行从性能优化升格为正确性前提，因此写进规格（turn-loop 的并发那条）。替代：把 `ApprovalGate` 改成 async——否，不加没被要求过的复杂度，且提问本来就该是唯一串行段。
 
@@ -79,5 +79,7 @@
 
 ## Open Questions
 
-- Windows 上 `CTRL_C_EVENT` 的黑盒判据要不要在 M3 做——不影响规格与任务分解，可在人手验收之后决定。
-- bash 输出上限的具体字节数、以及 stdout 与 stderr 是否分别限额——常量取值，判据只断言「有上限、有标记」。
+两条都在 2026-10-19 由人裁决，不再是开放项：
+
+- **bash 输出上限：单一上限 16384 字节，stdout 与 stderr 合起来算**，截断标记固定一行。替代（分别限额 16 KiB / 8 KiB）否：多一个数值、多一套判据，而 M3 的判据只断言「有上限、有标记」。
+- **Windows 的 Ctrl-C 黑盒不在 M3 做**：seam ① 用注入 cancel 事件判「取消打断执行中的调用」，seam ⑥ 在 Linux 上跑真实 SIGINT 黑盒、Windows 上跑超时黑盒；Windows 侧 `CTRL_C_EVENT` 的缺口记进 `docs/verification/<change-id>-manual.md` 与 `docs/CURRENT.md`，不假装补上。
