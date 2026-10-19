@@ -11,8 +11,8 @@ from pathlib import Path
 from typing import get_args
 
 from mini_harness.events import EventLog, read_events
-from mini_harness.loop import STOP_REASONS, SessionSettings, run_session
-from mini_harness.provider import AssistantTurn, FixtureProvider
+from mini_harness.loop import STOP_REASONS
+from mini_harness.provider import AssistantTurn
 from mini_harness.tools import DispatchOutcome, ToolRegistry
 from mini_harness.tools.fences import (
     ApprovalDecision,
@@ -20,7 +20,6 @@ from mini_harness.tools.fences import (
     FenceCode,
     StdinApprovalGate,
 )
-from mini_harness.tools.file_tools import file_tool_definitions
 from mini_harness.tools.registry import (
     ToolArgs,
     ToolDefinition,
@@ -28,7 +27,13 @@ from mini_harness.tools.registry import (
     ToolOutcome,
     ToolResult,
 )
-from tool_harness import DONE, dispatch_call, run_fixture_session, tool_call_entry
+from tool_harness import (
+    DONE,
+    dispatch_call,
+    run_fixture_session,
+    run_session_fixture,
+    tool_call_entry,
+)
 
 
 class _Gate:
@@ -242,32 +247,20 @@ async def test_every_stop_reason_is_reachable(tmp_path: Path) -> None:
     cancelled = tmp_path / "cancelled"
     cancelled.mkdir()
     cancel = asyncio.Event()
-    log = EventLog.create(session_dir=cancelled, session_id="s-cancel")
-    await run_session(
-        prompt="任务",
-        provider=_CancelDuringGenerate(cancel),
-        log=log,
-        registry=ToolRegistry(file_tool_definitions()),
-        settings=SessionSettings(workspace=cancelled, provider_name="mock", max_turns=8),
-        cancel=cancel,
+    log, _ = await run_session_fixture(
+        cancelled, "s-cancel", _CancelDuringGenerate(cancel), cancel=cancel, max_turns=8
     )
     observed |= _stop_reasons(log)
 
     denied = tmp_path / "denied"
     denied.mkdir()
-    log = EventLog.create(session_dir=denied, session_id="s-fence")
-    await run_session(
-        prompt="任务",
-        provider=FixtureProvider(
-            entries=[tool_call_entry("write", "c1", file_path="x.md", content="x\n")]
-        ),
-        log=log,
-        registry=ToolRegistry(file_tool_definitions()),
-        settings=SessionSettings(
-            workspace=denied, provider_name="mock", max_turns=8, approval="ask"
-        ),
-        cancel=asyncio.Event(),
+    log, _ = await run_fixture_session(
+        denied,
+        "s-fence",
+        [tool_call_entry("write", "c1", file_path="x.md", content="x\n")],
+        approval="ask",
         approval_gate=_Gate("DENIED"),
+        max_turns=8,
     )
     observed |= _stop_reasons(log)
 

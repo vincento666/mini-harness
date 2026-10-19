@@ -12,7 +12,7 @@
 
 - [x] 2.1 `tests/tool_harness.py::dispatch_call` 收 `registry` 与 `approval_gate` 参数（默认值不变），使「只注册 bash 的注册表」与「注入一个会提问的 gate」两条 seam ③ 判据写得出来。seam ②③
 - [x] 2.2 四处手搓 `SessionSettings(...)`（`test_fences._context`、`test_approval_gate._run`、`test_vocabulary_reachability._dispatch_with_gate`、`test_tool_registry`）改用 helper。seam ②③
-- [ ] 2.3 seam ① 的 provider 桩与 run helper 收成一份（ADR-0002 第 16 条）。seam ①
+- [x] 2.3 seam ① 的 provider 桩与 run helper 收成一份（ADR-0002 第 16 条）。seam ①
 - [x] 2.4 验证：`grep` 数一遍 `SessionSettings(` 在 `tests/` 的出现次数，与收口前对比并记录进提交信息。seam ①②③
 
 ## 3. bash 工具契约

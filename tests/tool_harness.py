@@ -10,7 +10,7 @@ from typing import Any
 from mini_harness.events import EventLog, EventRecord, read_events
 from mini_harness.loop import RunOutcome, SessionSettings, run_session
 from mini_harness.loop.settings import ApprovalMode, SandboxLevel
-from mini_harness.provider import FixtureProvider
+from mini_harness.provider import FixtureProvider, Provider
 from mini_harness.provider.contract import ToolCall
 from mini_harness.tools import ToolRegistry
 from mini_harness.tools.dispatch import DispatchOutcome, dispatch_tool_call
@@ -87,30 +87,37 @@ def tool_call_entry(name: str, call_id: str, **arguments: object) -> dict[str, o
 DONE: dict[str, object] = {"content": "算了", "finish_reason": "stop"}
 
 
-async def run_fixture_session(
+async def run_session_fixture(
     tmp_path: Path,
     session_id: str,
-    entries: list[dict[str, object]],
+    provider: Provider,
     *,
+    workspace: Path | None = None,
+    session_dir: Path | None = None,
     sandbox: SandboxLevel = "workspace-write",
     approval: ApprovalMode = "auto",
-    max_turns: int = 4,
+    max_turns: int = 8,
+    prompt: str = "任务",
+    provider_name: str = "mock",
     registry: ToolRegistry | None = None,
     approval_gate: ApprovalGate | None = None,
     cancel: asyncio.Event | None = None,
 ) -> tuple[EventLog, RunOutcome]:
-    """跑完一整段 fixture 回合。注册表、档位、approval 门、取消信号都可注入。"""
-    log = EventLog.create(session_dir=tmp_path, session_id=session_id)
+    """seam ① 唯一的「跑完一整段 session」形状：建日志、建设置、调 `run_session`。
+
+    注册表、档位、approval 门、取消信号、provider 与日志目录都从这里注入，测试文件里不再各自手搓。
+    """
+    log = EventLog.create(tmp_path if session_dir is None else session_dir, session_id=session_id)
     settings = SessionSettings(
-        workspace=tmp_path,
-        provider_name="mock",
+        workspace=tmp_path if workspace is None else workspace,
+        provider_name=provider_name,
         max_turns=max_turns,
         sandbox=sandbox,
         approval=approval,
     )
     outcome = await run_session(
-        prompt="任务",
-        provider=FixtureProvider(entries=entries),
+        prompt=prompt,
+        provider=provider,
         log=log,
         registry=file_registry() if registry is None else registry,
         settings=settings,
@@ -118,6 +125,24 @@ async def run_fixture_session(
         approval_gate=STDIN_APPROVAL_GATE if approval_gate is None else approval_gate,
     )
     return log, outcome
+
+
+async def run_fixture_session(
+    tmp_path: Path,
+    session_id: str,
+    entries: list[dict[str, object]],
+    *,
+    max_turns: int = 4,
+    **options: Any,
+) -> tuple[EventLog, RunOutcome]:
+    """fixture provider 的常用形状：`entries` 造桩，其余透传给 `run_session_fixture`。"""
+    return await run_session_fixture(
+        tmp_path,
+        session_id,
+        FixtureProvider(entries=entries),
+        max_turns=max_turns,
+        **options,
+    )
 
 
 def tool_outcomes(log: EventLog) -> list[str]:
