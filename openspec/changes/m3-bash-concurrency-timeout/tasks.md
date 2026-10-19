@@ -67,7 +67,7 @@
 ## 9. 收尾门禁
 
 - [x] 9.1 变异测试一轮，记进 `docs/verification/m3-bash-concurrency-timeout-mutation.md`。重点变异面：执行段的异常族、并发上限数值、落盘顺序、超时数值、进程树终止。判据：每个变异都被至少一条测试杀死；存活的补一条能杀死它的判据。—— 12 条：10 杀、2 存活已补判据（bash 默认 30 秒没人钉、输出上限的边界没人判）、1 条判定 dud（`started` 链在同步落盘下不可观察）
-- [ ] 9.2 Learning Gate：扫本轮证据（红过的测试、存活的变异、返工过的规格、踩过的工具坑），可复用教训进 `docs/lessons.md` 收件箱，没有可复用信号就写 `NO-PROMOTION`。
+- [x] 9.2 Learning Gate：扫本轮证据（红过的测试、存活的变异、返工过的规格、踩过的工具坑），可复用教训进 `docs/lessons.md` 收件箱，没有可复用信号就写 `NO-PROMOTION`。—— 收 L-027 至 L-030 四条，关闭 L-018、补 L-019；**AGENTS.md 不晋升**（三条最值钱的信号分别已被 AGENTS.md 变异段、L-005 / L-017 同族、L-004 覆盖）
 - [ ] 9.3 改判 `docs/adr/0002-deferred-refactors.md` 的第 1 条剩一半、第 12、16 条为「已处理」，并把 `docs/CURRENT.md` 的门禁实测与缺口更新到 M3 实况。
 
 ## Workflow follow-up
