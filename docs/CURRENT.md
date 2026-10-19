@@ -2,7 +2,7 @@
 
 每里程碑收尾更新一次。接手时以 `git status --short` 与 `git log --oneline -3` 为准，本文件只是快照。
 
-更新：2026-10-19（M3 的实现与收尾门禁跑完，`code-review` 两轴的修复轮 10.1–10.8 跑完，分支 `change/m3-bash-concurrency-timeout` 上 32 个提交；**推送、CI 首绿、人手验收与归档还没跑**）
+更新：2026-10-19（M3 的实现与收尾门禁跑完，`code-review` 两轴的修复轮 10.1–10.8 跑完，分支 `change/m3-bash-concurrency-timeout` 上 34 个提交；**推送与 CI 首绿已跑（两个 job 都绿），人手验收与归档还没跑**）
 
 ## 进度
 
@@ -15,7 +15,7 @@
   - 测试 helper 收口：`tests/tool_harness.py` 的 `dispatch_call` / `dispatch_context` / `run_session_fixture` 收 `registry` 与 `approval_gate`，seam ① 的 run 形状收成一份。
   - CI：`.github/workflows/gates.yml` 落地，`windows-latest` + `ubuntu-latest` 两端各跑四道门禁、各判 95% 地板，不持任何 secret。
 - **M3 的收尾门禁**：变异 12 条（10 条首轮被杀，T1 与 O1 存活并已各补一条判据，C2 判定 dud）→ `docs/verification/m3-bash-concurrency-timeout-mutation.md`；Learning Gate 收 L-027 至 L-030、关闭 L-018、补 L-019，**AGENTS.md 本轮不晋升** → `docs/lessons.md`。
-- **M3 还剩**：tasks 7.2（推送分支与 `main`，CI 首绿）、7.3（两端 `TOTAL` 记进本文件）、8.1–8.2（人手验收，见下）、`openspec-sync-specs` → `/openspec-archive-change` → `agents-md-slim`。`code-review` 两轴已跑完：A 至 G 七条全修（10.1–10.7，其中 10.4 改的是规格、10.1 与 10.5 改的是实现），Standards 轴的判断项与两条规格 ↔ 实现的判断记账进 ADR-0002 第 18 至 29 条，提交纪律的三处措辞欠账记在同文件最后一节。
+- **M3 还剩**：tasks 7.3（两端的 `TOTAL` 记进本文件的门禁表——数字要人从 run 页面贴回来，见下表 CI 那行）、8.1–8.2（人手验收，见下）、`openspec-sync-specs` → `/openspec-archive-change` → `agents-md-slim`。`code-review` 两轴已跑完：A 至 G 七条全修（10.1–10.7，其中 10.4 改的是规格、10.1 与 10.5 改的是实现），Standards 轴的判断项与两条规格 ↔ 实现的判断记账进 ADR-0002 第 18 至 29 条，提交纪律的三处措辞欠账记在同文件最后一节。
 
 ## 门禁实测（Windows 本机）
 
@@ -26,7 +26,7 @@
 | 覆盖率分布 | `events/reader.py` 85% · `provider/openai_compat.py` 89% · `loop/turn_loop.py` 91% · `tools/bash_tools.py` 94% · `tools/file_tools.py` 96% · `tools/registry.py` 97% · `provider/mock.py` 98% · `tools/dispatch.py` 98% · `cli/main.py` 99% · 其余 100% |
 | 类型 | `mypy --strict` 干净，22 个源文件 |
 | 风格 | `ruff check` 干净；`ruff format --diff` 空（56 文件）；全仓没有一处 `# noqa` |
-| CI | 门禁工作流已落地并本地验证过命令序列（八条命令逐条退出码 0）；**Actions 还没跑过第一轮**：分支与 `main` 都只在本地，`origin/main` 落后 54 个提交，推送是人要做的动作 |
+| CI | **首绿已跑**：run #1（`d681ec6`）与 run #2（`2b9e044`）都是 `completed / success`——`gates (ubuntu-latest)` 57 s、`gates (windows-latest)` 99 s。推送走本机代理：`GIT_SSH_COMMAND='ssh -o "ProxyCommand=C:/PROGRA~1/Git/mingw64/bin/connect.exe -H 127.0.0.1:7897 %h %p"'`。`main` 已快进 `134ae69..1ba0e2f`，但 **`main` 上没有 `gates.yml`**（它只在 change 分支上），所以推 `main` 不触发 run；`main` 的 CI 首绿要等 M3 合并。两端的 `TOTAL` 由 workflow 那一步写进步骤摘要与一条 annotation，但 run 日志与 annotation API 都要鉴权（实测 403 / 空列表），数字要人从 [run 页面](https://github.com/vincento666/mini-harness/actions/runs/39242198903) 贴回来 |
 
 50 条未覆盖行里绝大多数是回合循环里「日志写不进去」的分支（`turn_loop.py` 的 157、193–195、218–220、263、274、281、286、340、400、404、414、439、467、509、521 与 `dispatch.py` 的 74：approval 记录写不进日志时塌成 `TOOL_IO_FAILED`）。这一类在 seam ④ 直接判日志层，不在 seam ① 造场景去撞它——刻意没有为它们写判据，每个相关提交的信息里都写明了这一点。剩下的是平台分支与响应解析的形状分支：`bash_tools.py` 的 53–54、63（Windows 与 POSIX 各一半）、`file_tools.py` 的 128、130、133、160–161、203、`reader.py` 的 25、28–29、34、`openai_compat.py` 的 13 条、`cli/main.py` 的 216、254、`registry.py` 的 23、`mock.py` 的 67。要抬地板就补 `events/reader.py`、`provider/openai_compat.py`（响应解析里那些「形状不对」的分支）的判据，不要凑低价值测试。
 
@@ -34,7 +34,7 @@
 
 - **M3 的人手验收待跑**（tasks 8.1–8.2）：清单已备好，等人在真终端跑。三个场景（真事 + 并发派发与落盘顺序 / 一条故意超时的命令 / 一次 Ctrl-C）、可粘贴的命令、要贴回来的东西都在 `docs/verification/m3-bash-concurrency-timeout-manual.md`；工作区 `.tmp/m3-manual/`（gitignored）已备好 `notes/a.md`、`notes/b.md`、`count_lines.py`、`slow.py`，`counts.txt` 与日志目录已清空。不进 CI。
 - **Windows 的 Ctrl-C 黑盒不在 M3**：seam ① 注入 cancel 判据、seam ⑥ Linux 真实 SIGINT 黑盒、两端都跑得动的 seam ⑥ `bash` 超时黑盒（`test_a_bash_timeout_in_the_cli_is_a_result_word_and_the_run_continues`，`timeout_seconds: 1` + 一条不会自己停的命令）都有；Windows 真实控制台 Ctrl-C 没有判据，缺口与边界记在 `docs/verification/m3-bash-concurrency-timeout-manual.md`。ConPTY 路线本机走不通（`UpdateProcThreadAttribute` 恒返回 87），可用的替代形状是 `WriteConsoleInput` 投递 KEY_EVENT（M2 的 approval smoke 用过）。
-- **Linux 侧的判据本机从没跑过**：符号链接键规范化、真实 SIGINT 黑盒、`tests/test_turn_cancel.py` 的 POSIX `killpg` 那一半。CI 首绿之前它们是未验证的；junction 那一半本机跑过（`test_a_junction_key_resolves_to_its_target_without_privileges`），符号链接那一半在 Linux runner 上跑。
+- **Linux 侧的判据在 CI 上跑绿了，本机仍没跑过**：符号链接键规范化、真实 SIGINT 黑盒、`tests/test_turn_cancel.py` 的 POSIX `killpg` 那一半——run #1 / #2 的 `ubuntu-latest` job 绿就是它们绿的证据（那两条在 Linux 上不被 skip，95% 地板也在那一端单独判过）。本机这一半依旧未验证；junction 那一半本机跑过（`test_a_junction_key_resolves_to_its_target_without_privileges`）。
 - **硬杀会吞掉已经完成的结果**：`tool/result` 缓冲到批次结束才落盘（design.md 的 D3），所以 SIGKILL 落在批次中间时，已经跑完的那几条结果不在盘上，日志留下「有 `tool/call` 没 `tool/result`」的前缀。取消路径不受影响——`TOOL_CANCELLED` 是合成出来的结果，每条 `tool/call` 都有配对。append-only 日志里「立刻落盘」与「按声明顺序」只能要一样，M3 要的是顺序。pi 的 issue #7053 是同一形状。这条没有判据（判它要在判据里可靠地硬杀子进程再读日志，seam ⑥ 本机做不到），记为已知缺口。
 - **两端覆盖率各报各的，不合并**：95% 地板在两个 runner 上各自判。平台分支在两端各拉低一半是已知形状（D9）。
 - **M3 闭合的三条旧缺口**（原来在本文件的「已知缺口」里）：`approval/*` 晚落盘（ADR-0002 第 9 条）、取消只在回合边界被看到（第 10 条）、`error/fence` 的路径只在自由文本里（第 11 条）。三条都有判据与落地形状，见 `openspec/changes/m3-bash-concurrency-timeout/design.md` 的 D12 / D5 / D13。
