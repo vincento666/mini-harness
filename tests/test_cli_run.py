@@ -174,6 +174,48 @@ def test_malformed_fixture_entry_is_rejected_before_any_session_log(tmp_path: Pa
     assert _log_files(tmp_path) == []
 
 
+def test_a_fence_denial_exits_with_three(tmp_path: Path) -> None:
+    """退出码 3 的 seam ⑥ 判据：档位轴拒绝一次写，整段 session 以 `FENCE_DENIED` 收尾。"""
+    fixture = tmp_path / "fence.json"
+    fixture.write_text(
+        json.dumps(
+            [
+                {
+                    "content": "写一个文件",
+                    "finish_reason": "tool_calls",
+                    "tool_calls": [
+                        {
+                            "id": "c1",
+                            "name": "write",
+                            "arguments": {"file_path": "a.md", "content": "x\n"},
+                        }
+                    ],
+                },
+                {"content": "算了", "finish_reason": "stop"},
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(fixture),
+        "--sandbox",
+        "read-only",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 3
+    assert "SANDBOX_DENIES_WRITE" in result.stderr
+    assert _log_files(tmp_path)
+
+
 def test_happy_path_prints_session_id_and_writes_the_log(tmp_path: Path) -> None:
     result = _cli(
         "run", "-p", "任务", "--provider", "mock", "--fixture", str(HELLO_SCENARIO), cwd=tmp_path
