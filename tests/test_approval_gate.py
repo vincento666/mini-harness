@@ -16,7 +16,7 @@ from mini_harness.loop.settings import ApprovalMode
 from mini_harness.tools import ToolArgs, ToolRegistry, ToolResult
 from mini_harness.tools.fences import ApprovalDecision, DispatchContext, StdinApprovalGate
 from mini_harness.tools.registry import ToolDefinition
-from tool_harness import run_fixture_session
+from tool_harness import DONE, run_fixture_session
 
 
 class _WriteArgs(ToolArgs):
@@ -76,12 +76,9 @@ def _registry_and_entries(
                 for index, path in enumerate(files, start=1)
             ],
         },
-        _DONE,
+        DONE,
     ]
     return registry, entries
-
-
-_DONE = {"content": "算了", "finish_reason": "stop"}
 
 
 async def _run(
