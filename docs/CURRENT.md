@@ -2,12 +2,12 @@
 
 每里程碑收尾更新一次。接手时以 `git status --short` 与 `git log --oneline -3` 为准，本文件只是快照。
 
-更新：2026-10-19（M3 的实现、收尾门禁、`code-review` 修复轮 10.1–10.8、推送与 CI 首绿、人手验收 8.1–8.2 全部跑完，分支 `change/m3-bash-concurrency-timeout` 上 36 个提交；**只剩 `openspec-sync-specs` → 归档 → `agents-md-slim`**）
+更新：2026-10-19（**M3 完成并归档**：实现、收尾门禁、`code-review` 修复轮 10.1–10.8、CI 首绿、人手验收 8.1–8.2、`openspec-sync-specs`、`/openspec-archive-change` 全部跑完；分支 `change/m3-bash-concurrency-timeout` 上 40 个提交。**下一个里程碑是 M5**）
 
 ## 进度
 
-- **M1 / M2 / M4 完成并已归档**：分别在 `openspec/changes/archive/2026-10-16-m1-event-log-and-turn-loop/`、`2026-10-18-m2-file-tools-and-fences/`、`2026-10-18-m4-real-provider/`，tag `m1` / `m2` / `m4`，merge commit `141e28c` / `d89a7c2` / `1d8e120`。主规格现有 7 个能力，`openspec validate --specs` 7 过 0 失败（M2 后 cli 7 / context-projection 8 / event-log 9 / fences 12 / file-tools 11 / provider 9 / turn-loop 9）。
-- **M3 实现跑完，收尾门禁跑完，未合并未归档**：change `m3-bash-concurrency-timeout`，分支 `change/m3-bash-concurrency-timeout`（`main` 之上 32 个提交）。落地的东西：
+- **M1 / M2 / M3 / M4 完成并已归档**：分别在 `openspec/changes/archive/2026-10-16-m1-event-log-and-turn-loop/`、`2026-10-18-m2-file-tools-and-fences/`、`2026-10-19-m3-bash-concurrency-timeout/`、`2026-10-18-m4-real-provider/`，tag `m1` / `m2` / `m3` / `m4`，merge commit `141e28c` / `d89a7c2` / `1d8e120`（M3 的 merge commit 在归档之后写，见下一次更新）。主规格现有 **8 个能力**，`openspec validate --all --strict` 8 过 0 失败（M3 后新增 `bash-tool` 6 条 Requirement；cli 7 / context-projection 8 / event-log 10 / fences 12 / file-tools 11 / provider 9 / turn-loop 13）。
+- **M3 落地的东西**（change `m3-bash-concurrency-timeout`，分支 `change/m3-bash-concurrency-timeout`）：
   - `bash` 工具（`mutates=True`）：经平台 shell 执行、cwd 固定为工作区根、命令文本里的路径不解析（ADR-0008）；`timeout_seconds` 默认 30、上限 600，601 是 `TOOL_ARGS_INVALID` 且没有进程被启动；命令退出码非 0 仍是 `OK` 且 content 里有退出码；输出单一上限 16384 字节（stdout 与 stderr 合算）超限留固定标记 `[输出已截断]`；超时之后整棵进程树收掉（POSIX `start_new_session=True` + `killpg`，Windows `taskkill /T /F /PID`，ADR-0009）。
   - 派发段并发：同一回合的只读调用最多 8 个同时在跑，沾上「要改动」的排队串行；前缀每回合取样一次、整批共用；`tool/result` 按声明顺序落盘（第二个先完成也一样）。
   - 超时与取消落进词表：`ToolOutcome` 加 `TOOL_TIMEOUT` 与 `TOOL_CANCELLED`（16 值），新事件 `tool/cancelled`（payload 只有 `turn_id` 与 `tool_call_id`，不含命令输出）；超时塌成结果、回合继续，取消打断整个 session（`error/abort` + `turn/end(ABORTED)` + 退出码 5，ADR-0007）。模型请求超时 120 s 写进规格。
@@ -15,7 +15,7 @@
   - 测试 helper 收口：`tests/tool_harness.py` 的 `dispatch_call` / `dispatch_context` / `run_session_fixture` 收 `registry` 与 `approval_gate`，seam ① 的 run 形状收成一份。
   - CI：`.github/workflows/gates.yml` 落地，`windows-latest` + `ubuntu-latest` 两端各跑四道门禁、各判 95% 地板，不持任何 secret。
 - **M3 的收尾门禁**：变异 12 条（10 条首轮被杀，T1 与 O1 存活并已各补一条判据，C2 判定 dud）→ `docs/verification/m3-bash-concurrency-timeout-mutation.md`；Learning Gate 收 L-027 至 L-030、关闭 L-018、补 L-019，**AGENTS.md 本轮不晋升** → `docs/lessons.md`。
-- **M3 还剩**：`openspec-sync-specs` → `/openspec-archive-change` → `agents-md-slim`。tasks 第 1 至 9 节全勾（人手验收 8.1–8.2 于 2026-10-19 跑完，见下）。`code-review` 两轴已跑完：A 至 G 七条全修（10.1–10.7，其中 10.4 改的是规格、10.1 与 10.5 改的是实现），Standards 轴的判断项与两条规格 ↔ 实现的判断记账进 ADR-0002 第 18 至 29 条，提交纪律的三处措辞欠账记在同文件最后一节。
+- **M3 的收尾**：tasks 51/51 全勾（人手验收 8.1–8.2 于 2026-10-19 跑完，见下）。`code-review` 两轴已跑完：A 至 G 七条全修（10.1–10.7，其中 10.4 改的是规格、10.1 与 10.5 改的是实现），Standards 轴的判断项与两条规格 ↔ 实现的判断记账进 ADR-0002 第 18 至 29 条，提交纪律的三处措辞欠账记在同文件最后一节；人手验收跑出来的一条新缺口是第 30 条。delta 已合进 main specs（`697675c`），change 目录已移进 `openspec/changes/archive/2026-10-19-m3-bash-concurrency-timeout/`。**归档之后还剩 `agents-md-slim`**（AGENTS.md 本轮没晋升新规则，slim 是查有没有该删的过时内容）。
 
 ## 门禁实测（Windows 本机）
 
