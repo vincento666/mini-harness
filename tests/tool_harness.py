@@ -92,16 +92,21 @@ async def run_fixture_session(
     session_id: str,
     entries: list[dict[str, object]],
     *,
+    sandbox: SandboxLevel = "workspace-write",
     approval: ApprovalMode = "auto",
     max_turns: int = 4,
     registry: ToolRegistry | None = None,
     approval_gate: ApprovalGate | None = None,
     cancel: asyncio.Event | None = None,
 ) -> tuple[EventLog, RunOutcome]:
-    """跑完一整段 fixture 回合。注册表、approval 门、取消信号都可注入。"""
+    """跑完一整段 fixture 回合。注册表、档位、approval 门、取消信号都可注入。"""
     log = EventLog.create(session_dir=tmp_path, session_id=session_id)
     settings = SessionSettings(
-        workspace=tmp_path, provider_name="mock", max_turns=max_turns, approval=approval
+        workspace=tmp_path,
+        provider_name="mock",
+        max_turns=max_turns,
+        sandbox=sandbox,
+        approval=approval,
     )
     outcome = await run_session(
         prompt="任务",

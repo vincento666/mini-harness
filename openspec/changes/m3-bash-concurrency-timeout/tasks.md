@@ -6,21 +6,20 @@
 - [x] 1.2 `ToolOutcome` 加 `TOOL_TIMEOUT` 与 `TOOL_CANCELLED`；`tests/test_vocabulary_reachability.py` 先加两条可达判据（先红）。seam ②
 - [ ] 1.3 `tool/cancelled` 的 payload 形状判据：含 `turn_id` 与 `tool_call_id`、不含命令输出或文件内容。seam ④
 - [ ] 1.4 `tests/test_turn_loop.py` 里「M2 场景不写 tool/cancelled」那条判据拆成两条：取消发生在回合边界时仍不写、取消打断执行中的调用时必写。seam ①
-- [ ] 1.5 `error/fence` 的 payload 加 `path` 与 `raw_path`（`detail` 只面向人）：越界写那条判据断言两个字段各有取值，`read-only` 下的 `bash` 那条断言两者都是 `null`。ADR-0002 第 11 条。seam ②④
-  - 前半已落（提交里写明）；「`read-only` 下的 `bash` 两者都是 `null`」这一半要等 3.1 注册 `bash` 才写得出来，届时一起勾。
+- [x] 1.5 `error/fence` 的 payload 加 `path` 与 `raw_path`（`detail` 只面向人）：越界写那条判据断言两个字段各有取值，`read-only` 下的 `bash` 那条断言两者都是 `null`。ADR-0002 第 11 条。seam ②④
 
 ## 2. 测试 helper 收口（判据①的前置）
 
 - [x] 2.1 `tests/tool_harness.py::dispatch_call` 收 `registry` 与 `approval_gate` 参数（默认值不变），使「只注册 bash 的注册表」与「注入一个会提问的 gate」两条 seam ③ 判据写得出来。seam ②③
 - [x] 2.2 四处手搓 `SessionSettings(...)`（`test_fences._context`、`test_approval_gate._run`、`test_vocabulary_reachability._dispatch_with_gate`、`test_tool_registry`）改用 helper。seam ②③
 - [ ] 2.3 seam ① 的 provider 桩与 run helper 收成一份（ADR-0002 第 16 条）。seam ①
-- [ ] 2.4 验证：`grep` 数一遍 `SessionSettings(` 在 `tests/` 的出现次数，与收口前对比并记录进提交信息。seam ①②③
+- [x] 2.4 验证：`grep` 数一遍 `SessionSettings(` 在 `tests/` 的出现次数，与收口前对比并记录进提交信息。seam ①②③
 
 ## 3. bash 工具契约
 
-- [ ] 3.1 `BashArgs` 与 `bash` 的工具定义（`mutates=True`）注册进注册表；`--sandbox read-only` 下被拒的判据（`DENIED_BY_FENCE` + `error/fence` 的 `SANDBOX_DENIES_WRITE`，命令没有副作用）。seam ③
-- [ ] 3.2 cwd 固定为工作区根：命令写相对路径的文件，`read` 用同一相对路径读到它。seam ③
-- [ ] 3.3 超时数值：默认 30 s、入参 `timeout_seconds` 上限 600、601 是 `TOOL_ARGS_INVALID` 且没有进程被启动。seam ③
+- [x] 3.1 `BashArgs` 与 `bash` 的工具定义（`mutates=True`）注册进注册表；`--sandbox read-only` 下被拒的判据（`DENIED_BY_FENCE` + `error/fence` 的 `SANDBOX_DENIES_WRITE`，命令没有副作用）。seam ③
+- [x] 3.2 cwd 固定为工作区根：命令写相对路径的文件，`read` 用同一相对路径读到它。seam ③
+- [x] 3.3 超时数值：默认 30 s、入参 `timeout_seconds` 上限 600、601 是 `TOOL_ARGS_INVALID` 且没有进程被启动。seam ③
 - [ ] 3.4 执行段的超时塌成结果：`TOOL_TIMEOUT` 加一条配对的 `tool/cancelled`，进程没有未捕获异常（判据要用异常族里不显眼的成员，不只 `TimeoutError`）。seam ②③
 - [ ] 3.5 命令退出码非 0 仍是 `OK`，content 含退出码与 stderr 内容。seam ③
 - [ ] 3.6 输出上限与截断标记：超限的 content 含固定标记、长度有界、`outcome` 不变。seam ③

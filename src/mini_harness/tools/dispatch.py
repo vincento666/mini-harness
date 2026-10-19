@@ -63,12 +63,13 @@ async def dispatch_tool_call(
 
     approval: ApprovalDecision | None = None
     if decision.outcome == "NEEDS_APPROVAL":
-        approval = approval_gate.request(tool_name=definition.name, detail=decision.detail)
+        question = decision.detail or args.approval_detail()
+        approval = approval_gate.request(tool_name=definition.name, detail=question)
         if approval != "APPROVED":
             return DispatchOutcome(
                 ToolResult(
                     outcome="DENIED_BY_APPROVAL",
-                    content=f"没有获得批准：{decision.detail}",
+                    content=f"没有获得批准：{question}",
                 ),
                 approval=approval,
                 fence_code=_approval_denial_code(approval),

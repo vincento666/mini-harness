@@ -336,8 +336,8 @@ def test_session_start_records_sandbox_approval_and_tools(tmp_path: Path) -> Non
     assert result.returncode == 0
     assert payload["sandbox"] == "workspace-write"
     assert payload["approval"] == "ask"
-    # 五个名字来自注册表：session/start 的 tools 由它派生，不是另立一份清单。
-    assert payload["tools"] == ["read", "write", "edit", "glob", "grep"]
+    # 六个名字来自注册表：session/start 的 tools 由它派生，不是另立一份清单。
+    assert payload["tools"] == ["read", "write", "edit", "glob", "grep", "bash"]
     assert "schema_version" not in payload
 
 
