@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 
 from pydantic import ValidationError
@@ -68,6 +69,18 @@ async def dispatch_tool_call(
 
     try:
         result = await definition.run(args, context)
+    except TimeoutError as exc:
+        # `TimeoutError` 是 `OSError` 的子类：这一条 MUST 排在 `OSError` 之前。
+        return DispatchOutcome(
+            ToolResult(outcome="TOOL_TIMEOUT", content=f"工具 {call.name} 执行超时：{exc}"),
+            approval=approval,
+        )
+    except asyncio.CancelledError:
+        # ADR-0007：取消打断正在执行的调用，它也是结果；回合循环随后写 `tool/cancelled` 并收尾。
+        return DispatchOutcome(
+            ToolResult(outcome="TOOL_CANCELLED", content=f"工具 {call.name} 的执行被打断"),
+            approval=approval,
+        )
     except OSError as exc:
         # 不变量 B：执行段的 I/O 失败也是结果，不抛异常打断回合。
         return DispatchOutcome(

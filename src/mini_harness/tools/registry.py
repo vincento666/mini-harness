@@ -32,6 +32,8 @@ ToolOutcome = Literal[
     "EDIT_TARGET_NOT_FOUND",
     "EDIT_TARGET_AMBIGUOUS",
     "TOOL_IO_FAILED",
+    "TOOL_TIMEOUT",
+    "TOOL_CANCELLED",
     "DENIED_BY_FENCE",
     "DENIED_BY_APPROVAL",
 ]

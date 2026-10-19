@@ -16,11 +16,18 @@ from mini_harness.provider import AssistantTurn, FixtureProvider
 from mini_harness.tools import DispatchOutcome, ToolRegistry
 from mini_harness.tools.fences import (
     ApprovalDecision,
+    DispatchContext,
     FenceCode,
     StdinApprovalGate,
 )
 from mini_harness.tools.file_tools import file_tool_definitions
-from mini_harness.tools.registry import ToolOutcome
+from mini_harness.tools.registry import (
+    ToolArgs,
+    ToolDefinition,
+    ToolExecutor,
+    ToolOutcome,
+    ToolResult,
+)
 from tool_harness import DONE, dispatch_call, run_fixture_session, tool_call_entry
 
 
@@ -85,6 +92,33 @@ def _stop_reasons(log: EventLog) -> set[str]:
     }
 
 
+class _NoArgs(ToolArgs):
+    """桩工具没有入参。"""
+
+
+async def _raise_timeout(args: ToolArgs, context: DispatchContext) -> ToolResult:
+    raise TimeoutError("执行段超时")
+
+
+async def _raise_cancelled(args: ToolArgs, context: DispatchContext) -> ToolResult:
+    raise asyncio.CancelledError("执行段被打断")
+
+
+def _raising_registry(name: str, run: ToolExecutor) -> ToolRegistry:
+    """执行段抛异常的桩工具：判「异常塌成结果词、不逃逸出派发段」。"""
+    return ToolRegistry(
+        [
+            ToolDefinition(
+                name=name,
+                description="执行段抛异常的桩工具",
+                args_model=_NoArgs,
+                mutates=False,
+                run=run,
+            )
+        ]
+    )
+
+
 async def test_every_tool_outcome_is_reachable(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     log, _ = await run_fixture_session(
@@ -133,8 +167,26 @@ async def test_every_tool_outcome_is_reachable(tmp_path: Path) -> None:
     await run("write", {"file_path": "../outside.md", "content": "改写\n"})
     denied = await _dispatch_with_gate(workspace, "DENIED", file_path="new.md", content="x\n")
     observed.add(denied.result.outcome)
+    await run("stub", {}, registry=_raising_registry("stub", _raise_timeout))
+    await run("stub", {}, registry=_raising_registry("stub", _raise_cancelled))
 
     assert observed == set(get_args(ToolOutcome)), "有取值没被跑出来，或词表里多了跑不到的取值"
+
+
+async def test_a_timeout_in_the_execution_segment_is_a_result(tmp_path: Path) -> None:
+    """不变量 B：执行段超时塌成 `TOOL_TIMEOUT`，不抛异常打断回合。"""
+    outcome = await dispatch_call(
+        tmp_path, "stub", {}, registry=_raising_registry("stub", _raise_timeout)
+    )
+    assert outcome.result.outcome == "TOOL_TIMEOUT"
+
+
+async def test_an_interrupted_execution_segment_is_a_result(tmp_path: Path) -> None:
+    """不变量 B：执行段被打断塌成 `TOOL_CANCELLED`，不抛异常打断回合。"""
+    outcome = await dispatch_call(
+        tmp_path, "stub", {}, registry=_raising_registry("stub", _raise_cancelled)
+    )
+    assert outcome.result.outcome == "TOOL_CANCELLED"
 
 
 async def test_every_fence_code_is_reachable(tmp_path: Path) -> None:
