@@ -75,7 +75,7 @@
 - [x] 10.1 `_race_with_cancel` 的兜底塌词只对 `asyncio.CancelledError` 生效；从执行段逃出来的其它异常不得改名成 `TOOL_CANCELLED`，要落 `error/internal` 并作为内核失败收尾。seam ① —— 判据 `test_an_escaped_exception_is_not_renamed_to_a_cancellation`；逃出来的异常由 `one()` 接住、写 `error/internal`（含 `tool_call_id`）、置 `stop`，已跑完的调用照常落结果，run 以词表外的 `INTERNAL_ERROR` 收尾（退出码 1）
 - [x] 10.2 `bash` 在两个档位下各跑一次：结果与日志形状没有可观察差别，且日志里没有 `error/fence`。seam ③ —— 判据 `test_the_two_sandbox_levels_treat_the_same_command_the_same_way`：同一条命令在 `workspace-write` 与 `danger-full-access` 下各跑一整段 session，两次的 `tool/result` 内容与 `outcome` 逐字段相同、`stop_reason` 相同，两份日志里 `error/fence` 零条
 - [x] 10.3 「围栏拒绝时已在跑的并发调用不被吞」换成真实可达形状：一个还在跑的只读调用 + 一个被拒的调用。seam ① —— 结论比原判据更硬：落地规则（只读并发、会改动串行）让「拒绝时另一个调用还在跑」**在同一批里不可达**，被拒的写调用必须等前一个跑完。判据改名 `test_a_fence_denial_does_not_swallow_the_calls_dispatched_before_it`，钉配对与落盘顺序（`tool/result` 在 `error/fence` 之前）+ 档位轴先拒时 `path` 是 `null`、`raw_path` 仍是原写法；delta scenario 与 design.md 的 D1 落地修正同步改写，「还在跑就被打断」那一半由取消路径判
-- [ ] 10.4 event-log 的「成组出现」改成实现实际保证的东西（每个调用的四类事件按此相对顺序；不同调用的组可交错，`tool/result` 按声明顺序），并补一条判据钉住这个相对顺序。seam ④
+- [x] 10.4 event-log 的「成组出现」改成实现实际保证的东西（每个调用的四类事件按此相对顺序；不同调用的组可交错，`tool/result` 按声明顺序），并补一条判据钉住这个相对顺序。seam ④ —— scenario 改名并拆成两条；判据 `test_an_approved_call_keeps_its_relative_order_when_the_batch_interleaves`。R1（连续）/ R2（结果按声明顺序）/ R3（`tool/call` 派发时落盘）不能同时成立，证明与主流 harness 的对照记进 `design.md`
 - [ ] 10.5 提问可被取消打断：approval 门改成 awaitable，提问期间取消置位则这一对允许半对、这一条塌成 `TOOL_CANCELLED`。seam ① ②
 - [ ] 10.6 补一条 Windows 也跑得动的 `bash` 超时 CLI 黑盒（seam ⑥），并把 `docs/CURRENT.md` 里「Windows 侧超时黑盒都有」那句改到与实况一致
 - [ ] 10.7 「数值不暴露成命令行开关」补参数表判据：`bash` 的 30 / 600、并发上限 8、模型超时 120 都没有对应开关。seam ⑥

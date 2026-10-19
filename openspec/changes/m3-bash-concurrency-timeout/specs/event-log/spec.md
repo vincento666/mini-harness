@@ -7,7 +7,11 @@
 
 #### Scenario: 一次带审批的写的事件序列
 - **WHEN** 一次 run 的某回合派发一次获批的 `edit`
-- **THEN** 该回合里事件类型按 `tool/call`、`approval/request`、`approval/response`、`tool/result` 的顺序成组出现
+- **THEN** 该 `tool_call_id` 的记录按 `tool/call`、`approval/request`、`approval/response`、`tool/result` 的相对顺序出现
+
+#### Scenario: 并发批次里不同调用的记录可以交错
+- **WHEN** 同一回合里一个只读调用与一个获批的会改动调用同批派发
+- **THEN** 每个 `tool_call_id` 自己的记录保持上面那个相对顺序，`tool/result` 之间按声明顺序；不同调用的组可以交错，规格不要求它们连续
 
 #### Scenario: 无法归类的内部故障仍走 error 命名空间
 - **WHEN** 内核发生一个不属于任何既有 `namespace/method` 的故障

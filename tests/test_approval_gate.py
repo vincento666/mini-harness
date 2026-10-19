@@ -16,7 +16,7 @@ from mini_harness.loop.settings import ApprovalMode
 from mini_harness.tools import ToolArgs, ToolRegistry, ToolResult
 from mini_harness.tools.fences import ApprovalDecision, DispatchContext, StdinApprovalGate
 from mini_harness.tools.registry import ToolDefinition
-from tool_harness import DONE, run_fixture_session
+from tool_harness import DONE, call_ids, run_fixture_session, tool_call, turn_entry
 
 
 class _WriteArgs(ToolArgs):
@@ -122,6 +122,61 @@ async def test_each_approved_write_asks_once_and_then_succeeds(tmp_path: Path) -
     ]
     assert gate.asked == ["write", "write"]
     assert (tmp_path / "a.md").read_text(encoding="utf-8") == "A\n"
+
+
+async def test_an_approved_call_keeps_its_relative_order_when_the_batch_interleaves(
+    tmp_path: Path,
+) -> None:
+    """规格 scenario「一次带审批的写的事件序列」：保证的是同一个 `tool_call_id` 的相对顺序。
+
+    并发批次里不同调用的记录可以交错——`c1` 的 `tool/call` 落在 `c2` 的 `approval/request` 之前，
+    `c1` 的 `tool/result` 又落在 `c2` 的 `approval/response` 之前：`c2` 的那一组被 `c1` 的结果切开。
+    「这四条连续」不是并发派发下成立的东西，它是串行执行的副产品（证明见 `design.md`）。
+    """
+    registry = ToolRegistry(
+        [
+            ToolDefinition(
+                name="read",
+                description="测试桩读",
+                args_model=_WriteArgs,
+                mutates=False,
+                run=_stub_read,
+            ),
+            ToolDefinition(
+                name="write",
+                description="测试桩写",
+                args_model=_WriteArgs,
+                mutates=True,
+                run=_stub_write,
+            ),
+        ]
+    )
+    entries = [
+        turn_entry(
+            tool_call("read", "c1", file_path="a.md", content=""),
+            tool_call("write", "c2", file_path="b.md", content="B\n"),
+        ),
+        DONE,
+    ]
+    gate = _Gate("APPROVED")
+
+    log, _ = await _run(tmp_path, "s-interleave", registry, entries, gate)
+
+    records = read_events(log.path)
+    at = {
+        (record.type, record.payload.get("tool_call_id")): index
+        for index, record in enumerate(records)
+    }
+    assert (
+        at["tool/call", "c2"]
+        < at["approval/request", "c2"]
+        < at["approval/response", "c2"]
+        < at["tool/result", "c2"]
+    )
+    assert at["tool/call", "c1"] < at["approval/request", "c2"]
+    assert at["tool/result", "c1"] < at["approval/response", "c2"]
+    assert call_ids(records, "tool/result") == ["c1", "c2"]
+    assert gate.asked == ["write"]
 
 
 async def test_a_denied_write_is_a_result_and_an_error_fence(tmp_path: Path) -> None:
