@@ -103,7 +103,7 @@ async def _dispatch_batch(
 ) -> _BatchOutcome:
     """派发一个回合声明的工具调用批次：只读的并发、会改动文件的串行。
 
-    `tool/call` 由「前一个已经开始」这条链保证按声明顺序落盘；结果缓冲到批次结束，
+    `tool/call` 由「前一个已经轮到过——开始派发或放弃」这条链保证按声明顺序落盘；结果缓冲到批次结束，
     仍按声明顺序落盘。围栏拒绝之后，还没开始的调用不再派发（连 `tool/call` 都不写），
     已经开始的照常跑完并落结果。前缀只在本批次开始时取样一次，整批共用。
     """
@@ -145,6 +145,13 @@ async def _dispatch_batch(
         return True
 
     async def one(index: int, call: ToolCall) -> None:
+        try:
+            await dispatch_one(index, call)
+        finally:
+            # 放弃派发也要把这条链传下去：否则排在它后面的调用会永远等一个不会开始的调用。
+            started[index].set()
+
+    async def dispatch_one(index: int, call: ToolCall) -> None:
         if index > 0:
             await started[index - 1].wait()
         definition = registry.lookup(call.name)

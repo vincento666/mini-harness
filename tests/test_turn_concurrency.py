@@ -303,6 +303,42 @@ async def test_a_fence_denial_does_not_swallow_the_calls_already_running(tmp_pat
     assert outcome.failure_code == "SANDBOX_DENIES_WRITE"
 
 
+async def test_calls_declared_after_a_denied_one_are_all_skipped(tmp_path: Path) -> None:
+    """围栏拒绝之后声明的调用一个都不派发，包括排在「不会开始的调用」后面的那几个。
+
+    「前一个已经开始」这条链在有人放弃派发时也必须传下去，否则后面的调用永远等下去。
+    """
+    (tmp_path / "a.md").write_text("甲\n", encoding="utf-8")
+    observed: Intervals = []
+
+    log, outcome = await asyncio.wait_for(
+        run_session_fixture(
+            tmp_path,
+            "s-chain-after-denial",
+            FixtureProvider(
+                entries=[
+                    turn_entry(
+                        tool_call("write", "c1", file_path="a.md", content="改写\n"),
+                        tool_call("write", "c2", file_path="b.md", content="新\n"),
+                        tool_call("write", "c3", file_path="c.md", content="新\n"),
+                    ),
+                    DONE,
+                ]
+            ),
+            registry=_instrumented(observed),
+            sandbox="read-only",
+            max_turns=4,
+        ),
+        timeout=10,
+    )
+
+    records = read_events(log.path)
+    assert isinstance(records, list)
+    assert call_ids(records, "tool/call") == ["c1"]
+    assert result_outcomes(records) == [("c1", "DENIED_BY_FENCE")]
+    assert outcome.stop_reason == "FENCE_DENIED"
+
+
 async def test_the_same_batch_gives_the_same_outcomes_concurrently_and_serially(
     tmp_path: Path,
 ) -> None:
