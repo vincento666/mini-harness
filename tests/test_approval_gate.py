@@ -180,6 +180,44 @@ async def test_auto_approval_writes_no_approval_records(tmp_path: Path) -> None:
     assert (tmp_path / "a.md").read_text(encoding="utf-8") == "A\n"
 
 
+class _LogWatchingGate:
+    """提问的那一刻回看日志：那一刻 `approval/request` 在不在盘上，是 5.6 的判据。"""
+
+    def __init__(self, log_path: Path) -> None:
+        self._log_path = log_path
+        self.requested: list[bool] = []
+
+    def request(self, *, tool_name: str, detail: str) -> ApprovalDecision:
+        self.requested.append(
+            any(record.type == "approval/request" for record in read_events(self._log_path))
+        )
+        return "APPROVED"
+
+
+async def test_the_request_is_on_disk_before_the_human_is_asked(tmp_path: Path) -> None:
+    """规格：`approval/request` 在提问之前落盘。判据是门自己在提问那一刻回看日志。
+
+    半对（有 `approval/request` 没有 `approval/response`）只允许出现在以 `error/abort`
+    收尾的 session 里；这条 run 正常收尾，所以配对必须完整。
+    """
+    registry, entries = _registry_and_entries(mutates=True, files=("a.md",))
+    gate = _LogWatchingGate(tmp_path / "s-early.jsonl")
+
+    log, _ = await _run(tmp_path, "s-early", registry, entries, gate)
+
+    assert gate.requested == [True]
+    records = read_events(log.path)
+    types = [record.type for record in records]
+    assert types[types.index("tool/call") : types.index("tool/result")] == [
+        "tool/call",
+        "approval/request",
+        "approval/response",
+    ]
+    requests = [r.payload["tool_call_id"] for r in records if r.type == "approval/request"]
+    responses = [r.payload["tool_call_id"] for r in records if r.type == "approval/response"]
+    assert requests == responses
+
+
 class _Stream:
     """假 stdin：tty 可控、答案固定、写了什么看得见。"""
 

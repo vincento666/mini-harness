@@ -13,7 +13,7 @@ from mini_harness.events.reader import LogReadFailure, read_events
 from mini_harness.events.writer import EventLog, LogWriteFailure
 from mini_harness.loop.settings import SessionSettings
 from mini_harness.provider.contract import Provider, ProviderFailure, ToolCall
-from mini_harness.tools.dispatch import DispatchOutcome, dispatch_tool_call
+from mini_harness.tools.dispatch import ApprovalAsked, DispatchOutcome, dispatch_tool_call
 from mini_harness.tools.fences import (
     STDIN_APPROVAL_GATE,
     ApprovalGate,
@@ -98,13 +98,16 @@ async def _race_with_cancel(
     context: DispatchContext,
     approval_gate: ApprovalGate,
     cancel: asyncio.Event,
+    on_approval_request: ApprovalAsked,
 ) -> DispatchOutcome:
     """取消置位时打断正在执行的调用：被打断的那一条塌成 `TOOL_CANCELLED`。
 
     `dispatch_tool_call` 自己会把 `CancelledError` 塌成结果词；拿不到那个结果时这里补一条，
     于是「有 `tool/call` 必有 `tool/result`」不依赖工具配合。
     """
-    running = asyncio.create_task(dispatch_tool_call(call, registry, context, approval_gate))
+    running = asyncio.create_task(
+        dispatch_tool_call(call, registry, context, approval_gate, on_approval_request)
+    )
     watcher = asyncio.create_task(cancel.wait())
     _, pending = await asyncio.wait({running, watcher}, return_when=asyncio.FIRST_COMPLETED)
     for task in pending:
@@ -175,6 +178,31 @@ async def _dispatch_batch(
             return False
         return True
 
+    def ask_logged(call: ToolCall) -> bool:
+        """「要问人」在提问之前先落盘：`approval/request` 先到日志，再到人跟前（D12）。
+
+        写不进去就不问人——这一批已经注定失败，把人挂在提问前没有意义。
+        """
+        failure = _append_all(
+            log,
+            [
+                (
+                    "approval/request",
+                    {
+                        "turn_id": turn_id,
+                        "tool_call_id": call.id,
+                        "name": call.name,
+                        "arguments": call.arguments,
+                    },
+                )
+            ],
+        )
+        if failure is not None:
+            outcome.failure = failure
+            stop.set()
+            return False
+        return True
+
     async def one(index: int, call: ToolCall) -> None:
         try:
             await dispatch_one(index, call)
@@ -198,7 +226,7 @@ async def _dispatch_batch(
                 if not begin(index, call):
                     return
                 outcomes[index] = await _race_with_cancel(
-                    call, registry, context, approval_gate, cancel
+                    call, registry, context, approval_gate, cancel, ask_logged
                 )
             dispatched = outcomes[index]
             if dispatched is not None and dispatched.fence_code is not None:
@@ -210,7 +238,7 @@ async def _dispatch_batch(
             return
         async with read_slots:
             outcomes[index] = await _race_with_cancel(
-                call, registry, context, approval_gate, cancel
+                call, registry, context, approval_gate, cancel, ask_logged
             )
         dispatched = outcomes[index]
         if dispatched is not None and dispatched.fence_code is not None:
@@ -226,17 +254,7 @@ async def _dispatch_batch(
         if dispatched is None:
             continue
         if dispatched.approval is not None:
-            written.append(
-                (
-                    "approval/request",
-                    {
-                        "turn_id": turn_id,
-                        "tool_call_id": call.id,
-                        "name": call.name,
-                        "arguments": call.arguments,
-                    },
-                )
-            )
+            # `approval/request` 已经在提问之前落盘了（`ask_logged`），这里只补结论。
             written.append(
                 (
                     "approval/response",

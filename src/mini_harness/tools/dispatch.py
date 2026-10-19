@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from pydantic import ValidationError
@@ -32,11 +33,16 @@ class DispatchOutcome:
     raw_path: str | None = None
 
 
+# 「要问人」的落盘钩子：提问之前先写 `approval/request`，写不进去就不问人（ADR-0002 第 9 条）。
+ApprovalAsked = Callable[[ToolCall], bool]
+
+
 async def dispatch_tool_call(
     call: ToolCall,
     registry: ToolRegistry,
     context: DispatchContext,
     approval_gate: ApprovalGate,
+    on_approval_request: ApprovalAsked | None = None,
 ) -> DispatchOutcome:
     """按固定顺序判定。校验失败不做围栏判定，围栏拒绝不执行。"""
     definition = registry.lookup(call.name)
@@ -64,6 +70,13 @@ async def dispatch_tool_call(
     approval: ApprovalDecision | None = None
     if decision.outcome == "NEEDS_APPROVAL":
         question = decision.detail or args.approval_detail()
+        if on_approval_request is not None and not on_approval_request(call):
+            return DispatchOutcome(
+                ToolResult(
+                    outcome="TOOL_IO_FAILED",
+                    content=f"工具 {call.name} 的 approval 记录写不进日志",
+                )
+            )
         approval = approval_gate.request(tool_name=definition.name, detail=question)
         if approval != "APPROVED":
             return DispatchOutcome(
