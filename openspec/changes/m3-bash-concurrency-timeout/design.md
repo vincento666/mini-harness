@@ -34,6 +34,8 @@
 
 **D3 `tool/result` 缓冲后按声明顺序落盘。** 并发完成顺序不定，落盘顺序必须是 `tool_calls` 的声明顺序。替代：按完成顺序落盘——否，折叠与 `replay` 的判据依赖日志顺序（context-projection 的「折叠是确定性纯函数」），而两端的完成顺序天然不同，判据「两端同一套判据全绿」会直接为假。
 
+**D3 的措辞返工（人工裁决 2026-10-19）。** Scenario「同一回合两个 edit 串行」原来写「第二个只在第一个写出 `tool/result` 之后才开始执行」。按 D3，结果是缓冲到批次结束才落盘的，那条 THEN 测到的是落盘时机而不是串行——实现里它永远为假。改成「第二个只在第一个**执行结束**之后才开始执行」，判据用记录执行区间的工具桩：seam ① 测的是调度器本身，工具契约原样保留。
+
 **D4 每回合取样一次前缀，整批共用。** 替代：保持每调用重读——否，并发时先完成的结果会进入后派发者的前缀，「同一份日志前缀得到同一判定」这条 Scenario 字面不成立。副带好处：消掉 O(n²) 重读。
 
 **D5 超时塌成结果词，异常不逃逸出执行段。** `TimeoutError` → `TOOL_TIMEOUT`，`CancelledError` → `TOOL_CANCELLED`，两条都在 `dispatch_tool_call` 的执行段内塌（任务 1.2 已落）。超时的**数值**由工具自己执行：`bash` 用 `asyncio.wait_for` 包住自己的执行段，因为只有它知道入参里的 `timeout_seconds`。替代：给每个工具传 deadline 参数、或在 `ToolDefinition` 上加超时字段——否，那是把超时散进六个工具契约里，且 M3 只有 `bash` 需要它。事实更正（实现时核实）：`TimeoutError` **是** `OSError` 的子类，所以 `except TimeoutError` MUST 排在 `except OSError` 之前，否则超时读成 `TOOL_IO_FAILED`；`CancelledError` 是 `BaseException`。按 AGENTS.md 的变异纪律，执行段的判据要用族里不显眼的成员，不能只用 `TimeoutError`。

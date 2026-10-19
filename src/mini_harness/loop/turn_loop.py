@@ -12,8 +12,8 @@ from mini_harness.events.fold import assembled_payload, fold
 from mini_harness.events.reader import LogReadFailure, read_events
 from mini_harness.events.writer import EventLog, LogWriteFailure
 from mini_harness.loop.settings import SessionSettings
-from mini_harness.provider.contract import Provider, ProviderFailure
-from mini_harness.tools.dispatch import dispatch_tool_call
+from mini_harness.provider.contract import Provider, ProviderFailure, ToolCall
+from mini_harness.tools.dispatch import DispatchOutcome, dispatch_tool_call
 from mini_harness.tools.fences import (
     STDIN_APPROVAL_GATE,
     ApprovalGate,
@@ -39,6 +39,9 @@ STOP_PROVIDER_ERROR = "PROVIDER_ERROR"
 STOP_ABORTED = "ABORTED"
 STOP_FENCE_DENIED = "FENCE_DENIED"
 STOP_REASONS: frozenset[str] = frozenset(get_args(StopReason))
+
+# 同一回合里同时在跑的只读调用上限；会改动文件的调用不吃这个额度，它们串行。
+MAX_PARALLEL_TOOLS = 8
 
 
 @dataclass(frozen=True)
@@ -75,6 +78,162 @@ def _kernel_failure(
         failure_code=failure.code,
         detail=failure.detail,
     )
+
+
+@dataclass
+class _BatchOutcome:
+    """一个派发批次的结果：日志层失败，或第一个围栏拒绝。"""
+
+    failure: LogWriteFailure | LogReadFailure | None = None
+    denial_code: str | None = None
+    denial_detail: str = ""
+
+
+async def _dispatch_batch(
+    *,
+    log: EventLog,
+    turn_id: str,
+    calls: Sequence[ToolCall],
+    registry: ToolRegistry,
+    settings: SessionSettings,
+    approval_gate: ApprovalGate,
+) -> _BatchOutcome:
+    """派发一个回合声明的工具调用批次：只读的并发、会改动文件的串行。
+
+    `tool/call` 由「前一个已经开始」这条链保证按声明顺序落盘；结果缓冲到批次结束，
+    仍按声明顺序落盘。围栏拒绝之后，还没开始的调用不再派发（连 `tool/call` 都不写），
+    已经开始的照常跑完并落结果。前缀只在本批次开始时取样一次，整批共用。
+    """
+    prefix = read_events(log.path)
+    if isinstance(prefix, LogReadFailure):
+        return _BatchOutcome(failure=prefix)
+    context = DispatchContext.from_settings(
+        settings,
+        reads=reads_from_records(prefix, settings.workspace),
+    )
+
+    outcomes: list[DispatchOutcome | None] = [None] * len(calls)
+    started: list[asyncio.Event] = [asyncio.Event() for _ in calls]
+    stop = asyncio.Event()
+    read_slots = asyncio.Semaphore(MAX_PARALLEL_TOOLS)
+    mutating_slot = asyncio.Lock()
+    outcome = _BatchOutcome()
+
+    def begin(index: int, call: ToolCall) -> bool:
+        failure = _append_all(
+            log,
+            [
+                (
+                    "tool/call",
+                    {
+                        "turn_id": turn_id,
+                        "tool_call_id": call.id,
+                        "name": call.name,
+                        "arguments": call.arguments,
+                    },
+                )
+            ],
+        )
+        started[index].set()
+        if failure is not None:
+            outcome.failure = failure
+            stop.set()
+            return False
+        return True
+
+    async def one(index: int, call: ToolCall) -> None:
+        if index > 0:
+            await started[index - 1].wait()
+        definition = registry.lookup(call.name)
+        if definition is not None and definition.mutates:
+            async with mutating_slot:
+                # 拿到独占权之后才决定要不要开始：串行链上「已声明」不等于「已派发」。
+                if stop.is_set():
+                    return
+                if not begin(index, call):
+                    return
+                outcomes[index] = await dispatch_tool_call(call, registry, context, approval_gate)
+            dispatched = outcomes[index]
+            if dispatched is not None and dispatched.fence_code is not None:
+                stop.set()
+            return
+        if stop.is_set():
+            return
+        if not begin(index, call):
+            return
+        async with read_slots:
+            outcomes[index] = await dispatch_tool_call(call, registry, context, approval_gate)
+        dispatched = outcomes[index]
+        if dispatched is not None and dispatched.fence_code is not None:
+            stop.set()
+
+    await asyncio.gather(*(one(index, call) for index, call in enumerate(calls)))
+    if outcome.failure is not None:
+        return outcome
+
+    written: list[tuple[str, dict[str, Any]]] = []
+    for index, call in enumerate(calls):
+        dispatched = outcomes[index]
+        if dispatched is None:
+            continue
+        if dispatched.approval is not None:
+            written.append(
+                (
+                    "approval/request",
+                    {
+                        "turn_id": turn_id,
+                        "tool_call_id": call.id,
+                        "name": call.name,
+                        "arguments": call.arguments,
+                    },
+                )
+            )
+            written.append(
+                (
+                    "approval/response",
+                    {
+                        "turn_id": turn_id,
+                        "tool_call_id": call.id,
+                        "decision": dispatched.approval,
+                    },
+                )
+            )
+        written.append(
+            (
+                "tool/result",
+                {
+                    "turn_id": turn_id,
+                    "tool_call_id": call.id,
+                    "outcome": dispatched.result.outcome,
+                    "content": dispatched.result.content,
+                },
+            ),
+        )
+        if dispatched.fence_code is not None:
+            written.append(
+                (
+                    "error/fence",
+                    {
+                        "turn_id": turn_id,
+                        "tool_call_id": call.id,
+                        "code": dispatched.fence_code,
+                        "path": dispatched.path,
+                        "raw_path": dispatched.raw_path,
+                        "detail": dispatched.result.content,
+                    },
+                )
+            )
+
+    failure = _append_all(log, written)
+    if failure is not None:
+        return _BatchOutcome(failure=failure)
+
+    for dispatched in outcomes:
+        if dispatched is not None and dispatched.fence_code is not None:
+            return _BatchOutcome(
+                denial_code=dispatched.fence_code, denial_detail=dispatched.result.content
+            )
+    return outcome
 
 
 async def run_session(
@@ -194,91 +353,20 @@ async def run_session(
             return _kernel_failure(log, failure, turns)
 
         fence_denied = False
-        for call in generated.tool_calls:
-            failure = _append_all(
-                log,
-                [
-                    (
-                        "tool/call",
-                        {
-                            "turn_id": turn_id,
-                            "tool_call_id": call.id,
-                            "name": call.name,
-                            "arguments": call.arguments,
-                        },
-                    ),
-                ],
-            )
-            if failure is not None:
-                return _kernel_failure(log, failure, turns)
-
-            prefix = read_events(log.path)
-            if isinstance(prefix, LogReadFailure):
-                return _kernel_failure(log, prefix, turns)
-            dispatch_context = DispatchContext.from_settings(
-                settings,
-                reads=reads_from_records(prefix, settings.workspace),
-            )
-            dispatched = await dispatch_tool_call(call, registry, dispatch_context, approval_gate)
-
-            written: list[tuple[str, dict[str, Any]]] = []
-            if dispatched.approval is not None:
-                written.append(
-                    (
-                        "approval/request",
-                        {
-                            "turn_id": turn_id,
-                            "tool_call_id": call.id,
-                            "name": call.name,
-                            "arguments": call.arguments,
-                        },
-                    )
-                )
-                written.append(
-                    (
-                        "approval/response",
-                        {
-                            "turn_id": turn_id,
-                            "tool_call_id": call.id,
-                            "decision": dispatched.approval,
-                        },
-                    )
-                )
-            written.append(
-                (
-                    "tool/result",
-                    {
-                        "turn_id": turn_id,
-                        "tool_call_id": call.id,
-                        "outcome": dispatched.result.outcome,
-                        "content": dispatched.result.content,
-                    },
-                ),
-            )
-            if dispatched.fence_code is not None:
-                written.append(
-                    (
-                        "error/fence",
-                        {
-                            "turn_id": turn_id,
-                            "tool_call_id": call.id,
-                            "code": dispatched.fence_code,
-                            "path": dispatched.path,
-                            "raw_path": dispatched.raw_path,
-                            "detail": dispatched.result.content,
-                        },
-                    )
-                )
-
-            failure = _append_all(log, written)
-            if failure is not None:
-                return _kernel_failure(log, failure, turns)
-
-            if dispatched.fence_code is not None:
-                fence_denied = True
-                denial_code = dispatched.fence_code
-                denial_detail = dispatched.result.content
-                break
+        batch = await _dispatch_batch(
+            log=log,
+            turn_id=turn_id,
+            calls=generated.tool_calls,
+            registry=registry,
+            settings=settings,
+            approval_gate=approval_gate,
+        )
+        if batch.failure is not None:
+            return _kernel_failure(log, batch.failure, turns)
+        if batch.denial_code is not None:
+            fence_denied = True
+            denial_code = batch.denial_code
+            denial_detail = batch.denial_detail
 
         if cancel.is_set():
             stop_reason = STOP_ABORTED

@@ -84,6 +84,15 @@ def tool_call_entry(name: str, call_id: str, **arguments: object) -> dict[str, o
     }
 
 
+def turn_entry(*calls: ToolCall) -> dict[str, object]:
+    """一次模型回复里声明多个调用：一个回合的派发批次就是这个形状。"""
+    return {
+        "content": "一次声明多个调用",
+        "finish_reason": "tool_calls",
+        "tool_calls": [call.model_dump(mode="json") for call in calls],
+    }
+
+
 DONE: dict[str, object] = {"content": "算了", "finish_reason": "stop"}
 
 
