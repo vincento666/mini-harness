@@ -15,7 +15,7 @@
   - 测试 helper 收口：`tests/tool_harness.py` 的 `dispatch_call` / `dispatch_context` / `run_session_fixture` 收 `registry` 与 `approval_gate`，seam ① 的 run 形状收成一份。
   - CI：`.github/workflows/gates.yml` 落地，`windows-latest` + `ubuntu-latest` 两端各跑四道门禁、各判 95% 地板，不持任何 secret。
 - **M3 的收尾门禁**：变异 12 条（10 条首轮被杀，T1 与 O1 存活并已各补一条判据，C2 判定 dud）→ `docs/verification/m3-bash-concurrency-timeout-mutation.md`；Learning Gate 收 L-027 至 L-030、关闭 L-018、补 L-019，**AGENTS.md 本轮不晋升** → `docs/lessons.md`。
-- **M3 还剩**：tasks 7.3（两端的 `TOTAL` 记进本文件的门禁表——数字要人从 run 页面贴回来，见下表 CI 那行）、8.1–8.2（人手验收，见下）、`openspec-sync-specs` → `/openspec-archive-change` → `agents-md-slim`。`code-review` 两轴已跑完：A 至 G 七条全修（10.1–10.7，其中 10.4 改的是规格、10.1 与 10.5 改的是实现），Standards 轴的判断项与两条规格 ↔ 实现的判断记账进 ADR-0002 第 18 至 29 条，提交纪律的三处措辞欠账记在同文件最后一节。
+- **M3 还剩**：tasks 8.1–8.2（人手验收，见下）、`openspec-sync-specs` → `/openspec-archive-change` → `agents-md-slim`。第 7 节（CI 与推送）四条全勾。`code-review` 两轴已跑完：A 至 G 七条全修（10.1–10.7，其中 10.4 改的是规格、10.1 与 10.5 改的是实现），Standards 轴的判断项与两条规格 ↔ 实现的判断记账进 ADR-0002 第 18 至 29 条，提交纪律的三处措辞欠账记在同文件最后一节。
 
 ## 门禁实测（Windows 本机）
 
@@ -24,9 +24,10 @@
 | 测试 | 222 passed / 2 skipped。skip 的两条：符号链接判据（本机不允许创建符号链接）、`test_sigint_in_a_real_subprocess_exits_with_five`（`skipif win32`，Linux 侧跑）。全量带覆盖率记账约 58 秒 |
 | 覆盖率 | `coverage erase` → `coverage run -m pytest` → `coverage combine` → `coverage report --fail-under=95`：TOTAL **96%**（1136 语句 / 50 未覆盖）；地板 `fail_under = 95` |
 | 覆盖率分布 | `events/reader.py` 85% · `provider/openai_compat.py` 89% · `loop/turn_loop.py` 91% · `tools/bash_tools.py` 94% · `tools/file_tools.py` 96% · `tools/registry.py` 97% · `provider/mock.py` 98% · `tools/dispatch.py` 98% · `cli/main.py` 99% · 其余 100% |
+| 覆盖率（CI 两端，run #3 `81e268f`） | `coverage TOTAL (ubuntu-latest)` = **1136 语句 / 50 未覆盖 / 96%**；`coverage TOTAL (windows-latest)` = **1136 / 50 / 96%**。两端数字一模一样：D9 预期的「平台分支在两端各拉低一半」没有把总数拉开。本机那 50 行是哪 50 行已知（下一段）；Linux 端那 50 行的身份没读到——annotation 只带 `TOTAL` 行，要 `--show-missing` 才有清单 |
 | 类型 | `mypy --strict` 干净，22 个源文件 |
 | 风格 | `ruff check` 干净；`ruff format --diff` 空（56 文件）；全仓没有一处 `# noqa` |
-| CI | **首绿已跑**：run #1（`d681ec6`）与 run #2（`2b9e044`）都是 `completed / success`——`gates (ubuntu-latest)` 57 s、`gates (windows-latest)` 99 s。推送走本机代理：`GIT_SSH_COMMAND='ssh -o "ProxyCommand=C:/PROGRA~1/Git/mingw64/bin/connect.exe -H 127.0.0.1:7897 %h %p"'`。`main` 已快进 `134ae69..1ba0e2f`，但 **`main` 上没有 `gates.yml`**（它只在 change 分支上），所以推 `main` 不触发 run；`main` 的 CI 首绿要等 M3 合并。两端的 `TOTAL` 由 workflow 那一步写进步骤摘要与一条 annotation，但 run 日志与 annotation API 都要鉴权（实测 403 / 空列表），数字要人从 [run 页面](https://github.com/vincento666/mini-harness/actions/runs/39242198903) 贴回来 |
+| CI | **首绿已跑**：run #1（`d681ec6`）与 run #2（`2b9e044`）都是 `completed / success`——`gates (ubuntu-latest)` 57 s、`gates (windows-latest)` 99 s。推送走本机代理：`GIT_SSH_COMMAND='ssh -o "ProxyCommand=C:/PROGRA~1/Git/mingw64/bin/connect.exe -H 127.0.0.1:7897 %h %p"'`。`main` 已快进 `134ae69..1ba0e2f`，但 **`main` 上没有 `gates.yml`**（它只在 change 分支上），所以推 `main` 不触发 run；`main` 的 CI 首绿要等 M3 合并。两端的 `TOTAL` 由 workflow 那一步写进步骤摘要与一条 annotation，但 run 日志与 annotation API 都要鉴权（实测 403 / 空列表），数字要人从 [run 页面](https://github.com/vincento666/mini-harness/actions/runs/39243031468) 贴回来（已贴，见上一行）。GitHub 另有一条提示：`ubuntu-latest` 自 2026-10-19 起迁移到 Ubuntu 26（[runner-images #14748](https://github.com/actions/runner-images/issues/14748)），三次绿都在迁移当天 |
 
 50 条未覆盖行里绝大多数是回合循环里「日志写不进去」的分支（`turn_loop.py` 的 157、193–195、218–220、263、274、281、286、340、400、404、414、439、467、509、521 与 `dispatch.py` 的 74：approval 记录写不进日志时塌成 `TOOL_IO_FAILED`）。这一类在 seam ④ 直接判日志层，不在 seam ① 造场景去撞它——刻意没有为它们写判据，每个相关提交的信息里都写明了这一点。剩下的是平台分支与响应解析的形状分支：`bash_tools.py` 的 53–54、63（Windows 与 POSIX 各一半）、`file_tools.py` 的 128、130、133、160–161、203、`reader.py` 的 25、28–29、34、`openai_compat.py` 的 13 条、`cli/main.py` 的 216、254、`registry.py` 的 23、`mock.py` 的 67。要抬地板就补 `events/reader.py`、`provider/openai_compat.py`（响应解析里那些「形状不对」的分支）的判据，不要凑低价值测试。
 
