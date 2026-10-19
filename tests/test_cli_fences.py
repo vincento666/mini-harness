@@ -20,7 +20,14 @@ _FIVE_MD = ["README.md", "notes/plan.md", "notes/meeting.md", "notes/retro.md", 
 
 
 class _Run:
-    def __init__(self, name: str, fixture: Path, tmp_path: Path, *extra: str) -> None:
+    def __init__(
+        self,
+        name: str,
+        fixture: Path,
+        tmp_path: Path,
+        *extra: str,
+        stdin_text: str | None = None,
+    ) -> None:
         root = tmp_path / name
         self.workspace = root / "ws"
         copy_repo_to(self.workspace)
@@ -38,6 +45,7 @@ class _Run:
             str(root / "sessions"),
             *extra,
             cwd=tmp_path,
+            stdin_text=stdin_text,
         )
         self.code = result.returncode
         self.stdout = result.stdout
@@ -95,6 +103,25 @@ def test_a_write_with_no_human_to_ask_ends_with_code_three(tmp_path: Path) -> No
         if event["type"] == "approval/response"
     ]
     assert decisions == ["UNAVAILABLE"]
+
+
+def test_answers_piped_into_stdin_are_not_a_human_to_ask(tmp_path: Path) -> None:
+    """seam ②⑥：tty 检测在两端同形——管道里喂进来的 `y` 不是人。
+
+    stdin 是管道就不是 tty，没有人可问：门给 `UNAVAILABLE`、写被拒、退出码 3。
+    把管道里的 `y` 当成批准等于让任何能写 stdin 的东西替人点头，两端都不成立。
+    """
+    run = _Run("piped", READ_THEN_WRITE_SCENARIO, tmp_path, stdin_text="y\n")
+
+    assert run.code == 3
+    assert run.outcomes() == ["OK", "DENIED_BY_APPROVAL"]
+    decisions = [
+        str(event["payload"]["decision"])
+        for event in run.events
+        if event["type"] == "approval/response"
+    ]
+    assert decisions == ["UNAVAILABLE"]
+    assert "重写过的计划" not in (run.workspace / "notes" / "plan.md").read_text(encoding="utf-8")
 
 
 def test_yes_does_not_relax_the_read_only_level(tmp_path: Path) -> None:

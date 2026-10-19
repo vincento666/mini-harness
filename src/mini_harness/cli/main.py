@@ -32,6 +32,7 @@ from mini_harness.provider import FixtureLoadFailure, load_fixture_provider
 from mini_harness.provider.contract import Provider
 from mini_harness.provider.openai_compat import OpenAICompatProvider, validate_base_url
 from mini_harness.tools import ToolRegistry
+from mini_harness.tools.bash_tools import bash_tool_definitions
 from mini_harness.tools.file_tools import file_tool_definitions
 
 EXIT_OK = 0
@@ -133,7 +134,7 @@ async def _await_session(
             prompt=prompt,
             provider=provider,
             log=log,
-            registry=ToolRegistry(file_tool_definitions()),
+            registry=ToolRegistry([*file_tool_definitions(), *bash_tool_definitions()]),
             settings=settings,
             cancel=cancel,
         )

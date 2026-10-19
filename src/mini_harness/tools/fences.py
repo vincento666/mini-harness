@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
+import threading
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -57,11 +59,17 @@ class DispatchContext:
 
 @dataclass(frozen=True)
 class FenceDecision:
-    """围栏段的结论。被拒也是结果，不是异常。"""
+    """围栏段的结论。被拒也是结果，不是异常。
+
+    `path` 是判定实际使用的解析后键（档位轴先拒、或调用没有目标路径时是 `None`）；
+    `raw_path` 是调用里写的原始写法。两者进 `error/fence` 的 payload。
+    """
 
     outcome: FenceOutcome
     code: FenceCode | None = None
     detail: str = ""
+    path: str | None = None
+    raw_path: str | None = None
 
 
 def path_key(workspace: Path, raw_path: str) -> str:
@@ -89,9 +97,42 @@ ApprovalDecision = Literal["APPROVED", "DENIED", "UNAVAILABLE"]
 
 
 class ApprovalGate(Protocol):
-    """问一次 → 结论。内核只认这个接口：CLI 层接真实 stdin，测试注入固定结论。"""
+    """问一次 → 结论。内核只认这个接口：CLI 层接真实 stdin，测试注入固定结论。
 
-    def request(self, *, tool_name: str, detail: str) -> ApprovalDecision: ...
+    它是 awaitable：M3 之后提问可以被取消打断（ADR-0007）。挂在「等人回答」里的调用
+    必须能被中断，否则取消只能等人先答完。
+    """
+
+    async def request(self, *, tool_name: str, detail: str) -> ApprovalDecision: ...
+
+
+def _settle(target: asyncio.Future[str], text: str) -> None:
+    """回答回来了，但等它的人可能已经被取消：已经定论的 future 不再写。"""
+    if not target.done():
+        target.set_result(text)
+
+
+async def _await_readline(source: TextIO) -> str:
+    """在一行回答上等待，同时允许等它的人被取消。
+
+    `readline()` 是阻塞调用，放在 daemon 线程里等：事件循环不被一行回答钉住，取消才插得进来。
+    用 daemon 线程而不是 `asyncio.to_thread`——后者的工作线程不是 daemon，解释器退出时要 join，
+    一条永远等不到回答的 `readline` 会把退出一起挂住。
+    """
+    loop = asyncio.get_running_loop()
+    answer: asyncio.Future[str] = loop.create_future()
+
+    def read() -> None:
+        try:
+            text = source.readline()
+        except OSError:
+            # 流被关掉：读到的是 EOF，不是「人说了不」。
+            text = ""
+        if not loop.is_closed():
+            loop.call_soon_threadsafe(_settle, answer, text)
+
+    threading.Thread(target=read, name="approval-ask", daemon=True).start()
+    return await answer
 
 
 class StdinApprovalGate:
@@ -110,14 +151,14 @@ class StdinApprovalGate:
         self._stream = stream
         self._prompt_stream = prompt_stream
 
-    def request(self, *, tool_name: str, detail: str) -> ApprovalDecision:
+    async def request(self, *, tool_name: str, detail: str) -> ApprovalDecision:
         answers = sys.stdin if self._stream is None else self._stream
         if not answers.isatty():
             return "UNAVAILABLE"
         prompt = sys.stderr if self._prompt_stream is None else self._prompt_stream
         prompt.write(f"允许 {tool_name} 改动 {detail}，输入 y 或 n：")
         prompt.flush()
-        answer = answers.readline()
+        answer = await _await_readline(answers)
         if answer == "":
             # 读到 EOF：没有人在回答，不是「人说了不」。Windows 上 NUL 设备也算 tty。
             return "UNAVAILABLE"
@@ -158,20 +199,29 @@ def reads_from_records(records: Iterable[EventRecord], workspace: Path) -> dict[
     return reads
 
 
-def judge_fence(context: DispatchContext, *, raw_path: str, mutates: bool) -> FenceDecision:
+def judge_fence(context: DispatchContext, *, raw_path: str | None, mutates: bool) -> FenceDecision:
     """三段判定里的围栏段：档位 → 工作区边界 → 要不要问人。
 
     边界只约束会改动的操作；`danger-full-access` 解除边界，但写前必读与 CAS 不在这里判。
+    没有目标路径的会改动工具（`bash`）不受边界轴判定，只受档位轴判定（ADR-0008）。
     """
     if not mutates:
-        return FenceDecision(outcome="ALLOWED")
+        return FenceDecision(outcome="ALLOWED", raw_path=raw_path)
 
     if context.sandbox == "read-only":
+        target = f"：{raw_path}" if raw_path is not None else ""
         return FenceDecision(
             outcome="DENIED",
             code="SANDBOX_DENIES_WRITE",
-            detail=f"{context.sandbox} 档位不许可会改动的操作：{raw_path}",
+            detail=f"{context.sandbox} 档位不许可会改动的操作{target}",
+            raw_path=raw_path,
         )
+
+    if raw_path is None:
+        # 没有路径可判：边界轴无从生效，档位轴已经放行。
+        if context.approval == "ask":
+            return FenceDecision(outcome="NEEDS_APPROVAL")
+        return FenceDecision(outcome="ALLOWED")
 
     key = path_key(context.workspace, raw_path)
     if context.sandbox == "workspace-write" and not _is_inside_workspace(context.workspace, key):
@@ -179,9 +229,11 @@ def judge_fence(context: DispatchContext, *, raw_path: str, mutates: bool) -> Fe
             outcome="DENIED",
             code="OUTSIDE_WORKSPACE",
             detail=f"解析后在工作区之外：{key}",
+            path=key,
+            raw_path=raw_path,
         )
 
     if context.approval == "ask":
-        return FenceDecision(outcome="NEEDS_APPROVAL", detail=key)
+        return FenceDecision(outcome="NEEDS_APPROVAL", detail=key, path=key, raw_path=raw_path)
 
-    return FenceDecision(outcome="ALLOWED", detail=key)
+    return FenceDecision(outcome="ALLOWED", detail=key, path=key, raw_path=raw_path)

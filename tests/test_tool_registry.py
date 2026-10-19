@@ -5,10 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, get_args
 
-from mini_harness.loop.settings import SessionSettings
-from mini_harness.provider.contract import ToolCall
-from mini_harness.tools.dispatch import dispatch_tool_call
-from mini_harness.tools.fences import ApprovalDecision, DispatchContext
+from mini_harness.tools.fences import ApprovalDecision, DispatchContext, path_key
 from mini_harness.tools.file_tools import file_tool_definitions
 from mini_harness.tools.registry import (
     ToolArgs,
@@ -33,7 +30,7 @@ class _StubArgs(ToolArgs):
 
 
 class _ApprovingGate:
-    def request(self, *, tool_name: str, detail: str) -> ApprovalDecision:
+    async def request(self, *, tool_name: str, detail: str) -> ApprovalDecision:
         return "APPROVED"
 
 
@@ -86,10 +83,10 @@ def test_the_parameter_schema_a_model_sees_comes_from_the_dispatch_side_model() 
         assert tool.name in {"read", "write", "edit", "glob", "grep"}
 
 
-def test_the_outcome_vocabulary_has_fourteen_values_and_no_not_implemented() -> None:
+def test_the_outcome_vocabulary_has_sixteen_values_and_no_not_implemented() -> None:
     outcomes = set(get_args(ToolOutcome))
 
-    assert len(outcomes) == 14
+    assert len(outcomes) == 16
     assert "NOT_IMPLEMENTED" not in outcomes
     required = {
         "DENIED_BY_FENCE",
@@ -97,6 +94,8 @@ def test_the_outcome_vocabulary_has_fourteen_values_and_no_not_implemented() -> 
         "UNKNOWN_TOOL",
         "TOOL_ARGS_INVALID",
         "TOOL_IO_FAILED",
+        "TOOL_TIMEOUT",
+        "TOOL_CANCELLED",
         "NOT_A_DIRECTORY",
     }
     assert required <= outcomes
@@ -104,16 +103,14 @@ def test_the_outcome_vocabulary_has_fourteen_values_and_no_not_implemented() -> 
 
 async def test_invalid_arguments_skip_both_the_fence_and_the_execution(tmp_path: Path) -> None:
     _RAN.clear()
-    settings = SessionSettings(
-        workspace=tmp_path, provider_name="mock", max_turns=4, sandbox="read-only", approval="ask"
-    )
-    context = DispatchContext.from_settings(settings)
-
-    outcome = await dispatch_tool_call(
-        ToolCall(id="c1", name="stub", arguments={}),
-        _stub_registry(mutates=True),
-        context,
-        _ApprovingGate(),
+    outcome = await dispatch_call(
+        tmp_path,
+        "stub",
+        {},
+        sandbox="read-only",
+        approval="ask",
+        registry=_stub_registry(mutates=True),
+        approval_gate=_ApprovingGate(),
     )
 
     assert outcome.result.outcome == "TOOL_ARGS_INVALID"
@@ -124,24 +121,18 @@ async def test_invalid_arguments_skip_both_the_fence_and_the_execution(tmp_path:
 
 async def test_a_fence_denial_skips_the_execution(tmp_path: Path) -> None:
     _RAN.clear()
-    settings = SessionSettings(
-        workspace=tmp_path,
-        provider_name="mock",
-        max_turns=4,
-        sandbox="workspace-write",
-        approval="auto",
-    )
-    context = DispatchContext.from_settings(settings)
-
-    outcome = await dispatch_tool_call(
-        ToolCall(id="c1", name="stub", arguments={"file_path": "../outside.md"}),
-        _stub_registry(mutates=True),
-        context,
-        _ApprovingGate(),
+    outcome = await dispatch_call(
+        tmp_path,
+        "stub",
+        {"file_path": "../outside.md"},
+        registry=_stub_registry(mutates=True),
+        approval_gate=_ApprovingGate(),
     )
 
     assert outcome.result.outcome == "DENIED_BY_FENCE"
     assert outcome.fence_code == "OUTSIDE_WORKSPACE"
+    assert outcome.raw_path == "../outside.md"
+    assert outcome.path == path_key(tmp_path, "../outside.md")
     assert _RAN == []
 
 

@@ -12,15 +12,15 @@ from mini_harness.events.fold import assembled_payload, fold
 from mini_harness.events.reader import LogReadFailure, read_events
 from mini_harness.events.writer import EventLog, LogWriteFailure
 from mini_harness.loop.settings import SessionSettings
-from mini_harness.provider.contract import Provider, ProviderFailure
-from mini_harness.tools.dispatch import dispatch_tool_call
+from mini_harness.provider.contract import Provider, ProviderFailure, ToolCall
+from mini_harness.tools.dispatch import ApprovalAsked, DispatchOutcome, dispatch_tool_call
 from mini_harness.tools.fences import (
     STDIN_APPROVAL_GATE,
     ApprovalGate,
     DispatchContext,
     reads_from_records,
 )
-from mini_harness.tools.registry import ToolRegistry
+from mini_harness.tools.registry import ToolRegistry, ToolResult
 
 # `turn/end.stop_reason` 的词表：常量与 `Literal` 同源，加一个值只改这一处。
 StopReason = Literal[
@@ -39,6 +39,12 @@ STOP_PROVIDER_ERROR = "PROVIDER_ERROR"
 STOP_ABORTED = "ABORTED"
 STOP_FENCE_DENIED = "FENCE_DENIED"
 STOP_REASONS: frozenset[str] = frozenset(get_args(StopReason))
+
+# 同一回合里同时在跑的只读调用上限；会改动文件的调用不吃这个额度，它们串行。
+MAX_PARALLEL_TOOLS = 8
+
+# 被超时或取消打断的结果词，各配一条 `tool/cancelled`。
+CANCELLED_OUTCOMES: frozenset[str] = frozenset({"TOOL_TIMEOUT", "TOOL_CANCELLED"})
 
 
 @dataclass(frozen=True)
@@ -63,11 +69,23 @@ def _append_all(
     return None
 
 
+@dataclass(frozen=True)
+class InternalFailure:
+    """执行段逃出来的异常：不是工具的结果，是内核自己的故障。
+
+    `code` 故意在 `StopReason` 词表外——写不出 `turn/end`，也就不写；它走 `error/internal`。
+    """
+
+    code: str
+    detail: str
+    tool_call_id: str | None = None
+
+
 def _kernel_failure(
-    log: EventLog, failure: LogWriteFailure | LogReadFailure, turns: int
+    log: EventLog, failure: LogWriteFailure | LogReadFailure | InternalFailure, turns: int
 ) -> RunOutcome:
-    """日志层失败作为结果结束。`stop_reason` 取失败码，它不是 `turn/end` 的词表值：
-    日志层坏了就写不出 `turn/end`。"""
+    """内核失败作为结果结束。`stop_reason` 取失败码，它不是 `turn/end` 的词表值：
+    内核坏了就写不出 `turn/end`。"""
     return RunOutcome(
         session_id=log.session_id,
         stop_reason=failure.code,
@@ -75,6 +93,261 @@ def _kernel_failure(
         failure_code=failure.code,
         detail=failure.detail,
     )
+
+
+@dataclass
+class _BatchOutcome:
+    """一个派发批次的结果：内核失败（日志层坏了，或执行段逃出了异常），或第一个围栏拒绝。"""
+
+    failure: LogWriteFailure | LogReadFailure | InternalFailure | None = None
+    denial_code: str | None = None
+    denial_detail: str = ""
+
+
+async def _race_with_cancel(
+    call: ToolCall,
+    registry: ToolRegistry,
+    context: DispatchContext,
+    approval_gate: ApprovalGate,
+    cancel: asyncio.Event,
+    on_approval_request: ApprovalAsked,
+) -> DispatchOutcome:
+    """取消置位时打断正在执行的调用：被打断的那一条塌成 `TOOL_CANCELLED`。
+
+    `dispatch_tool_call` 自己会把 `CancelledError` 塌成结果词；拿不到那个结果时这里补一条，
+    于是「有 `tool/call` 必有 `tool/result`」不依赖工具配合。**只有 `CancelledError` 有这个兜底**：
+    从执行段逃出来的其它异常是内核故障，改名成取消就是往日志里写一件没发生过的事。
+    """
+    running = asyncio.create_task(
+        dispatch_tool_call(call, registry, context, approval_gate, on_approval_request)
+    )
+    watcher = asyncio.create_task(cancel.wait())
+    _, pending = await asyncio.wait({running, watcher}, return_when=asyncio.FIRST_COMPLETED)
+    for task in pending:
+        task.cancel()
+    settled = await asyncio.gather(running, watcher, return_exceptions=True)
+    if isinstance(settled[0], DispatchOutcome):
+        return settled[0]
+    if isinstance(settled[0], asyncio.CancelledError):
+        return DispatchOutcome(
+            ToolResult("TOOL_CANCELLED", f"取消打断了正在执行的调用：{call.name}")
+        )
+    raise settled[0]
+
+
+async def _dispatch_batch(
+    *,
+    log: EventLog,
+    turn_id: str,
+    calls: Sequence[ToolCall],
+    registry: ToolRegistry,
+    settings: SessionSettings,
+    approval_gate: ApprovalGate,
+    cancel: asyncio.Event,
+) -> _BatchOutcome:
+    """派发一个回合声明的工具调用批次：只读的并发、会改动文件的串行。
+
+    `tool/call` 由「前一个已经轮到过——开始派发或放弃」这条链保证按声明顺序落盘；结果缓冲到批次结束，
+    仍按声明顺序落盘。围栏拒绝之后，还没开始的调用不再派发（连 `tool/call` 都不写），
+    已经开始的照常跑完并落结果。取消置位之后同样不再派发，已经开始的被打断并落 `TOOL_CANCELLED`。
+    前缀只在本批次开始时取样一次，整批共用。
+    """
+    prefix = read_events(log.path)
+    if isinstance(prefix, LogReadFailure):
+        return _BatchOutcome(failure=prefix)
+    context = DispatchContext.from_settings(
+        settings,
+        reads=reads_from_records(prefix, settings.workspace),
+    )
+
+    outcomes: list[DispatchOutcome | None] = [None] * len(calls)
+    # `started` 是「轮到过：开始派发或放弃」；`finished` 是「整个跑完」。
+    started: list[asyncio.Event] = [asyncio.Event() for _ in calls]
+    finished: list[asyncio.Event] = [asyncio.Event() for _ in calls]
+    mutating: list[bool] = []
+    for call in calls:
+        definition = registry.lookup(call.name)
+        mutating.append(definition is not None and definition.mutates)
+    stop = asyncio.Event()
+    read_slots = asyncio.Semaphore(MAX_PARALLEL_TOOLS)
+    mutating_slot = asyncio.Lock()
+    outcome = _BatchOutcome()
+
+    def begin(index: int, call: ToolCall) -> bool:
+        failure = _append_all(
+            log,
+            [
+                (
+                    "tool/call",
+                    {
+                        "turn_id": turn_id,
+                        "tool_call_id": call.id,
+                        "name": call.name,
+                        "arguments": call.arguments,
+                    },
+                )
+            ],
+        )
+        started[index].set()
+        if failure is not None:
+            outcome.failure = failure
+            stop.set()
+            return False
+        return True
+
+    def ask_logged(call: ToolCall) -> bool:
+        """「要问人」在提问之前先落盘：`approval/request` 先到日志，再到人跟前（D12）。
+
+        写不进去就不问人——这一批已经注定失败，把人挂在提问前没有意义。
+        """
+        failure = _append_all(
+            log,
+            [
+                (
+                    "approval/request",
+                    {
+                        "turn_id": turn_id,
+                        "tool_call_id": call.id,
+                        "name": call.name,
+                        "arguments": call.arguments,
+                    },
+                )
+            ],
+        )
+        if failure is not None:
+            outcome.failure = failure
+            stop.set()
+            return False
+        return True
+
+    def escaped(call: ToolCall, error: BaseException) -> None:
+        """执行段逃出来的异常不是结果：写 `error/internal`，让 run 以内部错误收尾。"""
+        detail = f"{call.name}：{type(error).__name__}: {error}"
+        written = _append_all(
+            log,
+            [
+                (
+                    "error/internal",
+                    {"turn_id": turn_id, "tool_call_id": call.id, "detail": detail},
+                )
+            ],
+        )
+        outcome.failure = (
+            written if written is not None else InternalFailure("INTERNAL_ERROR", detail, call.id)
+        )
+        stop.set()
+
+    async def one(index: int, call: ToolCall) -> None:
+        try:
+            await dispatch_one(index, call)
+        except Exception as error:
+            escaped(call, error)
+        finally:
+            # 放弃派发也要把这两条链传下去：否则排在它后面的调用会永远等一个不会开始的调用。
+            started[index].set()
+            finished[index].set()
+
+    async def dispatch_one(index: int, call: ToolCall) -> None:
+        if index > 0:
+            await started[index - 1].wait()
+            if mutating[index] or mutating[index - 1]:
+                # 只有一对相邻的只读调用允许同时在跑；沾上「要改动」的都排队。
+                # 于是「拒绝之后的调用不再派发」是这条规则保证的，不是碰巧的调度顺序。
+                await finished[index - 1].wait()
+        if mutating[index]:
+            async with mutating_slot:
+                # 拿到独占权之后才决定要不要开始：串行链上「已声明」不等于「已派发」。
+                if stop.is_set() or cancel.is_set():
+                    return
+                if not begin(index, call):
+                    return
+                outcomes[index] = await _race_with_cancel(
+                    call, registry, context, approval_gate, cancel, ask_logged
+                )
+            dispatched = outcomes[index]
+            if dispatched is not None and dispatched.fence_code is not None:
+                stop.set()
+            return
+        if stop.is_set() or cancel.is_set():
+            return
+        if not begin(index, call):
+            return
+        async with read_slots:
+            outcomes[index] = await _race_with_cancel(
+                call, registry, context, approval_gate, cancel, ask_logged
+            )
+        dispatched = outcomes[index]
+        if dispatched is not None and dispatched.fence_code is not None:
+            stop.set()
+
+    await asyncio.gather(*(one(index, call) for index, call in enumerate(calls)))
+    if outcome.failure is not None and not isinstance(outcome.failure, InternalFailure):
+        # 日志层坏了：后面的事件都写不出去。
+        return outcome
+
+    written: list[tuple[str, dict[str, Any]]] = []
+    for index, call in enumerate(calls):
+        dispatched = outcomes[index]
+        if dispatched is None:
+            continue
+        if dispatched.approval is not None:
+            # `approval/request` 已经在提问之前落盘了（`ask_logged`），这里只补结论。
+            written.append(
+                (
+                    "approval/response",
+                    {
+                        "turn_id": turn_id,
+                        "tool_call_id": call.id,
+                        "decision": dispatched.approval,
+                    },
+                )
+            )
+        written.append(
+            (
+                "tool/result",
+                {
+                    "turn_id": turn_id,
+                    "tool_call_id": call.id,
+                    "outcome": dispatched.result.outcome,
+                    "content": dispatched.result.content,
+                },
+            ),
+        )
+        if dispatched.result.outcome in CANCELLED_OUTCOMES:
+            written.append(
+                (
+                    "tool/cancelled",
+                    {"turn_id": turn_id, "tool_call_id": call.id},
+                )
+            )
+        if dispatched.fence_code is not None:
+            written.append(
+                (
+                    "error/fence",
+                    {
+                        "turn_id": turn_id,
+                        "tool_call_id": call.id,
+                        "code": dispatched.fence_code,
+                        "path": dispatched.path,
+                        "raw_path": dispatched.raw_path,
+                        "detail": dispatched.result.content,
+                    },
+                )
+            )
+
+    failure = _append_all(log, written)
+    if failure is not None:
+        return _BatchOutcome(failure=failure)
+    if outcome.failure is not None:
+        # 执行段逃出来的异常：已经跑完的调用照常落结果，run 以内部错误收尾。
+        return outcome
+
+    for dispatched in outcomes:
+        if dispatched is not None and dispatched.fence_code is not None:
+            return _BatchOutcome(
+                denial_code=dispatched.fence_code, denial_detail=dispatched.result.content
+            )
+    return outcome
 
 
 async def run_session(
@@ -194,89 +467,21 @@ async def run_session(
             return _kernel_failure(log, failure, turns)
 
         fence_denied = False
-        for call in generated.tool_calls:
-            failure = _append_all(
-                log,
-                [
-                    (
-                        "tool/call",
-                        {
-                            "turn_id": turn_id,
-                            "tool_call_id": call.id,
-                            "name": call.name,
-                            "arguments": call.arguments,
-                        },
-                    ),
-                ],
-            )
-            if failure is not None:
-                return _kernel_failure(log, failure, turns)
-
-            prefix = read_events(log.path)
-            if isinstance(prefix, LogReadFailure):
-                return _kernel_failure(log, prefix, turns)
-            dispatch_context = DispatchContext.from_settings(
-                settings,
-                reads=reads_from_records(prefix, settings.workspace),
-            )
-            dispatched = await dispatch_tool_call(call, registry, dispatch_context, approval_gate)
-
-            written: list[tuple[str, dict[str, Any]]] = []
-            if dispatched.approval is not None:
-                written.append(
-                    (
-                        "approval/request",
-                        {
-                            "turn_id": turn_id,
-                            "tool_call_id": call.id,
-                            "name": call.name,
-                            "arguments": call.arguments,
-                        },
-                    )
-                )
-                written.append(
-                    (
-                        "approval/response",
-                        {
-                            "turn_id": turn_id,
-                            "tool_call_id": call.id,
-                            "decision": dispatched.approval,
-                        },
-                    )
-                )
-            written.append(
-                (
-                    "tool/result",
-                    {
-                        "turn_id": turn_id,
-                        "tool_call_id": call.id,
-                        "outcome": dispatched.result.outcome,
-                        "content": dispatched.result.content,
-                    },
-                ),
-            )
-            if dispatched.fence_code is not None:
-                written.append(
-                    (
-                        "error/fence",
-                        {
-                            "turn_id": turn_id,
-                            "tool_call_id": call.id,
-                            "code": dispatched.fence_code,
-                            "detail": dispatched.result.content,
-                        },
-                    )
-                )
-
-            failure = _append_all(log, written)
-            if failure is not None:
-                return _kernel_failure(log, failure, turns)
-
-            if dispatched.fence_code is not None:
-                fence_denied = True
-                denial_code = dispatched.fence_code
-                denial_detail = dispatched.result.content
-                break
+        batch = await _dispatch_batch(
+            log=log,
+            turn_id=turn_id,
+            calls=generated.tool_calls,
+            registry=registry,
+            settings=settings,
+            approval_gate=approval_gate,
+            cancel=cancel,
+        )
+        if batch.failure is not None:
+            return _kernel_failure(log, batch.failure, turns)
+        if batch.denial_code is not None:
+            fence_denied = True
+            denial_code = batch.denial_code
+            denial_detail = batch.denial_detail
 
         if cancel.is_set():
             stop_reason = STOP_ABORTED

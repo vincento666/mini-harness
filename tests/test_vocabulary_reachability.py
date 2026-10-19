@@ -11,26 +11,36 @@ from pathlib import Path
 from typing import get_args
 
 from mini_harness.events import EventLog, read_events
-from mini_harness.loop import STOP_REASONS, SessionSettings, run_session
-from mini_harness.provider import AssistantTurn, FixtureProvider
-from mini_harness.provider.contract import ToolCall
-from mini_harness.tools import DispatchOutcome, ToolRegistry, dispatch_tool_call
+from mini_harness.loop import STOP_REASONS
+from mini_harness.provider import AssistantTurn
+from mini_harness.tools import DispatchOutcome, ToolRegistry
 from mini_harness.tools.fences import (
     ApprovalDecision,
     DispatchContext,
     FenceCode,
     StdinApprovalGate,
 )
-from mini_harness.tools.file_tools import file_tool_definitions
-from mini_harness.tools.registry import ToolOutcome
-from tool_harness import DONE, dispatch_call, run_fixture_session, tool_call_entry
+from mini_harness.tools.registry import (
+    ToolArgs,
+    ToolDefinition,
+    ToolExecutor,
+    ToolOutcome,
+    ToolResult,
+)
+from tool_harness import (
+    DONE,
+    dispatch_call,
+    run_fixture_session,
+    run_session_fixture,
+    tool_call_entry,
+)
 
 
 class _Gate:
     def __init__(self, decision: ApprovalDecision) -> None:
         self._decision = decision
 
-    def request(self, *, tool_name: str, detail: str) -> ApprovalDecision:
+    async def request(self, *, tool_name: str, detail: str) -> ApprovalDecision:
         return self._decision
 
 
@@ -62,13 +72,9 @@ async def _dispatch_with_gate(
     name: str = "write",
     **arguments: object,
 ) -> DispatchOutcome:
-    settings = SessionSettings(
-        workspace=workspace, provider_name="mock", max_turns=8, approval="ask"
+    return await dispatch_call(
+        workspace, name, dict(arguments), approval="ask", approval_gate=_Gate(decision)
     )
-    context = DispatchContext.from_settings(settings)
-    call = ToolCall(id="c1", name=name, arguments=dict(arguments))
-    registry = ToolRegistry(file_tool_definitions())
-    return await dispatch_tool_call(call, registry, context, _Gate(decision))
 
 
 def _workspace(tmp_path: Path) -> Path:
@@ -89,6 +95,33 @@ def _stop_reasons(log: EventLog) -> set[str]:
         for record in read_events(log.path)
         if record.type in {"turn/end", "session/end"}
     }
+
+
+class _NoArgs(ToolArgs):
+    """桩工具没有入参。"""
+
+
+async def _raise_timeout(args: ToolArgs, context: DispatchContext) -> ToolResult:
+    raise TimeoutError("执行段超时")
+
+
+async def _raise_cancelled(args: ToolArgs, context: DispatchContext) -> ToolResult:
+    raise asyncio.CancelledError("执行段被打断")
+
+
+def _raising_registry(name: str, run: ToolExecutor) -> ToolRegistry:
+    """执行段抛异常的桩工具：判「异常塌成结果词、不逃逸出派发段」。"""
+    return ToolRegistry(
+        [
+            ToolDefinition(
+                name=name,
+                description="执行段抛异常的桩工具",
+                args_model=_NoArgs,
+                mutates=False,
+                run=run,
+            )
+        ]
+    )
 
 
 async def test_every_tool_outcome_is_reachable(tmp_path: Path) -> None:
@@ -139,8 +172,26 @@ async def test_every_tool_outcome_is_reachable(tmp_path: Path) -> None:
     await run("write", {"file_path": "../outside.md", "content": "改写\n"})
     denied = await _dispatch_with_gate(workspace, "DENIED", file_path="new.md", content="x\n")
     observed.add(denied.result.outcome)
+    await run("stub", {}, registry=_raising_registry("stub", _raise_timeout))
+    await run("stub", {}, registry=_raising_registry("stub", _raise_cancelled))
 
     assert observed == set(get_args(ToolOutcome)), "有取值没被跑出来，或词表里多了跑不到的取值"
+
+
+async def test_a_timeout_in_the_execution_segment_is_a_result(tmp_path: Path) -> None:
+    """不变量 B：执行段超时塌成 `TOOL_TIMEOUT`，不抛异常打断回合。"""
+    outcome = await dispatch_call(
+        tmp_path, "stub", {}, registry=_raising_registry("stub", _raise_timeout)
+    )
+    assert outcome.result.outcome == "TOOL_TIMEOUT"
+
+
+async def test_an_interrupted_execution_segment_is_a_result(tmp_path: Path) -> None:
+    """不变量 B：执行段被打断塌成 `TOOL_CANCELLED`，不抛异常打断回合。"""
+    outcome = await dispatch_call(
+        tmp_path, "stub", {}, registry=_raising_registry("stub", _raise_cancelled)
+    )
+    assert outcome.result.outcome == "TOOL_CANCELLED"
 
 
 async def test_every_fence_code_is_reachable(tmp_path: Path) -> None:
@@ -166,13 +217,13 @@ async def test_every_fence_code_is_reachable(tmp_path: Path) -> None:
     assert outcomes == {"DENIED_BY_FENCE", "DENIED_BY_APPROVAL"}
 
 
-def test_every_approval_decision_is_reachable() -> None:
+async def test_every_approval_decision_is_reachable() -> None:
     observed: set[str] = set()
     for answer in ("y\n", "n\n"):
         gate = StdinApprovalGate(stream=_Tty(answer), prompt_stream=io.StringIO())
-        observed.add(gate.request(tool_name="write", detail="a.md"))
+        observed.add(await gate.request(tool_name="write", detail="a.md"))
     silent = StdinApprovalGate(stream=io.StringIO("y\n"), prompt_stream=io.StringIO())
-    observed.add(silent.request(tool_name="write", detail="a.md"))
+    observed.add(await silent.request(tool_name="write", detail="a.md"))
 
     assert observed == set(get_args(ApprovalDecision))
 
@@ -196,32 +247,20 @@ async def test_every_stop_reason_is_reachable(tmp_path: Path) -> None:
     cancelled = tmp_path / "cancelled"
     cancelled.mkdir()
     cancel = asyncio.Event()
-    log = EventLog.create(session_dir=cancelled, session_id="s-cancel")
-    await run_session(
-        prompt="任务",
-        provider=_CancelDuringGenerate(cancel),
-        log=log,
-        registry=ToolRegistry(file_tool_definitions()),
-        settings=SessionSettings(workspace=cancelled, provider_name="mock", max_turns=8),
-        cancel=cancel,
+    log, _ = await run_session_fixture(
+        cancelled, "s-cancel", _CancelDuringGenerate(cancel), cancel=cancel, max_turns=8
     )
     observed |= _stop_reasons(log)
 
     denied = tmp_path / "denied"
     denied.mkdir()
-    log = EventLog.create(session_dir=denied, session_id="s-fence")
-    await run_session(
-        prompt="任务",
-        provider=FixtureProvider(
-            entries=[tool_call_entry("write", "c1", file_path="x.md", content="x\n")]
-        ),
-        log=log,
-        registry=ToolRegistry(file_tool_definitions()),
-        settings=SessionSettings(
-            workspace=denied, provider_name="mock", max_turns=8, approval="ask"
-        ),
-        cancel=asyncio.Event(),
+    log, _ = await run_fixture_session(
+        denied,
+        "s-fence",
+        [tool_call_entry("write", "c1", file_path="x.md", content="x\n")],
+        approval="ask",
         approval_gate=_Gate("DENIED"),
+        max_turns=8,
     )
     observed |= _stop_reasons(log)
 

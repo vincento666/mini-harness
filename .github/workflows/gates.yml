@@ -1,0 +1,65 @@
+# M3 的门禁矩阵（D11）：AGENTS.md「命令」一节的那四道，在 `windows-latest` 与 `ubuntu-latest`
+# 上各跑一遍，两端分别报告、不合并——平台专属分支在两端各有一半本来就跑不到（D9）。
+# 这里没有任何 secret，也不引用 secret：密钥只走环境变量，openai 的 seam ⑥ 判据连的是
+# 测试自己起的本地假端点（`tests/test_cli_provider.py`）。
+name: gates
+
+on:
+  push:
+    branches: [main, "change/**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  gates:
+    strategy:
+      # 一端红不要把另一端也取消：两端各自的缺口是两条独立的事实。
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: 装依赖（照 uv.lock，不重新解析）
+        run: uv sync --frozen
+
+      # coverage 的三步不可拆：seam ⑥ 是真实子进程，每个子进程各写一份 partial 数据文件。
+      - name: 清空旧 partial
+        run: uv run coverage erase
+
+      - name: pytest 全量（seam ⑥ 的子进程也记账）
+        run: uv run coverage run -m pytest -q
+
+      - name: coverage combine
+        run: uv run coverage combine
+
+      - name: 覆盖率地板
+        run: uv run coverage report --fail-under=95
+
+      # 两端分别报告（task 7.3）：这一端的 `TOTAL` 写进步骤摘要，也发成一条 annotation，
+      # 这样「Windows 端多少、Linux 端多少」是两条可读的事实，不是一个合并数字。
+      - name: 覆盖率两端分别报告
+        shell: bash
+        run: |
+          line=$(uv run coverage report --fail-under=95 | grep '^TOTAL')
+          echo "coverage ${line}  on ${{ matrix.os }}" | tee -a "${GITHUB_STEP_SUMMARY}"
+          echo "::notice title=coverage TOTAL (${{ matrix.os }})::${line}"
+
+      - name: mypy --strict
+        run: uv run mypy --strict src
+
+      - name: ruff check
+        run: uv run ruff check src tests
+
+      - name: ruff format --diff
+        run: uv run ruff format --diff src tests

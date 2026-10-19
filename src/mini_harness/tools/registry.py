@@ -18,6 +18,10 @@ class ToolArgs(BaseModel):
     def target_path(self) -> str | None:
         return None
 
+    def approval_detail(self) -> str:
+        """问人时展示的关键参数。有目标路径的工具默认就是它，没有路径的自己说清要干什么。"""
+        return self.target_path() or ""
+
 
 ToolOutcome = Literal[
     "OK",
@@ -32,6 +36,8 @@ ToolOutcome = Literal[
     "EDIT_TARGET_NOT_FOUND",
     "EDIT_TARGET_AMBIGUOUS",
     "TOOL_IO_FAILED",
+    "TOOL_TIMEOUT",
+    "TOOL_CANCELLED",
     "DENIED_BY_FENCE",
     "DENIED_BY_APPROVAL",
 ]

@@ -182,13 +182,13 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Evidence: `docs/verification/m2-file-tools-and-fences-approval-smoke.md` 与同目录 `-approval-smoke-harness.py`（`y` → 0、`n` → 3）；13.3 第一次红的记录
 - Next use: M3 要真实 tty 的黑盒（Ctrl-C、交互式 approval）直接复用那份 harness，别再试 ConPTY
 - Promotion candidate: 无需进 AGENTS.md（环境事实，非项目规则）
-- Status: inbox
+- Status: closed（M3 裁决 Windows 真实 Ctrl-C 黑盒不在该 change 范围，缺口记进 `docs/verification/m3-bash-concurrency-timeout-manual.md`；harness 本身仍可用）
 
 ### L-019
 - Date: 2026-10-17
 - Context: M2 变异轮里补测试
 - Observation: 编辑工具的两个坑各咬过一次：把 `async def test_...:` 整行（含结尾换行）当 `old_string` 会把下一行粘到 def 行上、语法当场坏掉；`git checkout -- <file>` 之后直接 edit 会报「file changed since it was read」，必须先重读那一小段
-- Evidence: 本轮 `tests/test_tool_registry.py` 的 def 行被粘坏过一次；`dispatch.py` / `fences.py` / `file_tools.py` 各撞过一次「file changed since it was read」
+- Evidence: 本轮 `tests/test_tool_registry.py` 的 def 行被粘坏过一次；`dispatch.py` / `fences.py` / `file_tools.py` 各撞过一次「file changed since it was read」；M3 变异轮每次 `git checkout --` 之后重读，三次先 edit 后报错
 - Next use: 锚点选正文里唯一的两行组合，不选 def 行；每次 `git checkout --` 之后先 read 再 edit
 - Promotion candidate: 无需进 AGENTS.md（工具用法，不是项目规则）
 - Status: inbox
@@ -267,6 +267,50 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 先消化再收新条目：关闭 L-006（人手验收已是 AGENTS.md 的固定完成判据）、L-007（覆盖率三步走已写死在命令段）、L-012（环境事实已处置）、L-015（引用纪律已写死照 ADR-FORMAT）、L-020（`EventLog` 词表外塌缩有判据自证）；合并 L-016 → L-004、L-022 → Active 5。收件箱从 13 条降到 6 条（L-005 / L-014 / L-017 / L-018 / L-019 / L-021），收进 L-023 至 L-026 后是 10 条，仍在 15 条以内。
 
 **AGENTS.md 本轮晋升一条**：L-023 的「捕获一整个异常类族的代码，判据要用族里不显眼的那个成员」进流程节的变异段；换掉的那条是变异段末尾的「做法与判据见 `docs/verification/` 下的记录」（同一句里已经写了记录去哪儿）。另有一处**事实修正**不算晋升：技术选型段的密钥那句改成「只走环境变量（默认 `DEEPSEEK_API_KEY`，`--api-key-env` 指定变量名）」——`--api-key-env` 是 M4 新加的 CLI 参数。
+
+### L-027
+- Date: 2026-10-19
+- Context: M3 收尾变异轮 X1（`except OSError` 排在 `except TimeoutError` 之前）
+- Observation: 定向跑 `tests/test_bash_tool.py tests/test_turn_cancel.py` 15 条全绿，看着像存活；跑全量才红。原因是 `bash` 自己把超时塌成结果词，dispatch 那条捕获只有 seam ② 的桩判据（`test_vocabulary_reachability.py`）经过——**判据在另一个 seam 上，定向跑看不见它**
+- Evidence: `docs/verification/m3-bash-concurrency-timeout-mutation.md` 的「工具坑」一节；X1 行（全量杀 2 条）
+- Next use: 变异一律跑全量；定向跑只用来定位哪条红。AGENTS.md 变异段本来就写着「跑全量测试」，这条是执行纪律，不是新规则
+- Promotion candidate: 无需晋升（AGENTS.md 已写「跑全量测试」，本轮是没照自己写的做）
+- Status: inbox
+
+### L-028
+- Date: 2026-10-19
+- Context: M3 变异轮 T1（`DEFAULT_TIMEOUT_SECONDS = 30` → 45）与 O1（`<=` → `<`）
+- Observation: 两条存活，形状不同但同源：规格里写死的**数值**没有判据钉着。T1 是默认值（上限有 `timeout_seconds: 601` 钉，默认值没人钉）；O1 是边界（已有判据只判「超限会被截」，等于上限被截它抓不到）。补完两条后端点从 2 个变 4 个：等于上限、多一字节、默认值、省略入参时实际拿到的值
+- Evidence: 变异下的红：`assert 45 == 30`、`assert 16401 == 16384`（16384 + 17 字节的标记）；补测提交 `e4b03ea`
+- Next use: 规格里出现数值（默认值、上限、超时、预算）就问一句「哪条判据会因为改这个数而红」；指不到就是缺口。与 L-017 同族：一条规则有多个输入维度时按维度逐个变异
+- Promotion candidate: 与 L-005 同族（「规格里每条失败路径 Scenario 都要能指到一条测试」的数值版）；本轮不占 AGENTS.md 额度
+- Status: inbox（与 L-017 同族，M5 若再出现同类就合并）
+
+### L-029
+- Date: 2026-10-19
+- Context: M3 变异轮 P1（Windows 的 `taskkill /T /F /PID` → `process.kill()`）
+- Observation: 超时那半边红（后代继续往工作区写），取消那半边是**挂住**：后代握着 stdout/stderr 的管道句柄，`await process.wait()` 永不返回，整条 session 卡在执行段里，全量跑不结束。「取消塌成结果词」隐含一个前提——**执行段一定会返回**，而返回取决于管道句柄全部关闭，不只取决于那个进程死没死
+- Evidence: `docs/verification/m3-bash-concurrency-timeout-mutation.md` 的 P1 行与「P1 的附带事实」一节；两次全量跑被手动终止
+- Next use: 任何 `asyncio` 子进程 + PIPE 的代码，收尾都要问「谁还握着这两个管道」；只杀父进程不等于执行段会返回
+- Promotion candidate: 无需进 AGENTS.md（本仓 `bash` 工具与 asyncio 的具体行为，已由 ADR-0009 与那两条判据承载）
+- Status: inbox
+
+### L-030
+- Date: 2026-10-19
+- Context: M3 6.4 往 `tests/test_cli_run.py` 插新测试
+- Observation: 把新函数插在 `@pytest.mark.skipif(...)` 与它装饰的 `def` 之间，装饰器就挂到了新测试上：Linux-only 的 SIGINT 黑盒失去 skip、新写的 Windows 判据反而被 skip。两边都表现为「跑过了」——一条 deselected、一条 skipped，全量仍然绿
+- Evidence: `-rs` 的 skip 摘要指向 `tests\test_cli_run.py:307`（新测试的 def 行）；修法是装饰器紧贴它装饰的那个 `def`
+- Next use: 在带装饰器的测试之间插函数，锚点选装饰器**之前**那两行；新加 skip 类测试后跑一次 `-rs` 看 skip 落在谁身上
+- Promotion candidate: 无需进 AGENTS.md（工具用法，不是项目规则）
+- Status: inbox
+
+### M3 收尾轮的消化记录（2026-10-19，tasks 9.2）
+
+先消化再收新条目：关闭 L-018（M3 裁决 Windows 真实 Ctrl-C 黑盒不在本 change 范围，缺口记进 `docs/verification/m3-bash-concurrency-timeout-manual.md`；那份 ConPTY 之外的 harness 仍然可用，但「M3 要用它」这条 next use 作废）；L-019 补一条同型证据（本轮 `git checkout --` 之后 edit 又报「file changed since it was read」三次，先 read 再 edit 才成）；L-005 与 L-017 保持收件箱，L-028 是它们的数值/边界版同族证据。
+
+**AGENTS.md 本轮不晋升**：本轮最值钱的三条信号里，「变异必须跑全量」AGENTS.md 变异段本来就写着（L-027 是执行纪律，不是新规则）；「规格里的数值要有判据钉住」与 L-005 / L-017 同族，晋升要占一进一出的额度而额度现在没有空闲；「dud 判定」的 `started` 链那条（`_append_all` 是同步函数，所以「等前一个开始」不可观察）已被 L-004 晋升的那句「变异必须改变可观察行为」覆盖。
+
+收件箱：12 条（L-005 / L-014 / L-017 / L-019 / L-021 / L-024 / L-025 / L-026 / L-027 / L-028 / L-029 / L-030），仍在 15 条以内。
 
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 

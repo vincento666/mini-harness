@@ -30,17 +30,17 @@ def test_approval_types_can_be_written_to_the_log(tmp_path: Path) -> None:
     assert types == ["approval/request", "approval/response"]
 
 
-def test_model_retry_is_in_the_vocabulary_and_tool_cancelled_is_not(tmp_path: Path) -> None:
-    """M4 把 `model/retry` 收进词表；`tool/cancelled` 属于 M3，仍留在表外。"""
+def test_model_retry_and_tool_cancelled_are_in_the_vocabulary(tmp_path: Path) -> None:
+    """M4 把 `model/retry` 收进词表；M3 把 `tool/cancelled` 收进词表。"""
     assert is_known_type("model/retry")
-    assert not is_known_type("tool/cancelled")
+    assert is_known_type("tool/cancelled")
 
     log = EventLog.create(session_dir=tmp_path, session_id="sess-v2")
-    log.append("tool/cancelled", {"turn_id": "t1"})
+    log.append("tool/cancelled", {"turn_id": "t1", "tool_call_id": "call-1"})
 
     written = json.loads(log.path.read_text(encoding="utf-8").splitlines()[0])
-    assert written["type"] == "error/internal"
-    assert written["payload"]["unrecognized_type"] == "tool/cancelled"
+    assert written["type"] == "tool/cancelled"
+    assert "unrecognized_type" not in written["payload"]
 
 
 def test_error_fence_is_a_declared_error_type() -> None:

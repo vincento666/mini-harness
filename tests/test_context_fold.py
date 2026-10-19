@@ -236,3 +236,37 @@ def test_model_retry_is_a_fact_that_does_not_enter_the_context(tmp_path: Path) -
 
     without_retry = [record for record in records if record.type != "model/retry"]
     assert fold(without_retry).model_dump(mode="json") == fold(records).model_dump(mode="json")
+
+
+def test_an_unanswered_approval_request_leaves_the_fold_unchanged() -> None:
+    """半对（有 `approval/request`、没有 `approval/response`）只允许出现在取消收尾的 session 里。
+
+    折叠读的是结果、不是问答：缺一条结论不改变上下文，也不让折叠崩。
+    """
+    arguments = {"file_path": "a.md"}
+    asked = [
+        _rec(0, "session/start", {}),
+        _rec(1, "turn/start", {"turn_id": "t1"}),
+        _rec(
+            2,
+            "tool/call",
+            {"turn_id": "t1", "tool_call_id": "c1", "name": "write", "arguments": arguments},
+        ),
+        _rec(
+            3,
+            "approval/request",
+            {"turn_id": "t1", "tool_call_id": "c1", "name": "write", "arguments": arguments},
+        ),
+        _rec(
+            4, "approval/response", {"turn_id": "t1", "tool_call_id": "c1", "decision": "APPROVED"}
+        ),
+        _rec(
+            5,
+            "tool/result",
+            {"turn_id": "t1", "tool_call_id": "c1", "outcome": "OK", "content": "写了"},
+        ),
+        _rec(6, "turn/end", {"turn_id": "t1", "stop_reason": "TOOL_CALLS"}),
+    ]
+    half_pair = [record for record in asked if record.type != "approval/response"]
+
+    assert fold(half_pair).model_dump(mode="json") == fold(asked).model_dump(mode="json")

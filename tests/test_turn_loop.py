@@ -13,24 +13,18 @@ from mini_harness.events import EventLog, EventRecord, read_events
 from mini_harness.loop import RunOutcome, SessionSettings, run_session
 from mini_harness.provider import AssistantTurn, FixtureProvider, Provider
 from mini_harness.provider.openai_compat import OpenAICompatProvider
-from mini_harness.tools import ToolRegistry
-from mini_harness.tools.file_tools import file_tool_definitions
-
-
-def _settings(workspace: Path, max_turns: int = 8) -> SessionSettings:
-    return SessionSettings(workspace=workspace, provider_name="mock", max_turns=max_turns)
+from mini_harness.tools import ToolArgs, ToolDefinition, ToolRegistry, ToolResult
+from mini_harness.tools.fences import DispatchContext, path_key
+from tool_harness import DONE, result_outcomes, run_session_fixture, tool_call, turn_entry
 
 
 async def test_single_turn_writes_the_expected_event_sequence(tmp_path: Path) -> None:
-    log = EventLog.create(session_dir=tmp_path, session_id="s-loop")
-
-    outcome = await run_session(
-        prompt="任务",
-        provider=FixtureProvider(entries=[{"content": "done", "finish_reason": "stop"}]),
-        log=log,
+    log, outcome = await run_session_fixture(
+        tmp_path,
+        "s-loop",
+        FixtureProvider(entries=[{"content": "done", "finish_reason": "stop"}]),
         registry=ToolRegistry(),
-        settings=_settings(tmp_path, max_turns=8),
-        cancel=asyncio.Event(),
+        max_turns=8,
     )
 
     types = [record.type for record in read_events(log.path)]
@@ -59,15 +53,12 @@ def _tool_call_entries(count: int) -> list[dict[str, object]]:
 
 
 async def test_each_turn_is_closed_before_the_next_one_starts(tmp_path: Path) -> None:
-    log = EventLog.create(session_dir=tmp_path, session_id="s-multi")
-
-    await run_session(
-        prompt="任务",
-        provider=FixtureProvider(entries=_tool_call_entries(3)),
-        log=log,
+    log, _ = await run_session_fixture(
+        tmp_path,
+        "s-multi",
+        FixtureProvider(entries=_tool_call_entries(3)),
         registry=ToolRegistry(),
-        settings=_settings(tmp_path, max_turns=3),
-        cancel=asyncio.Event(),
+        max_turns=3,
     )
 
     records = read_events(log.path)
@@ -91,7 +82,7 @@ async def test_a_log_that_becomes_unwritable_ends_the_run_as_a_failure_result(
             provider=FixtureProvider(entries=[{"content": "done", "finish_reason": "stop"}]),
             log=log,
             registry=ToolRegistry(),
-            settings=_settings(tmp_path, max_turns=8),
+            settings=SessionSettings(workspace=tmp_path, provider_name="mock", max_turns=8),
             cancel=asyncio.Event(),
         )
     finally:
@@ -102,16 +93,59 @@ async def test_a_log_that_becomes_unwritable_ends_the_run_as_a_failure_result(
     assert log.path.read_text(encoding="utf-8") == ""
 
 
-async def test_context_assembled_carries_the_turn_id_it_belongs_to(tmp_path: Path) -> None:
-    log = EventLog.create(session_dir=tmp_path, session_id="s-turnid")
+class _BoomArgs(ToolArgs):
+    """没有参数：这条判据只关心执行段里逃出来的异常。"""
 
-    await run_session(
-        prompt="任务",
-        provider=FixtureProvider(entries=_tool_call_entries(2)),
-        log=log,
+
+async def _boom(_: _BoomArgs, __: DispatchContext) -> ToolResult:
+    raise RuntimeError("执行段里逃出来的内核 bug")
+
+
+_BUGGY_REGISTRY = ToolRegistry(
+    [
+        ToolDefinition(
+            name="boom",
+            description="执行段里抛出一个不属于任何异常族的异常",
+            args_model=_BoomArgs,
+            mutates=False,
+            run=_boom,
+        )
+    ]
+)
+
+
+async def test_an_escaped_exception_is_not_renamed_to_a_cancellation(tmp_path: Path) -> None:
+    """执行段逃出来的异常走 `error/internal`，run 以内部错误收尾。
+
+    不变量 F：日志说的是真相。把真 bug 改名成 `TOOL_CANCELLED`，读日志的人会去找一次
+    没有发生过的取消。规格里那条「无法归类的内部故障仍走 error 命名空间」在 seam ① 也得成立。
+    """
+    log, outcome = await run_session_fixture(
+        tmp_path,
+        "s-escaped-exception",
+        FixtureProvider(entries=[turn_entry(tool_call("boom", "c1")), DONE]),
+        registry=_BUGGY_REGISTRY,
+        max_turns=4,
+    )
+
+    records = read_events(log.path)
+    internal = [record for record in records if record.type == "error/internal"]
+    assert len(internal) == 1
+    assert internal[0].payload["tool_call_id"] == "c1"
+    assert "RuntimeError" in internal[0].payload["detail"]
+    assert "tool/cancelled" not in [record.type for record in records]
+    assert ("c1", "TOOL_CANCELLED") not in result_outcomes(records)
+    assert outcome.stop_reason == "INTERNAL_ERROR"
+    assert outcome.failure_code == "INTERNAL_ERROR"
+
+
+async def test_context_assembled_carries_the_turn_id_it_belongs_to(tmp_path: Path) -> None:
+    log, _ = await run_session_fixture(
+        tmp_path,
+        "s-turnid",
+        FixtureProvider(entries=_tool_call_entries(2)),
         registry=ToolRegistry(),
-        settings=_settings(tmp_path, max_turns=2),
-        cancel=asyncio.Event(),
+        max_turns=2,
     )
 
     assembled = [record for record in read_events(log.path) if record.type == "context/assembled"]
@@ -120,15 +154,12 @@ async def test_context_assembled_carries_the_turn_id_it_belongs_to(tmp_path: Pat
 
 
 async def test_empty_tool_calls_ends_the_loop_with_model_completed(tmp_path: Path) -> None:
-    log = EventLog.create(session_dir=tmp_path, session_id="s-stop")
-
-    outcome = await run_session(
-        prompt="任务",
-        provider=FixtureProvider(entries=[{"content": "done", "finish_reason": "stop"}]),
-        log=log,
+    log, outcome = await run_session_fixture(
+        tmp_path,
+        "s-stop",
+        FixtureProvider(entries=[{"content": "done", "finish_reason": "stop"}]),
         registry=ToolRegistry(),
-        settings=_settings(tmp_path, max_turns=8),
-        cancel=asyncio.Event(),
+        max_turns=8,
     )
 
     records = read_events(log.path)
@@ -139,15 +170,12 @@ async def test_empty_tool_calls_ends_the_loop_with_model_completed(tmp_path: Pat
 
 
 async def test_reaching_max_turns_stops_with_max_turns_and_no_failure(tmp_path: Path) -> None:
-    log = EventLog.create(session_dir=tmp_path, session_id="s-max")
-
-    outcome = await run_session(
-        prompt="任务",
-        provider=FixtureProvider(entries=_tool_call_entries(5)),
-        log=log,
+    log, outcome = await run_session_fixture(
+        tmp_path,
+        "s-max",
+        FixtureProvider(entries=_tool_call_entries(5)),
         registry=ToolRegistry(),
-        settings=_settings(tmp_path, max_turns=2),
-        cancel=asyncio.Event(),
+        max_turns=2,
     )
 
     records = read_events(log.path)
@@ -159,17 +187,14 @@ async def test_reaching_max_turns_stops_with_max_turns_and_no_failure(tmp_path: 
 
 
 async def test_turn_that_requests_tool_calls_closes_with_tool_calls(tmp_path: Path) -> None:
-    log = EventLog.create(session_dir=tmp_path, session_id="s-toolcalls")
-
-    outcome = await run_session(
-        prompt="任务",
-        provider=FixtureProvider(
+    log, outcome = await run_session_fixture(
+        tmp_path,
+        "s-toolcalls",
+        FixtureProvider(
             entries=[*_tool_call_entries(1), {"content": "done", "finish_reason": "stop"}]
         ),
-        log=log,
         registry=ToolRegistry(),
-        settings=_settings(tmp_path, max_turns=8),
-        cancel=asyncio.Event(),
+        max_turns=8,
     )
 
     records = read_events(log.path)
@@ -195,16 +220,14 @@ class _CancelDuringGenerate:
 
 
 async def test_cancel_signal_ends_the_turn_with_aborted(tmp_path: Path) -> None:
-    log = EventLog.create(session_dir=tmp_path, session_id="s-cancel")
     cancel = asyncio.Event()
-
-    outcome = await run_session(
-        prompt="任务",
-        provider=_CancelDuringGenerate(cancel),
-        log=log,
+    log, outcome = await run_session_fixture(
+        tmp_path,
+        "s-cancel",
+        _CancelDuringGenerate(cancel),
         registry=ToolRegistry(),
-        settings=_settings(tmp_path, max_turns=8),
         cancel=cancel,
+        max_turns=8,
     )
 
     records = read_events(log.path)
@@ -216,16 +239,14 @@ async def test_cancel_signal_ends_the_turn_with_aborted(tmp_path: Path) -> None:
 
 
 async def test_a_cancelled_turn_writes_an_error_abort_event(tmp_path: Path) -> None:
-    log = EventLog.create(session_dir=tmp_path, session_id="s-abort")
     cancel = asyncio.Event()
-
-    outcome = await run_session(
-        prompt="任务",
-        provider=_CancelDuringGenerate(cancel),
-        log=log,
+    log, outcome = await run_session_fixture(
+        tmp_path,
+        "s-abort",
+        _CancelDuringGenerate(cancel),
         registry=ToolRegistry(),
-        settings=_settings(tmp_path, max_turns=8),
         cancel=cancel,
+        max_turns=8,
     )
 
     records = read_events(log.path)
@@ -240,15 +261,12 @@ async def test_a_cancelled_turn_writes_an_error_abort_event(tmp_path: Path) -> N
 async def test_provider_failure_is_recorded_as_error_model_and_provider_error(
     tmp_path: Path,
 ) -> None:
-    log = EventLog.create(session_dir=tmp_path, session_id="s-fail")
-
-    outcome = await run_session(
-        prompt="任务",
-        provider=FixtureProvider(entries=[]),
-        log=log,
+    log, outcome = await run_session_fixture(
+        tmp_path,
+        "s-fail",
+        FixtureProvider(entries=[]),
         registry=ToolRegistry(),
-        settings=_settings(tmp_path, max_turns=8),
-        cancel=asyncio.Event(),
+        max_turns=8,
     )
 
     records = read_events(log.path)
@@ -276,17 +294,15 @@ class _SpyProvider:
 
 
 async def test_loop_only_calls_generate_with_three_positional_parameters(tmp_path: Path) -> None:
-    log = EventLog.create(session_dir=tmp_path, session_id="s-spy")
     cancel = asyncio.Event()
     spy = _SpyProvider()
-
-    await run_session(
-        prompt="任务",
-        provider=spy,
-        log=log,
+    await run_session_fixture(
+        tmp_path,
+        "s-spy",
+        spy,
         registry=ToolRegistry(),
-        settings=_settings(tmp_path, max_turns=8),
         cancel=cancel,
+        max_turns=8,
     )
 
     assert spy.calls == [("generate", 3)]
@@ -310,17 +326,12 @@ def _two_write_entries() -> list[dict[str, object]]:
 async def test_a_fence_denial_ends_the_run_without_dispatching_the_rest(
     tmp_path: Path,
 ) -> None:
-    log = EventLog.create(session_dir=tmp_path, session_id="s-fence")
-
-    outcome = await run_session(
-        prompt="任务",
-        provider=FixtureProvider(entries=_two_write_entries()),
-        log=log,
-        registry=ToolRegistry(file_tool_definitions()),
-        settings=SessionSettings(
-            workspace=tmp_path, provider_name="mock", max_turns=8, sandbox="read-only"
-        ),
-        cancel=asyncio.Event(),
+    log, outcome = await run_session_fixture(
+        tmp_path,
+        "s-fence",
+        FixtureProvider(entries=_two_write_entries()),
+        sandbox="read-only",
+        max_turns=8,
     )
 
     records = read_events(log.path)
@@ -342,44 +353,81 @@ async def test_a_fence_denial_ends_the_run_without_dispatching_the_rest(
     assert outcome.stop_reason == "FENCE_DENIED"
     assert not (tmp_path / "a.md").exists()
     assert not (tmp_path / "b.md").exists()
+    denied = next(record for record in records if record.type == "error/fence")
+    assert denied.payload["code"] == "SANDBOX_DENIES_WRITE"
+    assert denied.payload["raw_path"] == "a.md"
+    assert denied.payload["path"] is None
 
 
-async def test_no_m2_scenario_writes_tool_cancelled_or_model_retry(tmp_path: Path) -> None:
-    cancel_log = EventLog.create(session_dir=tmp_path, session_id="s-no-cancel-event")
-    cancel = asyncio.Event()
-    fence_log = EventLog.create(session_dir=tmp_path / "fence", session_id="s-no-retry")
-
-    await run_session(
-        prompt="任务",
-        provider=_CancelDuringGenerate(cancel),
-        log=cancel_log,
-        registry=ToolRegistry(),
-        settings=_settings(tmp_path, max_turns=8),
-        cancel=cancel,
-    )
-    await run_session(
-        prompt="任务",
-        provider=FixtureProvider(entries=_two_write_entries()),
-        log=fence_log,
-        registry=ToolRegistry(file_tool_definitions()),
-        settings=SessionSettings(
-            workspace=tmp_path, provider_name="mock", max_turns=8, sandbox="read-only"
-        ),
-        cancel=asyncio.Event(),
-    )
-
-    types = [record.type for record in read_events(cancel_log.path)]
-    types += [record.type for record in read_events(fence_log.path)]
-    assert "tool/cancelled" not in types
-    assert "model/retry" not in types
-    # 词表外的类型会被 `EventLog.append` 塌成 `error/internal`，所以还要看它记下的原类型。
-    unrecognized = [
-        record.payload.get("unrecognized_type")
-        for record in read_events(cancel_log.path) + read_events(fence_log.path)
+async def test_the_fence_denial_record_carries_both_path_fields(tmp_path: Path) -> None:
+    """`error/fence` 的两个路径字段各有取值：判据不需要读自由文本 `detail`。"""
+    entries = [
+        {
+            "content": "写到工作区外",
+            "finish_reason": "tool_calls",
+            "tool_calls": [
+                {
+                    "id": "c1",
+                    "name": "write",
+                    "arguments": {"file_path": "../outside.md", "content": "x\n"},
+                }
+            ],
+        },
+        {"content": "算了", "finish_reason": "stop"},
     ]
+    log, _ = await run_session_fixture(
+        tmp_path, "s-fence-paths", FixtureProvider(entries=entries), max_turns=8
+    )
+
+    records = read_events(log.path)
+    fence = next(record for record in records if record.type == "error/fence")
+    assert fence.payload["code"] == "OUTSIDE_WORKSPACE"
+    assert fence.payload["raw_path"] == "../outside.md"
+    assert fence.payload["path"] == path_key(tmp_path, "../outside.md")
+    assert not (tmp_path.parent / "outside.md").exists()
+
+
+async def test_a_cancel_at_the_turn_boundary_writes_no_tool_cancelled(tmp_path: Path) -> None:
+    """取消发生在回合边界（`generate` 期间）时不写 `tool/cancelled`。
+
+    打断正在执行的调用必写，那一半在 `test_turn_cancel.py` 的
+    `test_a_cancel_interrupts_the_call_that_is_running`。两条合起来才是规格里那对判据：
+    这个词只属于「被打断的那个调用」。
+    """
+    cancel = asyncio.Event()
+    log, _ = await run_session_fixture(
+        tmp_path,
+        "s-no-cancel-event",
+        _CancelDuringGenerate(cancel),
+        registry=ToolRegistry(),
+        cancel=cancel,
+        max_turns=8,
+    )
+
+    records = read_events(log.path)
+    types = [record.type for record in records]
+    assert "tool/cancelled" not in types
+    # 词表外的类型会被 `EventLog.append` 塌成 `error/internal`，所以还要看它记下的原类型。
+    unrecognized = [record.payload.get("unrecognized_type") for record in records]
     assert "tool/cancelled" not in unrecognized
-    assert "model/retry" not in unrecognized
     assert "error/abort" in types
+
+
+async def test_a_fenced_fixture_run_writes_no_model_retry(tmp_path: Path) -> None:
+    """围栏拒绝收尾的 run 里没有 `model/retry`：重试事实只属于真实适配器的那条路径。"""
+    log, _ = await run_session_fixture(
+        tmp_path / "fence",
+        "s-no-retry",
+        FixtureProvider(entries=_two_write_entries()),
+        sandbox="read-only",
+        max_turns=8,
+    )
+
+    records = read_events(log.path)
+    types = [record.type for record in records]
+    assert "model/retry" not in types
+    unrecognized = [record.payload.get("unrecognized_type") for record in records]
+    assert "model/retry" not in unrecognized
     assert "error/fence" in types
 
 
@@ -448,15 +496,12 @@ async def test_one_turn_with_two_tool_calls_dispatches_both(tmp_path: Path) -> N
     """一轮里两个工具调用都要派发，第二个不许被吞掉。"""
     (tmp_path / "a.md").write_text("甲", encoding="utf-8")
     (tmp_path / "b.md").write_text("乙", encoding="utf-8")
-    log = EventLog.create(session_dir=tmp_path, session_id="s-two-calls")
-
-    outcome = await run_session(
+    log, outcome = await run_session_fixture(
+        tmp_path,
+        "s-two-calls",
+        _openai_provider(_ONE_TURN_TWO_CALLS),
         prompt="读两个文件",
-        provider=_openai_provider(_ONE_TURN_TWO_CALLS),
-        log=log,
-        registry=ToolRegistry(file_tool_definitions()),
-        settings=_settings(tmp_path, max_turns=8),
-        cancel=asyncio.Event(),
+        max_turns=8,
     )
 
     records = read_events(log.path)
@@ -501,15 +546,7 @@ def _scripted_provider(responses: list[httpx.Response]) -> OpenAICompatProvider:
 
 
 async def _run_with_provider(tmp_path: Path, provider: OpenAICompatProvider):
-    log = EventLog.create(session_dir=tmp_path, session_id="s-retry")
-    outcome = await run_session(
-        prompt="任务",
-        provider=provider,
-        log=log,
-        registry=ToolRegistry(file_tool_definitions()),
-        settings=_settings(tmp_path, max_turns=8),
-        cancel=asyncio.Event(),
-    )
+    log, outcome = await run_session_fixture(tmp_path, "s-retry", provider, max_turns=8)
     records = read_events(log.path)
     assert isinstance(records, list)
     return records, outcome
@@ -605,6 +642,12 @@ async def test_a_timeout_is_a_provider_timeout_result(tmp_path: Path) -> None:
     assert outcome.failure_code == "PROVIDER_TIMEOUT"
 
 
+_FORGED_STOP: dict[str, object] = {
+    "content": "done",
+    "finish_reason": "stop",
+    "attempts": [{"attempt": 1, "status": 429}],
+}
+
 _SCENE_ENTRIES: list[dict[str, object]] = [
     {
         "content": "",
@@ -644,18 +687,14 @@ _SCENE_BODIES: list[dict[str, object]] = [
 async def _run_through(
     tmp_path: Path, provider: Provider, session_id: str, workspace: Path, provider_name: str
 ) -> tuple[list[EventRecord], RunOutcome]:
-    session_dir = tmp_path / session_id
-    session_dir.mkdir(parents=True)
-    log = EventLog.create(session_dir=session_dir, session_id=session_id)
-    outcome = await run_session(
-        prompt="任务",
-        provider=provider,
-        log=log,
-        registry=ToolRegistry(file_tool_definitions()),
-        settings=SessionSettings(
-            workspace=workspace, provider_name=provider_name, max_turns=8, approval="auto"
-        ),
-        cancel=asyncio.Event(),
+    log, outcome = await run_session_fixture(
+        tmp_path,
+        session_id,
+        provider,
+        workspace=workspace,
+        session_dir=tmp_path / session_id,
+        provider_name=provider_name,
+        max_turns=8,
     )
     records = read_events(log.path)
     assert isinstance(records, list)
@@ -706,22 +745,12 @@ async def test_the_same_scene_through_both_providers_writes_the_same_log(
 
 async def test_a_fixture_cannot_invent_a_model_retry(tmp_path: Path) -> None:
     """重试事实只能由真实适配器带回。fixture 里写 `attempts` 不得凭空造出 `model/retry`。"""
-    log = EventLog.create(session_dir=tmp_path, session_id="s-forge")
-    entries = [
-        {
-            "content": "done",
-            "finish_reason": "stop",
-            "attempts": [{"attempt": 1, "status": 429}],
-        }
-    ]
-
-    await run_session(
-        prompt="任务",
-        provider=FixtureProvider(entries=entries),
-        log=log,
+    log, _ = await run_session_fixture(
+        tmp_path,
+        "s-forge",
+        FixtureProvider(entries=[_FORGED_STOP]),
         registry=ToolRegistry(),
-        settings=_settings(tmp_path, max_turns=8),
-        cancel=asyncio.Event(),
+        max_turns=8,
     )
 
     types = [record.type for record in read_events(log.path)]

@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 
-from mini_harness.events import EventLog, read_events
-from mini_harness.loop import SessionSettings, run_session
-from mini_harness.provider import FixtureProvider
+from mini_harness.events import read_events
 from mini_harness.tools import ToolRegistry
+from tool_harness import run_fixture_session
 
 _TOOL_ENTRY = {
     "content": "需要读文件",
@@ -17,24 +15,13 @@ _TOOL_ENTRY = {
 }
 
 
-async def _run(
-    tmp_path: Path, session_id: str, entries: list[dict[str, object]], max_turns: int = 8
-):
-    log = EventLog.create(session_dir=tmp_path, session_id=session_id)
-    outcome = await run_session(
-        prompt="任务",
-        provider=FixtureProvider(entries=entries),
-        log=log,
-        registry=ToolRegistry(),
-        settings=SessionSettings(workspace=tmp_path, provider_name="mock", max_turns=max_turns),
-        cancel=asyncio.Event(),
-    )
-    return log, outcome
-
-
 async def test_unregistered_tool_call_is_a_paired_unknown_tool_result(tmp_path: Path) -> None:
-    log, _ = await _run(
-        tmp_path, "s-tool", [_TOOL_ENTRY, {"content": "算了", "finish_reason": "stop"}]
+    log, _ = await run_fixture_session(
+        tmp_path,
+        "s-tool",
+        [_TOOL_ENTRY, {"content": "算了", "finish_reason": "stop"}],
+        registry=ToolRegistry(),
+        max_turns=8,
     )
 
     records = read_events(log.path)
@@ -51,8 +38,12 @@ async def test_unregistered_tool_call_is_a_paired_unknown_tool_result(tmp_path: 
 
 
 async def test_previous_tool_result_is_folded_into_the_next_context(tmp_path: Path) -> None:
-    log, _ = await _run(
-        tmp_path, "s-fold-tool", [_TOOL_ENTRY, {"content": "算了", "finish_reason": "stop"}]
+    log, _ = await run_fixture_session(
+        tmp_path,
+        "s-fold-tool",
+        [_TOOL_ENTRY, {"content": "算了", "finish_reason": "stop"}],
+        registry=ToolRegistry(),
+        max_turns=8,
     )
 
     records = read_events(log.path)
@@ -66,7 +57,13 @@ async def test_previous_tool_result_is_folded_into_the_next_context(tmp_path: Pa
 
 
 async def test_session_start_records_the_run_settings(tmp_path: Path) -> None:
-    log, _ = await _run(tmp_path, "s-start", [{"content": "done", "finish_reason": "stop"}])
+    log, _ = await run_fixture_session(
+        tmp_path,
+        "s-start",
+        [{"content": "done", "finish_reason": "stop"}],
+        registry=ToolRegistry(),
+        max_turns=8,
+    )
 
     records = read_events(log.path)
     payload = records[0].payload

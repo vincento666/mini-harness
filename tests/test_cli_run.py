@@ -7,9 +7,13 @@ import codecs
 import json
 import os
 import signal
+import sys
+import time
 from pathlib import Path
 
-from cli_blackbox import _cli
+import pytest
+
+from cli_blackbox import _cli, _cli_process
 from mini_harness.cli import main as cli_main
 from mini_harness.cli.main import STOP_REASONS_TO_EXIT_CODES, exit_code_for, sigint_handler
 from mini_harness.events import EventLog
@@ -174,6 +178,48 @@ def test_malformed_fixture_entry_is_rejected_before_any_session_log(tmp_path: Pa
     assert _log_files(tmp_path) == []
 
 
+def test_a_fence_denial_exits_with_three(tmp_path: Path) -> None:
+    """退出码 3 的 seam ⑥ 判据：档位轴拒绝一次写，整段 session 以 `FENCE_DENIED` 收尾。"""
+    fixture = tmp_path / "fence.json"
+    fixture.write_text(
+        json.dumps(
+            [
+                {
+                    "content": "写一个文件",
+                    "finish_reason": "tool_calls",
+                    "tool_calls": [
+                        {
+                            "id": "c1",
+                            "name": "write",
+                            "arguments": {"file_path": "a.md", "content": "x\n"},
+                        }
+                    ],
+                },
+                {"content": "算了", "finish_reason": "stop"},
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(fixture),
+        "--sandbox",
+        "read-only",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 3
+    assert "SANDBOX_DENIES_WRITE" in result.stderr
+    assert _log_files(tmp_path)
+
+
 def test_happy_path_prints_session_id_and_writes_the_log(tmp_path: Path) -> None:
     result = _cli(
         "run", "-p", "任务", "--provider", "mock", "--fixture", str(HELLO_SCENARIO), cwd=tmp_path
@@ -248,6 +294,219 @@ async def test_the_cli_installs_and_restores_the_sigint_handler(tmp_path: Path) 
     installed = spy.seen_handlers[0]
     assert callable(installed) and installed is not before
     assert signal.getsignal(signal.SIGINT) is before
+
+
+def test_run_has_no_switch_that_changes_the_model_timeout(tmp_path: Path) -> None:
+    """120 秒是实现常量：`minihns run` 的参数表里没有改变它的开关。"""
+    result = _cli("run", "-p", "任务", "--provider", "mock", "--timeout", "5", cwd=tmp_path)
+
+    assert result.returncode == 2
+    assert "unrecognized arguments: --timeout" in result.stderr
+
+
+_RUN_SWITCHES = {
+    "-h",
+    "--help",
+    "-p",
+    "--prompt",
+    "--workspace",
+    "--session-dir",
+    "--provider",
+    "--fixture",
+    "--base-url",
+    "--model",
+    "--api-key-env",
+    "--max-turns",
+    "--append-system-prompt",
+    "--events",
+    "--sandbox",
+    "--yes",
+}
+
+
+def test_the_run_argument_table_holds_no_switch_for_a_bounded_number(tmp_path: Path) -> None:
+    """seam ⑥：`bash` 的 30 / 600、并发上限 8、模型超时 120 是实现常量，参数表里没有开关改它们。
+
+    判据是整张表：列出来的就是全部（`-h` / `--help` 是 argparse 自带的）。哪天加一个
+    `--bash-timeout` 或 `--max-parallel-tools`，这条立刻红——那正是要的信号。
+    `--max-turns` 的默认值也是 8，那是回合上限，与并发上限无关。
+    """
+    result = _cli("run", "--help", cwd=tmp_path)
+
+    assert result.returncode == 0
+    listed = {token.strip("[],") for token in result.stdout.split() if token.startswith("-")}
+    assert listed == _RUN_SWITCHES
+
+
+def test_a_bash_command_runs_end_to_end_in_the_cli(tmp_path: Path) -> None:
+    """seam ⑥：`bash` 在真实 CLI 里跑通——命令在工作区根起、结果进日志、退出码 0。
+
+    命令写成 `python <文件>`：`-c` 的引号在 `cmd.exe` 与 `/bin/sh` 里语义不同，用它判到的是
+    shell 方言而不是 CLI 契约。`--yes` 是因为黑盒的 stdin 不是 tty，没有人可问。
+    """
+    (tmp_path / "make_marker.py").write_text("open('made.md', 'w').close()\n", encoding="utf-8")
+    fixture = tmp_path / "bash.json"
+    fixture.write_text(
+        json.dumps(
+            [
+                {
+                    "content": "跑一条真实检查命令",
+                    "finish_reason": "tool_calls",
+                    "tool_calls": [
+                        {
+                            "id": "c1",
+                            "name": "bash",
+                            "arguments": {"command": "python make_marker.py"},
+                        }
+                    ],
+                },
+                {
+                    "content": "再读它留下的文件",
+                    "finish_reason": "tool_calls",
+                    "tool_calls": [
+                        {"id": "c2", "name": "read", "arguments": {"file_path": "made.md"}}
+                    ],
+                },
+                {"content": "完了", "finish_reason": "stop"},
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    result = _cli(
+        "run", "-p", "任务", "--provider", "mock", "--fixture", str(fixture), "--yes", cwd=tmp_path
+    )
+
+    assert result.returncode == 0
+    logs = _log_files(tmp_path)
+    assert logs
+    events = [json.loads(line) for line in logs[0].read_text(encoding="utf-8").splitlines()]
+    outcomes = [
+        str(event["payload"]["outcome"]) for event in events if event["type"] == "tool/result"
+    ]
+    assert outcomes == ["OK", "OK"]
+    assert (tmp_path / "made.md").exists()
+
+
+def test_a_bash_timeout_in_the_cli_is_a_result_word_and_the_run_continues(tmp_path: Path) -> None:
+    """seam ⑥：`bash` 超时在真实 CLI 里塌成结果词，回合继续走到正常收尾，退出码 0。
+
+    Windows 也跑得动：命令是 `python <文件>`、超时用 `timeout_seconds: 1`。M3 原本只有
+    Linux 侧的 SIGINT 黑盒，超时这条两端都要有——它判的是超时收尾，不是打断收尾。
+    `--yes` 是因为黑盒的 stdin 不是 tty，而 `bash` 算会改动的工具。
+    """
+    (tmp_path / "loop.py").write_text("import time\n\nwhile True:\n    time.sleep(0.1)\n", "utf-8")
+    (tmp_path / "a.md").write_text("甲\n", encoding="utf-8")
+    fixture = tmp_path / "timeout.json"
+    fixture.write_text(
+        json.dumps(
+            [
+                {
+                    "content": "跑一条不会自己停的命令",
+                    "finish_reason": "tool_calls",
+                    "tool_calls": [
+                        {
+                            "id": "c1",
+                            "name": "bash",
+                            "arguments": {"command": "python loop.py", "timeout_seconds": 1},
+                        }
+                    ],
+                },
+                {
+                    "content": "超时之后回合继续",
+                    "finish_reason": "tool_calls",
+                    "tool_calls": [
+                        {"id": "c2", "name": "read", "arguments": {"file_path": "a.md"}}
+                    ],
+                },
+                {"content": "完了", "finish_reason": "stop"},
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    result = _cli(
+        "run", "-p", "任务", "--provider", "mock", "--fixture", str(fixture), "--yes", cwd=tmp_path
+    )
+
+    assert result.returncode == 0
+    logs = _log_files(tmp_path)
+    assert logs
+    events = [json.loads(line) for line in logs[0].read_text(encoding="utf-8").splitlines()]
+    outcomes = [
+        (str(event["payload"]["tool_call_id"]), str(event["payload"]["outcome"]))
+        for event in events
+        if event["type"] == "tool/result"
+    ]
+    assert outcomes == [("c1", "TOOL_TIMEOUT"), ("c2", "OK")]
+    assert [
+        event["payload"]["tool_call_id"] for event in events if event["type"] == "tool/cancelled"
+    ] == ["c1"]
+    assert events[-1]["type"] == "session/end"
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason=(
+        "Windows 的 Ctrl-C 黑盒不在 M3："
+        "缺口记进 docs/verification/m3-bash-concurrency-timeout-manual.md"
+    ),
+)
+def test_sigint_in_a_real_subprocess_exits_with_five(tmp_path: Path) -> None:
+    """seam ⑥：真实子进程里的 SIGINT → 退出码 5，日志以 `error/abort` 与 ABORTED 收尾。
+
+    被打断的是一条正在执行的 `bash`：`sleep 30` 在 POSIX 下待在自己的进程组里，
+    SIGINT 只发给 harness 那个进程，命令本身要靠 harness 收掉。
+    """
+    fixture = tmp_path / "sleep.json"
+    fixture.write_text(
+        json.dumps(
+            [
+                {
+                    "content": "跑一条挂很久的命令",
+                    "finish_reason": "tool_calls",
+                    "tool_calls": [
+                        {
+                            "id": "c1",
+                            "name": "bash",
+                            "arguments": {"command": "sleep 30", "timeout_seconds": 30},
+                        }
+                    ],
+                },
+                {"content": "不该走到这里", "finish_reason": "stop"},
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    process = _cli_process(
+        "run", "-p", "任务", "--provider", "mock", "--fixture", str(fixture), "--yes", cwd=tmp_path
+    )
+    for _ in range(200):
+        logs = _log_files(tmp_path)
+        if logs and '"tool/call"' in logs[0].read_text(encoding="utf-8"):
+            break
+        time.sleep(0.1)
+    else:
+        process.kill()
+        pytest.fail("子进程没有进入工具执行段")
+
+    process.send_signal(signal.SIGINT)
+    _, stderr = process.communicate(timeout=30)
+
+    assert process.returncode == 5
+    assert "ABORTED" in stderr
+    records = [json.loads(line) for line in _log_files(tmp_path)[0].read_text("utf-8").splitlines()]
+    types = [record["type"] for record in records]
+    assert types.count("tool/call") == 1
+    assert types.count("tool/cancelled") == 1
+    outcomes = [r["payload"]["outcome"] for r in records if r["type"] == "tool/result"]
+    assert outcomes == ["TOOL_CANCELLED"]
+    assert types[-3:] == ["error/abort", "turn/end", "session/end"]
+    assert records[-1]["payload"]["stop_reason"] == "ABORTED"
 
 
 class _SigintSpyProvider:
@@ -336,8 +595,8 @@ def test_session_start_records_sandbox_approval_and_tools(tmp_path: Path) -> Non
     assert result.returncode == 0
     assert payload["sandbox"] == "workspace-write"
     assert payload["approval"] == "ask"
-    # 五个名字来自注册表：session/start 的 tools 由它派生，不是另立一份清单。
-    assert payload["tools"] == ["read", "write", "edit", "glob", "grep"]
+    # 六个名字来自注册表：session/start 的 tools 由它派生，不是另立一份清单。
+    assert payload["tools"] == ["read", "write", "edit", "glob", "grep", "bash"]
     assert "schema_version" not in payload
 
 
