@@ -16,6 +16,16 @@ from mini_harness.tools.registry import ToolArgs, ToolDefinition, ToolResult
 
 DEFAULT_TIMEOUT_SECONDS = 30
 MAX_TIMEOUT_SECONDS = 600
+OUTPUT_LIMIT_BYTES = 16 * 1024
+TRUNCATION_MARK = "[输出已截断]"
+
+
+def _bounded(content: str) -> str:
+    """进日志的结果内容有界：超限截到上限字节数，末尾留下固定标记。"""
+    encoded = content.encode("utf-8")
+    if len(encoded) <= OUTPUT_LIMIT_BYTES:
+        return content
+    return encoded[:OUTPUT_LIMIT_BYTES].decode("utf-8", errors="ignore") + TRUNCATION_MARK
 
 
 class BashArgs(ToolArgs):
@@ -66,9 +76,10 @@ async def run_bash(args: BashArgs, context: DispatchContext) -> ToolResult:
             outcome="TOOL_TIMEOUT",
             content=f"命令超过 {args.timeout_seconds} 秒没有结束：{args.command}",
         )
+    output = stdout.decode("utf-8", errors="replace") + stderr.decode("utf-8", errors="replace")
     return ToolResult(
         outcome="OK",
-        content=stdout.decode("utf-8", errors="replace") + stderr.decode("utf-8", errors="replace"),
+        content=_bounded(f"退出码 {process.returncode}\n{output}"),
     )
 
 

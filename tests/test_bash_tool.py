@@ -2,16 +2,34 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from mini_harness.events import read_events
 from mini_harness.tools import ToolRegistry
-from mini_harness.tools.bash_tools import bash_tool_definitions
+from mini_harness.tools.bash_tools import OUTPUT_LIMIT_BYTES, TRUNCATION_MARK, bash_tool_definitions
 from mini_harness.tools.fences import ApprovalDecision
 from mini_harness.tools.file_tools import file_tool_definitions
 from tool_harness import DONE, dispatch_call, run_fixture_session, tool_call_entry
 
 _MARKER = "open('made.md', 'w').close()\n"
+
+_TICKER = (
+    "import time\n\n"
+    "with open('ticking.txt', 'a', encoding='utf-8') as handle:\n"
+    "    for _ in range(200):\n"
+    "        handle.write('tick\\n')\n"
+    "        handle.flush()\n"
+    "        time.sleep(0.2)\n"
+)
+
+_SPAWNS_CHILD = (
+    "import subprocess\nimport sys\nimport time\n\n"
+    "subprocess.Popen(\n"
+    "    [sys.executable, 'child.py'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL\n"
+    ")\n"
+    "time.sleep(30)\n"
+)
 
 
 class _RecordingGate:
@@ -122,3 +140,44 @@ async def test_the_approval_question_for_bash_shows_the_command(tmp_path: Path) 
     assert outcome.result.outcome == "DENIED_BY_APPROVAL"
     assert gate.details == [command]
     assert not (tmp_path / "made.md").exists()
+
+
+async def test_a_failing_command_is_ok_with_its_exit_code_in_the_content(tmp_path: Path) -> None:
+    command = _script(
+        tmp_path,
+        "fail.py",
+        "import sys\n\nprint('boom on stderr', file=sys.stderr)\nsys.exit(1)\n",
+    )
+    outcome = await dispatch_call(tmp_path, "bash", {"command": command}, registry=_registry())
+
+    assert outcome.result.outcome == "OK"
+    assert outcome.result.content.startswith("退出码 1")
+    assert "boom on stderr" in outcome.result.content
+
+
+async def test_oversized_output_is_truncated_and_marked(tmp_path: Path) -> None:
+    chatter = "for index in range(4000):\n    print('x' * 40, index)\n"
+    command = _script(tmp_path, "chatter.py", chatter)
+    outcome = await dispatch_call(tmp_path, "bash", {"command": command}, registry=_registry())
+
+    assert outcome.result.outcome == "OK"
+    assert TRUNCATION_MARK in outcome.result.content
+    assert OUTPUT_LIMIT_BYTES == 16 * 1024
+    limit = OUTPUT_LIMIT_BYTES + len(TRUNCATION_MARK.encode("utf-8"))
+    assert len(outcome.result.content.encode("utf-8")) <= limit
+
+
+async def test_a_timed_out_command_leaves_no_descendant_still_writing(tmp_path: Path) -> None:
+    """判据只看后果：超时之后那个后代进程不再往工作区写。终止手段是实现细节。"""
+    _script(tmp_path, "child.py", _TICKER)
+    command = _script(tmp_path, "parent.py", _SPAWNS_CHILD)
+
+    outcome = await dispatch_call(
+        tmp_path, "bash", {"command": command, "timeout_seconds": 2}, registry=_registry()
+    )
+
+    assert outcome.result.outcome == "TOOL_TIMEOUT"
+    ticking = tmp_path / "ticking.txt"
+    first = ticking.read_text(encoding="utf-8")
+    await asyncio.sleep(1.5)
+    assert ticking.read_text(encoding="utf-8") == first
