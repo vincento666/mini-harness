@@ -17,7 +17,7 @@ from mini_harness.tools.bash_tools import (
 )
 from mini_harness.tools.fences import ApprovalDecision
 from mini_harness.tools.file_tools import file_tool_definitions
-from tool_harness import DONE, dispatch_call, run_fixture_session, tool_call_entry
+from tool_harness import DONE, dispatch_call, result_outcomes, run_fixture_session, tool_call_entry
 
 _MARKER = "open('made.md', 'w').close()\n"
 
@@ -107,6 +107,44 @@ async def test_the_command_runs_in_the_workspace_root(tmp_path: Path) -> None:
         tmp_path, "read", {"file_path": "made.md"}, registry=_registry()
     )
     assert read_back.result.outcome == "OK"
+
+
+async def test_the_two_sandbox_levels_treat_the_same_command_the_same_way(
+    tmp_path: Path,
+) -> None:
+    """规格那两条：「边界轴对 bash 恒真」的后半边，与「两个档位对 bash 没有可观察差别」。
+
+    同一条命令在 `workspace-write` 与 `danger-full-access` 下各跑一次：结果、内容、收尾都相同，
+    日志里没有 `error/fence`——围栏不看命令实际写到哪儿（ADR-0008）。
+    """
+    command = _script(tmp_path, "marker.py", _MARKER)
+    runs = [
+        await run_fixture_session(
+            tmp_path,
+            f"s-bash-{level}",
+            [tool_call_entry("bash", "c1", command=command), DONE],
+            session_dir=tmp_path / level,
+            sandbox=level,
+            registry=_registry(),
+        )
+        for level in ("workspace-write", "danger-full-access")
+    ]
+
+    for log, outcome in runs:
+        records = read_events(log.path)
+        assert result_outcomes(records) == [("c1", "OK")]
+        assert [record for record in records if record.type == "error/fence"] == []
+        assert outcome.stop_reason == "MODEL_COMPLETED"
+    contents = [
+        [
+            str(record.payload["content"])
+            for record in read_events(log.path)
+            if record.type == "tool/result"
+        ]
+        for log, _ in runs
+    ]
+    assert contents[0] == contents[1]
+    assert (tmp_path / "made.md").exists()
 
 
 async def test_the_command_runs_through_a_shell(tmp_path: Path) -> None:

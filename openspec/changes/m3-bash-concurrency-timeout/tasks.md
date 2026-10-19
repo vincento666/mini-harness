@@ -73,7 +73,7 @@
 ## 10. `code-review` 修复轮（两轴审查之后）
 
 - [x] 10.1 `_race_with_cancel` 的兜底塌词只对 `asyncio.CancelledError` 生效；从执行段逃出来的其它异常不得改名成 `TOOL_CANCELLED`，要落 `error/internal` 并作为内核失败收尾。seam ① —— 判据 `test_an_escaped_exception_is_not_renamed_to_a_cancellation`；逃出来的异常由 `one()` 接住、写 `error/internal`（含 `tool_call_id`）、置 `stop`，已跑完的调用照常落结果，run 以词表外的 `INTERNAL_ERROR` 收尾（退出码 1）
-- [ ] 10.2 `bash` 在两个档位下各跑一次：结果与日志形状没有可观察差别，且日志里没有 `error/fence`。seam ③
+- [x] 10.2 `bash` 在两个档位下各跑一次：结果与日志形状没有可观察差别，且日志里没有 `error/fence`。seam ③ —— 判据 `test_the_two_sandbox_levels_treat_the_same_command_the_same_way`：同一条命令在 `workspace-write` 与 `danger-full-access` 下各跑一整段 session，两次的 `tool/result` 内容与 `outcome` 逐字段相同、`stop_reason` 相同，两份日志里 `error/fence` 零条
 - [ ] 10.3 「围栏拒绝时已在跑的并发调用不被吞」换成真实可达形状：一个还在跑的只读调用 + 一个被拒的调用。seam ①
 - [ ] 10.4 event-log 的「成组出现」改成实现实际保证的东西（每个调用的四类事件按此相对顺序；不同调用的组可交错，`tool/result` 按声明顺序），并补一条判据钉住这个相对顺序。seam ④
 - [ ] 10.5 提问可被取消打断：approval 门改成 awaitable，提问期间取消置位则这一对允许半对、这一条塌成 `TOOL_CANCELLED`。seam ① ②
