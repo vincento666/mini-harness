@@ -21,7 +21,7 @@
 
 | 门禁 | 实测 |
 |---|---|
-| 测试 | 221 passed / 2 skipped。skip 的两条：符号链接判据（本机不允许创建符号链接）、`test_sigint_in_a_real_subprocess_exits_with_five`（`skipif win32`，Linux 侧跑）。全量带覆盖率记账约 62 秒 |
+| 测试 | 222 passed / 2 skipped。skip 的两条：符号链接判据（本机不允许创建符号链接）、`test_sigint_in_a_real_subprocess_exits_with_five`（`skipif win32`，Linux 侧跑）。全量带覆盖率记账约 58 秒 |
 | 覆盖率 | `coverage erase` → `coverage run -m pytest` → `coverage combine` → `coverage report --fail-under=95`：TOTAL **96%**（1136 语句 / 50 未覆盖）；地板 `fail_under = 95` |
 | 覆盖率分布 | `events/reader.py` 85% · `provider/openai_compat.py` 89% · `loop/turn_loop.py` 91% · `tools/bash_tools.py` 94% · `tools/file_tools.py` 96% · `tools/registry.py` 97% · `provider/mock.py` 98% · `tools/dispatch.py` 98% · `cli/main.py` 99% · 其余 100% |
 | 类型 | `mypy --strict` 干净，22 个源文件 |

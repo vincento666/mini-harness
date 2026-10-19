@@ -304,6 +304,40 @@ def test_run_has_no_switch_that_changes_the_model_timeout(tmp_path: Path) -> Non
     assert "unrecognized arguments: --timeout" in result.stderr
 
 
+_RUN_SWITCHES = {
+    "-h",
+    "--help",
+    "-p",
+    "--prompt",
+    "--workspace",
+    "--session-dir",
+    "--provider",
+    "--fixture",
+    "--base-url",
+    "--model",
+    "--api-key-env",
+    "--max-turns",
+    "--append-system-prompt",
+    "--events",
+    "--sandbox",
+    "--yes",
+}
+
+
+def test_the_run_argument_table_holds_no_switch_for_a_bounded_number(tmp_path: Path) -> None:
+    """seam ⑥：`bash` 的 30 / 600、并发上限 8、模型超时 120 是实现常量，参数表里没有开关改它们。
+
+    判据是整张表：列出来的就是全部（`-h` / `--help` 是 argparse 自带的）。哪天加一个
+    `--bash-timeout` 或 `--max-parallel-tools`，这条立刻红——那正是要的信号。
+    `--max-turns` 的默认值也是 8，那是回合上限，与并发上限无关。
+    """
+    result = _cli("run", "--help", cwd=tmp_path)
+
+    assert result.returncode == 0
+    listed = {token.strip("[],") for token in result.stdout.split() if token.startswith("-")}
+    assert listed == _RUN_SWITCHES
+
+
 def test_a_bash_command_runs_end_to_end_in_the_cli(tmp_path: Path) -> None:
     """seam ⑥：`bash` 在真实 CLI 里跑通——命令在工作区根起、结果进日志、退出码 0。
 
