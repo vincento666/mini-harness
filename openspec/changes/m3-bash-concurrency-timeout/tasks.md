@@ -54,10 +54,10 @@
 
 ## 7. CI 矩阵
 
-- [ ] 7.1 写 `.github/workflows/` 的 CI：`windows-latest` + `ubuntu-latest` 矩阵，跑 pytest、`coverage combine`、`coverage report --fail-under=95`、`mypy --strict src`、`ruff check`、`ruff format --diff`。验证：本地逐条跑过同样的命令序列且退出码 0。
+- [x] 7.1 写 `.github/workflows/` 的 CI：`windows-latest` + `ubuntu-latest` 矩阵，跑 pytest、`coverage combine`、`coverage report --fail-under=95`、`mypy --strict src`、`ruff check`、`ruff format --diff`。验证：本地逐条跑过同样的命令序列且退出码 0。—— `.github/workflows/gates.yml`；本地那 8 条命令逐条退出码 0（`uv sync --frozen` 起）
 - [ ] 7.2 推送分支与 `main`（`origin/main` 落后 52 个提交，推送与首次启用 Actions 是人要做的动作），确认两个 job 都跑绿。
 - [ ] 7.3 覆盖率在两端分别报告、不合并；把两端的 `TOTAL` 记进 `docs/CURRENT.md` 的门禁实测表。
-- [ ] 7.4 验证 CI 不持 API key：workflow 文件里没有 secret 引用，openai 的 seam ⑥ 判据只连本地假端点。
+- [x] 7.4 验证 CI 不持 API key：workflow 文件里没有 secret 引用，openai 的 seam ⑥ 判据只连本地假端点。—— `gates.yml` 里 `secrets` / `env:` / `API_KEY` 零命中；`tests/test_cli_provider.py` 的 openai 黑盒连的是测试自己起的 `127.0.0.1` 假端点，另有一条判据钉住 `trust_env=False`（代理环境变量不生效）
 
 ## 8. 人手验收（AGENTS.md 固定判据）
 
