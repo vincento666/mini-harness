@@ -2,7 +2,7 @@
 
 ## 1. 词表与结果形状先行
 
-- [ ] 1.1 `tool/cancelled` 进 `events/vocabulary.py` 的具体类型表；翻转 `tests/test_event_vocabulary.py` 里「它在词表外」那条判据（改成在表内、写出去不被记为 `unrecognized_type`）。seam ④
+- [x] 1.1 `tool/cancelled` 进 `events/vocabulary.py` 的具体类型表；翻转 `tests/test_event_vocabulary.py` 里「它在词表外」那条判据（改成在表内、写出去不被记为 `unrecognized_type`）。seam ④
 - [ ] 1.2 `ToolOutcome` 加 `TOOL_TIMEOUT` 与 `TOOL_CANCELLED`；`tests/test_vocabulary_reachability.py` 先加两条可达判据（先红）。seam ②
 - [ ] 1.3 `tool/cancelled` 的 payload 形状判据：含 `turn_id` 与 `tool_call_id`、不含命令输出或文件内容。seam ④
 - [ ] 1.4 `tests/test_turn_loop.py` 里「M2 场景不写 tool/cancelled」那条判据拆成两条：取消发生在回合边界时仍不写、取消打断执行中的调用时必写。seam ①

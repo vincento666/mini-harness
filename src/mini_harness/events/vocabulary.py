@@ -14,6 +14,7 @@ CONCRETE_EVENT_TYPES: frozenset[str] = frozenset(
         "model/response",
         "tool/call",
         "tool/result",
+        "tool/cancelled",
         "approval/request",
         "approval/response",
     }
