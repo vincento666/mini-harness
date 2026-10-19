@@ -2,12 +2,12 @@
 
 每里程碑收尾更新一次。接手时以 `git status --short` 与 `git log --oneline -3` 为准，本文件只是快照。
 
-更新：2026-10-19（M3 的实现与收尾门禁跑完，分支 `change/m3-bash-concurrency-timeout` 上 24 个提交；**推送、CI 首绿、人手验收、`code-review` 两轴与归档还没跑**）
+更新：2026-10-19（M3 的实现与收尾门禁跑完，`code-review` 两轴的修复轮 10.1–10.8 跑完，分支 `change/m3-bash-concurrency-timeout` 上 32 个提交；**推送、CI 首绿、人手验收与归档还没跑**）
 
 ## 进度
 
 - **M1 / M2 / M4 完成并已归档**：分别在 `openspec/changes/archive/2026-10-16-m1-event-log-and-turn-loop/`、`2026-10-18-m2-file-tools-and-fences/`、`2026-10-18-m4-real-provider/`，tag `m1` / `m2` / `m4`，merge commit `141e28c` / `d89a7c2` / `1d8e120`。主规格现有 7 个能力，`openspec validate --specs` 7 过 0 失败（M2 后 cli 7 / context-projection 8 / event-log 9 / fences 12 / file-tools 11 / provider 9 / turn-loop 9）。
-- **M3 实现跑完，收尾门禁跑完，未合并未归档**：change `m3-bash-concurrency-timeout`，分支 `change/m3-bash-concurrency-timeout`（`main` 之上 24 个提交）。落地的东西：
+- **M3 实现跑完，收尾门禁跑完，未合并未归档**：change `m3-bash-concurrency-timeout`，分支 `change/m3-bash-concurrency-timeout`（`main` 之上 32 个提交）。落地的东西：
   - `bash` 工具（`mutates=True`）：经平台 shell 执行、cwd 固定为工作区根、命令文本里的路径不解析（ADR-0008）；`timeout_seconds` 默认 30、上限 600，601 是 `TOOL_ARGS_INVALID` 且没有进程被启动；命令退出码非 0 仍是 `OK` 且 content 里有退出码；输出单一上限 16384 字节（stdout 与 stderr 合算）超限留固定标记 `[输出已截断]`；超时之后整棵进程树收掉（POSIX `start_new_session=True` + `killpg`，Windows `taskkill /T /F /PID`，ADR-0009）。
   - 派发段并发：同一回合的只读调用最多 8 个同时在跑，沾上「要改动」的排队串行；前缀每回合取样一次、整批共用；`tool/result` 按声明顺序落盘（第二个先完成也一样）。
   - 超时与取消落进词表：`ToolOutcome` 加 `TOOL_TIMEOUT` 与 `TOOL_CANCELLED`（16 值），新事件 `tool/cancelled`（payload 只有 `turn_id` 与 `tool_call_id`，不含命令输出）；超时塌成结果、回合继续，取消打断整个 session（`error/abort` + `turn/end(ABORTED)` + 退出码 5，ADR-0007）。模型请求超时 120 s 写进规格。
@@ -15,7 +15,7 @@
   - 测试 helper 收口：`tests/tool_harness.py` 的 `dispatch_call` / `dispatch_context` / `run_session_fixture` 收 `registry` 与 `approval_gate`，seam ① 的 run 形状收成一份。
   - CI：`.github/workflows/gates.yml` 落地，`windows-latest` + `ubuntu-latest` 两端各跑四道门禁、各判 95% 地板，不持任何 secret。
 - **M3 的收尾门禁**：变异 12 条（10 条首轮被杀，T1 与 O1 存活并已各补一条判据，C2 判定 dud）→ `docs/verification/m3-bash-concurrency-timeout-mutation.md`；Learning Gate 收 L-027 至 L-030、关闭 L-018、补 L-019，**AGENTS.md 本轮不晋升** → `docs/lessons.md`。
-- **M3 还剩**：tasks 7.2（推送分支与 `main`，CI 首绿）、7.3（两端 `TOTAL` 记进本文件）、8.1–8.2（人手验收，见下）、`code-review` 两轴 → `openspec-sync-specs` → `/openspec-archive-change` → `agents-md-slim`。
+- **M3 还剩**：tasks 7.2（推送分支与 `main`，CI 首绿）、7.3（两端 `TOTAL` 记进本文件）、8.1–8.2（人手验收，见下）、`openspec-sync-specs` → `/openspec-archive-change` → `agents-md-slim`。`code-review` 两轴已跑完：A 至 G 七条全修（10.1–10.7，其中 10.4 改的是规格、10.1 与 10.5 改的是实现），Standards 轴的判断项与两条规格 ↔ 实现的判断记账进 ADR-0002 第 18 至 29 条，提交纪律的三处措辞欠账记在同文件最后一节。
 
 ## 门禁实测（Windows 本机）
 
@@ -35,6 +35,7 @@
 - **M3 的人手验收待跑**（tasks 8.1–8.2）：拿真工作区办一件真事（`bash` 生成产物、`read` 读回），再观察两件打断——一条故意超时的命令（跑过 30 s）看 `tool/cancelled` 与回合继续；一次 Ctrl-C 看退出码 5 与 `error/abort`。记录写进 `docs/verification/m3-bash-concurrency-timeout-manual.md` 的空着的那节。不进 CI。
 - **Windows 的 Ctrl-C 黑盒不在 M3**：seam ① 注入 cancel 判据、seam ⑥ Linux 真实 SIGINT 黑盒、两端都跑得动的 seam ⑥ `bash` 超时黑盒（`test_a_bash_timeout_in_the_cli_is_a_result_word_and_the_run_continues`，`timeout_seconds: 1` + 一条不会自己停的命令）都有；Windows 真实控制台 Ctrl-C 没有判据，缺口与边界记在 `docs/verification/m3-bash-concurrency-timeout-manual.md`。ConPTY 路线本机走不通（`UpdateProcThreadAttribute` 恒返回 87），可用的替代形状是 `WriteConsoleInput` 投递 KEY_EVENT（M2 的 approval smoke 用过）。
 - **Linux 侧的判据本机从没跑过**：符号链接键规范化、真实 SIGINT 黑盒、`tests/test_turn_cancel.py` 的 POSIX `killpg` 那一半。CI 首绿之前它们是未验证的；junction 那一半本机跑过（`test_a_junction_key_resolves_to_its_target_without_privileges`），符号链接那一半在 Linux runner 上跑。
+- **硬杀会吞掉已经完成的结果**：`tool/result` 缓冲到批次结束才落盘（design.md 的 D3），所以 SIGKILL 落在批次中间时，已经跑完的那几条结果不在盘上，日志留下「有 `tool/call` 没 `tool/result`」的前缀。取消路径不受影响——`TOOL_CANCELLED` 是合成出来的结果，每条 `tool/call` 都有配对。append-only 日志里「立刻落盘」与「按声明顺序」只能要一样，M3 要的是顺序。pi 的 issue #7053 是同一形状。这条没有判据（判它要在判据里可靠地硬杀子进程再读日志，seam ⑥ 本机做不到），记为已知缺口。
 - **两端覆盖率各报各的，不合并**：95% 地板在两个 runner 上各自判。平台分支在两端各拉低一半是已知形状（D9）。
 - **M3 闭合的三条旧缺口**（原来在本文件的「已知缺口」里）：`approval/*` 晚落盘（ADR-0002 第 9 条）、取消只在回合边界被看到（第 10 条）、`error/fence` 的路径只在自由文本里（第 11 条）。三条都有判据与落地形状，见 `openspec/changes/m3-bash-concurrency-timeout/design.md` 的 D12 / D5 / D13。
 - 延后的重构与记账：`docs/adr/0002-deferred-refactors.md`。M3 收尾轮逐条改判：**已处理** 第 1（含剩的那一半）、6、9、10、11 条；**改判为长期形态** 第 8、12、16 条；**未处理推到 M5** 第 14、15 条（要等第二个 provider 或 REPL）；**未触发** 第 17 条；第 3 条（`_replay` 的扫描逻辑下沉）推到 M6 的 chat REPL。第 2、4、5、7 条 M2 已处理。

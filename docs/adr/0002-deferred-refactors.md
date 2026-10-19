@@ -1,6 +1,6 @@
-# 记账：M1 与 M2 留下的坏味道与设计缺口，到对应里程碑再动
+# 记账：M1 至 M4 留下的坏味道与设计缺口，到对应里程碑再动
 
-这一条不是待办清单的优先级排序，而是 code-review 修复轮（change `m1-event-log-and-turn-loop` 的 tasks 第 11 节）留下的**账**：审查里确认存在的重复与泄漏，M1 里改它们只会增加改动面、不会增加判据，因此只记账不动代码。任何一条到 M2 都可以按新证据改判——但改判要发生在 M2 的 change 里，不是顺手改。第 9 至 12 条来自 M2（change `m2-file-tools-and-fences`）的 `code-review` 两轴审查，第 13 至 17 条来自 M4（change `m4-real-provider`）的同一轮审查；处理方式同样是记账。M3（change `m3-bash-concurrency-timeout`）的收尾轮对第 1、8 至 17 条逐条改判，判词写在各条末尾：已处理 4 条（1、9、10、11），改判为长期形态 3 条（8、12、16），未处理推到 M5 2 条（14、15），未触发 1 条（17）。
+这一条不是待办清单的优先级排序，而是 code-review 修复轮（change `m1-event-log-and-turn-loop` 的 tasks 第 11 节）留下的**账**：审查里确认存在的重复与泄漏，M1 里改它们只会增加改动面、不会增加判据，因此只记账不动代码。任何一条到 M2 都可以按新证据改判——但改判要发生在 M2 的 change 里，不是顺手改。第 9 至 12 条来自 M2（change `m2-file-tools-and-fences`）的 `code-review` 两轴审查，第 13 至 17 条来自 M4（change `m4-real-provider`）的同一轮审查；处理方式同样是记账。M3（change `m3-bash-concurrency-timeout`）的收尾轮对第 1、8 至 17 条逐条改判，判词写在各条末尾：已处理 4 条（1、9、10、11），改判为长期形态 3 条（8、12、16），未处理推到 M5 2 条（14、15），未触发 1 条（17）。第 18 至 29 条来自 M3 的 `code-review` 两轴审查——Standards 轴确认存在但「改它不增加判据」的判断项，加两条规格 ↔ 实现的判断（第 28、29 条）——处理方式同样是记账：八条推到 M5，两条判为不动（25、27），两条按现状留着并写明何时才动（28、29）。最后一节记提交纪律的三处措辞欠账：历史提交不改写，只把与 AGENTS.md 原文不符的地方更正在这里。
 
 ## 1. `run_session` 的九个关键字参数就是 `session/start` 的 payload
 
@@ -138,5 +138,95 @@ payload 是 `turn_id` / `tool_call_id` / `code` / `detail`。规格要求「被�
 - 现在不动的理由：`model/retry` 的存在就是为了让这条可读；写两条 `model/request` 会让「一个回合一次请求」这条形状变模糊，而且要改 event-log 的 payload 字段表（扩词表级决定）。
 - M3 的处理：若流式或并发派发让「一个回合多次请求」成为真实形状，再决定 `model/request` 是否带 `attempt` 字段。
 - **未触发（2026-10-19 核实）**：M3 的并发派发让「一个回合多个工具调用」成为真实形状，没有让「一个回合多次请求」成为真实形状——provider 仍是一回合一次 `generate`，重试那条形状没变。`model/request` 不带 `attempt` 字段这条保留。
+
+## 18. `_dispatch_batch` 一个函数里装着派发段的五件事
+
+`loop/turn_loop.py:138-350` 约 210 行，里面五个闭包：`begin`（176）、`ask_logged`（198）、`escaped`（223）、`one`（240）、`dispatch_one`（250），共用 `calls` / `started` / `finished` / `mutating` / `read_slots` / `outcomes` / `stop` 这批批次状态。取消、超时、围栏、approval 落盘、内核故障五件事都在同一个函数里改（Divergent Change）。
+
+- 现在不动的理由：这些闭包共用的是**一批调用的状态**，抽成模块级函数要把这七份状态传来传去；seam ① 的判据全部从日志外部观察派发结果，抽与不抽对判据没有区别，M3 里抽只增加改动面。
+- 处理时点：M5（chat REPL 需要把同一派发段跑在不同外壳里）或出现第二个派发者时。那时先抽的是批次状态（一个 `_Batch`），不是闭包本身。
+
+## 19. `begin` 与 `ask_logged` 是同形的
+
+两个闭包都是「`_append_all` 写一条 → 有 failure 就记进 `outcome.failure`、`stop.set()`、返回 `False`」（`turn_loop.py:176-196` 与 `198-221`）。
+
+- 现在不动的理由：两者写的记录类型不同，失败之后的下一步也不同（`begin` 假 → 这一条不派发；`ask_logged` 假 → 不问人）。合并要加一个「失败之后怎么办」的参数，那是为两个调用方加的抽象（编码四规第 2 条）。
+- 处理时点：出现第三个「先落盘再决定」的记录时再收（M5 的 REPL 若把 approval 换成异步审批就有第三个）。
+
+## 20. 只读与会改动的派发链在 `dispatch_one` 里分两段写
+
+`if index > 0: await started[index - 1].wait()` 与 `if mutating[index] or mutating[index - 1]: await finished[index - 1].wait()` 串在一起，读的人要自己拼出「只有一对相邻的只读调用允许同时在跑」。
+
+- 现在不动的理由：这两条 `await` 就是那条规则的直译，而规则本身是 M3 实现期才发现的（design.md 的 D1 落地修正）。收成 `await chain(index)` 会把规则从代码里搬进一个名字，规格 turn-loop 那条 scenario 判的正是这两条 `await` 的可观察结果。
+- 处理时点：M5 若并发形状变复杂（只读调用带自己的预算、或出现第三类工具）再抽。
+
+## 21. `registry` / `context` / `approval_gate` / `on_approval_request` 四个入参一路结伴
+
+`dispatch_tool_call(...)` 里后四个每次一起出现（`tools/dispatch.py:41-48`），是 data clump。
+
+- 现在不动的理由：它们就是 seam ② 的接口本身，判据注入的正是这四个的不同组合；收成一个 `DispatchEnvironment` 会让「这条判据注入了哪个门」多一层跳转。
+- 处理时点：M5 / M6（REPL 与 serve 各带一套门与上下文时）。
+
+## 22. 三个名字与实际含义有距离
+
+`_race_with_cancel` 也 race 内核异常（`turn_loop.py:107`）；`MAX_PARALLEL_TOOLS = 8` 实际只约束只读调用（会改动的永远串行，`turn_loop.py:44`）；`_bounded` 做的是「截断并留固定标记」，不是「限制」（`tools/bash_tools.py:23`）。
+
+- 现在不动的理由：改名是纯搬运，判据不受影响；M3 的提交里混进与规格无关的改名会让 `git log` ↔ `tasks.md` 的对应变浑。
+- 处理时点：M5 与第 18 条同一处代码动的时候一起改（`MAX_PARALLEL_TOOLS` → `MAX_PARALLEL_READS` 一类）。
+
+## 23. `denial_code: str | None` 应该是 `FenceCode | None`
+
+`_BatchOutcome.denial_code`（`turn_loop.py:103`）与 `run_session` 里的局部 `denial_code`（`turn_loop.py:390`）是 `str | None`，取值来自 `DispatchOutcome.fence_code`（`FenceCode`）。mypy 挡不住往这两处塞词表外的字符串。
+
+- 现在不动的理由：终点 `RunOutcome.failure_code` 是 `str`（它对应日志里的字段），只锁中间量等于锁一半；M3 里锁它没有新判据。
+- 处理时点：M5 与第 5 条（词表 `Literal`）同源一起收。
+
+## 24. `ApprovalAsked | None` 是一个「可以没有」的钩子
+
+`dispatch_tool_call` 的 `on_approval_request` 可选（`tools/dispatch.py:46`）；不传时 `approval/request` 不落盘，也就是 D12 那条规格在这个调用方身上不成立。实现里唯一的调用方（回合循环）永远传。
+
+- 现在不动的理由：可选是为了 seam ②③ 的判据能单独跑 `dispatch_tool_call`（不建日志也能判围栏与门）。改成必填会让那批判据都要造一份日志。
+- 处理时点：M5。若「不传就少写一条记录」这个形状造成真 bug，再改成必填或换成显式的 NoOp。
+
+## 25. `tests/tool_harness.py` 的 `workspace` / `session_dir` 两个旋钮
+
+`run_session_fixture(..., workspace=None, session_dir=None)` 两个可选参数默认都是 `tmp_path`；只有少数判据用它们（两个档位对 `bash` 那条要两个 session 各一个目录，「日志变得不可写」那条要在跑之前先把日志建出来）。
+
+- 现在不动的理由：用它们的判据都有结构性理由；少一个旋钮就要多一处手搓 `SessionSettings`，那正是第 1 条刚收掉的东西。
+- 处理时点：不动。M5 若 session 目录成为一等概念，跟着那时一起改。
+
+## 26. `tool_harness` 的两个 `wrap` 闭包逐字段重建 `ToolDefinition`
+
+`timed_registry` 与 `serialized_registry` 里的 `wrap`（`tests/tool_harness.py:59` 与 `83`）都把 `ToolDefinition` 的五个字段抄一遍再换 `run`。
+
+- 现在不动的理由：`dataclasses.replace(definition, run=...)` 一行能替，但 M3 里改它没有任何判据变化，只是测试内部形状。
+- 处理时点：M5 顺手（与第 22 条一起）。
+
+## 27. `bash_tools.py` 两处平台判断方向相反
+
+`_terminate_tree` 里 `if sys.platform == "win32":`（`tools/bash_tools.py:41`，`taskkill /T /F /PID`）与启动处 `if sys.platform != "win32":`（`tools/bash_tools.py:61`，`start_new_session=True`）。
+
+- 现在不动的理由：两处都必须是字面量比较，`mypy --strict` 才会剪掉另一侧的 `killpg` / `getpgid` / `SIGKILL`——抽成 helper 函数不剪（M3 实测过，见 `docs/lessons.md`）。两个方向相反是用途不同（终止 vs 启动参数），不是笔误。
+- 处理时点：不动。这是平台分支的长期形态，代价写在 ADR-0009 与 design.md 的 D9（两端各拉低一半覆盖率）。
+
+## 28. `dispatch.py:73-79`：approval 记录写不进日志时塌成 `TOOL_IO_FAILED`
+
+规格没有这条，实现有：`on_approval_request` 报告写不进去时直接返回 `TOOL_IO_FAILED`，不去问人。这一行未覆盖（`docs/CURRENT.md` 的未覆盖清单里）。
+
+- 判词：留着。它是 D12「`approval/request` 在提问之前落盘，写不进去就不问人」的另一半，`TOOL_IO_FAILED` 是既有词表里最贴近的取值，没有为它新造取值。规格侧的对应物是 event-log 那条「提问之前落盘」；「写不进去时得到哪个结果词」目前没有规格，也没有判据需要它。
+- 处理时点：M5 之后若这条变成要判的行为，再在 event-log 的 delta 里写明结果词。
+
+## 29. `registry.py:21-24`：`ToolArgs.approval_detail()` 只有 `bash` 覆写
+
+基类默认给目标路径，六个工具里只有 `bash` 覆写它——一个只有一个实现的钩子。
+
+- 判词：留着到 M5。它现在承担的是「问人的那句话拿什么当主语」这条区分：`bash` 没有目标路径，主语是命令；文件工具主语是路径。
+- 处理时点：M5 之后若仍只有 `bash` 覆写，就把它塌成 dispatch 侧的一个函数（`question_for(definition, args)`）并删掉钩子。
+
+## 提交纪律：本轮审查查出的三处措辞欠账（不改写历史，只记账）
+
+- `b7534fa`、`7608649`、`90bc02f` 三个 docs 提交的信息里没有门禁那一行。AGENTS.md 的原文是「一次提交算『完成』= 测试、覆盖率地板、`mypy --strict`、ruff 四道全绿」，没有区分代码提交与文档提交。从 10.1 起本轮每个提交的信息里都带门禁实测行；历史提交不改写。
+- `788f3b7` 的信息里写「四道门禁跳过（AGENTS.md：门禁那四道是代码提交的门禁）」——括号里那句 AGENTS.md 没有。以仓库文本为准：四道是「一次提交算完成」的定义，规格结构、规格 ↔ 实现、变异测试才是里程碑收尾时跑的。
+- `6704997` 的信息里自称「不是编号 task」。AGENTS.md 要求提交信息带 task 编号；那一轮实际做的是「4.1–4.3 落地时埋下的缺陷」的修复，缺的是打包理由而不是编号本身。之后超过 3 个 task 的提交都在信息里写明理由。
 
 Considered options：现在就抽 `SessionSettings` 与 `Literal` 词表（否：M1 的判据已经全绿，改动只增加面不增加证据）；把 `_replay` 的扫描逻辑立刻下沉（否：只有一个消费者，等第二个消费者出现再抽）；M1 就把工具描述写进 `session/start`（否：M1 没有任何工具可写，写了也测不出差异）；M1 就把 `Message` 抽到独立类型模块（否：一个生产者两个消费者，抽出去只是把同一行 import 换个地方）；M2 就把 `approval/request` 改成提问前写（否：会留下「有 request 没 response」的半对，而 M2 词表里没有表达它的取值）；M2 就在派发循环里查取消（否：先要决定未执行的调用怎么写日志，那是扩词表级决定）。

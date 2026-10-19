@@ -79,7 +79,7 @@
 - [x] 10.5 提问可被取消打断：approval 门改成 awaitable，提问期间取消置位则这一对允许半对、这一条塌成 `TOOL_CANCELLED`。seam ① ② —— `ApprovalGate.request` 与 `StdinApprovalGate.request` 改成 awaitable，真实门的 `readline()` 放进 daemon 线程等（不是 `asyncio.to_thread`，理由记进 design.md 的 D6 重新裁决）；判据两条：`test_a_cancel_arrives_while_the_human_is_being_asked`（注入的门，半对 + `TOOL_CANCELLED` + `error/abort` + `ABORTED`）与 `test_a_cancel_interrupts_a_question_the_human_has_not_answered`（真实门，`readline()` 还挂着时 session 已经以 `ABORTED` 收尾）
 - [x] 10.6 补一条 Windows 也跑得动的 `bash` 超时 CLI 黑盒（seam ⑥），并把 `docs/CURRENT.md` 里「Windows 侧超时黑盒都有」那句改到与实况一致 —— 新判据 `test_a_bash_timeout_in_the_cli_is_a_result_word_and_the_run_continues`（`timeout_seconds: 1` + 一条不会自己停的命令，断言 `TOOL_TIMEOUT` 配对、`tool/cancelled` 有那条、回合继续、`session/end` 收尾、退出码 0）；本文件的门禁数字一并刷新到本轮实测
 - [x] 10.7 「数值不暴露成命令行开关」补参数表判据：`bash` 的 30 / 600、并发上限 8、模型超时 120 都没有对应开关。seam ⑥ —— 新判据 `test_the_run_argument_table_holds_no_switch_for_a_bounded_number`：`minihns run --help` 列出的开关集合与 `_RUN_SWITCHES` 逐字相等，多一个 `--bash-timeout` 或 `--max-parallel-tools` 就红；既有的 `test_run_has_no_switch_that_changes_the_model_timeout` 判退出码 2 那一半
-- [ ] 10.8 记账：Standards 轴的 9 条判断项进 `docs/adr/0002-deferred-refactors.md`；「结果 durability 缓冲到批次结束」这个取舍（硬杀会吞已完成的结果）记进 `design.md` 与 `docs/CURRENT.md` 的缺口
+- [x] 10.8 记账：Standards 轴的 9 条判断项进 `docs/adr/0002-deferred-refactors.md`；「结果 durability 缓冲到批次结束」这个取舍（硬杀会吞已完成的结果）记进 `design.md` 与 `docs/CURRENT.md` 的缺口 —— 账本新增第 18 至 29 条（八条推 M5、两条判为不动、两条按现状留着并写明何时才动），另加一节记提交纪律的三处措辞欠账（`b7534fa` / `7608649` / `90bc02f` 缺门禁行、`788f3b7` 引了一句 AGENTS.md 没有的话、`6704997` 自称「不是编号 task」；历史提交不改写）；design.md 补 D3 的另一面（取消路径有合成、硬杀没有），CURRENT.md 的已知缺口加同一条
 
 ## Workflow follow-up
 
