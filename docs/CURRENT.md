@@ -2,7 +2,7 @@
 
 每里程碑收尾更新一次。接手时以 `git status --short` 与 `git log --oneline -3` 为准，本文件只是快照。
 
-更新：2026-10-19（M3 的实现与收尾门禁跑完，`code-review` 两轴的修复轮 10.1–10.8 跑完，分支 `change/m3-bash-concurrency-timeout` 上 34 个提交；**推送与 CI 首绿已跑（两个 job 都绿），人手验收与归档还没跑**）
+更新：2026-10-19（M3 的实现、收尾门禁、`code-review` 修复轮 10.1–10.8、推送与 CI 首绿、人手验收 8.1–8.2 全部跑完，分支 `change/m3-bash-concurrency-timeout` 上 36 个提交；**只剩 `openspec-sync-specs` → 归档 → `agents-md-slim`**）
 
 ## 进度
 
@@ -15,7 +15,7 @@
   - 测试 helper 收口：`tests/tool_harness.py` 的 `dispatch_call` / `dispatch_context` / `run_session_fixture` 收 `registry` 与 `approval_gate`，seam ① 的 run 形状收成一份。
   - CI：`.github/workflows/gates.yml` 落地，`windows-latest` + `ubuntu-latest` 两端各跑四道门禁、各判 95% 地板，不持任何 secret。
 - **M3 的收尾门禁**：变异 12 条（10 条首轮被杀，T1 与 O1 存活并已各补一条判据，C2 判定 dud）→ `docs/verification/m3-bash-concurrency-timeout-mutation.md`；Learning Gate 收 L-027 至 L-030、关闭 L-018、补 L-019，**AGENTS.md 本轮不晋升** → `docs/lessons.md`。
-- **M3 还剩**：tasks 8.1–8.2（人手验收，见下）、`openspec-sync-specs` → `/openspec-archive-change` → `agents-md-slim`。第 7 节（CI 与推送）四条全勾。`code-review` 两轴已跑完：A 至 G 七条全修（10.1–10.7，其中 10.4 改的是规格、10.1 与 10.5 改的是实现），Standards 轴的判断项与两条规格 ↔ 实现的判断记账进 ADR-0002 第 18 至 29 条，提交纪律的三处措辞欠账记在同文件最后一节。
+- **M3 还剩**：`openspec-sync-specs` → `/openspec-archive-change` → `agents-md-slim`。tasks 第 1 至 9 节全勾（人手验收 8.1–8.2 于 2026-10-19 跑完，见下）。`code-review` 两轴已跑完：A 至 G 七条全修（10.1–10.7，其中 10.4 改的是规格、10.1 与 10.5 改的是实现），Standards 轴的判断项与两条规格 ↔ 实现的判断记账进 ADR-0002 第 18 至 29 条，提交纪律的三处措辞欠账记在同文件最后一节。
 
 ## 门禁实测（Windows 本机）
 
@@ -33,11 +33,12 @@
 
 ## 待办与已知缺口
 
-- **M3 的人手验收待跑**（tasks 8.1–8.2）：清单已备好，等人在真终端跑。三个场景（真事 + 并发派发与落盘顺序 / 一条故意超时的命令 / 一次 Ctrl-C）、可粘贴的命令、要贴回来的东西都在 `docs/verification/m3-bash-concurrency-timeout-manual.md`；工作区 `.tmp/m3-manual/`（gitignored）已备好 `notes/a.md`、`notes/b.md`、`count_lines.py`、`slow.py`，`counts.txt` 与日志目录已清空。不进 CI。
+- **M3 的人手验收跑完**（tasks 8.1–8.2，2026-10-19 20:08–20:11，人在真终端跑三个 session，观察记进 `docs/verification/m3-bash-concurrency-timeout-manual.md`）：真事 `c25136a7…` 52 条记录 / 31.92 s / 6 回合，三次 `bash` 提问都问到并得到 `APPROVED`，`counts.txt` 落在工作区根，t5 两条 `read` 是 `call c1`、`call c2`、`result c1`、`result c2`（两条结果同一毫秒）——10.4 的「可以交错」在真 run 里出现。超时 `4a2da4bf…` 实测 **30.07 s** 塌成 `TOOL_TIMEOUT` + `tool/cancelled`，之后三个回合继续，进程树收干净且是模型自己用 `tasklist` / `Get-CimInstance` 查出来的。Ctrl-C `30eae257…` 11 条记录 / 7.51 s，`TOOL_CANCELLED` → `tool/cancelled` → `error/abort(ABORTED)` → `session/end(ABORTED)`。两格没有终端侧直接证据：退出码 5 是从日志加映射表读出的，「同一回合里没开始的调用也各有一条结果」那一回合没撞到。不进 CI。
 - **Windows 的 Ctrl-C 黑盒不在 M3**：seam ① 注入 cancel 判据、seam ⑥ Linux 真实 SIGINT 黑盒、两端都跑得动的 seam ⑥ `bash` 超时黑盒（`test_a_bash_timeout_in_the_cli_is_a_result_word_and_the_run_continues`，`timeout_seconds: 1` + 一条不会自己停的命令）都有；Windows 真实控制台 Ctrl-C 没有判据，缺口与边界记在 `docs/verification/m3-bash-concurrency-timeout-manual.md`。ConPTY 路线本机走不通（`UpdateProcThreadAttribute` 恒返回 87），可用的替代形状是 `WriteConsoleInput` 投递 KEY_EVENT（M2 的 approval smoke 用过）。
 - **Linux 侧的判据在 CI 上跑绿了，本机仍没跑过**：符号链接键规范化、真实 SIGINT 黑盒、`tests/test_turn_cancel.py` 的 POSIX `killpg` 那一半——run #1 / #2 的 `ubuntu-latest` job 绿就是它们绿的证据（那两条在 Linux 上不被 skip，95% 地板也在那一端单独判过）。本机这一半依旧未验证；junction 那一半本机跑过（`test_a_junction_key_resolves_to_its_target_without_privileges`）。
 - **硬杀会吞掉已经完成的结果**：`tool/result` 缓冲到批次结束才落盘（design.md 的 D3），所以 SIGKILL 落在批次中间时，已经跑完的那几条结果不在盘上，日志留下「有 `tool/call` 没 `tool/result`」的前缀。取消路径不受影响——`TOOL_CANCELLED` 是合成出来的结果，每条 `tool/call` 都有配对。append-only 日志里「立刻落盘」与「按声明顺序」只能要一样，M3 要的是顺序。pi 的 issue #7053 是同一形状。这条没有判据（判它要在判据里可靠地硬杀子进程再读日志，seam ⑥ 本机做不到），记为已知缺口。
-- **两端覆盖率各报各的，不合并**：95% 地板在两个 runner 上各自判。平台分支在两端各拉低一半是已知形状（D9）。
+- **两端覆盖率各报各的，不合并**：95% 地板在两个 runner 上各自判。平台分支在两端各拉低一半是已知形状（D9）。M3 实测：两端 `TOTAL` 都是 1136 / 50 / 96%，数字相同。
+- **`bash` 的输出按 UTF-8 解码，非 UTF-8 的控制台输出碎在日志里**：人手验收实测到，cmd.exe 上 `ls` 不存在时写的是 GBK 字节，`tools/bash_tools.py:83` 的 `errors="replace"` 把 content 变成 34 个 U+FFFD。没有判据（判它要在判据里造一条产出非 UTF-8 字节的命令并断言中文可读），记进 `docs/adr/0002-deferred-refactors.md` 第 30 条，处理时点 M5 或 M6。
 - **M3 闭合的三条旧缺口**（原来在本文件的「已知缺口」里）：`approval/*` 晚落盘（ADR-0002 第 9 条）、取消只在回合边界被看到（第 10 条）、`error/fence` 的路径只在自由文本里（第 11 条）。三条都有判据与落地形状，见 `openspec/changes/m3-bash-concurrency-timeout/design.md` 的 D12 / D5 / D13。
 - 延后的重构与记账：`docs/adr/0002-deferred-refactors.md`。M3 收尾轮逐条改判：**已处理** 第 1（含剩的那一半）、6、9、10、11 条；**改判为长期形态** 第 8、12、16 条；**未处理推到 M5** 第 14、15 条（要等第二个 provider 或 REPL）；**未触发** 第 17 条；第 3 条（`_replay` 的扫描逻辑下沉）推到 M6 的 chat REPL。第 2、4、5、7 条 M2 已处理。
 - 变异测试记录：`docs/verification/m1-mutation.md`（两轮 18 条：16 杀，G 与 P 各换回一条判据）、`docs/verification/m2-file-tools-and-fences-mutation.md`（收尾轮 20 条 + 审查后抽查 4 条）、`docs/verification/m4-real-provider-mutation.md`（18 条：17 杀，E2 补三条判据后被杀）、`docs/verification/m3-bash-concurrency-timeout-mutation.md`（12 条：10 杀，T1 与 O1 补判据后被杀，C2 是 dud）。

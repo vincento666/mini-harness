@@ -1,6 +1,6 @@
 # 记账：M1 至 M4 留下的坏味道与设计缺口，到对应里程碑再动
 
-这一条不是待办清单的优先级排序，而是 code-review 修复轮（change `m1-event-log-and-turn-loop` 的 tasks 第 11 节）留下的**账**：审查里确认存在的重复与泄漏，M1 里改它们只会增加改动面、不会增加判据，因此只记账不动代码。任何一条到 M2 都可以按新证据改判——但改判要发生在 M2 的 change 里，不是顺手改。第 9 至 12 条来自 M2（change `m2-file-tools-and-fences`）的 `code-review` 两轴审查，第 13 至 17 条来自 M4（change `m4-real-provider`）的同一轮审查；处理方式同样是记账。M3（change `m3-bash-concurrency-timeout`）的收尾轮对第 1、8 至 17 条逐条改判，判词写在各条末尾：已处理 4 条（1、9、10、11），改判为长期形态 3 条（8、12、16），未处理推到 M5 2 条（14、15），未触发 1 条（17）。第 18 至 29 条来自 M3 的 `code-review` 两轴审查——Standards 轴确认存在但「改它不增加判据」的判断项，加两条规格 ↔ 实现的判断（第 28、29 条）——处理方式同样是记账：八条推到 M5，两条判为不动（25、27），两条按现状留着并写明何时才动（28、29）。最后一节记提交纪律的三处措辞欠账：历史提交不改写，只把与 AGENTS.md 原文不符的地方更正在这里。
+这一条不是待办清单的优先级排序，而是 code-review 修复轮（change `m1-event-log-and-turn-loop` 的 tasks 第 11 节）留下的**账**：审查里确认存在的重复与泄漏，M1 里改它们只会增加改动面、不会增加判据，因此只记账不动代码。任何一条到 M2 都可以按新证据改判——但改判要发生在 M2 的 change 里，不是顺手改。第 9 至 12 条来自 M2（change `m2-file-tools-and-fences`）的 `code-review` 两轴审查，第 13 至 17 条来自 M4（change `m4-real-provider`）的同一轮审查；处理方式同样是记账。M3（change `m3-bash-concurrency-timeout`）的收尾轮对第 1、8 至 17 条逐条改判，判词写在各条末尾：已处理 4 条（1、9、10、11），改判为长期形态 3 条（8、12、16），未处理推到 M5 2 条（14、15），未触发 1 条（17）。第 18 至 29 条来自 M3 的 `code-review` 两轴审查——Standards 轴确认存在但「改它不增加判据」的判断项，加两条规格 ↔ 实现的判断（第 28、29 条）——处理方式同样是记账：八条推到 M5，两条判为不动（25、27），两条按现状留着并写明何时才动（28、29）。第 30 条来自 M3 的人手验收（cmd.exe 的 GBK 输出碎成 U+FFFD），同样是记账。最后一节记提交纪律的三处措辞欠账：历史提交不改写，只把与 AGENTS.md 原文不符的地方更正在这里。
 
 ## 1. `run_session` 的九个关键字参数就是 `session/start` 的 payload
 
@@ -222,6 +222,13 @@ payload 是 `turn_id` / `tool_call_id` / `code` / `detail`。规格要求「被�
 
 - 判词：留着到 M5。它现在承担的是「问人的那句话拿什么当主语」这条区分：`bash` 没有目标路径，主语是命令；文件工具主语是路径。
 - 处理时点：M5 之后若仍只有 `bash` 覆写，就把它塌成 dispatch 侧的一个函数（`question_for(definition, args)`）并删掉钩子。
+
+## 30. `bash` 的输出按 UTF-8 解码，非 UTF-8 的控制台输出碎成替换字符
+
+`tools/bash_tools.py:83` 的 `stdout.decode("utf-8", errors="replace") + stderr.decode(...)`。M3 人手验收实测到：cmd.exe 上 `ls` 不存在时写的是 GBK 字节，落进日志的是 **34 个 U+FFFD**（`docs/verification/m3-bash-concurrency-timeout-manual.md` 的「别扭与意外」第 2 条）。模型看到的是 `'ls' ??????ڲ???ⲿ???`。
+
+- 判词：M3 不动。规格只保证「命令的输出是结果」，没有规定解码选型；`errors="replace"` 至少保证不抛异常。真正的修法要先决定拿什么当依据——Windows 侧的 OEM 代码页（`cp936`）、`locale.getpreferredencoding(False)`，还是先试 UTF-8 失败再回退——那是选型不是修补，选错会把一种乱码换成另一种。
+- 处理时点：M5 或 M6，等 `bash` 的输出成为模型的主要输入面。届时先补一条 seam ③ 判据：一条命令在 Windows 上产出非 UTF-8 字节，断言 `tool/result` 的 content 是可读的中文而不是替换字符。
 
 ## 提交纪律：本轮审查查出的三处措辞欠账（不改写历史，只记账）
 

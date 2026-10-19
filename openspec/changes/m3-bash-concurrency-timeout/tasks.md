@@ -61,8 +61,8 @@
 
 ## 8. 人手验收（AGENTS.md 固定判据）
 
-- [ ] 8.1 拿真实工作区办一件真事：一次 run 里让模型用 `bash` 跑一条真实检查命令、再用 `read` 读它的输出；观察并发派发与落盘顺序。记进 `docs/verification/m3-bash-concurrency-timeout-manual.md`。
-- [ ] 8.2 同一份记录里观察两件打断：一条故意超时的命令（跑过 30 s）看 `tool/cancelled` 与回合继续；一次 Ctrl-C 看退出码 5 与 `error/abort`。
+- [x] 8.1 拿真实工作区办一件真事：一次 run 里让模型用 `bash` 跑一条真实检查命令、再用 `read` 读它的输出；观察并发派发与落盘顺序。记进 `docs/verification/m3-bash-concurrency-timeout-manual.md`。—— session `c25136a7e1d942cb9b953fdd329af558`（52 条记录、31.92 s、6 回合、`MAX_TURNS` → 退出码 0）。三次 `bash` 提问都在真 tty 上问到并得到 `APPROVED`；`python count_lines.py` 的 `tool/result` 是 `OK` 且第一行「退出码 0」，`counts.txt` 落在工作区根；t5 两条 `read` 是 `call c1`、`call c2`、`result c1`、`result c2`（两条结果同一毫秒），交错形状与 10.4 的措辞一致。没对上的一格：收尾是 `MAX_TURNS` 不是 `MODEL_COMPLETED`，`--max-turns 6` 不够办完这件事
+- [x] 8.2 同一份记录里观察两件打断：一条故意超时的命令（跑过 30 s）看 `tool/cancelled` 与回合继续；一次 Ctrl-C 看退出码 5 与 `error/abort`。—— 超时：`4a2da4bf8106482a9dbab9ab54e7ce3d`，`tool/call` → `tool/result` 实测 **30.07 s**，`TOOL_TIMEOUT` 与 `tool/cancelled` 都在（结果在前），t4 / t5 / t6 三个回合继续，进程树收干净且是模型自己查出来的。Ctrl-C：`30eae25741a840f381e8fc1fd41221c9`，11 条记录、7.51 s，`TOOL_CANCELLED` → `tool/cancelled` → `error/abort(ABORTED)` → `session/end(ABORTED)`。两格没有终端侧直接证据（已在记录里标明）：退出码 5 是从日志加映射表读出的，「同一回合里没开始的调用也各有一条结果」那一回合没撞到
 
 ## 9. 收尾门禁
 
