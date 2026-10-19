@@ -5,7 +5,7 @@
 - [x] 1.1 `tool/cancelled` 进 `events/vocabulary.py` 的具体类型表；翻转 `tests/test_event_vocabulary.py` 里「它在词表外」那条判据（改成在表内、写出去不被记为 `unrecognized_type`）。seam ④
 - [x] 1.2 `ToolOutcome` 加 `TOOL_TIMEOUT` 与 `TOOL_CANCELLED`；`tests/test_vocabulary_reachability.py` 先加两条可达判据（先红）。seam ②
 - [x] 1.3 `tool/cancelled` 的 payload 形状判据：含 `turn_id` 与 `tool_call_id`、不含命令输出或文件内容。seam ④
-- [ ] 1.4 `tests/test_turn_loop.py` 里「M2 场景不写 tool/cancelled」那条判据拆成两条：取消发生在回合边界时仍不写、取消打断执行中的调用时必写。seam ①
+- [x] 1.4 `tests/test_turn_loop.py` 里「M2 场景不写 tool/cancelled」那条判据拆成两条：取消发生在回合边界时仍不写、取消打断执行中的调用时必写。seam ① —— 前半拆成 `test_a_cancel_at_the_turn_boundary_writes_no_tool_cancelled`，后半是 `test_turn_cancel.py::test_a_cancel_interrupts_the_call_that_is_running`；原来那条同时判 `model/retry` 的半边拆成 `test_a_fenced_fixture_run_writes_no_model_retry`
 - [x] 1.5 `error/fence` 的 payload 加 `path` 与 `raw_path`（`detail` 只面向人）：越界写那条判据断言两个字段各有取值，`read-only` 下的 `bash` 那条断言两者都是 `null`。ADR-0002 第 11 条。seam ②④
 
 ## 2. 测试 helper 收口（判据①的前置）

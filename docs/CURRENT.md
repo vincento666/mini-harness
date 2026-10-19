@@ -2,12 +2,12 @@
 
 每里程碑收尾更新一次。接手时以 `git status --short` 与 `git log --oneline -3` 为准，本文件只是快照。
 
-更新：2026-10-19（M3 的实现与收尾门禁跑完，分支 `change/m3-bash-concurrency-timeout` 上 23 个提交；**推送、CI 首绿、人手验收、`code-review` 两轴与归档还没跑**）
+更新：2026-10-19（M3 的实现与收尾门禁跑完，分支 `change/m3-bash-concurrency-timeout` 上 24 个提交；**推送、CI 首绿、人手验收、`code-review` 两轴与归档还没跑**）
 
 ## 进度
 
 - **M1 / M2 / M4 完成并已归档**：分别在 `openspec/changes/archive/2026-10-16-m1-event-log-and-turn-loop/`、`2026-10-18-m2-file-tools-and-fences/`、`2026-10-18-m4-real-provider/`，tag `m1` / `m2` / `m4`，merge commit `141e28c` / `d89a7c2` / `1d8e120`。主规格现有 7 个能力，`openspec validate --specs` 7 过 0 失败（M2 后 cli 7 / context-projection 8 / event-log 9 / fences 12 / file-tools 11 / provider 9 / turn-loop 9）。
-- **M3 实现跑完，收尾门禁跑完，未合并未归档**：change `m3-bash-concurrency-timeout`，分支 `change/m3-bash-concurrency-timeout`（`main` 之上 23 个提交，HEAD `e11161c`）。落地的东西：
+- **M3 实现跑完，收尾门禁跑完，未合并未归档**：change `m3-bash-concurrency-timeout`，分支 `change/m3-bash-concurrency-timeout`（`main` 之上 24 个提交）。落地的东西：
   - `bash` 工具（`mutates=True`）：经平台 shell 执行、cwd 固定为工作区根、命令文本里的路径不解析（ADR-0008）；`timeout_seconds` 默认 30、上限 600，601 是 `TOOL_ARGS_INVALID` 且没有进程被启动；命令退出码非 0 仍是 `OK` 且 content 里有退出码；输出单一上限 16384 字节（stdout 与 stderr 合算）超限留固定标记 `[输出已截断]`；超时之后整棵进程树收掉（POSIX `start_new_session=True` + `killpg`，Windows `taskkill /T /F /PID`，ADR-0009）。
   - 派发段并发：同一回合的只读调用最多 8 个同时在跑，沾上「要改动」的排队串行；前缀每回合取样一次、整批共用；`tool/result` 按声明顺序落盘（第二个先完成也一样）。
   - 超时与取消落进词表：`ToolOutcome` 加 `TOOL_TIMEOUT` 与 `TOOL_CANCELLED`（16 值），新事件 `tool/cancelled`（payload 只有 `turn_id` 与 `tool_call_id`，不含命令输出）；超时塌成结果、回合继续，取消打断整个 session（`error/abort` + `turn/end(ABORTED)` + 退出码 5，ADR-0007）。模型请求超时 120 s 写进规格。
@@ -21,7 +21,7 @@
 
 | 门禁 | 实测 |
 |---|---|
-| 测试 | 213 passed / 2 skipped。skip 的两条：符号链接判据（本机不允许创建符号链接）、`test_sigint_in_a_real_subprocess_exits_with_five`（`skipif win32`，Linux 侧跑）。全量带覆盖率记账约 57 秒 |
+| 测试 | 214 passed / 2 skipped。skip 的两条：符号链接判据（本机不允许创建符号链接）、`test_sigint_in_a_real_subprocess_exits_with_five`（`skipif win32`，Linux 侧跑）。全量带覆盖率记账约 55 秒 |
 | 覆盖率 | `coverage erase` → `coverage run -m pytest` → `coverage combine` → `coverage report --fail-under=95`：TOTAL **95%**（1103 语句 / 52 未覆盖）；地板 `fail_under = 95` |
 | 覆盖率分布 | `events/reader.py` 85% · `provider/openai_compat.py` 89% · `loop/turn_loop.py` 90% · `tools/bash_tools.py` 94% · `tools/file_tools.py` 96% · `tools/registry.py` 97% · `tools/dispatch.py` 98% · `provider/mock.py` 98% · `cli/main.py` 99% · 其余 100% |
 | 类型 | `mypy --strict` 干净，22 个源文件 |

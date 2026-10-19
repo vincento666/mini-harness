@@ -341,9 +341,15 @@ async def test_the_fence_denial_record_carries_both_path_fields(tmp_path: Path) 
     assert not (tmp_path.parent / "outside.md").exists()
 
 
-async def test_no_m2_scenario_writes_tool_cancelled_or_model_retry(tmp_path: Path) -> None:
+async def test_a_cancel_at_the_turn_boundary_writes_no_tool_cancelled(tmp_path: Path) -> None:
+    """取消发生在回合边界（`generate` 期间）时不写 `tool/cancelled`。
+
+    打断正在执行的调用必写，那一半在 `test_turn_cancel.py` 的
+    `test_a_cancel_interrupts_the_call_that_is_running`。两条合起来才是规格里那对判据：
+    这个词只属于「被打断的那个调用」。
+    """
     cancel = asyncio.Event()
-    cancel_log, _ = await run_session_fixture(
+    log, _ = await run_session_fixture(
         tmp_path,
         "s-no-cancel-event",
         _CancelDuringGenerate(cancel),
@@ -351,7 +357,19 @@ async def test_no_m2_scenario_writes_tool_cancelled_or_model_retry(tmp_path: Pat
         cancel=cancel,
         max_turns=8,
     )
-    fence_log, _ = await run_session_fixture(
+
+    records = read_events(log.path)
+    types = [record.type for record in records]
+    assert "tool/cancelled" not in types
+    # 词表外的类型会被 `EventLog.append` 塌成 `error/internal`，所以还要看它记下的原类型。
+    unrecognized = [record.payload.get("unrecognized_type") for record in records]
+    assert "tool/cancelled" not in unrecognized
+    assert "error/abort" in types
+
+
+async def test_a_fenced_fixture_run_writes_no_model_retry(tmp_path: Path) -> None:
+    """围栏拒绝收尾的 run 里没有 `model/retry`：重试事实只属于真实适配器的那条路径。"""
+    log, _ = await run_session_fixture(
         tmp_path / "fence",
         "s-no-retry",
         FixtureProvider(entries=_two_write_entries()),
@@ -359,18 +377,11 @@ async def test_no_m2_scenario_writes_tool_cancelled_or_model_retry(tmp_path: Pat
         max_turns=8,
     )
 
-    types = [record.type for record in read_events(cancel_log.path)]
-    types += [record.type for record in read_events(fence_log.path)]
-    assert "tool/cancelled" not in types
+    records = read_events(log.path)
+    types = [record.type for record in records]
     assert "model/retry" not in types
-    # 词表外的类型会被 `EventLog.append` 塌成 `error/internal`，所以还要看它记下的原类型。
-    unrecognized = [
-        record.payload.get("unrecognized_type")
-        for record in read_events(cancel_log.path) + read_events(fence_log.path)
-    ]
-    assert "tool/cancelled" not in unrecognized
+    unrecognized = [record.payload.get("unrecognized_type") for record in records]
     assert "model/retry" not in unrecognized
-    assert "error/abort" in types
     assert "error/fence" in types
 
 
