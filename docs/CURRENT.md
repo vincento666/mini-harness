@@ -21,19 +21,19 @@
 
 | 门禁 | 实测 |
 |---|---|
-| 测试 | 214 passed / 2 skipped。skip 的两条：符号链接判据（本机不允许创建符号链接）、`test_sigint_in_a_real_subprocess_exits_with_five`（`skipif win32`，Linux 侧跑）。全量带覆盖率记账约 55 秒 |
-| 覆盖率 | `coverage erase` → `coverage run -m pytest` → `coverage combine` → `coverage report --fail-under=95`：TOTAL **95%**（1103 语句 / 52 未覆盖）；地板 `fail_under = 95` |
-| 覆盖率分布 | `events/reader.py` 85% · `provider/openai_compat.py` 89% · `loop/turn_loop.py` 90% · `tools/bash_tools.py` 94% · `tools/file_tools.py` 96% · `tools/registry.py` 97% · `tools/dispatch.py` 98% · `provider/mock.py` 98% · `cli/main.py` 99% · 其余 100% |
+| 测试 | 221 passed / 2 skipped。skip 的两条：符号链接判据（本机不允许创建符号链接）、`test_sigint_in_a_real_subprocess_exits_with_five`（`skipif win32`，Linux 侧跑）。全量带覆盖率记账约 62 秒 |
+| 覆盖率 | `coverage erase` → `coverage run -m pytest` → `coverage combine` → `coverage report --fail-under=95`：TOTAL **96%**（1136 语句 / 50 未覆盖）；地板 `fail_under = 95` |
+| 覆盖率分布 | `events/reader.py` 85% · `provider/openai_compat.py` 89% · `loop/turn_loop.py` 91% · `tools/bash_tools.py` 94% · `tools/file_tools.py` 96% · `tools/registry.py` 97% · `provider/mock.py` 98% · `tools/dispatch.py` 98% · `cli/main.py` 99% · 其余 100% |
 | 类型 | `mypy --strict` 干净，22 个源文件 |
 | 风格 | `ruff check` 干净；`ruff format --diff` 空（56 文件）；全仓没有一处 `# noqa` |
 | CI | 门禁工作流已落地并本地验证过命令序列（八条命令逐条退出码 0）；**Actions 还没跑过第一轮**：分支与 `main` 都只在本地，`origin/main` 落后 54 个提交，推送是人要做的动作 |
 
-52 条未覆盖行里绝大多数是回合循环里「日志写不进去」的分支（`turn_loop.py` 的 176–178、360、364、374、399、427、440、469、481 与 `_race_with_cancel` 的 118、`dispatch.py` 的 74）。这一类在 seam ④ 直接判日志层，不在 seam ① 造场景去撞它——刻意没有为它们写判据，每个相关提交的信息里都写明了这一点。要抬地板就补 `events/reader.py`、`provider/openai_compat.py`（响应解析里那些「形状不对」的分支）的判据，不要凑低价值测试。
+50 条未覆盖行里绝大多数是回合循环里「日志写不进去」的分支（`turn_loop.py` 的 157、193–195、218–220、263、274、281、286、340、400、404、414、439、467、509、521 与 `dispatch.py` 的 74：approval 记录写不进日志时塌成 `TOOL_IO_FAILED`）。这一类在 seam ④ 直接判日志层，不在 seam ① 造场景去撞它——刻意没有为它们写判据，每个相关提交的信息里都写明了这一点。剩下的是平台分支与响应解析的形状分支：`bash_tools.py` 的 53–54、63（Windows 与 POSIX 各一半）、`file_tools.py` 的 128、130、133、160–161、203、`reader.py` 的 25、28–29、34、`openai_compat.py` 的 13 条、`cli/main.py` 的 216、254、`registry.py` 的 23、`mock.py` 的 67。要抬地板就补 `events/reader.py`、`provider/openai_compat.py`（响应解析里那些「形状不对」的分支）的判据，不要凑低价值测试。
 
 ## 待办与已知缺口
 
 - **M3 的人手验收待跑**（tasks 8.1–8.2）：拿真工作区办一件真事（`bash` 生成产物、`read` 读回），再观察两件打断——一条故意超时的命令（跑过 30 s）看 `tool/cancelled` 与回合继续；一次 Ctrl-C 看退出码 5 与 `error/abort`。记录写进 `docs/verification/m3-bash-concurrency-timeout-manual.md` 的空着的那节。不进 CI。
-- **Windows 的 Ctrl-C 黑盒不在 M3**：seam ① 注入 cancel 判据、seam ⑥ Linux 真实 SIGINT 黑盒、Windows 侧超时黑盒都有；Windows 真实控制台 Ctrl-C 没有判据，缺口与边界记在 `docs/verification/m3-bash-concurrency-timeout-manual.md`。ConPTY 路线本机走不通（`UpdateProcThreadAttribute` 恒返回 87），可用的替代形状是 `WriteConsoleInput` 投递 KEY_EVENT（M2 的 approval smoke 用过）。
+- **Windows 的 Ctrl-C 黑盒不在 M3**：seam ① 注入 cancel 判据、seam ⑥ Linux 真实 SIGINT 黑盒、两端都跑得动的 seam ⑥ `bash` 超时黑盒（`test_a_bash_timeout_in_the_cli_is_a_result_word_and_the_run_continues`，`timeout_seconds: 1` + 一条不会自己停的命令）都有；Windows 真实控制台 Ctrl-C 没有判据，缺口与边界记在 `docs/verification/m3-bash-concurrency-timeout-manual.md`。ConPTY 路线本机走不通（`UpdateProcThreadAttribute` 恒返回 87），可用的替代形状是 `WriteConsoleInput` 投递 KEY_EVENT（M2 的 approval smoke 用过）。
 - **Linux 侧的判据本机从没跑过**：符号链接键规范化、真实 SIGINT 黑盒、`tests/test_turn_cancel.py` 的 POSIX `killpg` 那一半。CI 首绿之前它们是未验证的；junction 那一半本机跑过（`test_a_junction_key_resolves_to_its_target_without_privileges`），符号链接那一半在 Linux runner 上跑。
 - **两端覆盖率各报各的，不合并**：95% 地板在两个 runner 上各自判。平台分支在两端各拉低一半是已知形状（D9）。
 - **M3 闭合的三条旧缺口**（原来在本文件的「已知缺口」里）：`approval/*` 晚落盘（ADR-0002 第 9 条）、取消只在回合边界被看到（第 10 条）、`error/fence` 的路径只在自由文本里（第 11 条）。三条都有判据与落地形状，见 `openspec/changes/m3-bash-concurrency-timeout/design.md` 的 D12 / D5 / D13。

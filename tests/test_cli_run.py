@@ -355,6 +355,64 @@ def test_a_bash_command_runs_end_to_end_in_the_cli(tmp_path: Path) -> None:
     assert (tmp_path / "made.md").exists()
 
 
+def test_a_bash_timeout_in_the_cli_is_a_result_word_and_the_run_continues(tmp_path: Path) -> None:
+    """seam ⑥：`bash` 超时在真实 CLI 里塌成结果词，回合继续走到正常收尾，退出码 0。
+
+    Windows 也跑得动：命令是 `python <文件>`、超时用 `timeout_seconds: 1`。M3 原本只有
+    Linux 侧的 SIGINT 黑盒，超时这条两端都要有——它判的是超时收尾，不是打断收尾。
+    `--yes` 是因为黑盒的 stdin 不是 tty，而 `bash` 算会改动的工具。
+    """
+    (tmp_path / "loop.py").write_text("import time\n\nwhile True:\n    time.sleep(0.1)\n", "utf-8")
+    (tmp_path / "a.md").write_text("甲\n", encoding="utf-8")
+    fixture = tmp_path / "timeout.json"
+    fixture.write_text(
+        json.dumps(
+            [
+                {
+                    "content": "跑一条不会自己停的命令",
+                    "finish_reason": "tool_calls",
+                    "tool_calls": [
+                        {
+                            "id": "c1",
+                            "name": "bash",
+                            "arguments": {"command": "python loop.py", "timeout_seconds": 1},
+                        }
+                    ],
+                },
+                {
+                    "content": "超时之后回合继续",
+                    "finish_reason": "tool_calls",
+                    "tool_calls": [
+                        {"id": "c2", "name": "read", "arguments": {"file_path": "a.md"}}
+                    ],
+                },
+                {"content": "完了", "finish_reason": "stop"},
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    result = _cli(
+        "run", "-p", "任务", "--provider", "mock", "--fixture", str(fixture), "--yes", cwd=tmp_path
+    )
+
+    assert result.returncode == 0
+    logs = _log_files(tmp_path)
+    assert logs
+    events = [json.loads(line) for line in logs[0].read_text(encoding="utf-8").splitlines()]
+    outcomes = [
+        (str(event["payload"]["tool_call_id"]), str(event["payload"]["outcome"]))
+        for event in events
+        if event["type"] == "tool/result"
+    ]
+    assert outcomes == [("c1", "TOOL_TIMEOUT"), ("c2", "OK")]
+    assert [
+        event["payload"]["tool_call_id"] for event in events if event["type"] == "tool/cancelled"
+    ] == ["c1"]
+    assert events[-1]["type"] == "session/end"
+
+
 @pytest.mark.skipif(
     sys.platform == "win32",
     reason=(
