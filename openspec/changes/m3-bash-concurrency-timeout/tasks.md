@@ -4,7 +4,7 @@
 
 - [x] 1.1 `tool/cancelled` 进 `events/vocabulary.py` 的具体类型表；翻转 `tests/test_event_vocabulary.py` 里「它在词表外」那条判据（改成在表内、写出去不被记为 `unrecognized_type`）。seam ④
 - [x] 1.2 `ToolOutcome` 加 `TOOL_TIMEOUT` 与 `TOOL_CANCELLED`；`tests/test_vocabulary_reachability.py` 先加两条可达判据（先红）。seam ②
-- [ ] 1.3 `tool/cancelled` 的 payload 形状判据：含 `turn_id` 与 `tool_call_id`、不含命令输出或文件内容。seam ④
+- [x] 1.3 `tool/cancelled` 的 payload 形状判据：含 `turn_id` 与 `tool_call_id`、不含命令输出或文件内容。seam ④
 - [ ] 1.4 `tests/test_turn_loop.py` 里「M2 场景不写 tool/cancelled」那条判据拆成两条：取消发生在回合边界时仍不写、取消打断执行中的调用时必写。seam ①
 - [x] 1.5 `error/fence` 的 payload 加 `path` 与 `raw_path`（`detail` 只面向人）：越界写那条判据断言两个字段各有取值，`read-only` 下的 `bash` 那条断言两者都是 `null`。ADR-0002 第 11 条。seam ②④
 
@@ -20,7 +20,7 @@
 - [x] 3.1 `BashArgs` 与 `bash` 的工具定义（`mutates=True`）注册进注册表；`--sandbox read-only` 下被拒的判据（`DENIED_BY_FENCE` + `error/fence` 的 `SANDBOX_DENIES_WRITE`，命令没有副作用）。seam ③
 - [x] 3.2 cwd 固定为工作区根：命令写相对路径的文件，`read` 用同一相对路径读到它。seam ③
 - [x] 3.3 超时数值：默认 30 s、入参 `timeout_seconds` 上限 600、601 是 `TOOL_ARGS_INVALID` 且没有进程被启动。seam ③
-- [ ] 3.4 执行段的超时塌成结果：`TOOL_TIMEOUT` 加一条配对的 `tool/cancelled`，进程没有未捕获异常（判据要用异常族里不显眼的成员，不只 `TimeoutError`）。seam ②③
+- [x] 3.4 执行段的超时塌成结果：`TOOL_TIMEOUT` 加一条配对的 `tool/cancelled`，进程没有未捕获异常（判据要用异常族里不显眼的成员，不只 `TimeoutError`）。seam ②③
 - [x] 3.5 命令退出码非 0 仍是 `OK`，content 含退出码与 stderr 内容。seam ③
 - [x] 3.6 输出上限与截断标记：超限的 content 含固定标记、长度有界、`outcome` 不变。seam ③
 - [x] 3.7 进程树终止：命令启动的后代进程在超时之后不再运行、不再继续写工作区（两端各自断言，判据不断言手段）。seam ③
@@ -38,7 +38,7 @@
 
 ## 5. 超时与取消落进回合与 CLI
 
-- [ ] 5.1 超时后回合继续：`TOOL_TIMEOUT` 之后同批剩余调用照常派发，`turn/end` 的 `stop_reason` 不是 `ABORTED`。seam ①
+- [x] 5.1 超时后回合继续：`TOOL_TIMEOUT` 之后同批剩余调用照常派发，`turn/end` 的 `stop_reason` 不是 `ABORTED`。seam ①
 - [ ] 5.2 取消打断正在执行的调用：`tool/cancelled` + `TOOL_CANCELLED` + `error/abort` + `turn/end(ABORTED)` + 退出码 5（seam ① 注入 cancel）。seam ①
 - [ ] 5.3 取消之后没有「有 `tool/call` 没 `tool/result`」的记录。seam ①
 - [ ] 5.4 Linux 上 SIGINT 的 CLI 黑盒：真实子进程 + SIGINT → 退出码 5 与上述日志形状。seam ⑥

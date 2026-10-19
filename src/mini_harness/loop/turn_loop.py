@@ -43,6 +43,9 @@ STOP_REASONS: frozenset[str] = frozenset(get_args(StopReason))
 # 同一回合里同时在跑的只读调用上限；会改动文件的调用不吃这个额度，它们串行。
 MAX_PARALLEL_TOOLS = 8
 
+# 被超时或取消打断的结果词，各配一条 `tool/cancelled`。
+CANCELLED_OUTCOMES: frozenset[str] = frozenset({"TOOL_TIMEOUT", "TOOL_CANCELLED"})
+
 
 @dataclass(frozen=True)
 class RunOutcome:
@@ -209,6 +212,13 @@ async def _dispatch_batch(
                 },
             ),
         )
+        if dispatched.result.outcome in CANCELLED_OUTCOMES:
+            written.append(
+                (
+                    "tool/cancelled",
+                    {"turn_id": turn_id, "tool_call_id": call.id},
+                )
+            )
         if dispatched.fence_code is not None:
             written.append(
                 (

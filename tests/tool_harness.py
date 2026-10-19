@@ -13,6 +13,7 @@ from mini_harness.loop.settings import ApprovalMode, SandboxLevel
 from mini_harness.provider import FixtureProvider, Provider
 from mini_harness.provider.contract import ToolCall
 from mini_harness.tools import ToolRegistry
+from mini_harness.tools.bash_tools import bash_tool_definitions
 from mini_harness.tools.dispatch import DispatchOutcome, dispatch_tool_call
 from mini_harness.tools.fences import (
     STDIN_APPROVAL_GATE,
@@ -34,6 +35,11 @@ class _ApprovingGate:
 def file_registry() -> ToolRegistry:
     """五个文件工具的注册表：helper 的默认注册表，也是「不注册 bash」的那一份。"""
     return ToolRegistry(file_tool_definitions())
+
+
+def full_registry() -> ToolRegistry:
+    """六个工具的注册表：文件工具加 `bash`。"""
+    return ToolRegistry([*file_tool_definitions(), *bash_tool_definitions()])
 
 
 def dispatch_context(
@@ -84,6 +90,11 @@ def tool_call_entry(name: str, call_id: str, **arguments: object) -> dict[str, o
     }
 
 
+def tool_call(name: str, call_id: str, **arguments: object) -> ToolCall:
+    """契约里的一个工具调用，用来拼 `turn_entry` 的批次。"""
+    return ToolCall(id=call_id, name=name, arguments=dict(arguments))
+
+
 def turn_entry(*calls: ToolCall) -> dict[str, object]:
     """一次模型回复里声明多个调用：一个回合的派发批次就是这个形状。"""
     return {
@@ -91,6 +102,20 @@ def turn_entry(*calls: ToolCall) -> dict[str, object]:
         "finish_reason": "tool_calls",
         "tool_calls": [call.model_dump(mode="json") for call in calls],
     }
+
+
+def call_ids(records: Iterable[EventRecord], event_type: str) -> list[str]:
+    """某一类事件里的 `tool_call_id`，按落盘顺序。"""
+    return [str(record.payload["tool_call_id"]) for record in records if record.type == event_type]
+
+
+def result_outcomes(records: Iterable[EventRecord]) -> list[tuple[str, str]]:
+    """落盘的 `tool/result`：(它属于哪个调用, 结果词)，按落盘顺序。"""
+    return [
+        (str(record.payload["tool_call_id"]), str(record.payload["outcome"]))
+        for record in records
+        if record.type == "tool/result"
+    ]
 
 
 DONE: dict[str, object] = {"content": "算了", "finish_reason": "stop"}
