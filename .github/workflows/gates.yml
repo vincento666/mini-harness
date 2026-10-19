@@ -46,6 +46,15 @@ jobs:
       - name: 覆盖率地板
         run: uv run coverage report --fail-under=95
 
+      # 两端分别报告（task 7.3）：这一端的 `TOTAL` 写进步骤摘要，也发成一条 annotation，
+      # 这样「Windows 端多少、Linux 端多少」是两条可读的事实，不是一个合并数字。
+      - name: 覆盖率两端分别报告
+        shell: bash
+        run: |
+          line=$(uv run coverage report --fail-under=95 | grep '^TOTAL')
+          echo "coverage ${line}  on ${{ matrix.os }}" | tee -a "${GITHUB_STEP_SUMMARY}"
+          echo "::notice title=coverage TOTAL (${{ matrix.os }})::${line}"
+
       - name: mypy --strict
         run: uv run mypy --strict src
 

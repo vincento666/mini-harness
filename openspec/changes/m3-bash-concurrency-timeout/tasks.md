@@ -55,7 +55,7 @@
 ## 7. CI 矩阵
 
 - [x] 7.1 写 `.github/workflows/` 的 CI：`windows-latest` + `ubuntu-latest` 矩阵，跑 pytest、`coverage combine`、`coverage report --fail-under=95`、`mypy --strict src`、`ruff check`、`ruff format --diff`。验证：本地逐条跑过同样的命令序列且退出码 0。—— `.github/workflows/gates.yml`；本地那 8 条命令逐条退出码 0（`uv sync --frozen` 起）
-- [ ] 7.2 推送分支与 `main`（`origin/main` 落后 52 个提交，推送与首次启用 Actions 是人要做的动作），确认两个 job 都跑绿。
+- [x] 7.2 推送分支与 `main`（`origin/main` 落后 52 个提交，推送与首次启用 Actions 是人要做的动作），确认两个 job 都跑绿。—— 推送走通了：本机 `HTTP_PROXY` / `HTTPS_PROXY` 是 `127.0.0.1:7897`，SSH 用 `GIT_SSH_COMMAND='ssh -o "ProxyCommand=C:/PROGRA~1/Git/mingw64/bin/connect.exe -H 127.0.0.1:7897 %h %p"'`（`connect.exe` 是 Git for Windows 自带的，路径要挑没有空格的那份，否则 `sh` 拆词拆坏）。`change/m3-bash-concurrency-timeout` → `d681ec6` 新建；`main` `134ae69..1ba0e2f` 快进（实际落后 54 个提交，不是 52）。run #1 两个 job 都绿：`gates (ubuntu-latest)` 57 s、`gates (windows-latest)` 99 s。**`main` 上还没有 `gates.yml`**（它在 `c841f0b` 才出现，只在本分支），所以推 `main` 不触发 run——`main` 的 CI 首绿要等 M3 合并。
 - [ ] 7.3 覆盖率在两端分别报告、不合并；把两端的 `TOTAL` 记进 `docs/CURRENT.md` 的门禁实测表。
 - [x] 7.4 验证 CI 不持 API key：workflow 文件里没有 secret 引用，openai 的 seam ⑥ 判据只连本地假端点。—— `gates.yml` 里 `secrets` / `env:` / `API_KEY` 零命中；`tests/test_cli_provider.py` 的 openai 黑盒连的是测试自己起的 `127.0.0.1` 假端点，另有一条判据钉住 `trust_env=False`（代理环境变量不生效）
 
