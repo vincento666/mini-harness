@@ -11,12 +11,12 @@
 
 ## 2. 预算读数与触发线（seam ①）
 
-- [ ] 2.1 红：触发线公式——默认参数（128000 / 8192）下是 54272；`W − O − 65536` 为负时是 0 而不是负数
-- [ ] 2.2 绿：新建 `src/mini_harness/context/budget.py`，`trigger_line(window, reserve)`
-- [ ] 2.3 红：估算 token——`content` 与 `tool_calls` 的 JSON 文本都算，逐条除以 4 向上取整再相加
-- [ ] 2.4 绿：`estimate_tokens(messages)`
-- [ ] 2.5 红：预算读数 = max(估算, 该前缀里 `model/response.usage.input_tokens` 的最大值)；没有回报时等于估算；同一份前缀两次读数相同
-- [ ] 2.6 绿：`budget_reading(events, messages)`
+- [x] 2.1 红：触发线公式——默认参数（128000 / 8192）下是 54272；`W − O − 65536` 为负时是 0 而不是负数
+- [x] 2.2 绿：新建 `src/mini_harness/context/budget.py`，`trigger_line(window, reserve)`
+- [x] 2.3 红：估算 token——`content` 与 `tool_calls` 的 JSON 文本都算，逐条除以 4 向上取整再相加
+- [x] 2.4 绿：`estimate_tokens(messages)`
+- [x] 2.5 红：预算读数 = max(估算, 该前缀里 `model/response.usage.input_tokens` 的最大值)；`purpose` 为 `compaction` 的那次回复不参与校准；没有回报时等于估算；同一份前缀两次读数相同
+- [x] 2.6 绿：`budget_reading(events, messages)`
 
 ## 3. 遮蔽范围与语法边界（seam ①）
 

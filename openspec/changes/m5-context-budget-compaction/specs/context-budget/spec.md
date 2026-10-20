@@ -29,11 +29,15 @@
 - **THEN** 每一个需要装配的回合都进入压缩判定，且触发线本身是 0 而不是负数
 
 ### Requirement: 预算读数有两个来源
-系统 SHALL 把一次装配的预算读数定义为两者中较大的一个：本次折叠上下文的估算 token 数（每条消息的 `content` 与 `tool_calls` 文本长度之和除以 4、向上取整后逐条相加），与该日志前缀里所有 `model/response` 的 `usage.input_tokens` 的最大值。读数 MUST NOT 依赖进程内缓存或该点之后的事件。
+系统 SHALL 把一次装配的预算读数定义为两者中较大的一个：本次折叠上下文的估算 token 数（每条消息的 `content` 与 `tool_calls` 文本长度之和除以 4、向上取整后逐条相加），与该日志前缀里 `purpose` 不是 `compaction` 的 `model/response` 的 `usage.input_tokens` 的最大值。读数 MUST NOT 依赖进程内缓存或该点之后的事件。
 
 #### Scenario: provider 回报的读数比估算大时用它
 - **WHEN** 某回合之前的 `model/response` 里 `usage.input_tokens` 大于同一份上下文的估算值
 - **THEN** 该回合的预算读数是那个回报值，判定用它
+
+#### Scenario: 摘要调用的读数不参与校准
+- **WHEN** 一次压缩的 `model/response`（`purpose` 为 `compaction`）回报的 `input_tokens` 远大于压缩后的上下文
+- **THEN** 之后每一次装配的预算读数都不用它，只用回合级回复的回报值与当前估算
 
 #### Scenario: 没有回报时只有估算
 - **WHEN** 一次 mock run 的日志里没有任何 `usage.input_tokens` 大于 0 的记录
