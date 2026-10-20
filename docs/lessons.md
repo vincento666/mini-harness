@@ -386,6 +386,63 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 
 收件箱：6 条（L-005 / L-019 / L-025 / L-031 / L-032 / L-033），额度回到 9 条空闲。
 
+### L-036
+- Date: 2026-10-21
+- Context: M5 组 5 写 `test_overflow_when_nothing_can_be_shadowed` 里 `error/context` 的 detail 断言，8.1 人手验收时暴露
+- Observation: 那条断言写成 `assert error.payload == {"turn_id": "t1", "code": ..., "detail": error.payload["detail"]}`——待判的值同时写在两侧，恒真。人手验收读 stderr 时才看见真正的缺陷：没有发生压缩的回合，stderr 写的是「压缩之后预算读数 …」
+- Evidence: 换成两条判前缀的断言（「无可遮蔽的内容」/「压缩之后」），先红后绿；`docs/verification/m5-context-budget-compaction-manual.md` 的「这一栏里发现的一处缺陷」
+- Next use: 断言的一侧必须是常量或另一个来源的值；user-visible 文案的判据判「措辞与日志事实一致」
+- Promotion candidate: 是四规 #4「把任务写成可验证的判据」的收紧，本轮不占额度
+- Status: inbox
+
+### L-037
+- Date: 2026-10-21
+- Context: M5 变异轮准备阶段读到 `shadowed_range` 的尾部累加器
+- Observation: 把一处实现改对（`total = _record_chars(last)` → `total = _tokens(_record_chars(last))`）之后跑全量测试**283 条全绿**——没有任何判据注意到这个差别。这与 L-033 那条「变异下前 207 条全绿」是同一个信号的另一面：不只变异存活是缺口，**修复不引起任何红也是缺口**
+- Evidence: `docs/verification/m5-context-budget-compaction-mutation.md` 的「一处存活的变异变成一处真 bug」；补的判据放回变异下确认它红，再还原
+- Next use: 任何时候「修完 bug 全量全绿」都当覆盖缺口处理，补一条能区分对错的判据并确认它在旧实现下红
+- Promotion candidate: 与 AGENTS.md 变异段「存活的算覆盖缺口」同族，本轮不占额度
+- Status: inbox
+
+### L-038
+- Date: 2026-10-21
+- Context: 同 L-037，`context/budget.py` 里 `_record_chars` 与 `_tokens` 的交界处
+- Observation: 同一个累加器里混字符与 token，mypy strict 抓不到（两边都是 `int`），测试也抓不到（结果只是「遮蔽得多了一点」）。名字带单位是唯一防线，混用点必须有判据钉住
+- Evidence: `src/mini_harness/context/budget.py` 的 `total = _tokens(_record_chars(candidates[-1]))`；判据 `test_the_tail_budget_is_counted_in_tokens_not_characters`（窗口 9375 → 保留预算 1500 token，尾部 4000 字符 + 100 字符 = 1025 token 装得下 → 无可遮蔽）
+- Next use: 任何「按 token 计」的预算代码都让单位出现在名字里，并在边界值上写判据
+- Promotion candidate: 与 L-005 家族（数值与边界）同族
+- Status: inbox
+
+### L-039
+- Date: 2026-10-21
+- Context: M5 组 6 / 组 7 里那批「写出来就是绿的」守卫判据（400 的另两种形状、发生过压缩的日志逐点重放、新事件类型的词表可达）
+- Observation: 变异 6（任何 400 都算上下文超限）被三条测试杀死，其中两条正是那批绿着写出来的守卫——它们的价值到变异轮才兑现。与 L-031（守卫红着穿过中间任务）是同一件事的两面：红着写与绿着写都算数，前提是在提交信息里如实标注它不是红绿对
+- Evidence: `docs/verification/m5-context-budget-compaction-mutation.md` 变异 6；`test_a_400_with_any_other_error_code_is_still_an_http_status_result`、`test_a_400_with_an_unreadable_body_is_still_an_http_status_result`
+- Next use: 既有行为的守卫照写，提交信息里写明「这条写出来就是绿的，它是防下一步把分类改宽的守卫」
+- Promotion candidate: 与 L-031 同族，本轮不占额度
+- Status: inbox
+
+### L-040
+- Date: 2026-10-21
+- Context: M5 task 8.1 搭人手验收的工作区
+- Observation: harness 的 pwsh 子进程里，命令行上写中文路径会被编码掉：`Get-Content -Raw -Encoding UTF8 "docs\DSH逆向分析报告.md"` 报「找不到路径」，而同一个文件用 `Get-ChildItem docs -Filter 'DSH*.md'` 或内置 read / glob 工具都正常
+- Evidence: 本轮搭 `.tmp/m5-manual/ws` 时的第一次尝试
+- Next use: 命令行上不写非 ASCII 路径；要读非 ASCII 文件名就走内置工具或 ASCII 通配符
+- Promotion candidate: 工具用法，无需进 AGENTS.md
+- Status: inbox
+
+### M5 收尾轮的消化记录（2026-10-21，tasks 8.3）
+
+**关闭三条**：L-031（它的预测兑现了——词表守卫确实红着穿过 1 到 5 组，每个中间提交都写明了谁让它绿，M5 的提交信息就是承载）、L-032（4.7 的确定性判据确实喂了两份输入，代码就是它的形状）、L-033（M5 的三条否定式约束都先找到了能违反它的 run 形状：溢出回合没有 `model/request`、遮蔽范围不覆盖 `session/start`、切点落组内时整组一起遮蔽）。
+
+**留存三条**：L-005（家族头，M5 的数值判据都挂在它下面）、L-019（本轮变异轮又踩到「file changed since it was read」，规则仍然在起作用）、L-025（两栏记录已成型，但模型层那一半要等人类跑完才能判断它是否值得晋升）。
+
+**新收五条**：L-036 到 L-040。
+
+**AGENTS.md 本轮不晋升（NO-PROMOTION）**：本轮最值钱的三条（L-036 断言两侧不能同源、L-037 修复不引起红也是缺口、L-039 绿着写出来的守卫照写）都是四规 #4 与变异段现有句子的收紧，不是新规则；一进一出的额度要留给真正独立的内容。
+
+收件箱：8 条（L-005 / L-019 / L-025 / L-036 / L-037 / L-038 / L-039 / L-040），额度空闲 7 条。
+
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 
 - 每个里程碑收尾扫一次，**允许输出 `NO-PROMOTION`**（没有可复用信号就不写条目）。
