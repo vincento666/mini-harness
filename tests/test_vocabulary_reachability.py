@@ -291,4 +291,18 @@ async def test_every_stop_reason_is_reachable(tmp_path: Path) -> None:
     )
     observed |= _stop_reasons(log)
 
+    overflow = tmp_path / "overflow"
+    overflow.mkdir()
+    log, _ = await run_fixture_session(
+        overflow,
+        "s-overflow",
+        [],
+        prompt="x" * 100000,
+        registry=ToolRegistry(),
+        window=70000,
+        reserve=100,
+        max_turns=1,
+    )
+    observed |= _stop_reasons(log)
+
     assert observed == set(STOP_REASONS)

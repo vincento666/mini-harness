@@ -197,6 +197,8 @@ async def run_session_fixture(
     max_turns: int = 8,
     prompt: str = "任务",
     provider_name: str = "mock",
+    window: int = 128000,
+    reserve: int = 8192,
     registry: ToolRegistry | None = None,
     approval_gate: ApprovalGate | None = None,
     cancel: asyncio.Event | None = None,
@@ -212,6 +214,8 @@ async def run_session_fixture(
         max_turns=max_turns,
         sandbox=sandbox,
         approval=approval,
+        window=window,
+        reserve=reserve,
     )
     outcome = await run_session(
         prompt=prompt,

@@ -29,11 +29,15 @@
 - **THEN** 每一个需要装配的回合都进入压缩判定，且触发线本身是 0 而不是负数
 
 ### Requirement: 预算读数有两个来源
-系统 SHALL 把一次装配的预算读数定义为两者中较大的一个：本次折叠上下文的估算 token 数（每条消息的 `content` 与 `tool_calls` 文本长度之和除以 4、向上取整后逐条相加），与该日志前缀里 `purpose` 不是 `compaction` 的 `model/response` 的 `usage.input_tokens` 的最大值。读数 MUST NOT 依赖进程内缓存或该点之后的事件。
+系统 SHALL 把一次装配的预算读数定义为两者中较大的一个：本次折叠上下文的估算 token 数（每条消息的 `content` 与 `tool_calls` 文本长度之和除以 4、向上取整后逐条相加），与该日志前缀里未被遮蔽、`purpose` 不是 `compaction` 的 `model/response` 的 `usage.input_tokens` 的最大值。读数 MUST NOT 依赖进程内缓存或该点之后的事件。
 
 #### Scenario: provider 回报的读数比估算大时用它
 - **WHEN** 某回合之前的 `model/response` 里 `usage.input_tokens` 大于同一份上下文的估算值
 - **THEN** 该回合的预算读数是那个回报值，判定用它
+
+#### Scenario: 被遮蔽的读数不参与校准
+- **WHEN** 一条回报过 `input_tokens` 的 `model/response` 落在遮蔽范围里
+- **THEN** 之后每一次装配的预算读数都不用它
 
 #### Scenario: 摘要调用的读数不参与校准
 - **WHEN** 一次压缩的 `model/response`（`purpose` 为 `compaction`）回报的 `input_tokens` 远大于压缩后的上下文
@@ -82,7 +86,11 @@
 - **THEN** 系统不尝试第二次压缩，而是产出溢出结果
 
 ### Requirement: 压缩救不了时是 CONTEXT_WINDOW_EXCEEDED 结果
-当一次装配压缩之后预算读数仍超过触发线时，系统 SHALL 写一条 `error/context`（payload 含 `turn_id`、`code: CONTEXT_WINDOW_EXCEEDED`、`detail`）、写 `turn/end`（`stop_reason: CONTEXT_WINDOW_EXCEEDED`）与 `session/end`，并以退出码 4 结束；MUST NOT 抛出未捕获异常，也 MUST NOT 调用模型。
+当一次装配压缩之后预算读数仍超过触发线时，系统 SHALL 写一条 `error/context`（payload 含 `turn_id`、`code: CONTEXT_WINDOW_EXCEEDED`、`detail`）、写 `turn/end`（`stop_reason: CONTEXT_WINDOW_EXCEEDED`）与 `session/end`，并以退出码 4 结束；MUST NOT 抛出未捕获异常，也 MUST NOT 为这个溢出结果调用回合模型——带 `purpose: compaction` 的摘要调用除外。
+
+#### Scenario: 溢出的回合不产出该回合自己的模型调用
+- **WHEN** 一次装配以 `CONTEXT_WINDOW_EXCEEDED` 收尾
+- **THEN** 该回合没有 `context/assembled`、没有不带 `purpose: compaction` 的 `model/request`、没有 `tool/call`
 
 #### Scenario: 单条消息本身就超线
 - **WHEN** 对话体里没有任何可遮蔽的内容，而预算读数已超过触发线

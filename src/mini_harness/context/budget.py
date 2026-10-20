@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 
-from mini_harness.events.fold import PURPOSE_COMPACTION, Message
+from mini_harness.events.fold import PURPOSE_COMPACTION, Message, shadowed_seqs
 from mini_harness.events.record import EventRecord
 
 # 触发线公式里的 headroom：照 DSH `dsh-compaction-basic` 的 `headroomTokens ?? 65536`。
@@ -77,12 +77,16 @@ def estimate_tokens(messages: Sequence[Message]) -> int:
 def budget_reading(events: Sequence[EventRecord], messages: Sequence[Message]) -> int:
     """预算读数 = max(本次折叠上下文的估算, 前缀里回合级回复回报的 `input_tokens` 最大值)。
 
-    `purpose` 为 `compaction` 的那次回复不参与校准：它量的是被遮蔽的那一大段，
-    压缩之后还拿它当读数，下一回合立刻又越线，于是每一回合都压缩一次。
+    两条排除是同一条判据：校准量的是**当前表层**。`purpose` 为 `compaction` 的那次回复量的是被遮蔽的
+    那一大段；落在遮蔽范围里的回复描述的那份上下文已经不存在了。留着它们，压缩永远救不回来——
+    每次装配都越线，每次装配都压缩一次。
     """
+    shadowed = shadowed_seqs(events)
     reported = 0
     for event in events:
-        if event.type != "model/response" or event.payload.get("purpose") == PURPOSE_COMPACTION:
+        if event.type != "model/response" or event.seq in shadowed:
+            continue
+        if event.payload.get("purpose") == PURPOSE_COMPACTION:
             continue
         usage = event.payload.get("usage")
         if not isinstance(usage, dict):

@@ -44,7 +44,7 @@ mock provider 不需要新形状：摘要调用只是 fixture 序列里多一条
 
 ### D3 预算读数 = max(估算, provider 回报过的最大值)
 
-估算：逐条消息 `len(content) + len(tool_calls 的 JSON 文本)`，除以 4 向上取整，再逐条相加。校准：该前缀里 `purpose` 不是 `compaction` 的 `model/response.payload.usage.input_tokens` 的最大值。摘要那次调用的回报值不参与——它量的是被遮蔽的那一大段，压缩之后还拿它当读数，下一回合立刻又越线，于是每一回合都压缩一次，最后撞到兜底溢出。这条在 propose 之后由实现核对补进规格（`context-budget` 的「摘要调用的读数不参与校准」场景）。
+估算：逐条消息 `len(content) + len(tool_calls 的 JSON 文本)`，除以 4 向上取整，再逐条相加。校准：该前缀里**未被遮蔽**、`purpose` 不是 `compaction` 的 `model/response.payload.usage.input_tokens` 的最大值。两条排除是同一条判据——校准量的是**当前表层**：摘要那次调用量的是被遮蔽的那一大段，被遮蔽的回复描述的那份上下文已经不存在了。留着它们，压缩永远救不回来：每次装配都越线、每次装配都压缩一次，最后撞到兜底溢出。这两条都在 propose 之后由实现核对补进规格（`context-budget` 的「摘要调用的读数不参与校准」与「被遮蔽的读数不参与校准」场景；后者在组 5 写回合循环测试时才暴露）。
 
 `tool_calls` 必须算进去——上下文里最贵的常是模型请求的 `write` 参数，只算 `content` 会漏掉它。
 

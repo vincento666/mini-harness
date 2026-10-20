@@ -38,16 +38,16 @@
 
 ## 5. 回合循环的压缩段（seam ①）
 
-- [ ] 5.1 红：装配越线 → 调模型生成摘要 → 写一条 `compaction/summary`（在该点 `context/assembled` 之前，payload 五个字段齐全）→ 按新前缀重新折叠
-- [ ] 5.2 绿：`turn_loop.py` 的装配步内加压缩段（`_compact_if_over_line`）
-- [ ] 5.3 红：未越线的 run 里没有任何 `compaction/summary`；一次装配最多一次压缩
-- [ ] 5.4 绿
-- [ ] 5.5 红：压缩后读数仍超线 → `error/context` + `turn/end`（`CONTEXT_WINDOW_EXCEEDED`）+ `session/end`，该回合没有 `model/request` 与 `tool/call`
-- [ ] 5.6 绿
-- [ ] 5.7 红：取消信号已置位时不生成摘要、不写 `compaction/summary`、不写 `error/context`，收尾仍是 `ABORTED`
-- [ ] 5.8 绿
-- [ ] 5.9 红：摘要调用失败 → `error/model` + `PROVIDER_ERROR` + 退出码 1，且没有 `compaction/summary`
-- [ ] 5.10 绿
+- [x] 5.1 红：装配越线 → 调模型生成摘要 → 写一条 `compaction/summary`（在该点 `context/assembled` 之前，payload 五个字段齐全）→ 按新前缀重新折叠
+- [x] 5.2 绿：`turn_loop.py` 的装配步内加压缩段（`_compact_if_over_line`）
+- [x] 5.3 红：未越线的 run 里没有任何 `compaction/summary`；一次装配最多一次压缩
+- [x] 5.4 绿
+- [x] 5.5 红：压缩后读数仍超线 → `error/context` + `turn/end`（`CONTEXT_WINDOW_EXCEEDED`）+ `session/end`，该回合没有 `model/request` 与 `tool/call`
+- [x] 5.6 绿
+- [x] 5.7 红：取消信号已置位时不生成摘要、不写 `compaction/summary`、不写 `error/context`，收尾仍是 `ABORTED`
+- [x] 5.8 绿
+- [x] 5.9 红：摘要调用失败 → `error/model` + `PROVIDER_ERROR` + 退出码 1，且没有 `compaction/summary`
+- [x] 5.10 绿
 - [ ] 5.11 红：provider 返回 `PROVIDER_CONTEXT_OVERFLOW` → 同一个溢出结果（`error/context`、退出码 4、没有 `error/model`）
 - [ ] 5.12 绿
 

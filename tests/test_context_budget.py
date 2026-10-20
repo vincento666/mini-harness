@@ -186,6 +186,32 @@ def _tool_round(
     ]
 
 
+def test_a_shadowed_measurement_stops_calibrating() -> None:
+    """遮蔽之后，那段里的读数不再描述当前表层：它不参与校准，否则压缩永远救不回来。"""
+    events = [
+        _start(),
+        _response(1, usage={"input_tokens": 5000, "output_tokens": 10}),
+        _rec(
+            2,
+            "compaction/summary",
+            {
+                "turn_id": "t2",
+                "shadowed_range": {"start": 1, "end": 1},
+                "summary": "摘要",
+                "tokens_before": 5000,
+                "tokens_after": 20,
+            },
+        ),
+    ]
+    messages = [
+        Message(role="system", content="头部"),
+        Message(role="user", content="任务"),
+        Message(role="system", content="摘要"),
+    ]
+
+    assert budget_reading(events, messages) == estimate_tokens(messages)
+
+
 def test_the_retain_budget_is_sixteen_percent_of_the_window() -> None:
     assert retain_line(DEFAULT_WINDOW) == 20480
     assert retain_line(1000) == 160

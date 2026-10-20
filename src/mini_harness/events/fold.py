@@ -106,7 +106,7 @@ def _call_id_of(event: EventRecord) -> str | None:
     return tool_call_id if isinstance(tool_call_id, str) else None
 
 
-def _shadowed_seqs(events: Sequence[EventRecord]) -> set[int]:
+def shadowed_seqs(events: Sequence[EventRecord]) -> set[int]:
     """既有 `compaction/summary` 遮蔽了哪些 `seq`（闭区间的并集）。
 
     遮蔽是一条替换记录：日志不删，读方跳过。摘要记录自己与 `session/start` 不进遮蔽（规格）。
@@ -146,7 +146,7 @@ def fold(events: Sequence[EventRecord]) -> AssembledContext:
         append_system_prompt=append_system_prompt,
         tool_names=tool_names,
     )
-    shadowed = _shadowed_seqs(events)
+    shadowed = shadowed_seqs(events)
     body: list[Message] = []
     summaries: list[Message] = []
     pending: list[str] = []
