@@ -449,13 +449,20 @@ async def _provider_error(
 
 
 async def _context_overflow(
-    log: EventLog, turn_id: str, turns: int, reading: int, line: int
+    log: EventLog,
+    turn_id: str,
+    turns: int,
+    detail: str,
+    retry_events: Sequence[tuple[str, dict[str, Any]]] = (),
 ) -> RunOutcome:
-    """压缩救不了时是结果不是异常（不变量 D）：不调模型，直接收尾。"""
-    detail = f"压缩之后预算读数 {reading} 仍超过触发线 {line}"
+    """上下文装不下时是结果不是异常（不变量 D）：不调回合模型，直接收尾。
+
+    两条触发路径共用这里——估算兜底与 provider 报出的超限产出同一个停止理由。
+    """
     written = _append_all(
         log,
         [
+            *retry_events,
             (
                 "error/context",
                 {"turn_id": turn_id, "code": STOP_CONTEXT_WINDOW_EXCEEDED, "detail": detail},
@@ -620,7 +627,8 @@ async def run_session(
             context = fold(events)
             reading = budget_reading(events, context.messages)
             if reading > line:
-                return await _context_overflow(log, turn_id, turns, reading, line)
+                detail = f"压缩之后预算读数 {reading} 仍超过触发线 {line}"
+                return await _context_overflow(log, turn_id, turns, detail)
 
         failure = _append_all(
             log,
@@ -636,6 +644,15 @@ async def run_session(
         # 重试事实由 provider 带回、由循环写进日志：provider 不碰日志（不变量 A）。
         retry_events = _retry_events(turn_id, generated)
         if isinstance(generated, ProviderFailure):
+            if generated.code == "PROVIDER_CONTEXT_OVERFLOW":
+                # provider 报出的超限与估算兜底是同一个结果（不变量 D）：不写 `error/model`。
+                return await _context_overflow(
+                    log,
+                    turn_id,
+                    turns,
+                    f"provider 报出上下文超限：{generated.detail}",
+                    retry_events,
+                )
             return await _provider_error(log, turn_id, generated, turns, retry_events)
 
         failure = _append_all(

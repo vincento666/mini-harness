@@ -7,7 +7,7 @@ from pathlib import Path
 
 from mini_harness.events import EventRecord, read_events
 from mini_harness.events.fold import TOOL_OUTCOME_UNKNOWN
-from mini_harness.provider import FixtureProvider
+from mini_harness.provider import FixtureProvider, ProviderFailure
 from mini_harness.tools import ToolRegistry
 from tool_harness import run_fixture_session, run_session_fixture
 
@@ -35,6 +35,18 @@ def _summary_entry(text: str = SUMMARY_TEXT) -> dict[str, object]:
 
 
 DONE_ENTRY: dict[str, object] = {"content": "收尾", "finish_reason": "stop"}
+
+
+class _OverflowProvider:
+    """模型层自己报出上下文超限：估算没抓到，兜底由 provider 触发。"""
+
+    async def generate(
+        self,
+        messages: object,
+        tools: object,
+        signal: asyncio.Event,
+    ) -> ProviderFailure:
+        return ProviderFailure(code="PROVIDER_CONTEXT_OVERFLOW", detail="HTTP 400 上下文超限")
 
 
 def _records_of(log_path: Path, event_type: str) -> list[EventRecord]:
@@ -220,3 +232,26 @@ async def test_a_failed_summary_call_is_a_provider_error(tmp_path: Path) -> None
     assert closers[-2:] == ["PROVIDER_ERROR", "PROVIDER_ERROR"]
     assert outcome.stop_reason == "PROVIDER_ERROR"
     assert outcome.failure_code == "PROVIDER_EXHAUSTED"
+
+
+async def test_a_provider_reported_overflow_collapses_into_the_same_result(tmp_path: Path) -> None:
+    """两条触发路径产出同一个溢出结果：`error/context` 收尾，没有 `error/model`。"""
+    log, outcome = await run_session_fixture(
+        tmp_path,
+        "s-provider-overflow",
+        _OverflowProvider(),
+        max_turns=2,
+        registry=ToolRegistry(),
+    )
+    records = read_events(log.path)
+
+    assert [record.type for record in records][-3:] == [
+        "error/context",
+        "turn/end",
+        "session/end",
+    ]
+    assert _records_of(log.path, "error/model") == []
+    assert _records_of(log.path, "compaction/summary") == []
+    assert _records_of(log.path, "tool/call") == []
+    assert outcome.stop_reason == "CONTEXT_WINDOW_EXCEEDED"
+    assert outcome.failure_code == "CONTEXT_WINDOW_EXCEEDED"

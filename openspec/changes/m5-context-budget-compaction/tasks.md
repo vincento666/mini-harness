@@ -48,15 +48,15 @@
 - [x] 5.8 绿
 - [x] 5.9 红：摘要调用失败 → `error/model` + `PROVIDER_ERROR` + 退出码 1，且没有 `compaction/summary`
 - [x] 5.10 绿
-- [ ] 5.11 红：provider 返回 `PROVIDER_CONTEXT_OVERFLOW` → 同一个溢出结果（`error/context`、退出码 4、没有 `error/model`）
-- [ ] 5.12 绿
+- [x] 5.11 红：provider 返回 `PROVIDER_CONTEXT_OVERFLOW` → 同一个溢出结果（`error/context`、退出码 4、没有 `error/model`）
+- [x] 5.12 绿
 
 ## 6. provider 侧的超限识别（seam ⑤）
 
-- [ ] 6.1 红：假端点返回 400 且 `error.code` 为 `context_length_exceeded` → `code: PROVIDER_CONTEXT_OVERFLOW`，且没有任何 `model/retry`
-- [ ] 6.2 绿：`provider/openai_compat.py` 的失败分类
-- [ ] 6.3 红：400 且 `error.code` 是别的值 → 仍 `PROVIDER_HTTP_STATUS`
-- [ ] 6.4 绿
+- [x] 6.1 红：假端点返回 400 且 `error.code` 为 `context_length_exceeded` → `code: PROVIDER_CONTEXT_OVERFLOW`，且没有任何 `model/retry`
+- [x] 6.2 绿：`provider/openai_compat.py` 的失败分类
+- [x] 6.3 红：400 且 `error.code` 是别的值 → 仍 `PROVIDER_HTTP_STATUS`
+- [x] 6.4 绿
 
 ## 7. CLI 参数、fixture 与黑盒（seam ⑥ 与 ②）
 
