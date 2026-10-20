@@ -20,10 +20,10 @@
 
 ## 3. 遮蔽范围与语法边界（seam ①）
 
-- [ ] 3.1 红：尾部保留预算 `floor(W × 0.16)`；切点落在「assistant 消息 + 它的工具结果组」之外；范围不覆盖 `session/start`
-- [ ] 3.2 绿：`shadowed_range(events, window)` 返回 `{start, end}` 或 `None`
-- [ ] 3.3 红：保留尾部本身已超预算（无可遮蔽内容）时返回 `None`
-- [ ] 3.4 绿：补那条分支
+- [x] 3.1 红：尾部保留预算 `floor(W × 0.16)`；切点落在「assistant 消息 + 它的工具结果组」之外；范围不覆盖 `session/start` 与既有的 `compaction/summary`
+- [x] 3.2 绿：`shadowed_range(events, window)` 返回 `{start, end}` 或 `None`
+- [x] 3.3 红：保留尾部本身已超预算（无可遮蔽内容）时返回 `None`
+- [x] 3.4 绿：补那条分支
 
 ## 4. 折叠的读方规则（seam ④）
 

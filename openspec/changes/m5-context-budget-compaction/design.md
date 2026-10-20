@@ -56,7 +56,11 @@ mock provider 不需要新形状：摘要调用只是 fixture 序列里多一条
 
 DSH 保护的是 node 0（受保护的 `system/message`），压缩范围从「第一个不是 system/message 的节点」开始（compaction-basic README:113）。mini 的受保护头部与用户 prompt 都从 `session/start` **一条记录**派生，覆盖它等于同时拆掉头部与任务本身——这是 mini 与 DSH 的一处形状差异，不是简化。→ **ADR-0017**。
 
-不拆散配对是硬要求：范围拆开一对 `tool/call` 与 `tool/result` 会让 fold 为那条调用派生 `TOOL_OUTCOME_UNKNOWN` 闭合，压缩反而把上下文弄得更怪。
+不拆散配对是硬要求：范围拆开一对 `tool/call` 与 `tool/result` 会让 fold 为那条调用派生 `TOOL_OUTCOME_UNKNOWN` 闭合，压缩反而把上下文弄得更怪。切点落在组内时**整组一起遮蔽**，而不是把整组拉进尾部——尾部是预算的目标，不是保证；把一条 25000 token 的 assistant 请求拉进 20480 的尾部等于这次压缩什么都没做。
+
+既有的 `compaction/summary` 也不进范围：遮蔽它等于丢掉上一份摘要，而摘要链是压缩后仅存的长程记忆。
+
+`shadowed_range` 返回 `None` 的唯一含义是「没有可遮蔽的内容」：候选为空，或遮蔽之后尾部为空。这时压缩帮不上忙，走溢出路径（`context-budget` 的「单条消息本身就超线」）。
 
 ### D5 一次装配最多压缩一次
 

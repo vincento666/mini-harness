@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from mini_harness.context.budget import budget_reading, estimate_tokens, trigger_line
+from mini_harness.context.budget import (
+    budget_reading,
+    estimate_tokens,
+    retain_line,
+    shadowed_range,
+    trigger_line,
+)
 from mini_harness.events import EventRecord
 from mini_harness.events.fold import Message
 
@@ -131,3 +137,144 @@ def test_the_reading_ignores_events_after_the_assembly_point() -> None:
 
     assert budget_reading(events[:1], messages) == estimate_tokens(messages)
     assert budget_reading(events, messages) == 900
+
+
+def _big(seq: int, chars: int) -> EventRecord:
+    return _rec(
+        seq,
+        "model/response",
+        {
+            "turn_id": f"t{seq}",
+            "content": "x" * chars,
+            "tool_calls": [],
+            "finish_reason": "stop",
+        },
+    )
+
+
+def _tool_round(
+    seq: int, *, content_chars: int, call_id: str, result_chars: int
+) -> list[EventRecord]:
+    """一条 assistant 工具请求加它的 `tool/call` 与 `tool/result`：切点不许落在这一组里。"""
+    arguments = {"file_path": "a.md"}
+    return [
+        _rec(
+            seq,
+            "model/response",
+            {
+                "turn_id": f"t{seq}",
+                "content": "x" * content_chars,
+                "tool_calls": [{"id": call_id, "name": "read", "arguments": arguments}],
+                "finish_reason": "tool_calls",
+            },
+        ),
+        _rec(
+            seq + 1,
+            "tool/call",
+            {"turn_id": f"t{seq}", "tool_call_id": call_id, "name": "read", "arguments": arguments},
+        ),
+        _rec(
+            seq + 2,
+            "tool/result",
+            {
+                "turn_id": f"t{seq}",
+                "tool_call_id": call_id,
+                "outcome": "OK",
+                "content": "y" * result_chars,
+            },
+        ),
+    ]
+
+
+def test_the_retain_budget_is_sixteen_percent_of_the_window() -> None:
+    assert retain_line(DEFAULT_WINDOW) == 20480
+    assert retain_line(1000) == 160
+
+
+def test_the_shadowed_range_covers_the_oldest_body_and_keeps_the_tail() -> None:
+    """遮蔽的是最老的那段对话体；`session/start`（seq 0）不在范围里。"""
+    events = [
+        _start(),
+        _rec(1, "turn/start", {"turn_id": "t1"}),
+        _big(2, 100000),
+        _rec(3, "turn/end", {"turn_id": "t1", "stop_reason": "MODEL_COMPLETED"}),
+        _big(4, 4000),
+    ]
+
+    assert shadowed_range(events, DEFAULT_WINDOW) == {"start": 1, "end": 2}
+
+
+def test_the_cut_never_splits_an_assistant_request_from_its_tool_round() -> None:
+    """朴素切点会落在 seq 3 的 `tool/call` 上，把 seq 2 那条 assistant 请求与它的结果拆开。
+
+    整组一起遮蔽。
+    """
+    events = [
+        _start(),
+        _rec(1, "turn/start", {"turn_id": "t1"}),
+        *_tool_round(2, content_chars=100000, call_id="c1", result_chars=4000),
+        _rec(5, "turn/end", {"turn_id": "t1", "stop_reason": "TOOL_CALLS"}),
+        _big(6, 10000),
+    ]
+
+    assert shadowed_range(events, DEFAULT_WINDOW) == {"start": 1, "end": 4}
+
+
+def test_an_existing_summary_is_never_inside_the_range() -> None:
+    """遮蔽既有摘要等于丢掉上一份摘要，而摘要链是压缩后仅存的长程记忆。"""
+    events = [
+        _start(),
+        _big(1, 100000),
+        _rec(
+            2,
+            "compaction/summary",
+            {
+                "turn_id": "t2",
+                "shadowed_range": {"start": 1, "end": 1},
+                "summary": "上一份摘要",
+                "tokens_before": 25000,
+                "tokens_after": 40,
+            },
+        ),
+        _big(3, 100000),
+        _big(4, 4000),
+    ]
+
+    reading = shadowed_range(events, DEFAULT_WINDOW)
+
+    assert reading is not None
+    assert reading["start"] > 2
+
+
+def test_nothing_to_shadow_returns_none() -> None:
+    """对话体里只剩一条本身就超预算的记录：遮蔽它之后什么都不剩。"""
+    events = [
+        _start(),
+        _rec(1, "turn/start", {"turn_id": "t1"}),
+        _big(2, 100000),
+    ]
+
+    assert shadowed_range(events, DEFAULT_WINDOW) is None
+
+
+def test_a_lone_tool_round_that_does_not_fit_returns_none() -> None:
+    """整组装不下时不许把组拆开，也不许把整组拉进尾部：没有可遮蔽的内容。"""
+    events = [
+        _start(),
+        _rec(1, "turn/start", {"turn_id": "t1"}),
+        *_tool_round(2, content_chars=100000, call_id="c1", result_chars=4000),
+    ]
+
+    assert shadowed_range(events, DEFAULT_WINDOW) is None
+
+
+def test_shadowing_only_bookkeeping_records_is_nothing_to_shadow() -> None:
+    """遮蔽范围里没有任何产出消息的记录，这次压缩就没有意义。"""
+    events = [
+        _start(),
+        _rec(1, "turn/start", {"turn_id": "t1"}),
+        _rec(2, "turn/end", {"turn_id": "t1", "stop_reason": "MODEL_COMPLETED"}),
+        _big(3, 4000),
+    ]
+
+    assert shadowed_range(events, 1000) is None

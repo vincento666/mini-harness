@@ -47,6 +47,25 @@
 - **WHEN** 对同一份日志前缀连续计算两次预算读数
 - **THEN** 两次读数完全相等
 
+### Requirement: 遮蔽范围保留尾部且不拆散配对
+系统 SHALL 在压缩时保留尾部：保留预算为 `floor(W × 0.16)`（W 是 `window`）。遮蔽范围是从对话体第一条可遮蔽记录起的连续 seq 区间，其选择使未被遮蔽的记录估算不超过保留预算。`session/start` 与既有的 `compaction/summary` MUST NOT 进入遮蔽范围；切点 MUST NOT 落在一条 assistant 工具请求与它的 `tool/call` 或 `tool/result` 之间，此时整组一起遮蔽。没有可遮蔽内容时 SHALL 不产生遮蔽范围。
+
+#### Scenario: 保留预算是窗口的 16%
+- **WHEN** `window` 为 128000
+- **THEN** 保留预算为 20480
+
+#### Scenario: 切点不拆散一组工具往返
+- **WHEN** 尾部切点落在一组 assistant 工具请求与它的工具结果之间
+- **THEN** 遮蔽范围的 `end` 在该组最后一条记录之后，整组一起被遮蔽
+
+#### Scenario: 既有摘要不被遮蔽
+- **WHEN** 一次压缩发生在已有 `compaction/summary` 之后
+- **THEN** 遮蔽范围的 `start` 大于那条记录的 `seq`
+
+#### Scenario: 没有可遮蔽内容时不产生范围
+- **WHEN** 对话体里只剩一条本身就超预算的记录
+- **THEN** 不产生遮蔽范围，也不写 `compaction/summary`
+
 ### Requirement: 越线时压缩发生在装配之内
 当一次装配的预算读数超过触发线时，系统 SHALL 在写出该点的 `context/assembled` 之前完成一次压缩：生成摘要、写一条 `compaction/summary`、再按新的日志前缀重新折叠。一次装配 MUST NOT 压缩多于一次；未越线的装配 MUST NOT 写 `compaction/summary`。
 
