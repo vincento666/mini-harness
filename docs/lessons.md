@@ -275,7 +275,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Evidence: `docs/verification/m3-bash-concurrency-timeout-mutation.md` 的「工具坑」一节；X1 行（全量杀 2 条）
 - Next use: 变异一律跑全量；定向跑只用来定位哪条红。AGENTS.md 变异段本来就写着「跑全量测试」，这条是执行纪律，不是新规则
 - Promotion candidate: 无需晋升（AGENTS.md 已写「跑全量测试」，本轮是没照自己写的做）
-- Status: inbox
+- Status: rejected（2026-10-20 M8 收尾消化：AGENTS.md 变异段本来就写着，M8 八条变异全部跑全量，没有新规则）
 
 ### L-028
 - Date: 2026-10-19
@@ -302,7 +302,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Evidence: `-rs` 的 skip 摘要指向 `tests\test_cli_run.py:307`（新测试的 def 行）；修法是装饰器紧贴它装饰的那个 `def`
 - Next use: 在带装饰器的测试之间插函数，锚点选装饰器**之前**那两行；新加 skip 类测试后跑一次 `-rs` 看 skip 落在谁身上
 - Promotion candidate: 无需进 AGENTS.md（工具用法，不是项目规则）
-- Status: inbox
+- Status: rejected（2026-10-20 M8 收尾消化：本轮往 `tests/test_cli_run.py` 插两条 seam ⑥ 测试时照这条锚点纪律做了，没有新信号）
 
 ### M3 收尾轮的消化记录（2026-10-19，tasks 9.2）
 
@@ -311,6 +311,59 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 **AGENTS.md 本轮不晋升**：本轮最值钱的三条信号里，「变异必须跑全量」AGENTS.md 变异段本来就写着（L-027 是执行纪律，不是新规则）；「规格里的数值要有判据钉住」与 L-005 / L-017 同族，晋升要占一进一出的额度而额度现在没有空闲；「dud 判定」的 `started` 链那条（`_append_all` 是同步函数，所以「等前一个开始」不可观察）已被 L-004 晋升的那句「变异必须改变可观察行为」覆盖。
 
 收件箱：12 条（L-005 / L-014 / L-017 / L-019 / L-021 / L-024 / L-025 / L-026 / L-027 / L-028 / L-029 / L-030），仍在 15 条以内。
+
+### L-031
+- Date: 2026-10-20
+- Context: M8 tasks 2.1 → 5.5（`test_every_tool_outcome_is_reachable` 从词表加值那一刻起就红，要等 seam ① 的取消批次与 seam ④ 的折叠都落地才可能绿）
+- Observation: 词表守卫判据的红是**结构性**的，不是实现写错了。硬按「一次一个红绿循环」走就会逼出一个假绿（先给 seam ② 造一个假生产者）。裁决是让它红着穿过四个任务组，代价是每个中间提交都必须自己说清楚：哪条判据红着、哪个 task 让它绿
+- Evidence: `openspec/changes/m8-runtime-semantics-alignment/design.md` 的 D6 与 Migration Plan 第 5 步；提交 `ff0937a` / `7953165` / `39eed49` 的信息里各有一段写明这条红；5.5 的提交 `7336791` 让它转绿
+- Next use: 守卫判据预计要跨任务组才转绿时，先把它写成裁决记进 design，再在每个中间提交的信息里复述「哪条红 / 谁让它绿」；不要为了门禁当场造一个假生产者
+- Promotion candidate: 与 Active Lesson 1 同族（词表可达性）；本轮不占 AGENTS.md 额度
+- Status: inbox
+
+### L-032
+- Date: 2026-10-20
+- Context: M8 变异轮 D（`fold()` 的 `pending` 从局部列表换成模块级 `_PENDING`，折叠结束不清）
+- Observation: 全量 **232 passed / 0 failed**——「同一份日志折叠两次逐字段相等」这条判据抓不到进程内残留。原因是它只喂一份输入，而那份输入里未配对的调用后面还跟着一条会产出消息的事件，折叠在中途就把 pending 冲掉并 `clear()`：**残留唯一显形的路径（只能靠收尾清掉的那条）没有被喂进去**
+- Evidence: `docs/verification/m8-runtime-semantics-alignment-mutation.md` 的 D 一节；补法是把同一条判据改成判两份形状（`_half_log_events()` 与 `[:-1]`），变异下 `assert ['tool','assistant'] == ['assistant','tool','assistant']`
+- Next use: 判「无状态 / 确定性」时至少两份输入：状态在中途被清掉的那份，和只能靠收尾清掉的那份
+- Promotion candidate: 测试设计规则，与 Active Lesson 3（写下即绿就是危险信号）同族；本轮不占额度
+- Status: inbox
+
+### L-033
+- Date: 2026-10-20
+- Context: M8 变异轮 G（内核替未配对的 `tool/call` 在日志里编一条 `tool/result(TOOL_OUTCOME_UNKNOWN)`）
+- Observation: 施加变异前先补判据，因为这条约束在旧判据集里**没有可观察落点**：run 正常跑完的批次里不存在未配对的调用（取消路径下未派发的有配对结果，围栏与写日志失败的路径下 `tool/call` 根本没写），唯一在 run 里留下未配对调用的形状是执行段逃出来的异常，而既有判据只判它不被改名成 `TOOL_CANCELLED`。证据是变异下全量跑到第 208 条才红、**前 207 条全绿**
+- Evidence: `docs/verification/m8-runtime-semantics-alignment-mutation.md` 的 G 一节；新判据 `test_an_escaped_exception_leaves_the_call_unpaired_and_fold_closes_it`（seam ①）
+- Next use: 写「MUST NOT 产生 X」这类否定式约束时先问「哪个 run 形状会让它被违反」；指不到就把判据写在读方（折叠 / replay）而不是内核，或者补一个能跑出那个形状的场景
+- Promotion candidate: 与 Active Lesson 1 / 3 同族（可达性、写下即绿）；本轮不占额度
+- Status: inbox
+
+### L-034
+- Date: 2026-10-20
+- Context: M8 tasks 6.1 写 seam ⑥ 的硬杀判据
+- Observation: 硬杀判据有三条形状约束，缺一条就会变成不可靠或留孤儿：杀点**由日志定位**（轮询到那条挂着的调用的 `tool/call` 落盘才杀，它出现时命令一定在跑），断言**只挑与杀点无关的性质**（每行独立可解析、文件以换行结尾、落了的记录字段齐全），挂着的命令**自己会在有限时间后结束**（`for _ in range(100): time.sleep(0.1)`），否则硬杀之后它是永远不回的孤儿
+- Evidence: `tests/test_cli_run.py` 的 `_hard_kill_a_run()`；变异 F（结果回到批次末缓冲）正是被这条判据杀死
+- Next use: M15（OS 级拦截）与任何要判「进程被硬杀之后日志什么形状」的判据都照这三条写
+- Promotion candidate: 无需进 AGENTS.md（判据写法，不是项目规则）
+- Status: inbox
+
+### L-035
+- Date: 2026-10-20
+- Context: M8 tasks 7.2 跑 `openspec validate --all --strict`
+- Observation: `uv run openspec ...` 报 `error: Failed to spawn: openspec` / `Caused by: program not found`——`openspec` 是全局 CLI，不在本项目的 uv 依赖里。AGENTS.md 的命令块只列了四道门禁（都走 `uv run`），OpenSpec 那几条命令要直接跑全局命令
+- Evidence: 本轮 tasks 7.2 的记录；`openspec validate --all --strict` 直接跑是 `Totals: 9 passed, 0 failed (9 items)`
+- Next use: OpenSpec 系列命令不加 `uv run` 前缀
+- Promotion candidate: 无需进 AGENTS.md（工具用法）
+- Status: inbox
+
+### M8 收尾轮的消化记录（2026-10-20，tasks 8.3）
+
+先消化再收：L-027 关闭为 `rejected`（AGENTS.md 变异段本来就写着「跑全量测试」，本轮变异八条全部跑全量，没有新规则）；L-030 关闭为 `rejected`（在带装饰器的测试之间插函数的锚点纪律，本轮新增两条 seam ⑥ 测试时照做了，没有新信号）。L-028 与 L-005 / L-017 同族保持收件箱；本轮 L-032 与 L-033 是它们在读方与否定式约束上的同族证据。
+
+**AGENTS.md 本轮不晋升**：一进一出的额度没有空闲，而本轮三条最值钱的信号里，「守卫判据可以红着穿过中间任务」与 Active Lesson 1 同族、「确定性判据要判到清理的那条路径」与 Active Lesson 3 同族、「否定式约束要先找到能违反它的 run 形状」是 L-005 那条已晋升规则的镜像面——三条都不够新到值得挤掉现有五条里的任何一条。
+
+收件箱：15 条（L-005 / L-014 / L-017 / L-019 / L-021 / L-024 / L-025 / L-026 / L-028 / L-029 / L-031 / L-032 / L-033 / L-034 / L-035），到 15 条上限；下一个 change 收尾先消化再收。本轮关闭两条：L-027、L-030。
 
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 
