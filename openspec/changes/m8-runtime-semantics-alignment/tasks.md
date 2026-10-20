@@ -9,7 +9,7 @@
 
 - [x] 2.1 先写 seam ② 判据：`tests/test_tool_registry.py::test_the_outcome_vocabulary_has_sixteen_values_and_no_not_implemented` 改成 18 个取值并含 `ABORTED_BEFORE_DISPATCH` 与 `TOOL_OUTCOME_UNKNOWN`（red），再扩 `tools/registry.py` 的结果词表让它转绿。注意：`tests/test_vocabulary_reachability.py::test_every_tool_outcome_is_reachable` 从这一步起红着，直到 5.5 把两个生产者接进观察源
 - [x] 2.2 seam ② 护栏：新增 `test_the_pipeline_never_produces_the_two_kernel_only_outcomes`——工具与管线自己跑不出 `ABORTED_BEFORE_DISPATCH` 与 `TOOL_OUTCOME_UNKNOWN`（执行段逃出的异常只能塌成 `TOOL_TIMEOUT` / `TOOL_CANCELLED`）。**记录一处任务修正**：本条原写「未派发的调用不配 `tool/cancelled`、闭合码不出现在日志里」，那两半在 seam ② 上没有红切片可做（`dispatch_call` 没有取消入口、闭合不落盘），已分别落到 4.3 与 5.3；本条落地为护栏，写完即绿
-- [ ] 2.3 在 `GLOSSARY.md` 的「围栏与工具」一节补这两个结果词的一句话定义（含 `_Avoid_`：不要把 `ABORTED_BEFORE_DISPATCH` 读成失败、不要把 `TOOL_OUTCOME_UNKNOWN` 读成日志损坏），并确认 `tests/test_event_vocabulary.py` 仍绿
+- [x] 2.3 在 `GLOSSARY.md` 补这两个结果词的一句话定义（含 `_Avoid_`：不要把 `ABORTED_BEFORE_DISPATCH` 读成失败、不要把 `TOOL_OUTCOME_UNKNOWN` 读成日志损坏），并确认 `tests/test_event_vocabulary.py` 仍绿。**落点更正**：两个词写在「日志与折叠」一节紧跟「结果词」的位置（那里才是结果词在的地方），不是原写的「围栏与工具」；同节的「闭合记录」条目补一句「调用没有配对时，闭合由折叠派生，不写进日志」
 
 ## 3. 结果在产生时落盘（seam ④ 与 seam ①）
 
@@ -20,11 +20,11 @@
 
 ## 4. 取消是回合级事件（seam ①）
 
-- [ ] 4.1 扩 seam ① 判据：`tests/test_turn_cancel.py::test_no_call_has_a_tool_call_without_a_result_after_a_cancel` 改成「未派发的声明调用也各有一条 `tool/call` 与一条 `outcome: ABORTED_BEFORE_DISPATCH` 的 `tool/result`」（red）
-- [ ] 4.2 改派发段的取消分支：未派发的调用落 `tool/call` + `ABORTED_BEFORE_DISPATCH`，已开始执行的仍塌 `TOOL_CANCELLED` 并配 `tool/cancelled`，让 4.1 转绿（seam ①）
-- [ ] 4.3 先写 seam ① 判据：取消收尾的回合里 `error/abort` → `turn/end`（`stop_reason: ABORTED`）的相对顺序不变、且未派发的调用不配 `tool/cancelled`（red），再让实现满足（seam ①）
-- [ ] 4.4 先写 seam ① 判据：一次以 `ABORTED` 收尾的 run 的日志折叠后，每个 assistant 工具请求消息都有配平的工具结果消息（red），再确认 4.2 之后它转绿——这条是「会话终止由入口决定」的可观察后果（seam ① 与 seam ④）
-- [ ] 4.5 确认 `cli/main.py` 侧的会话终止形状：内核返回 `ABORTED` 后入口写 `session/end` 并以退出码 5 结束；`tests/test_turn_cancel.py` 其余三条与 `tests/test_cli_run.py::test_sigint_handler_sets_the_cancel_event` 全绿（seam ⑥）
+- [x] 4.1 扩 seam ① 判据：`tests/test_turn_cancel.py::test_no_call_has_a_tool_call_without_a_result_after_a_cancel` 改成「未派发的声明调用也各有一条 `tool/call` 与一条 `outcome: ABORTED_BEFORE_DISPATCH` 的 `tool/result`」（red），并加一条「结果词说它没开始，文件就必须没被写过」的反向断言。实测在旧实现下红在 `['c1','c2'] == ['c1','c2','c3']`
+- [x] 4.2 改派发段的取消分支：新增 `abandoned()`——未派发的调用落 `tool/call` + `ABORTED_BEFORE_DISPATCH`（走同一个 `begin` 与 `settle`），已开始执行的仍塌 `TOOL_CANCELLED` 并配 `tool/cancelled`，让 4.1 转绿（seam ①）。取消与围栏拒绝同时在场时取消优先：未派发的调用落一对记录，run 仍以 `FENCE_DENIED` 收尾
+- [x] 4.3 先写 seam ① 判据：取消收尾的回合里 `error/abort` → `turn/end`（`stop_reason: ABORTED`）的相对顺序不变、且未派发的调用不配 `tool/cancelled`（seam ①）。**记录**：新增 `test_the_undispatched_call_gets_no_tool_cancelled`；「不配 `tool/cancelled`」这半在 4.2 之后即绿（`settle` 只对 `CANCELLED_OUTCOMES` 写该记录），新形状下真正新增的是「本批每条 `tool/result` 都在 `error/abort` 之前落盘」这条前缀完整性
+- [x] 4.4 先写 seam ① 判据：一次以 `ABORTED` 收尾的 run 的日志折叠后，每个 assistant 工具请求消息都有配平的工具结果消息，再确认 4.2 之后它转绿（seam ① 与 seam ④）。新增 `test_an_aborted_run_folds_into_balanced_tool_messages`，形状与 4.1 不同：慢的那条被打断、后两条没开始
+- [x] 4.5 确认 `cli/main.py` 侧的会话终止形状：内核返回 `ABORTED` 后入口写 `session/end` 并以退出码 5 结束（`EXIT_ABORTED = 5` 与 `STOP_REASONS_TO_EXIT_CODES` 未改）；`tests/test_turn_cancel.py` 六条与 `tests/test_cli_run.py::test_sigint_handler_sets_the_cancel_event` 全绿（seam ⑥）
 
 ## 5. 读方闭合（seam ④）
 

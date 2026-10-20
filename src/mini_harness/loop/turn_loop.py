@@ -149,8 +149,9 @@ async def _dispatch_batch(
 
     `tool/call` 由「前一个已经轮到过——开始派发或放弃」这条链保证按声明顺序落盘；结果在产生时落盘
     （`settle`），所以 `tool/result` 之间是完成顺序。围栏拒绝之后，还没开始的调用不再派发
-    （连 `tool/call` 都不写），已经开始的照常跑完并落结果。取消置位之后同样不再派发，
-    已经开始的被打断并落 `TOOL_CANCELLED`。前缀只在本批次开始时取样一次，整批共用。
+    （连 `tool/call` 都不写），已经开始的照常跑完并落结果。取消置位之后不再派发：未派发的落一对
+    记录（`tool/call` 加 `ABORTED_BEFORE_DISPATCH`），已经开始的被打断并落 `TOOL_CANCELLED`。
+    前缀只在本批次开始时取样一次，整批共用。
     """
     prefix = read_events(log.path)
     if isinstance(prefix, LogReadFailure):
@@ -299,6 +300,24 @@ async def _dispatch_batch(
                 outcome.denial_code = dispatched.fence_code
                 outcome.denial_detail = dispatched.result.content
 
+    def abandoned(index: int, call: ToolCall) -> None:
+        """取消置位后没轮到派发的调用：落一对记录，结果词 `ABORTED_BEFORE_DISPATCH`（ADR-0011）。
+
+        它被声明过，就要在日志里有个交代——回合收尾后会话续跑时，assistant 的工具请求必须配平。
+        不配 `tool/cancelled`：「被打断」预设它开始过。
+        """
+        if not begin(index, call):
+            return
+        settle(
+            call,
+            DispatchOutcome(
+                ToolResult(
+                    "ABORTED_BEFORE_DISPATCH",
+                    f"取消在派发之前置位，这个调用没有开始：{call.name}",
+                )
+            ),
+        )
+
     async def one(index: int, call: ToolCall) -> None:
         try:
             await dispatch_one(index, call)
@@ -319,7 +338,10 @@ async def _dispatch_batch(
         if mutating[index]:
             async with mutating_slot:
                 # 拿到独占权之后才决定要不要开始：串行链上「已声明」不等于「已派发」。
-                if stop.is_set() or cancel.is_set():
+                if cancel.is_set():
+                    abandoned(index, call)
+                    return
+                if stop.is_set():
                     return
                 if not begin(index, call):
                     return
@@ -330,7 +352,10 @@ async def _dispatch_batch(
                     ),
                 )
             return
-        if stop.is_set() or cancel.is_set():
+        if cancel.is_set():
+            abandoned(index, call)
+            return
+        if stop.is_set():
             return
         if not begin(index, call):
             return
