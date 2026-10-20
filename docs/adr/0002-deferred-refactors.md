@@ -1,6 +1,6 @@
 # 记账：M1 至 M4 留下的坏味道与设计缺口，到对应里程碑再动
 
-这一条不是待办清单的优先级排序，而是 code-review 修复轮（change `m1-event-log-and-turn-loop` 的 tasks 第 11 节）留下的**账**：审查里确认存在的重复与泄漏，M1 里改它们只会增加改动面、不会增加判据，因此只记账不动代码。任何一条到 M2 都可以按新证据改判——但改判要发生在 M2 的 change 里，不是顺手改。第 9 至 12 条来自 M2（change `m2-file-tools-and-fences`）的 `code-review` 两轴审查，第 13 至 17 条来自 M4（change `m4-real-provider`）的同一轮审查；处理方式同样是记账。M3（change `m3-bash-concurrency-timeout`）的收尾轮对第 1、8 至 17 条逐条改判，判词写在各条末尾：已处理 4 条（1、9、10、11），改判为长期形态 3 条（8、12、16），未处理推到 M5 2 条（14、15），未触发 1 条（17）。第 18 至 29 条来自 M3 的 `code-review` 两轴审查——Standards 轴确认存在但「改它不增加判据」的判断项，加两条规格 ↔ 实现的判断（第 28、29 条）——处理方式同样是记账：八条推到 M5，两条判为不动（25、27），两条按现状留着并写明何时才动（28、29）。第 30 条来自 M3 的人手验收（cmd.exe 的 GBK 输出碎成 U+FFFD），同样是记账。最后一节记提交纪律的三处措辞欠账：历史提交不改写，只把与 AGENTS.md 原文不符的地方更正在这里。
+这一条不是待办清单的优先级排序，而是 code-review 修复轮（change `m1-event-log-and-turn-loop` 的 tasks 第 11 节）留下的**账**：审查里确认存在的重复与泄漏，M1 里改它们只会增加改动面、不会增加判据，因此只记账不动代码。任何一条到 M2 都可以按新证据改判——但改判要发生在 M2 的 change 里，不是顺手改。第 9 至 12 条来自 M2（change `m2-file-tools-and-fences`）的 `code-review` 两轴审查，第 13 至 17 条来自 M4（change `m4-real-provider`）的同一轮审查；处理方式同样是记账。M3（change `m3-bash-concurrency-timeout`）的收尾轮对第 1、8 至 17 条逐条改判，判词写在各条末尾：已处理 4 条（1、9、10、11），改判为长期形态 3 条（8、12、16），未处理推到 M5 2 条（14、15），未触发 1 条（17）。第 18 至 29 条来自 M3 的 `code-review` 两轴审查——Standards 轴确认存在但「改它不增加判据」的判断项，加两条规格 ↔ 实现的判断（第 28、29 条）——处理方式同样是记账：八条推到 M5，两条判为不动（25、27），两条按现状留着并写明何时才动（28、29）。第 30 条来自 M3 的人手验收（cmd.exe 的 GBK 输出碎成 U+FFFD），同样是记账。最后一节记提交纪律的三处措辞欠账：历史提交不改写，只把与 AGENTS.md 原文不符的地方更正在这里。它前面那节是 M8 审查轮（2026-10-20）的账：提交粒度三处超数没写打包理由、三个 docs 提交没有门禁行、派发段两条未定形状推到 M10，第 18 与 19 条改判。
 
 ## 1. `run_session` 的九个关键字参数就是 `session/start` 的 payload
 
@@ -242,3 +242,16 @@ payload 是 `turn_id` / `tool_call_id` / `code` / `detail`。规格要求「被�
 - `6704997` 的信息里自称「不是编号 task」。AGENTS.md 要求提交信息带 task 编号；那一轮实际做的是「4.1–4.3 落地时埋下的缺陷」的修复，缺的是打包理由而不是编号本身。之后超过 3 个 task 的提交都在信息里写明理由。
 
 Considered options：现在就抽 `SessionSettings` 与 `Literal` 词表（否：M1 的判据已经全绿，改动只增加面不增加证据）；把 `_replay` 的扫描逻辑立刻下沉（否：只有一个消费者，等第二个消费者出现再抽）；M1 就把工具描述写进 `session/start`（否：M1 没有任何工具可写，写了也测不出差异）；M1 就把 `Message` 抽到独立类型模块（否：一个生产者两个消费者，抽出去只是把同一行 import 换个地方）；M2 就把 `approval/request` 改成提问前写（否：会留下「有 request 没 response」的半对，而 M2 词表里没有表达它的取值）；M2 就在派发循环里查取消（否：先要决定未执行的调用怎么写日志，那是扩词表级决定）。
+
+## M8 审查轮：查出的欠账与改判（2026-10-20）
+
+来自 change `m8-runtime-semantics-alignment` 的 `code-review` 两轴审查（固定点 `main`）。处理方式同样是记账；已动的三条写在最后。
+
+- **提交粒度三处超数、没写打包理由**：`7953165`（3.1–3.4）、`39eed49`（2.3 加 4.1–4.5）、`7336791`（5.1–5.5）。AGENTS.md 的原文是「一个提交最多覆盖同一 seam 上相邻的 3 个 task；超过就在提交信息里写明为什么打包」——这三条都超过 3 个 task，信息里只有内容说明、没有打包理由。历史提交不改写。
+- **三个 docs 提交没有门禁那一行**：`ddb634a`、`f4328b3`、`71264cf`。与上面「提交纪律」一节同一条规矩：四道门禁是「一次提交算完成」的定义，不分代码与文档。
+- **围栏拒绝路径上未派发的调用连 `tool/call` 都不写**（Spec 轴第 2 条）。取消路径 M8 补了 scenario 与判据，围栏路径没有：`stop.is_set()` 在 `begin()` 之前返回，那批后面的调用不落任何记录。它与「每个 `tool/call` 都有配对的 `tool/result`」不冲突（没写调用就没有悬空），但这条形状在 delta 里没有落点，读规格的人要从代码里自己拼出来。处理时点：M10 与第 18 条一起动派发段时补 scenario 与判据。
+- **`denial_code` 的裁决依据换成了落盘时序**（Spec 轴第 4 条的一半）。`settle` 里 `if outcome.denial_code is None: outcome.denial_code = ...` 取的是**第一个落盘的**拒绝；M8 之前批次按声明顺序落盘，「第一个」等于「声明里第一个」，M8 之后它等于完成顺序里的第一个。同一批里有两条不同围栏码时 `RunOutcome.failure_code` 取哪一条变成时序依赖，没有判据固定它。处理时点：M10 与第 23 条（`denial_code: FenceCode`）一起收——那一步同时锁类型与定顺序。
+- **第 19 条的触发条件已经满足**：`settle`（`turn_loop.py:240`）是第三个「先落盘再决定」的形状——它把 `approval/response` / `tool/result` / `tool/cancelled` / `error/fence` 一次写完，失败就记 failure 并 `stop.set()`。三条同形、失败后的下一步各不相同（`begin` 假 → 这一条不派发；`ask_logged` 假 → 不问人；`settle` 假 → 这一条的结果没落盘）。M8 里合并它们只增加改动面、不增加判据，**改判到 M10 与第 18 条一起收**。
+- **第 18 条的账本数字要更新**：`_dispatch_batch` 现在是 `turn_loop.py:138-380` 约 242 行、**八个**闭包（`begin` 176、`ask_logged` 198、`escaped` 223、`settle` 240、`not_dispatched` 303、`abandoned` 318、`one` 327、`dispatch_one` 337），不是「五个闭包、约 210 行」。M8 把落盘时机从批次末改到产出时，新增的 `settle` 与 `not_dispatched` 就是那件事的两半。第 20 条的形状也因此更明显：只读链与会改动链各有一份「拿到额度之后才决定要不要开始」。结论不变，仍在 M10 收。
+- **已动的三条**：Spec 轴第 1 条是 delta 措辞写错、实现没错，`session/end` 归内核，措辞已改（REPL 与端点里会话继续归 M6 / M7）。第 3 条是 scenario 后半句没有落点，补了 seam ⑥ 判据 `test_a_log_that_ends_in_aborted_replays_without_a_derived_closer`。第 5 条是实现缺陷，已修（卡在只读并发额度上的调用塌成 `ABORTED_BEFORE_DISPATCH`，见 tasks 9.1）。
+- **词表与文档同步**：GLOSSARY 的「闭合记录」自相矛盾（前半句说它让日志完整、后半句说它不落盘），改名成「闭合（closer）」并以读方为准；新开 ADR-0014 记下「闭合是读方派生」这条裁决，ADR-0011 与 ADR-0012 的 `status` 各加一句收窄说明。`events/fold.py` 的常量改名成与值一致的 `TOOL_OUTCOME_UNKNOWN`；测试里的字面量保留——「每个值可达」的判据要写出那个词本身，而 `events` 不 import `tools`（依赖方向是工具读事件），所以两处同名不是可以合并的重复。

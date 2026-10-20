@@ -16,8 +16,9 @@
 | F | 结果回到批次末缓冲落盘：`settle()` 只把记录攒进 `deferred`，`asyncio.gather` 之后一次 `_append_all` | 杀：`test_a_hard_kill_leaves_no_half_written_line`（seam ⑥，硬杀时 `results` 是空列表——批次末的缓冲跟着进程一起没了） |
 | G | 内核替未配对的调用在日志里编一条结果：`escaped()` 在 `error/internal` 之前多写一条 `tool/result`，`outcome: TOOL_OUTCOME_UNKNOWN` | 杀：`test_an_escaped_exception_leaves_the_call_unpaired_and_fold_closes_it`（seam ①，本轮新增；见下） |
 | H | 未派发的调用复用旧词：`abandoned()` 的 `"ABORTED_BEFORE_DISPATCH"` → `"TOOL_CANCELLED"` | 杀：`test_no_call_has_a_tool_call_without_a_result_after_a_cancel`（seam ①，结果词集合里 `('c3','ABORTED_BEFORE_DISPATCH')` 不见了） |
+| I | 只读链不在拿到额度之后再查取消：删掉 `async with read_slots:` 里面那三行 `if cancel.is_set(): not_dispatched(call); return`（修复轮补，见下） | 杀：`test_a_read_queued_on_the_concurrency_limit_is_not_interrupted`（seam ①，`c9` 与 `c10` 变成 `TOOL_CANCELLED`；全量 235 条全绿，只有这一条红） |
 
-八条变异：七条第一轮被杀，一条（D）存活并已补判据、重跑确认被杀。判据「每个变异都被至少一条测试杀死」达成。
+八条变异：七条第一轮被杀，一条（D）存活并已补判据、重跑确认被杀。判据「每个变异都被至少一条测试杀死」达成。修复轮（tasks 组 9）另补一条 I，同样被杀。
 
 ## D 存活：折叠的确定性只判了一种形状
 
@@ -34,6 +35,12 @@
 证据：变异 G 下全量跑到第 208 条才红，**前 207 条全绿**——这条约束在旧判据集里确实没有落点。
 
 补的判据：seam ① `test_an_escaped_exception_leaves_the_call_unpaired_and_fold_closes_it`——`c1` 有 `tool/call`、没有 `tool/result`、日志里没有任何 `TOOL_OUTCOME_UNKNOWN` 结果词，而 `fold(records)` 里 `role` 为 `tool` 的消息恰好一条、`tool_call_id` 是 `c1`、`content` 是 `TOOL_OUTCOME_UNKNOWN`。基线下绿 ✓，变异 G 下红（`assert 'c1' not in ['c1']`）✓，还原后绿 ✓。
+
+## 修复轮补的变异 I（2026-10-20，tasks 组 9）
+
+`code-review` 的 Spec 轴查出实现缺陷（tasks 9.1）之后补的变异：删掉只读链里 `async with read_slots:` 之内那三行「拿到额度之后再查取消」。结果全量 **1 failed / 235 passed / 2 skipped**，红的只有 `test_a_read_queued_on_the_concurrency_limit_is_not_interrupted`，红在 `c9` 与 `c10` 塌成 `TOOL_CANCELLED` 而不是 `ABORTED_BEFORE_DISPATCH`。还原（`git checkout -- src/mini_harness/loop/turn_loop.py`，还原前先看 `git status --short`：工作树里那批与 M8 无关的 `docs/tools/` 与 `repowiki/` 改动没有被卷进来）后回到基线 **236 passed / 2 skipped**、`TOTAL 1167 53 95%`、mypy / ruff / format 全干净 ✓。
+
+这条变异顺带说明轮末基线为什么从 233 变 236：修复轮补了三条判据（seam ① 两条、seam ⑥ 一条），语句数 1162 → 1167、未覆盖仍是 53 行。
 
 ## 与 M3 变异记录的关系
 

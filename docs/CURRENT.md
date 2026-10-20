@@ -2,7 +2,7 @@
 
 每里程碑收尾更新一次。接手时以 `git status --short` 与 `git log --oneline -3` 为准，本文件只是快照。
 
-更新：2026-10-20（**M8 实现与四道门禁完成，收尾没跑**：分支 `change/m8-runtime-semantics-alignment`，tasks 1 至 7 组全勾、`openspec validate --all --strict` 9 过 0 失败；人手验收 8.1、变异轮 8.2、Learning Gate 8.3、`code-review`、归档都还没做。M3 的收尾记录留在下面）
+更新：2026-10-20（**M8 实现、四道门禁与收尾全跑完，只剩归档**：分支 `change/m8-runtime-semantics-alignment`，tasks 1 至 9 组全勾、`openspec validate --all --strict` 9 过 0 失败；人手验收 8.1、变异轮 8.2、Learning Gate 8.3、`code-review` 两轴与其修复轮（tasks 组 9）都跑完。归档与 `agents-md-slim` 还没做。M3 的收尾记录留在下面）
 
 ## 进度
 
@@ -22,14 +22,15 @@
   - **闭合是读方派生**：`tool/call` 没有配对结果时，`events/fold.py` 派生一条 `role` 为 `tool`、`content` 为 `TOOL_OUTCOME_UNKNOWN` 的工具结果消息，排在它该在的位置（未配对的先闭合，再轮到它之后的那条消息）。不落盘、不新造事件类型、不自动重试；`TOOL_OUTCOME_UNKNOWN` 不在日志里。
   - 新增 seam ⑥ 硬杀黑盒两条：`test_a_hard_kill_leaves_no_half_written_line`（Windows `Popen.kill()`、Linux CI `SIGKILL`）与 `test_a_hard_killed_log_replays_without_appending`。
   - 中途门禁裁决（tasks 组 5 之前的已知红）：`test_every_tool_outcome_is_reachable` 从 2.1 红到 5.5，5.5 把观察源从 seam ② 扩到 seam ① 的取消批次与 seam ④ 的折叠之后转绿；每个中间提交都写明了「哪条判据红着、哪个 task 让它绿」。
+- **M8 的收尾**：人手验收 8.1（六个 session 在真 PowerShell 终端跑完，取消落在批次中途那条形状跑出来了，见 `docs/verification/m8-runtime-semantics-alignment-manual.md`）；变异轮 8.2 八条（七条首轮被杀，D 存活 → 补判据后被杀，见 `docs/verification/m8-runtime-semantics-alignment-mutation.md`，M3 的 C2 已加追记）；Learning Gate 8.3 收 L-031 至 L-035、关闭 L-027 与 L-030，**AGENTS.md 本轮不晋升**，收件箱 15 条到上限。`code-review` 两轴（固定点 `main`）：Standards 轴七条判断项记账进 ADR-0002 的「M8 审查轮」一节（含第 18 与 19 条改判到 M10），Spec 轴五条里两条修代码、一条改 delta 措辞、两条记账——修的是「卡在只读并发额度上的调用被记成被打断」（tasks 9.1）与「取消与围栏拒绝同时在场时取消优先到底」的裁决与判据（tasks 9.2），改措辞的是「`session/end` 由谁写」（tasks 9.3）。词表同步：GLOSSARY 的「闭合记录」改名成「闭合（closer）」并以读方为准，新开 **ADR-0014**（闭合是读方派生，不是日志里的记录类型），ADR-0011 与 ADR-0012 的 `status` 各加一句收窄说明。
 
 ## 门禁实测（Windows 本机）
 
 | 门禁 | 实测 |
 |---|---|
-| 测试 | 232 passed / 2 skipped。skip 的两条：符号链接判据（本机不允许创建符号链接）、`test_sigint_in_a_real_subprocess_exits_with_five`（`skipif win32`，Linux 侧跑）。全量带覆盖率记账约 65 秒 |
-| 覆盖率 | `coverage erase` → `coverage run -m pytest` → `coverage combine` → `coverage report --fail-under=95`：TOTAL **95%**（1162 语句 / 53 未覆盖）；地板 `fail_under = 95` |
-| 覆盖率分布 | `events/reader.py` 88% · `loop/turn_loop.py` 90% · `provider/openai_compat.py` 89% · `tools/bash_tools.py` 94% · `tools/file_tools.py` 96% · `tools/registry.py` 97% · `provider/mock.py` 98% · `tools/dispatch.py` 98% · `cli/main.py` 99% · 其余 100%（含 M8 改过的 `events/fold.py`） |
+| 测试 | 236 passed / 2 skipped。skip 的两条：符号链接判据（本机不允许创建符号链接）、`test_sigint_in_a_real_subprocess_exits_with_five`（`skipif win32`，Linux 侧跑）。全量带覆盖率记账约 66 秒 |
+| 覆盖率 | `coverage erase` → `coverage run -m pytest` → `coverage combine` → `coverage report --fail-under=95`：TOTAL **95%**（1167 语句 / 53 未覆盖）；地板 `fail_under = 95`。**坑（2026-10-20 实测）**：combine 之后单独再跑一次 `coverage report` 读到的是没有子进程 partial 的那一份，同一轮里它报 `1167 / 69 / 94%` 并退出码 1——数字要在那三步连着跑完时读 |
+| 覆盖率分布 | `events/reader.py` 88% · `loop/turn_loop.py` 90%（227 语句 / 23 未覆盖） · `provider/openai_compat.py` 89% · `tools/bash_tools.py` 94% · `tools/file_tools.py` 96% · `tools/registry.py` 97% · `provider/mock.py` 98% · `tools/dispatch.py` 98% · `cli/main.py` 99% · 其余 100%（含 M8 改过的 `events/fold.py`） |
 | 覆盖率（CI 两端，run #3 `81e268f`） | `coverage TOTAL (ubuntu-latest)` = **1136 语句 / 50 未覆盖 / 96%**；`coverage TOTAL (windows-latest)` = **1136 / 50 / 96%**。两端数字一模一样：D9 预期的「平台分支在两端各拉低一半」没有把总数拉开。本机那 50 行是哪 50 行已知（下一段）；Linux 端那 50 行的身份没读到——annotation 只带 `TOTAL` 行，要 `--show-missing` 才有清单 |
 | 类型 | `mypy --strict` 干净，22 个源文件 |
 | 风格 | `ruff check` 干净；`ruff format --diff` 空（56 文件）；全仓没有一处 `# noqa` |
@@ -58,5 +59,5 @@
   - **`PROVIDER_ABORTED` 有词表值与判据、没有生产路径**：取消走回合边界的 `error/abort`（退出码 5），`src` 里没有「取消置位后再调 `generate()`」的地方。
   - **`Usage` 只落进日志、不参与预算**：不变量 D 的窗口预算与 `CONTEXT_WINDOW_EXCEEDED` 还不存在——**M5 的活**（`docs/roadmap.md`）。
   - **CAS 只比「读到的窗口」**：窗口之外的改动不触发 `STALE_EDIT`；取舍与收紧办法记在 `docs/adr/0004-cas-compares-the-read-window.md`。
-- ADR 现有十三份：`0001-m1-simplifications.md`、`0002-deferred-refactors.md`（记账，M3 改判见上）、`0003-m2-fence-simplifications.md`（**partially superseded by ADR-0013**：第 3 条作废，其余有效）、`0004-cas-compares-the-read-window.md`、`0005-m4-before-m3.md`（M4 换到 M3 之前）、`0006-m4-provider-simplifications.md`、`0007-ctrl-c-cancels-the-session.md`（**superseded by ADR-0011**）、`0008-bash-is-fenced-by-the-sandbox-level-only.md`、`0009-bash-runs-through-the-platform-shell.md`（进程树终止手段，与 fences 主规格「MUST NOT 依赖 job object」的区分）、`0010-two-phase-mvp-and-seventh-seam.md`、`0011-cancel-is-a-turn-level-cooperative-event.md`、`0012-tool-results-are-logged-as-they-happen.md`、`0013-tool-pipeline-gains-stages-and-a-runner-seam.md`。
+- ADR 现有十四份：`0001-m1-simplifications.md`、`0002-deferred-refactors.md`（记账，M3 改判与 M8 审查轮见上）、`0003-m2-fence-simplifications.md`（**partially superseded by ADR-0013**：第 3 条作废，其余有效）、`0004-cas-compares-the-read-window.md`、`0005-m4-before-m3.md`（M4 换到 M3 之前）、`0006-m4-provider-simplifications.md`、`0007-ctrl-c-cancels-the-session.md`（**superseded by ADR-0011**）、`0008-bash-is-fenced-by-the-sandbox-level-only.md`、`0009-bash-runs-through-the-platform-shell.md`（进程树终止手段，与 fences 主规格「MUST NOT 依赖 job object」的区分）、`0010-two-phase-mvp-and-seventh-seam.md`、`0011-cancel-is-a-turn-level-cooperative-event.md`（**「闭合记录收尾」与「闭合记录类型」由 ADR-0014 收窄**；另记「取消与围栏拒绝同时在场时取消优先到底」）、`0012-tool-results-are-logged-as-they-happen.md`（**「由闭合记录补上」由 ADR-0014 收窄**）、`0013-tool-pipeline-gains-stages-and-a-runner-seam.md`、`0014-closers-are-derived-by-the-reader.md`。
 - 门禁判据此前**只在 Windows 上跑绿过**；M3 把跨平台对齐与 CI 矩阵做成了工作流，但首绿要等人推送（`docs/roadmap.md` 的「跨平台与 CI 排在哪儿」；换序见 ADR-0005）。CI 不持 API key：门禁只跑 mock 判据，真实 Provider 的 smoke 归人手验收。平台绑定点：路径规范化（大小写 / junction / 符号链接）、tty 检测、SIGINT 与进程树终止。

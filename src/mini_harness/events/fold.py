@@ -16,7 +16,9 @@ SYSTEM_PROMPT = (
 )
 
 # 读方闭合的结果词：只出现在折叠出来的消息里，不在日志里。
-OUTCOME_UNKNOWN = "TOOL_OUTCOME_UNKNOWN"
+# 名字与值一致，且与 `tools.registry.ToolOutcome` 里那个词是同一个字符串——
+# 这里不 import 它，因为 `events` 不依赖 `tools`（依赖方向是工具读事件）。
+TOOL_OUTCOME_UNKNOWN = "TOOL_OUTCOME_UNKNOWN"
 
 
 class Message(BaseModel):
@@ -90,7 +92,7 @@ def _body_message(event: EventRecord) -> Message | None:
 
 def _closer(tool_call_id: str) -> Message:
     """读方派生的闭合：不落盘、不新造事件类型、不自动重试（design D1）。"""
-    return Message(role="tool", content=OUTCOME_UNKNOWN, tool_call_id=tool_call_id)
+    return Message(role="tool", content=TOOL_OUTCOME_UNKNOWN, tool_call_id=tool_call_id)
 
 
 def _call_id_of(event: EventRecord) -> str | None:
