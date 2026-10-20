@@ -35,9 +35,11 @@
 
 **D5 取消时未派发的调用不配 `tool/cancelled`。** 「被打断」预设它开始过。未派发的只有一个结果词。这让 `tool/cancelled` 的语义保持单一：它对应一次真的开始过的调用。
 
+**D6 两个新值都留在 `ToolOutcome`，可达性判据的观察源跟着扩。** 落地时发现 `tests/test_vocabulary_reachability.py::test_every_tool_outcome_is_reachable` 的 `observed` 全部来自 seam ② 的 `dispatch_call`，而这两个值的生产者都不在 seam ② 上：`ABORTED_BEFORE_DISPATCH` 是内核派发批次的决定，`TOOL_OUTCOME_UNKNOWN` 由折叠派生且按 D1 不落盘。备选是给闭合另立一份词表（否：两份词表描述同一件事，DSH 是一份），或让它不进词表只当字符串（否：Active Lesson 1 要的「每个值可达」护栏对它失效）。选留在 `ToolOutcome`，把那条判据的观察源从「只有 `dispatch_call`」扩成「每个值从它真正的生产者那里观察」：前者从 seam ① 的取消批次，后者从 seam ④ 的折叠。代价：那条判据变成三个观察源。顺带修掉规格 delta 的两处错措辞——`TOOL_OUTCOME_UNKNOWN` 不出现在任何日志记录里；`fold.Message` 没有 `outcome` 字段，闭合消息是 `role="tool"`、`content="TOOL_OUTCOME_UNKNOWN"`。
+
 **Seam 边界与测试策略**（不新增 seam）：
 - **seam ① 回合循环**：取消的两个结果词、回合闭合顺序（`error/abort` → `turn/end(ABORTED)`）、未派发调用不配 `tool/cancelled`。注入 cancel，不看真实信号。
-- **seam ② 工具注册与管线**：`ToolOutcome` 两个新值的可达判据与「词表外的值不被写出」。
+- **seam ② 工具注册与管线**：`ToolOutcome` 两个新值的可达判据与「词表外的值不被写出」。可达性判据的观察源按 D6 扩到 seam ① 与 seam ④ 的生产者。
 - **seam ④ 日志追加与折叠**：立刻落盘（轮询日志文件观察结果先于批次结束出现）、读方闭合、闭合的确定性、半截日志喂折叠。**读方闭合的判据全部用构造日志**，不依赖真硬杀——这条必须确定、不能 flaky。
 - **seam ⑥ CLI 黑盒**：真硬杀（Linux `SIGKILL`、Windows `Popen.kill()`，杀点用「轮询到日志里出现 N 条 `tool/call`」定位）判「已产出的结果都在盘上且每条可独立解析」；退出码 5 与 replay 逐点相等照旧。判据只断言**与杀点无关的性质**，不断言具体条数。
 
@@ -55,7 +57,8 @@
 2. 实现：`tools/registry.py` 两个新 `ToolOutcome` → `loop/turn_loop.py` 立刻落盘与取消分支 → `events/fold.py` 读方闭合 → `cli/main.py` 入口侧的会话终止措辞（退出码 5 不变）。
 3. 既有绿判据回归：`tests/test_turn_cancel.py` 其余三条、`tests/test_approval_gate.py` 的两条顺序与取消判据、`tests/test_event_vocabulary.py`。
 4. 无数据迁移：既有 session 日志不改写；旧日志里「有 `tool/call` 没 `tool/result`」的前缀在新折叠下自动得到闭合。
+5. 中途门禁状态（已裁决）：词表在第 2 组加值，两个生产者分别在第 4 组与第 5 组落地，所以 `test_every_tool_outcome_is_reachable` 在第 2 组到第 5 组之间红着。中途提交的信息里写明「哪条判据红着、由哪一组转绿」；四道门禁在第 7.1 组全绿。
 
 ## Open Questions
 
-- 读方闭合要不要在 payload 里留一个可观察标记（例如折叠结果的消息上带 `synthesized: true`）？留与不留都不改规格与任务拆分，实现时定。
+无。原先那条「闭合要不要留可观察标记」已随 D6 落地：标记就是消息的 `content` 取值 `TOOL_OUTCOME_UNKNOWN`，`fold.Message` 不加新字段。

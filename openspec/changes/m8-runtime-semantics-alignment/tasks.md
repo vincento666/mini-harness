@@ -2,12 +2,12 @@
 
 ## 1. 分支与基线
 
-- [ ] 1.1 从 `main` 建分支 `change/m8-runtime-semantics-alignment`，跑一遍四道门禁确认基线绿（`222 passed, 2 skipped`、`TOTAL` 不低于 95%、mypy / ruff / fmt 全绿），把基线数字记进提交信息
-- [ ] 1.2 读 `openspec/specs/turn-loop/spec.md` 的「工具调用与结果按声明顺序落盘」与 `tests/test_turn_concurrency.py::test_results_land_in_declared_order_when_the_second_finishes_first`，确认被推翻的判据就是这一条并列出它当前的断言形状（只读不改，产出写进本 change 的 design.md 附注或提交信息）
+- [x] 1.1 从 `main` 建分支 `change/m8-runtime-semantics-alignment`，跑一遍四道门禁确认基线绿（`222 passed, 2 skipped`、`TOTAL` 不低于 95%、mypy / ruff / fmt 全绿），把基线数字记进提交信息
+- [x] 1.2 读 `openspec/specs/turn-loop/spec.md` 的「工具调用与结果按声明顺序落盘」与 `tests/test_turn_concurrency.py::test_results_land_in_declared_order_when_the_second_finishes_first`，确认被推翻的判据就是这一条并列出它当前的断言形状（只读不改，产出写进本 change 的 design.md 附注或提交信息）
 
 ## 2. 词表两个新值（seam ②）
 
-- [ ] 2.1 先写 seam ② 判据：`ToolOutcome` 含 `ABORTED_BEFORE_DISPATCH` 与 `TOOL_OUTCOME_UNKNOWN` 两个值、且「词表外的值不被写出」的护栏仍成立（red），再扩 `tools/registry.py` 的结果词表让它转绿
+- [ ] 2.1 先写 seam ② 判据：`tests/test_tool_registry.py::test_the_outcome_vocabulary_has_sixteen_values_and_no_not_implemented` 改成 18 个取值并含 `ABORTED_BEFORE_DISPATCH` 与 `TOOL_OUTCOME_UNKNOWN`（red），再扩 `tools/registry.py` 的结果词表让它转绿。注意：`tests/test_vocabulary_reachability.py::test_every_tool_outcome_is_reachable` 从这一步起红着，直到 5.5 把两个生产者接进观察源
 - [ ] 2.2 先写 seam ② 判据：一个产出 `ABORTED_BEFORE_DISPATCH` 的调用不配 `tool/cancelled`、一个产出 `TOOL_OUTCOME_UNKNOWN` 的调用不出现在日志里（red），再让派发与落盘路径满足它（seam ②）
 - [ ] 2.3 在 `GLOSSARY.md` 的「围栏与工具」一节补这两个结果词的一句话定义（含 `_Avoid_`：不要把 `ABORTED_BEFORE_DISPATCH` 读成失败、不要把 `TOOL_OUTCOME_UNKNOWN` 读成日志损坏），并确认 `tests/test_event_vocabulary.py` 仍绿
 
@@ -32,6 +32,7 @@
 - [ ] 5.2 改 `events/fold.py`：未配对的 `tool/call` 派生闭合消息，让 5.1 转绿；派生不落盘、不新造事件类型、不自动重试（seam ④）
 - [ ] 5.3 先写 seam ④ 判据：完整日志不派生任何 `TOOL_OUTCOME_UNKNOWN`（负判据）、同一份半截日志折叠两次结果逐字段相等、`minihns replay` 对半截日志不追加任何记录（red），再确认 5.2 满足（seam ④）
 - [ ] 5.4 跑 seam ④ 既有回归：`tests/test_context_fold.py` 全部判据与「冷启动逐点重建」判据全绿，确认闭合没有弄坏前缀折叠的确定性
+- [ ] 5.5 按 design D6 扩 `tests/test_vocabulary_reachability.py::test_every_tool_outcome_is_reachable` 的观察源：`ABORTED_BEFORE_DISPATCH` 从 seam ① 的取消批次观察、`TOOL_OUTCOME_UNKNOWN` 从 seam ④ 的折叠观察，让这条从 2.1 起红着的判据转绿（seam ② 与 seam ① 与 seam ④）
 
 ## 6. 硬杀与入口（seam ⑥）
 

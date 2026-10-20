@@ -49,11 +49,15 @@
 - **THEN** 两次折叠结果的消息序列与头部指纹完全相等
 
 ### Requirement: 取消与未知是两个工具结果词
-`tool/result.outcome` SHALL 包含 `ABORTED_BEFORE_DISPATCH`（该调用被声明但内核因取消未派发）与 `TOOL_OUTCOME_UNKNOWN`（日志里该调用没有配对结果，由读方折叠派生）。两者 MUST NOT 配一条 `tool/cancelled`。词表外的值 MUST NOT 被写出。
+系统 SHALL 把 `ABORTED_BEFORE_DISPATCH` 与 `TOOL_OUTCOME_UNKNOWN` 收进工具结果词表。`ABORTED_BEFORE_DISPATCH` SHALL 出现在未派发调用的 `tool/result.outcome` 里。`TOOL_OUTCOME_UNKNOWN` MUST NOT 出现在任何日志记录里——它只出现在折叠派生的工具结果消息里（见 `context-projection`）。两者 MUST NOT 配一条 `tool/cancelled`。词表外的值 MUST NOT 被写出。
 
-#### Scenario: 两个新取值各有可达判据
-- **WHEN** 跑完 M8 的 seam ① 与 seam ④ 测试
-- **THEN** `ABORTED_BEFORE_DISPATCH` 与 `TOOL_OUTCOME_UNKNOWN` 各至少被一条测试断言到
+#### Scenario: 两个新取值各从自己的生产者可达
+- **WHEN** 跑完 M8 的可达性判据：`ABORTED_BEFORE_DISPATCH` 从 seam ① 的取消批次观察，`TOOL_OUTCOME_UNKNOWN` 从 seam ④ 的折叠观察
+- **THEN** 观察到的取值集合等于工具结果词表，没有取值跑不到，也没有词表外的值被写出
+
+#### Scenario: 闭合码不落盘
+- **WHEN** 一次 run 正常收尾，其日志被折叠
+- **THEN** 日志里没有任何一条记录的 `outcome` 是 `TOOL_OUTCOME_UNKNOWN`
 
 #### Scenario: 未派发的调用不算被打断
 - **WHEN** 一次取消让同一批里三个声明调用中的两个未被派发

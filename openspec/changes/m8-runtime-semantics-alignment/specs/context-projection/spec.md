@@ -3,11 +3,11 @@
 ## ADDED Requirements
 
 ### Requirement: 未配对的工具调用由折叠派生闭合
-当折叠遇到一条没有配对 `tool/result` 的 `tool/call` 时，系统 SHALL 在折叠结果里为该调用派生一条 `outcome: TOOL_OUTCOME_UNKNOWN` 的工具结果消息，使每个 assistant 工具请求消息都有配平的工具结果消息。该派生 MUST NOT 写入日志、MUST NOT 新造事件类型、MUST NOT 触发对该调用的自动重试，且 MUST 是确定性的。
+当折叠遇到一条没有配对 `tool/result` 的 `tool/call` 时，系统 SHALL 在折叠结果里为该调用派生一条 `role` 为 `tool`、`content` 为 `TOOL_OUTCOME_UNKNOWN` 的工具结果消息，使每个 assistant 工具请求消息都有配平的工具结果消息。该派生 MUST NOT 写入日志、MUST NOT 新造事件类型、MUST NOT 触发对该调用的自动重试，且 MUST 是确定性的。
 
 #### Scenario: 半截日志折叠补出闭合
 - **WHEN** 一份日志以「有 `tool/call` 没 `tool/result`」结尾
-- **THEN** 折叠结果里该 `tool_call_id` 有一条 `TOOL_OUTCOME_UNKNOWN` 的工具结果消息，且该日志文件的字节数与内容都不变
+- **THEN** 折叠结果里该 `tool_call_id` 有一条 `role` 为 `tool`、`content` 为 `TOOL_OUTCOME_UNKNOWN` 的消息，且该日志文件的字节数与内容都不变
 
 #### Scenario: 闭合不被重放成事件
 - **WHEN** 对同一份半截日志连续执行两次 `minihns replay`
