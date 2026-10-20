@@ -10,12 +10,13 @@ from pathlib import Path
 import httpx
 
 from mini_harness.events import EventLog, EventRecord, read_events
+from mini_harness.events.fold import fold
 from mini_harness.loop import RunOutcome, SessionSettings, run_session
 from mini_harness.provider import AssistantTurn, FixtureProvider, Provider
 from mini_harness.provider.openai_compat import OpenAICompatProvider
 from mini_harness.tools import ToolArgs, ToolDefinition, ToolRegistry, ToolResult
 from mini_harness.tools.fences import DispatchContext, path_key
-from tool_harness import DONE, result_outcomes, run_session_fixture, tool_call, turn_entry
+from tool_harness import DONE, call_ids, result_outcomes, run_session_fixture, tool_call, turn_entry
 
 
 async def test_single_turn_writes_the_expected_event_sequence(tmp_path: Path) -> None:
@@ -137,6 +138,33 @@ async def test_an_escaped_exception_is_not_renamed_to_a_cancellation(tmp_path: P
     assert ("c1", "TOOL_CANCELLED") not in result_outcomes(records)
     assert outcome.stop_reason == "INTERNAL_ERROR"
     assert outcome.failure_code == "INTERNAL_ERROR"
+
+
+async def test_an_escaped_exception_leaves_the_call_unpaired_and_fold_closes_it(
+    tmp_path: Path,
+) -> None:
+    """内核不给未配对的调用在日志里编一条结果：闭合是读方派生（design D1）。
+
+    执行段逃出来的异常是 run 里唯一会留下「有 `tool/call` 没 `tool/result`」的形状——硬杀那个
+    形状归 seam ⑥。日志里没有一条结果配它，`TOOL_OUTCOME_UNKNOWN` 只出现在折叠出来的消息里；
+    把它写进日志就是替这次调用编一个它没有拿到的结果。
+    """
+    log, _ = await run_session_fixture(
+        tmp_path,
+        "s-escaped-unpaired",
+        FixtureProvider(entries=[turn_entry(tool_call("boom", "c1")), DONE]),
+        registry=_BUGGY_REGISTRY,
+        max_turns=4,
+    )
+
+    records = read_events(log.path)
+    assert "c1" in call_ids(records, "tool/call")
+    assert "c1" not in call_ids(records, "tool/result")
+    assert "TOOL_OUTCOME_UNKNOWN" not in [outcome for _, outcome in result_outcomes(records)]
+
+    closers = [message for message in fold(records).messages if message.role == "tool"]
+    assert [message.tool_call_id for message in closers] == ["c1"]
+    assert [message.content for message in closers] == ["TOOL_OUTCOME_UNKNOWN"]
 
 
 async def test_context_assembled_carries_the_turn_id_it_belongs_to(tmp_path: Path) -> None:

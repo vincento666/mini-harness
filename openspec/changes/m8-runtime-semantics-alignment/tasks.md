@@ -49,7 +49,7 @@
 ## 8. 收尾
 
 - [ ] 8.1 人手验收：拿真实工作区办一件真事（一次 run 里故意并发多个 `read`，中途 Ctrl-C，再读那份日志），观察记进 `docs/verification/m8-runtime-semantics-alignment-manual.md`，不进 CI
-- [ ] 8.2 变异测试一轮并记进 `docs/verification/m8-runtime-semantics-alignment-mutation.md`：至少变异「取消时未派发的调用不落结果」「闭合不落盘」「闭合派生不确定（掺入进程内残留）」「`tool/cancelled` 给未派发的调用也配一条」各一处，判据是每个变异都被至少一条测试杀死；并在 `docs/verification/m3-bash-concurrency-timeout-mutation.md` 加一条注记说明 C2 那条落盘顺序护栏在 M8 之后不再适用（不改写历史）
+- [x] 8.2 变异测试一轮并记进 `docs/verification/m8-runtime-semantics-alignment-mutation.md`：至少变异「取消时未派发的调用不落结果」「闭合不落盘」「闭合派生不确定（掺入进程内残留）」「`tool/cancelled` 给未派发的调用也配一条」各一处，判据是每个变异都被至少一条测试杀死；并在 `docs/verification/m3-bash-concurrency-timeout-mutation.md` 加一条注记说明 C2 那条落盘顺序护栏在 M8 之后不再适用（不改写历史）。**实测**：八条变异（A 不落结果 / B 不落 `tool/call` / C 折叠不闭合末尾 / D 折叠掺进程残留 / E 每条结果都配 `tool/cancelled` / F 结果回到批次末缓冲 / G 内核替未配对调用编结果 / H 未派发复用 `TOOL_CANCELLED`），七条第一轮被杀，D 存活 → 补判据后被杀。轮末基线 233 passed / 2 skipped、`TOTAL 1162 53 95%`。补的两条判据：`test_the_derived_closer_is_deterministic` 改成判两份形状（含以未配对 `tool/call` 结尾的那份）、seam ① 新增 `test_an_escaped_exception_leaves_the_call_unpaired_and_fold_closes_it`（变异 G 下前 207 条全绿，证明「闭合不落盘」此前没有可观察落点）。M3 的 C2 追记已追加，原始判定未改写
 - [ ] 8.3 Learning Gate：扫本轮证据（红过的判据、存活的变异、返工过的规格、硬杀判据的工具坑），可复用教训写进 `docs/lessons.md` 收件箱，没有可复用信号就写 `NO-PROMOTION`
 
 ## Workflow follow-up

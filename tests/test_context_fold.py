@@ -182,13 +182,15 @@ def test_a_complete_log_derives_no_closer() -> None:
 
 
 def test_the_derived_closer_is_deterministic() -> None:
-    """规格 scenario「派生闭合是确定性的」：同一份半截日志折叠两次逐字段相等。"""
-    first = fold(_half_log_events()).model_dump(mode="json")
-    second = fold([record.model_copy(deep=True) for record in _half_log_events()]).model_dump(
-        mode="json"
-    )
+    """规格 scenario「派生闭合是确定性的」：同一份半截日志折叠两次逐字段相等。
 
-    assert first == second
+    两份形状都要判：闭合被后面的消息冲掉的那一份，以及**以未配对的 `tool/call` 结尾**的那一份。
+    后者的 pending 只能靠折叠收尾清掉——折叠要是把它存在进程里，第二次折叠就多一条闭合。
+    """
+    for events in (_half_log_events(), _half_log_events()[:-1]):
+        first = fold(events).model_dump(mode="json")
+        second = fold([record.model_copy(deep=True) for record in events]).model_dump(mode="json")
+        assert first == second
 
 
 def test_fold_puts_the_system_prompt_first_and_keeps_the_body_in_order() -> None:
