@@ -82,6 +82,7 @@
 - 现在不动的理由：M2 的取消判据覆盖的是 `generate` 期间与回合边界；「一批工具中途取消」需要决定剩下几个算不算执行过、要不要写 `tool/cancelled`（这个词在 M2 词表之外，见 ADR-0003 第 3 条）。
 - M3 的处理：决定「取消发生在派发段时剩下未执行的调用怎么写」——要么加 `tool/cancelled` 词表项，要么在 `turn/end.payload` 里记下「未执行的 `tool_call_id` 列表」。两者都是扩词表，与第 3 条同源。
 - **已处理（2026-10-19，M3 任务 1.1 / 5.2 / 5.3）**：选 `tool/cancelled`。派发段两处查取消（拿到独占权之后、`begin` 之前），已经开始的被打断并塌成 `TOOL_CANCELLED`，每条 `TOOL_TIMEOUT` / `TOOL_CANCELLED` 配一条 `tool/cancelled`；判据「取消之后没有『有 `tool/call` 没 `tool/result`』的记录」钉住剩下的那几个不写 `tool/call`。`turn/end.payload` 不记未执行列表——那条形状没有判据需要它。
+- **被取代（2026-10-20，ADR-0011）**：M3 那套「取消掀翻整个会话」的形状整体重做——取消改成回合级协作式事件，派发前被取消与派发后被取消是两个结果词，被中断的回合由闭合记录收尾，会话是否终止由入口决定。落点 M8。这一条从「已处理」改判为「被取代」，M8 之后本条作废。
 
 ## 11. `error/fence` 里被拒的路径只在自由文本 `detail` 里
 
@@ -114,6 +115,7 @@ payload 是 `turn_id` / `tool_call_id` / `code` / `detail`。规格要求「被�
 - 现在不动的理由：`SessionSettings` 是 `session/start.payload` 的唯一来源（第 1 条的处理结果），而 payload 的字段表是规格事实；把三条收成一个 `ProviderEndpoint | None` 会让 payload 多一层嵌套，改的是规格而不是代码。
 - M3 / M5 的处理：出现第二个真实 provider，或 REPL 需要显示端点时，立一个端点类型并让 payload 由它派生。
 - **未处理，推到 M5（2026-10-19 核实）**：M3 没有引入第二个真实 provider，也没有动 `session/start.payload` 的字段表（本轮动的 payload 是 `error/fence`，见第 11 条）。
+- **改判到 M9（2026-10-20，ADR-0010 之后）**：不再推 M5——M5 是窗口预算与压缩，跟端点类型无关，再推一次就是第五次「未处理推到 M5」。M9 `m9-assembly-and-config-layering` 才是「provider 与端点由装配决定」那一处：配置文件层叠落地时立 `ProviderEndpoint`，payload 由它派生。
 
 ## 15. 「这是 openai 路径」这个判断在四处重复
 
@@ -122,6 +124,7 @@ payload 是 `turn_id` / `tool_call_id` / `code` / `detail`。规格要求「被�
 - 现在不动的理由：四处各自决定不同的事；抽一个 `is_openai` 布尔只是把判断搬个地方，不减少任何一处。
 - M3 / M5 的处理：与第 14 条同源——`SessionSettings` 带一个可选端点对象之后，「是不是 openai」变成「端点在不在」，四处塌成一处。
 - **未处理，推到 M5（2026-10-19 核实）**：四处判断仍在四处，M3 一条没动；与第 14 条同源，等端点类型出现一起收。
+- **改判到 M9（2026-10-20，ADR-0010 之后）**：与第 14 条一起收在 M9——端点类型由装配引入之后，「是不是 openai」变成「端点在不在」，四处塌成一处。
 
 ## 16. seam ① 的测试里 provider 桩与 run helper 各两份
 
@@ -145,6 +148,7 @@ payload 是 `turn_id` / `tool_call_id` / `code` / `detail`。规格要求「被�
 
 - 现在不动的理由：这些闭包共用的是**一批调用的状态**，抽成模块级函数要把这七份状态传来传去；seam ① 的判据全部从日志外部观察派发结果，抽与不抽对判据没有区别，M3 里抽只增加改动面。
 - 处理时点：M5（chat REPL 需要把同一派发段跑在不同外壳里）或出现第二个派发者时。那时先抽的是批次状态（一个 `_Batch`），不是闭包本身。
+- **改判到 M10（2026-10-20，ADR-0013 之后）**：本条自己写的触发条件有两处不对——chat REPL 是 **M6** 不是 M5；而 ADR-0013 已把「管线加段 + 派生信号 + `CommandRunner` 缝」定在 **M10**，那正是派发段要动的时候。所以 `_Batch` 与第 23 条（`denial_code: FenceCode`）一起在 M10 收，M6 只收第 3 与第 21 条。
 
 ## 19. `begin` 与 `ask_logged` 是同形的
 
@@ -180,6 +184,7 @@ payload 是 `turn_id` / `tool_call_id` / `code` / `detail`。规格要求「被�
 
 - 现在不动的理由：终点 `RunOutcome.failure_code` 是 `str`（它对应日志里的字段），只锁中间量等于锁一半；M3 里锁它没有新判据。
 - 处理时点：M5 与第 5 条（词表 `Literal`）同源一起收。
+- **改判到 M10（2026-10-20，ADR-0013 之后）**：与第 18 条一起收在 M10——那一步给 `FenceCode` 加 `SANDBOX_UNAVAILABLE`，围栏码在派发段里流过的地方全都要重看一遍，锁中间量与加词表值是同一次改动。第 5 条（`stop_reason` / `outcome` / `role` 的 `Literal`）照旧在 M5 收，那里 `StopReason` 要加 `CONTEXT_WINDOW_EXCEEDED`。
 
 ## 24. `ApprovalAsked | None` 是一个「可以没有」的钩子
 
