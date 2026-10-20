@@ -5,14 +5,14 @@ context: |
   工具链：Python >= 3.12、uv、src/mini_harness 布局、mypy strict、pydantic v2、argparse、pytest + pytest-asyncio、asyncio 单事件循环。包名 mini_harness，命令名 minihns。
   六条不可让步的不变量：
     A 事件日志是唯一真源，只追加不改写；「当前上下文」由折叠派生。
-    B 工具是能力契约，定义与执行分离；失败也是结果（UNKNOWN_TOOL / TOOL_TIMEOUT / ABORTED），不抛异常打断回合。
+    B 工具是能力契约，定义与执行分离；失败也是结果（UNKNOWN_TOOL / TOOL_TIMEOUT / TOOL_CANCELLED / ABORTED_BEFORE_DISPATCH），不抛异常打断回合。
     C 回合主循环显式：记账 → 装配上下文 → 调模型 → 派发工具 → 判定停止。
     D 上下文有窗口预算与显式溢出错误 CONTEXT_WINDOW_EXCEEDED。
     E 围栏两条独立轴（sandbox 档位 / approval 是否问人）+ 工作区边界 + 写前必读 CAS。
     F 全程可观测：CLI 输出可重放的 JSONL 事件流。
   事件命名照抄 DSH 的 namespace/method 风格，约 16-20 种。
   已锁定的完整决策清单见 docs/handoff-2026-10-15.md 与 AGENTS.md；不要重新讨论已定项。
-  测试只写在六个预先约定的 seam 上：回合循环 / 工具注册与管线 / 文件工具契约 / 日志追加与折叠 / Provider 接口 / CLI 黑盒。
+  测试只写在七个预先约定的 seam 上：回合循环 / 工具注册与管线 / 文件工具契约 / 日志追加与折叠 / Provider 接口 / CLI 黑盒 / 委派与目标。
 
 rules:
   proposal:
@@ -35,3 +35,4 @@ operations:
   archive:
     guidance:
       - 归档前确认规格与实现一致，并把简化决策写进 docs/adr/
+      - 归档在 change 分支上做：sync delta 进主规格、openspec validate --all --strict 全绿，再代码与规格一次合入 main

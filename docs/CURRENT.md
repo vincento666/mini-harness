@@ -2,7 +2,7 @@
 
 每里程碑收尾更新一次。接手时以 `git status --short` 与 `git log --oneline -3` 为准，本文件只是快照。
 
-更新：2026-10-20（**M8 实现、四道门禁与收尾全跑完，只剩归档**：分支 `change/m8-runtime-semantics-alignment`，tasks 1 至 9 组全勾、`openspec validate --all --strict` 9 过 0 失败；人手验收 8.1、变异轮 8.2、Learning Gate 8.3、`code-review` 两轴与其修复轮（tasks 组 9）都跑完。归档与 `agents-md-slim` 还没做。M3 的收尾记录留在下面）
+更新：2026-10-20（**M8 完成并已归档**：tasks 32/32 全勾，人手验收 8.1、变异轮 8.2、Learning Gate 8.3、`code-review` 两轴与其修复轮（tasks 组 9）全跑完；delta 已 sync 进主规格（`d500ace`），change 目录已移进 `openspec/changes/archive/2026-10-20-m8-runtime-semantics-alignment`（`425466d`），merge 进 `main` 是 `8253a8e`，tag `m8`。**下一个里程碑是 M5**）
 
 ## 进度
 
@@ -22,6 +22,7 @@
   - **闭合是读方派生**：`tool/call` 没有配对结果时，`events/fold.py` 派生一条 `role` 为 `tool`、`content` 为 `TOOL_OUTCOME_UNKNOWN` 的工具结果消息，排在它该在的位置（未配对的先闭合，再轮到它之后的那条消息）。不落盘、不新造事件类型、不自动重试；`TOOL_OUTCOME_UNKNOWN` 不在日志里。
   - 新增 seam ⑥ 硬杀黑盒两条：`test_a_hard_kill_leaves_no_half_written_line`（Windows `Popen.kill()`、Linux CI `SIGKILL`）与 `test_a_hard_killed_log_replays_without_appending`。
   - 中途门禁裁决（tasks 组 5 之前的已知红）：`test_every_tool_outcome_is_reachable` 从 2.1 红到 5.5，5.5 把观察源从 seam ② 扩到 seam ① 的取消批次与 seam ④ 的折叠之后转绿；每个中间提交都写明了「哪条判据红着、哪个 task 让它绿」。
+- **流程裁决（2026-10-20，M8 归档之后定的三条）**：① **归档改在 change 分支上做**——sync delta 进主规格、移 `changeRoot`、`openspec validate --all --strict` 全绿，再代码与规格一次合入 `main`；M2 与 M4 是「先合并再归档」的旧顺序，主干上留过「代码已合、主规格还停在上一个里程碑」的窗口，M8 也走的是旧顺序（`8253a8e` 合并时主规格还是 M3 的形状，`d500ace` 才补上）。② **本地门禁改成便宜的在前**：格式 → 风格 → 类型 → 测试与覆盖率（覆盖率那三步仍不可拆，seam ⑥ 的子进程 partial 需要 `combine`）。③ **merge 与推 `main` 先征求人的批准、确认了才执行**；agent 可自行推 `change/<id>` 分支与归档提交。三条都写进了 AGENTS.md 与 `openspec/config.yaml` 的 archive guidance。
 - **M8 的收尾**：人手验收 8.1（六个 session 在真 PowerShell 终端跑完，取消落在批次中途那条形状跑出来了，见 `docs/verification/m8-runtime-semantics-alignment-manual.md`）；变异轮 8.2 八条（七条首轮被杀，D 存活 → 补判据后被杀，见 `docs/verification/m8-runtime-semantics-alignment-mutation.md`，M3 的 C2 已加追记）；Learning Gate 8.3 收 L-031 至 L-035、关闭 L-027 与 L-030，**AGENTS.md 本轮不晋升**，收件箱 15 条到上限。`code-review` 两轴（固定点 `main`）：Standards 轴七条判断项记账进 ADR-0002 的「M8 审查轮」一节（含第 18 与 19 条改判到 M10），Spec 轴五条里两条修代码、一条改 delta 措辞、两条记账——修的是「卡在只读并发额度上的调用被记成被打断」（tasks 9.1）与「取消与围栏拒绝同时在场时取消优先到底」的裁决与判据（tasks 9.2），改措辞的是「`session/end` 由谁写」（tasks 9.3）。词表同步：GLOSSARY 的「闭合记录」改名成「闭合（closer）」并以读方为准，新开 **ADR-0014**（闭合是读方派生，不是日志里的记录类型），ADR-0011 与 ADR-0012 的 `status` 各加一句收窄说明。
 
 ## 门禁实测（Windows 本机）

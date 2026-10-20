@@ -21,31 +21,32 @@
 1. **先想再写**：假设写出来；同一句话有多种读法时把读法摆出来让人裁决，不许默默选一种。
 2. **最简实现**：不为单次使用的代码加抽象，不加没被要求过的可配置性，不为不可能的场景写错误处理。
 3. **只改必须改的**：不顺手「改善」相邻代码，不重构没坏的东西，不删与本次改动无关的死代码；自己改动造成的孤儿 import 自己清。已识别的坏味道只记账进 `docs/adr/` 里的 ADR，到对应里程碑再动。
-4. **把任务写成可验证的判据**：修 bug 先写能复现它的测试；每个里程碑有完成判据；收尾跑一轮变异测试，判据是「每个变异都被至少一条测试杀死」。
+4. **把任务写成可验证的判据**：修 bug 先写能复现它的测试；每个里程碑有完成判据；收尾跑一轮变异测试（判据见下「流程」）。
 
 ---
 
 ## 命令
 
 ```bash
+# 便宜的在前：格式 / 风格 / 类型约 20 秒，测试带覆盖率记账约 66 秒
+uv run ruff format --diff src tests
+uv run ruff check src tests
+uv run mypy --strict src
 uv run coverage erase
 uv run coverage run -m pytest -q
 uv run coverage combine
 uv run coverage report --fail-under=95 --show-missing   # 这三步不可拆，理由见下「覆盖率纪律」
-uv run mypy --strict src      # 类型检查
-uv run ruff check src tests   # 风格门禁
-uv run ruff format --diff src tests   # 干净 = 退出码 0
 ```
 
 ---
 
 ## 门禁：有哪几道
 
-一次提交算「完成」= **测试、覆盖率地板、`mypy --strict`、ruff** 四道全绿；规格结构（Requirement / Scenario 形状）、规格 ↔ 实现（`code-review` 两轴）、变异测试是里程碑收尾时跑的。每道的通过信号都是**退出码 0**，覆盖率那道额外看 `TOTAL` 不低于地板。地板数值与具体规则在 `pyproject.toml`，不在这里重复一遍。
+一次提交算「完成」= **测试、覆盖率地板、`mypy --strict`、ruff** 四道全绿，通过信号都是**退出码 0**（覆盖率那道额外看 `TOTAL`）；规格结构、规格 ↔ 实现（`code-review` 两轴）、变异测试是里程碑收尾时跑的。地板数值与规则在 `pyproject.toml`。
 
 **覆盖率纪律**：seam ⑥ 是真实子进程，每个子进程各写一份 partial，所以上面那三步不可拆。combine 只认内容不认新旧，旧 partial 混进这一轮是**看不见的**。要抬地板就补低覆盖处的判据，不要凑低价值测试。
 
-**ruff 的例外只有两处**：中文全角标点（本项目的 docstring / 注释 / 用户可见字符串一律用中文全角标点）与 `docs/tools/` 下的文档与图表构建脚本——门禁只跑 `src` 与 `tests`。全仓没有一处 `# noqa`。
+**ruff 的例外只有两处**：中文全角标点（本项目的 docstring / 注释 / 用户可见字符串一律用中文全角标点）与 `docs/tools/` 下的文档与图表构建脚本——门禁只跑 `src` 与 `tests`。
 
 ---
 
@@ -64,10 +65,11 @@ uv run ruff format --diff src tests   # 干净 = 退出码 0
 /openspec-apply-change          → 按 tdd 技能实现：red → green 单切片，一次一个
 /code-review                    → Standards 与 Spec 两轴
 收尾门禁                        → 变异测试一轮 + Learning Gate
-/openspec-archive-change        → 归档进 openspec/changes/archive/
+/openspec-archive-change        → 在 change 分支上 sync delta 进主规格 + 归档提交
+合并                            → 代码与规格一次合入 main
 ```
 
-分支纪律：每个 change 一个分支 `change/<id>`，完成后合入 `main` 并做 archive 提交。
+分支纪律：每个 change 一个分支 `change/<id>`；**归档在分支上做**——sync 进主规格、移 `changeRoot`、`openspec validate --all --strict` 全绿，然后代码与规格一次合入 `main`。反过来（先合并再归档）会在主干上留下「代码已合、主规格还停在上一个里程碑」的窗口，M2 与 M4 就是这么留下的。**merge 与推 `main` 先征求人的批准、确认了才执行**；agent 可自行推 `change/<id>` 分支与归档提交。
 
 **完成判据含一条人手验收**：拿它用真实工作区办一件真事（不是跑判据），观察记进 `docs/verification/<change-id>-manual.md`；不进 CI，也不替代门禁那四道。
 
@@ -90,9 +92,7 @@ Python **>= 3.12** · **uv** · `src/mini_harness/` 布局 · **mypy strict** ·
 
 ## MVP 分两阶段（ADR-0010）
 
-**第一阶段**（内核 / 工件 / 组合 / 能力 / 模型的基础，围栏有雏形）：已完 M1 M2 M4 M3；接下来 **M8 运行时语义转向 → M5 窗口预算与压缩 → M9 装配与配置层叠 → M6 REPL → M7 SSE**。
-**第二阶段**（补全成**没有 web / Electron 外壳**的完整类 DSH 形态）：**M10 工具管线加段与执行缝 → M11 投影分流 / 折叠缓存 / resume / 格式迁移 → M12 委派 → M13 目标轮次 → M14 技能与外部触发 → M15 OS 级拦截**。
-**第三阶段**（加壳）等前两阶段做完再规划。**始终不做**：PTC 工具面塌缩、多模型路由与重试策略、独立工单与 triage 标签体系。
+**第一阶段**（内核 / 工件 / 组合 / 能力 / 模型的基础，围栏有雏形）：已完 M1 M2 M4 M3 M8，接下来 **M5 → M9 → M6 → M7**。**第二阶段**（补全成**没有 web / Electron 外壳**的完整类 DSH 形态）：**M10 → M11 → M12 → M13 → M14 → M15**。**第三阶段**（加壳）等前两阶段做完再规划。每个里程碑做什么见 `docs/roadmap.md` 的表。**始终不做**：PTC 工具面塌缩、多模型路由与重试策略、独立工单与 triage 标签体系。
 
 ---
 
