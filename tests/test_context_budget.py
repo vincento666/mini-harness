@@ -304,3 +304,23 @@ def test_shadowing_only_bookkeeping_records_is_nothing_to_shadow() -> None:
     ]
 
     assert shadowed_range(events, 1000) is None
+
+
+def test_the_tail_budget_is_counted_in_tokens_not_characters() -> None:
+    """保留预算量的是 token：尾部那条记录按 token 计，不是把它的字符数当成 token 数。
+
+    窗口 9375 → 保留预算 1500 token。尾部两条是 4000 字符（1000 token）与 100 字符（25 token），
+    合计 1025 token 装得下，于是没有可遮蔽的内容。把 4000 个字符当成 4000 token 累加，
+    走到第二条就断在 1500 上，遮蔽范围会凭空冒出来。
+    """
+    events = [
+        _start(),
+        _rec(1, "turn/start", {"turn_id": "t1"}),
+        _big(2, 100),
+        _rec(3, "turn/end", {"turn_id": "t1", "stop_reason": "TOOL_CALLS"}),
+        _rec(4, "turn/start", {"turn_id": "t2"}),
+        _big(5, 4000),
+    ]
+
+    assert retain_line(9375) == 1500
+    assert shadowed_range(events, 9375) is None

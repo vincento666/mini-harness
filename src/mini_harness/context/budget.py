@@ -189,7 +189,7 @@ def shadowed_range(events: Sequence[EventRecord], window: int) -> dict[str, int]
 
     # 最后一条记录总是留着，哪怕它本身就超预算。
     keep_from = candidates[-1].seq
-    total = _record_chars(candidates[-1])
+    total = _tokens(_record_chars(candidates[-1]))
     for event in reversed(candidates[:-1]):
         cost = _tokens(_record_chars(event))
         if total + cost > retain:
