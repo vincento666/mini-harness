@@ -36,15 +36,15 @@
 
 ## 6. 硬杀与入口（seam ⑥）
 
-- [ ] 6.1 新增 seam ⑥ 判据：用 `Popen` 起真实 `minihns run` 子进程，轮询日志到出现 `tool/call` 后 `kill()`，断言「已产出的每条 `tool/result` 完整可独立解析、没有半行 JSON」这条与杀点无关的性质（red → green；Windows 用 `Popen.kill()`，Linux CI 用 `SIGKILL`）
-- [ ] 6.2 确认硬杀后的日志可被折叠与 replay：新增 seam ⑥ 判据跑 `minihns replay` 读那份被硬杀的日志，断言它不追加记录、逐点重放不失败（seam ⑥）
-- [ ] 6.3 确认退出码形状没变：取消收尾仍是 5、围栏仍是 3、模型错误仍是 1、4 仍是保留码不被产生（seam ⑥ 既有判据回归）
+- [x] 6.1 新增 seam ⑥ 判据：用 `Popen` 起真实 `minihns run` 子进程，轮询日志到出现 `tool/call` 后 `kill()`，断言「已产出的每条 `tool/result` 完整可独立解析、没有半行 JSON」这条与杀点无关的性质（Windows 用 `Popen.kill()`，Linux CI 用 `SIGKILL`）。新增 `_hard_kill_a_run()` 与 `test_a_hard_kill_leaves_no_half_written_line`：杀点定位到那条挂着的 `bash` 的 `tool/call` 落盘（它出现时命令一定在跑），断言每行独立可解析、文件以换行结尾、落了的 `tool/result` 字段齐全、没有 `session/end`。**记录**：这条在 3.2 之后即绿，它是新形状的性质判据而不是红绿切片——在 3.2 之前它同样会红（结果缓冲到批次结束，杀点上一条结果都没有），那是推理不是实测
+- [x] 6.2 确认硬杀后的日志可被折叠与 replay：新增 seam ⑥ 判据跑 `minihns replay` 读那份被硬杀的日志，断言它不追加记录、逐点重放不失败（seam ⑥）。`test_a_hard_killed_log_replays_without_appending`：退出码 0、`verified seq=` 出现、日志字节不变
+- [x] 6.3 确认退出码形状没变：取消收尾仍是 5、围栏仍是 3、模型错误仍是 1、4 仍是保留码不被产生（seam ⑥ 既有判据回归）。给 `test_every_stop_reason_maps_to_an_exit_code` 补一条「4 不在映射表的取值里」；`tests/test_cli_run.py` 28 passed 1 skipped（跳过的仍是 Windows 侧 Ctrl-C 黑盒，ADR 已定不在范围内）
 
 ## 7. 集成检查
 
-- [ ] 7.1 跑四道门禁全绿（`uv run coverage erase` → `coverage run -m pytest -q` → `coverage combine` → `coverage report --fail-under=95 --show-missing`，再 mypy / ruff check / ruff format --diff），把 `TOTAL` 数字记进提交信息
-- [ ] 7.2 跑 `openspec validate --all --strict` 确认 0 failed，并跑 `openspec show m8-runtime-semantics-alignment --type change` 确认三条 delta 都被识别
-- [ ] 7.3 更新 `docs/CURRENT.md`：关闭「工具结果缓冲到批次结束落盘」那条缺口、写清 M8 的门禁实测与「协作式取消只做了一半，M10 补完」这条已知边界
+- [x] 7.1 跑四道门禁全绿（`uv run coverage erase` → `coverage run -m pytest -q` → `coverage combine` → `coverage report --fail-under=95 --show-missing`，再 mypy / ruff check / ruff format --diff），把 `TOTAL` 数字记进提交信息。**实测**：232 passed / 2 skipped（跳过的两条不变：符号链接、Windows 侧 Ctrl-C 黑盒）、`TOTAL 1162 53 95%`、`mypy --strict src` 22 个源文件干净、`ruff check` 干净、`ruff format --diff` 空（56 文件）
+- [x] 7.2 跑 `openspec validate --all --strict` 确认 0 failed，并跑 `openspec show m8-runtime-semantics-alignment --type change` 确认三条 delta 都被识别。**实测**：`Totals: 9 passed, 0 failed (9 items)`，其中 `change/m8-runtime-semantics-alignment` 那条是 ✓；`show` 的 Modified Capabilities 列出 `turn-loop` / `event-log` / `context-projection` 三条。**工具坑**：`openspec` 不在 uv 的项目依赖里，`uv run openspec` 报 `Failed to spawn`，要直接跑全局的 `openspec`
+- [x] 7.3 更新 `docs/CURRENT.md`：关闭「工具结果缓冲到批次结束落盘」那条缺口、写清 M8 的门禁实测与「协作式取消只做了一半，M10 补完」这条已知边界。另顺手更正三处会过期的账本：门禁实测那三行的数字、未覆盖行的行号清单（`turn_loop.py` 整段改了行号）、进度区新增「M8 落地的东西」一节并把「下一个是 M5」那句去掉
 
 ## 8. 收尾
 
