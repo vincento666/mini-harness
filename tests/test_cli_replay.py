@@ -5,8 +5,11 @@ from __future__ import annotations
 import json
 import shutil
 from pathlib import Path
+from typing import Any
 
 from cli_blackbox import _cli
+from mini_harness.events import EventLog, EventRecord
+from mini_harness.events.fold import assembled_payload, fold
 from paths import (
     HELLO_SCENARIO,
     READ_THEN_WRITE_SCENARIO,
@@ -212,3 +215,49 @@ def test_replay_touches_no_file_and_loads_no_provider(tmp_path: Path) -> None:
     assert _snapshot(workspace) == before
     assert log_path.read_bytes() == log_before
     assert "model/request" not in replay.stdout
+
+
+def test_replay_of_a_half_log_derives_the_closer_without_touching_the_log(tmp_path: Path) -> None:
+    """规格 scenario「闭合不被重放成事件」：闭合只在折叠结果里，日志一个字节都不变。
+
+    手搓的半截日志：`call-1` 的 `tool/call` 落了盘却没有结果，之后另有一个回合开始并装配过一次
+    上下文——那次装配的结果里带着派生闭合，日志里却没有这样一条记录。
+    """
+    session_dir = tmp_path / "sessions"
+    log = EventLog.create(session_dir, session_id="s-half")
+    assert isinstance(log, EventLog)
+
+    def emit(event_type: str, payload: dict[str, Any]) -> EventRecord:
+        appended = log.append(event_type, payload)
+        assert isinstance(appended, EventRecord)
+        return appended
+
+    written: list[EventRecord] = []
+    written.append(emit("session/start", {"prompt": "任务", "tools": ["read"]}))
+    written.append(emit("turn/start", {"turn_id": "t1"}))
+    written.append(emit("context/assembled", assembled_payload("t1", fold(written))))
+    written.append(
+        emit(
+            "model/response",
+            {
+                "turn_id": "t1",
+                "content": "读一个文件",
+                "tool_calls": [
+                    {"id": "call-1", "name": "read", "arguments": {"file_path": "a.md"}}
+                ],
+                "finish_reason": "tool_calls",
+            },
+        )
+    )
+    written.append(emit("tool/call", {"turn_id": "t1", "tool_call_id": "call-1", "name": "read"}))
+    written.append(emit("turn/start", {"turn_id": "t2"}))
+    emit("context/assembled", assembled_payload("t2", fold(written)))
+    log_before = log.path.read_bytes()
+
+    replay = _cli("replay", "s-half", "--session-dir", str(session_dir), cwd=tmp_path)
+
+    assert replay.returncode == 0
+    assert log.path.read_bytes() == log_before
+    types = [json.loads(line)["type"] for line in log_before.decode("utf-8").splitlines()]
+    assert "tool/result" not in types, "闭合不是事件：日志里没有一条结果记录配这个调用"
+    assert "TOOL_OUTCOME_UNKNOWN" in replay.stdout

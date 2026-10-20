@@ -15,6 +15,9 @@ SYSTEM_PROMPT = (
     "工具失败也是结果，不是异常。"
 )
 
+# 读方闭合的结果词：只出现在折叠出来的消息里，不在日志里。
+OUTCOME_UNKNOWN = "TOOL_OUTCOME_UNKNOWN"
+
 
 class Message(BaseModel):
     """进入模型的一条消息。"""
@@ -85,14 +88,47 @@ def _body_message(event: EventRecord) -> Message | None:
     return None
 
 
+def _closer(tool_call_id: str) -> Message:
+    """读方派生的闭合：不落盘、不新造事件类型、不自动重试（design D1）。"""
+    return Message(role="tool", content=OUTCOME_UNKNOWN, tool_call_id=tool_call_id)
+
+
+def _call_id_of(event: EventRecord) -> str | None:
+    tool_call_id = event.payload.get("tool_call_id")
+    return tool_call_id if isinstance(tool_call_id, str) else None
+
+
 def fold(events: Sequence[EventRecord]) -> AssembledContext:
-    """折叠事件序列。M1 不截断、不遮蔽、不摘要。"""
+    """折叠事件序列。不截断、不遮蔽、不摘要；没有配对结果的 `tool/call` 由这里派生闭合。
+
+    闭合排在它该在的位置：未配对的调用先闭合，再轮到它之后的那条消息。于是半截日志折叠出来的
+    上下文仍然配平——assistant 的工具请求后面跟着工具结果，之后才是既有消息。
+    """
     tool_names, append_system_prompt = _start_facts(events)
     header = protected_header(
         append_system_prompt=append_system_prompt,
         tool_names=tool_names,
     )
-    body = [message for event in events if (message := _body_message(event)) is not None]
+    body: list[Message] = []
+    pending: list[str] = []
+    for event in events:
+        if event.type == "tool/call":
+            call_id = _call_id_of(event)
+            if call_id is not None:
+                pending.append(call_id)
+            continue
+        message = _body_message(event)
+        if message is None:
+            continue
+        if event.type == "tool/result":
+            call_id = _call_id_of(event)
+            if call_id is not None and call_id in pending:
+                pending.remove(call_id)
+        else:
+            body.extend(_closer(call_id) for call_id in pending)
+            pending.clear()
+        body.append(message)
+    body.extend(_closer(call_id) for call_id in pending)
     fingerprint = hashlib.sha256(
         "\n".join(message.content for message in header).encode("utf-8")
     ).hexdigest()

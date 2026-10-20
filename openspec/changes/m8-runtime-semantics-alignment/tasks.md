@@ -28,11 +28,11 @@
 
 ## 5. 读方闭合（seam ④）
 
-- [ ] 5.1 先写 seam ④ 判据：构造一份以「有 `tool/call` 没 `tool/result`」结尾的日志，折叠结果里该 `tool_call_id` 有一条 `TOOL_OUTCOME_UNKNOWN` 的工具结果消息、且该消息出现在该调用的 assistant 请求之后、该点之后的既有消息之前（red）
-- [ ] 5.2 改 `events/fold.py`：未配对的 `tool/call` 派生闭合消息，让 5.1 转绿；派生不落盘、不新造事件类型、不自动重试（seam ④）
-- [ ] 5.3 先写 seam ④ 判据：完整日志不派生任何 `TOOL_OUTCOME_UNKNOWN`（负判据）、同一份半截日志折叠两次结果逐字段相等、`minihns replay` 对半截日志不追加任何记录（red），再确认 5.2 满足（seam ④）
-- [ ] 5.4 跑 seam ④ 既有回归：`tests/test_context_fold.py` 全部判据与「冷启动逐点重建」判据全绿，确认闭合没有弄坏前缀折叠的确定性
-- [ ] 5.5 按 design D6 扩 `tests/test_vocabulary_reachability.py::test_every_tool_outcome_is_reachable` 的观察源：`ABORTED_BEFORE_DISPATCH` 从 seam ① 的取消批次观察、`TOOL_OUTCOME_UNKNOWN` 从 seam ④ 的折叠观察，让这条从 2.1 起红着的判据转绿（seam ② 与 seam ① 与 seam ④）
+- [x] 5.1 先写 seam ④ 判据：构造一份以「有 `tool/call` 没 `tool/result`」结尾的日志，折叠结果里该 `tool_call_id` 有一条 `TOOL_OUTCOME_UNKNOWN` 的工具结果消息、且该消息出现在该调用的 assistant 请求之后、该点之后的既有消息之前（red）。新增 `test_an_unpaired_tool_call_folds_into_a_derived_closer`，实测红在 `['assistant','tool','assistant'] == ['assistant','tool','tool','assistant']`；构造日志抽成 `_half_log_events()` 供 5.3 复用
+- [x] 5.2 改 `events/fold.py`：未配对的 `tool/call` 派生闭合消息，让 5.1 转绿；派生不落盘、不新造事件类型、不自动重试（seam ④）。规则是「未配对的先闭合，再轮到它之后的那条消息」：`fold` 边扫边记 pending，遇到下一条会产出消息的事件就把 pending 闭合掉，末尾再闭合剩下的
+- [x] 5.3 先写 seam ④ 判据：完整日志不派生任何 `TOOL_OUTCOME_UNKNOWN`（负判据）、同一份半截日志折叠两次结果逐字段相等、`minihns replay` 对半截日志不追加任何记录，再确认 5.2 满足（seam ④）。三条都绿：`test_a_complete_log_derives_no_closer`、`test_the_derived_closer_is_deterministic`、`test_replay_of_a_half_log_derives_the_closer_without_touching_the_log`。**踩坑记录**：replay 要求日志里至少有一条 `context/assembled`（否则 `REPLAY_MISMATCH`），所以半截日志要手搓成「回合一开始装配过一次、之后另起一个回合又装配过一次」的形状；判据是「日志字节不变 + 日志里没有一条 `tool/result` 配这个调用 + 折叠结果里有闭合」，不是「日志里搜不到那个词」——装配记录本身就把折叠结果记进去了
+- [x] 5.4 跑 seam ④ 既有回归：`tests/test_context_fold.py` 全部判据与「冷启动逐点重建」判据全绿，确认闭合没有弄坏前缀折叠的确定性（24 passed，含 `test_cli_replay.py`）
+- [x] 5.5 按 design D6 扩 `tests/test_vocabulary_reachability.py::test_every_tool_outcome_is_reachable` 的观察源：`ABORTED_BEFORE_DISPATCH` 从 seam ① 的取消批次观察、`TOOL_OUTCOME_UNKNOWN` 从 seam ④ 的折叠观察，让这条从 2.1 起红着的判据转绿（seam ② 与 seam ① 与 seam ④）。观察源：取消在派发前置位的 fixture 会话（日志里的 `tool/result`）+ 把那份日志唯一一条结果抹掉后的 `fold`；折叠侧只收词表内的取值，因为工具结果消息的 `content` 通常是正文不是结果词
 
 ## 6. 硬杀与入口（seam ⑥）
 
