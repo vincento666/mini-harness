@@ -13,10 +13,10 @@
 
 ## 3. 结果在产生时落盘（seam ④ 与 seam ①）
 
-- [ ] 3.1 重写 seam ④ 判据：把 `test_results_land_in_declared_order_when_the_second_finishes_first` 改成「先完成的先落盘」+ 结果集合与配对关系不断言顺序（red），确认它在当前实现下红
-- [ ] 3.2 改 `loop/turn_loop.py` 的派发段：每个调用产出结果即 append 并 flush，去掉批次末的 `outcomes` 批量落盘，让 3.1 转绿（seam ④）
-- [ ] 3.3 先写 seam ④ 判据：并发只读批次里第二条结果在盘上出现的时间点早于第一条结果产出（轮询日志文件，red），再确认 3.2 的实现满足它；不满足就改派发段
-- [ ] 3.4 跑 seam ① 既有回归：`tests/test_turn_loop.py` 与 `tests/test_approval_gate.py::test_an_approved_call_keeps_its_relative_order_when_the_batch_interleaves` 全绿，确认「单个调用自己的记录相对顺序」没被 3.2 弄坏
+- [x] 3.1 重写 seam ④ 判据：把 `test_results_land_in_declared_order_when_the_second_finishes_first` 改成「先完成的先落盘」+ 结果集合与配对关系不断言顺序（red），确认它在当前实现下红。**同一批还拆了另一条声明顺序的残留**：`test_ten_reads_in_one_turn_never_exceed_the_limit` 原断言 `tool/result` 与 `tool/call` 同序，改成「`tool/call` 仍按声明顺序 + 结果集合配平」，被测对象（并发峰值 8）不变
+- [x] 3.2 改 `loop/turn_loop.py` 的派发段：每个调用产出结果即 append 并 flush，去掉批次末的 `outcomes` 批量落盘，让 3.1 转绿（seam ④）。新增 `settle()`：`approval/response` → `tool/result` → `tool/cancelled` → `error/fence` 逐个落盘，围栏拒绝的结论改在落盘时记进 `_BatchOutcome`
+- [x] 3.3 先写 seam ④ 判据：并发只读批次里第二条结果在盘上出现的时间点早于第一条结果产出（轮询日志文件，red），再确认 3.2 的实现满足它；不满足就改派发段。实测：把派发段回滚到 3.2 之前，这条在 `assert 'c1' not in ['c1', 'c2']` 上红；3.2 之后绿
+- [x] 3.4 跑 seam ① 既有回归：`tests/test_turn_loop.py` 与 `tests/test_approval_gate.py::test_an_approved_call_keeps_its_relative_order_when_the_batch_interleaves` 全绿，确认「单个调用自己的记录相对顺序」没被 3.2 弄坏（`test_turn_loop.py` + `test_approval_gate.py` + `test_event_log_append.py` + `test_context_fold.py` 共 52 passed）
 
 ## 4. 取消是回合级事件（seam ①）
 

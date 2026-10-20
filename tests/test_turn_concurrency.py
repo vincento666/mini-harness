@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from pathlib import Path
 
 from mini_harness.events import read_events
@@ -139,8 +140,8 @@ async def test_ten_reads_in_one_turn_never_exceed_the_limit(tmp_path: Path) -> N
     records = read_events(log.path)
     assert isinstance(records, list)
     calls = call_ids(records, "tool/call")
-    assert len(calls) == 10
-    assert call_ids(records, "tool/result") == calls
+    assert calls == [f"c{index}" for index in range(1, 11)], "tool/call 仍按声明顺序落盘"
+    assert set(call_ids(records, "tool/result")) == set(calls), "十条都有配对结果，顺序是完成顺序"
 
 
 async def test_a_read_in_the_same_batch_does_not_unlock_a_write(tmp_path: Path) -> None:
@@ -171,17 +172,21 @@ async def test_a_read_in_the_same_batch_does_not_unlock_a_write(tmp_path: Path) 
     assert outcome.stop_reason == "MODEL_COMPLETED"
 
 
-async def test_results_land_in_declared_order_when_the_second_finishes_first(
+async def test_results_land_in_completion_order_when_the_second_finishes_first(
     tmp_path: Path,
 ) -> None:
-    """规格 scenario「完成顺序与声明顺序不同」：落盘仍是声明顺序，两次折叠逐字段相等。"""
+    """规格 scenario「先完成的先落盘」：结果在产生时落盘，顺序就是完成顺序。
+
+    M8 之前这条钉的是声明顺序（`["c1", "c2"]`）。ADR-0012 之后声明顺序不再是落盘顺序：
+    判据改成「先完成的先落盘」，配对关系按集合断言，折叠确定性照旧。
+    """
     (tmp_path / "a.md").write_text("甲\n", encoding="utf-8")
     (tmp_path / "b.md").write_text("乙\n", encoding="utf-8")
     observed: Intervals = []
 
     log, _ = await run_session_fixture(
         tmp_path,
-        "s-declared-order",
+        "s-completion-order",
         FixtureProvider(
             entries=[
                 turn_entry(
@@ -199,10 +204,60 @@ async def test_results_land_in_declared_order_when_the_second_finishes_first(
     assert isinstance(records, list)
     spans = _spans(observed)
     assert spans["b.md"][1] < spans["a.md"][1], "第二个没有先完成：这个场景没构造出来"
-    assert call_ids(records, "tool/result") == ["c1", "c2"]
+    assert call_ids(records, "tool/result") == ["c2", "c1"]
+    assert set(result_outcomes(records)) == {("c1", "OK"), ("c2", "OK")}
     assert fold(records).model_dump(mode="json") == fold(
         [record.model_copy(deep=True) for record in records]
     ).model_dump(mode="json")
+
+
+async def test_the_faster_result_is_on_disk_before_the_slower_one_finishes(
+    tmp_path: Path,
+) -> None:
+    """落盘时刻的版本：不等整批结束，轮询日志文件就能看见先完成的那条已经在盘上。
+
+    seam ④ 判的是「append 即落盘」：3.2 之前结果缓冲在内存里，整批跑完才写，这条轮询永远等不到。
+    """
+    (tmp_path / "a.md").write_text("甲\n", encoding="utf-8")
+    (tmp_path / "b.md").write_text("乙\n", encoding="utf-8")
+    observed: Intervals = []
+    log_path = tmp_path / "s-land-early.jsonl"
+
+    running = asyncio.create_task(
+        run_session_fixture(
+            tmp_path,
+            "s-land-early",
+            FixtureProvider(
+                entries=[
+                    turn_entry(
+                        tool_call("read", "c1", file_path="a.md"),
+                        tool_call("read", "c2", file_path="b.md"),
+                    ),
+                    DONE,
+                ]
+            ),
+            registry=timed_registry(observed, delays={"a.md": 0.3, "b.md": 0.02}),
+            max_turns=4,
+        )
+    )
+
+    landed: list[str] | None = None
+    deadline = time.monotonic() + 10.0
+    while time.monotonic() < deadline and landed is None:
+        records = read_events(log_path)
+        if isinstance(records, list):
+            seen = call_ids(records, "tool/result")
+            if "c2" in seen:
+                landed = seen
+        await asyncio.sleep(0.005)
+
+    assert landed is not None, "轮询没等到第二条结果落盘"
+    assert "c1" not in landed, f"慢的那条已经落盘了：{landed}"
+    await running
+
+    final = read_events(log_path)
+    assert isinstance(final, list)
+    assert call_ids(final, "tool/result") == ["c2", "c1"]
 
 
 async def test_a_fence_denial_does_not_swallow_the_calls_dispatched_before_it(
