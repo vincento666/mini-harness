@@ -8,7 +8,7 @@
 
 ## 先读这三样，再动手
 
-1. **`docs/handoff-2026-10-15.md`** —— 已锁定的**编号决策与运行时不变量**，这就是规格输入。**不要重新 grill**，除非实现过程中出现新的设计分叉。两份文档会分叉：决策 15 的取消语义已被 ADR-0007 部分推翻，决策 33 的 `scripts/acceptance.py` 已被「每里程碑一条人手验收」替代——**以 ADR 与 `docs/roadmap.md` 为准**，handoff 冻结不编辑。
+1. **`docs/handoff-2026-10-15.md`** —— 已锁定的**编号决策与运行时不变量**，这就是规格输入。**不要重新 grill**，除非实现过程中出现新的设计分叉。两份文档会分叉：决策 15 的取消语义已被 ADR-0011 取代（ADR-0007 已标 superseded），决策 33 的 `scripts/acceptance.py` 已被「每里程碑一条人手验收」替代——**以 ADR 与 `docs/roadmap.md` 为准**，handoff 冻结不编辑。
 2. **`docs/lessons.md`** —— 教训的收件箱与活跃区；Active Lessons 每次接手都读。
 3. **`docs/CURRENT.md`** —— 当前进度、门禁实测、已知缺口。
 
@@ -73,8 +73,10 @@ uv run ruff format --diff src tests   # 干净 = 退出码 0
 
 **提交粒度**：一个红绿循环一次提交，提交信息带 task 编号，让 `git log` 能对上 `tasks.md` 的复选框。**一个提交最多覆盖同一 seam 上相邻的 3 个 task**；超过就在提交信息里写明为什么打包（没有理由为了省时间打包）。
 
-**测试只写在下面六个 seam 上**（tdd 技能要求先约定再写，不许水平切片）：
-① 回合循环 ② 工具注册与管线 ③ 文件工具契约 ④ 日志追加与折叠 ⑤ Provider 接口 ⑥ CLI 黑盒（subprocess 跑真实命令）
+**测试只写在下面七个 seam 上**（tdd 技能要求先约定再写，不许水平切片）：
+① 回合循环 ② 工具注册与管线 ③ 文件工具契约 ④ 日志追加与折叠 ⑤ Provider 接口 ⑥ CLI 黑盒（subprocess 跑真实命令） ⑦ 委派与目标（子会话日志与父日志的配对、目标轮次与 `blocked`）
+
+组合层与扩展层**不新增缝**：装配与配置在 ② 与 ⑥ 判，技能与外部触发在 ② 与 ⑥ 判。
 
 **每个里程碑收尾跑一轮变异测试并记录**：改坏一处实现 → 跑全量测试 → 把「变异 / 改法 / 哪些测试变红」记进 `docs/verification/<change-id>-mutation.md` → 还原并确认回到基线（**还原前先看 `git status`**，别把本轮未提交的改动一起回滚）。判据：每个变异都被至少一条测试杀死；存活的算覆盖缺口，补一条能杀死它的测试（先确认它在变异下红）。变异必须改变**可观察行为**，语义等价的改法是 dud mutant，不算。捕获一整个异常类族的代码，判据要用族里不显眼的那个成员。
 
@@ -86,9 +88,11 @@ uv run ruff format --diff src tests   # 干净 = 退出码 0
 
 Python **>= 3.12** · **uv** · `src/mini_harness/` 布局 · **mypy strict** · **pydantic v2** · **httpx** · **argparse** · **pytest + pytest-asyncio** · asyncio 单事件循环 · 包名 `mini_harness`，命令名 **`minihns`** · 密钥只走环境变量（默认 `DEEPSEEK_API_KEY`，`--api-key-env` 指定变量名）。
 
-## MVP 明确不做
+## MVP 分两阶段（ADR-0010）
 
-插件容器与热更新、子代理委派与目标状态机、OS 级沙箱（Windows ACL / job object / landlock）、投影缓存与 `--resume`、PTC 工具面塌缩、多模型路由与重试策略、web / Electron 外壳实现、独立工单与 triage 标签体系。
+**第一阶段**（内核 / 工件 / 组合 / 能力 / 模型的基础，围栏有雏形）：已完 M1 M2 M4 M3；接下来 **M8 运行时语义转向 → M5 窗口预算与压缩 → M9 装配与配置层叠 → M6 REPL → M7 SSE**。
+**第二阶段**（补全成**没有 web / Electron 外壳**的完整类 DSH 形态）：**M10 工具管线加段与执行缝 → M11 投影分流 / 折叠缓存 / resume / 格式迁移 → M12 委派 → M13 目标轮次 → M14 技能与外部触发 → M15 OS 级拦截**。
+**第三阶段**（加壳）等前两阶段做完再规划。**始终不做**：PTC 工具面塌缩、多模型路由与重试策略、独立工单与 triage 标签体系。
 
 ---
 

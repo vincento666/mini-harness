@@ -1,3 +1,7 @@
+---
+status: partially superseded by ADR-0013（第 3 条作废，其余仍然有效）
+---
+
 # M2 围栏的刻意简化：不做 OS 级强制、approval 不提权、管线只有三段、两轴不预设
 
 M2（change `m2-file-tools-and-fences`）落地五个文件工具与围栏判定，但只把围栏做成「harness 自己的判定」。后来的人看到下面的现象时，不要当成缺陷去「修」；每条都写明了代价。

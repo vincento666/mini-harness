@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded by ADR-0011
 ---
 
 # Ctrl-C 取消整个 session；「继续回合」只属于超时
