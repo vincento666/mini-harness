@@ -629,7 +629,16 @@ async def run_session(
             context = fold(events)
             reading = budget_reading(events, context.messages)
             if reading > line:
-                detail = f"压缩之后预算读数 {reading} 仍超过触发线 {line}"
+                # 措辞跟着日志里的事实走：这一回合真写过摘要才说「压缩之后」。
+                compacted_here = any(
+                    event.type == "compaction/summary" and event.payload.get("turn_id") == turn_id
+                    for event in events
+                )
+                detail = (
+                    f"压缩之后预算读数 {reading} 仍超过触发线 {line}"
+                    if compacted_here
+                    else f"无可遮蔽的内容，预算读数 {reading} 已超过触发线 {line}"
+                )
                 return await _context_overflow(log, turn_id, turns, detail)
 
         failure = _append_all(

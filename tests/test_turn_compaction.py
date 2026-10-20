@@ -144,11 +144,10 @@ async def test_overflow_when_nothing_can_be_shadowed(tmp_path: Path) -> None:
     assert _records_of(log.path, "tool/call") == []
     assert _records_of(log.path, "compaction/summary") == []
     error = _records_of(log.path, "error/context")[0]
-    assert error.payload == {
-        "turn_id": "t1",
-        "code": "CONTEXT_WINDOW_EXCEEDED",
-        "detail": error.payload["detail"],
-    }
+    assert error.payload["code"] == "CONTEXT_WINDOW_EXCEEDED"
+    assert error.payload["turn_id"] == "t1"
+    # 人手验收里发现的措辞：没有发生压缩时不能说「压缩之后」。
+    assert error.payload["detail"].startswith("无可遮蔽的内容")
     closers = [
         record.payload["stop_reason"]
         for record in records
@@ -187,6 +186,9 @@ async def test_one_compaction_then_overflow_when_the_context_still_does_not_fit(
         "turn/end",
         "session/end",
     ]
+    # 这一条压缩真的发生过，措辞就该是「压缩之后」。
+    overflow_error = _records_of(log.path, "error/context")[0]
+    assert overflow_error.payload["detail"].startswith("压缩之后")
     assert outcome.stop_reason == "CONTEXT_WINDOW_EXCEEDED"
 
 
