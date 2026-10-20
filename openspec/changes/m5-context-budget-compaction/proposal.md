@@ -39,7 +39,7 @@
 
 ## Impact
 
-- 代码：`events/fold.py`（遮蔽与摘要进表层）、`events/vocabulary.py`（两个新类型）、`loop/turn_loop.py`（压缩段、新 `StopReason`）、`loop/settings.py`（`window` / `reserve`）、`cli/main.py`（两个参数、退出码 4）、`provider/mock.py`（fixture 要能供摘要回复）。
-- 测试：seam ① ④ ⑤ ⑥ 各加一组判据；`tests/fixtures/scenarios/` 加压缩场景；词表可达性判据扩到新值。
-- 文档：新 ADR 三份（遮蔽的形状、预算读数与两条触发路径、压缩范围不覆盖 `session/start`）；ADR-0002 里指向 M5 的旧指针按 M5 的实际范围改判——那些「处理时点：M5」写于「M5 是 REPL」的旧分期。
+- 代码：`events/fold.py`（遮蔽与摘要进表层）、`events/vocabulary.py`（两个新类型）、`loop/turn_loop.py`（压缩段、新 `StopReason`）、`loop/settings.py` 与 `cli/main.py`（两个参数、退出码 4）、`provider/openai_compat.py`（新失败码）、新建 `context/budget.py`。
+- 测试：seam ① ② ④ ⑤ ⑥ 各加一组判据，`tests/fixtures/scenarios/` 加压缩场景，词表可达性判据扩到新值。
+- 文档：新 ADR 三份（遮蔽的形状、预算读数与两条触发路径、压缩范围不覆盖 `session/start`）；ADR-0002 追加剪枝记账，并把指向 M5 的旧指针按 M5 的实际范围改判——那些「处理时点：M5」写于「M5 是 REPL」的旧分期。
 - 基线会变：236 passed / 2 skipped 与 `TOTAL 1167 53 95%` 是本轮起点，不是终点。
