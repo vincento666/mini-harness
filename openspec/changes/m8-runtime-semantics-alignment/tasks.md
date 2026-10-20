@@ -7,8 +7,8 @@
 
 ## 2. 词表两个新值（seam ②）
 
-- [ ] 2.1 先写 seam ② 判据：`tests/test_tool_registry.py::test_the_outcome_vocabulary_has_sixteen_values_and_no_not_implemented` 改成 18 个取值并含 `ABORTED_BEFORE_DISPATCH` 与 `TOOL_OUTCOME_UNKNOWN`（red），再扩 `tools/registry.py` 的结果词表让它转绿。注意：`tests/test_vocabulary_reachability.py::test_every_tool_outcome_is_reachable` 从这一步起红着，直到 5.5 把两个生产者接进观察源
-- [ ] 2.2 先写 seam ② 判据：一个产出 `ABORTED_BEFORE_DISPATCH` 的调用不配 `tool/cancelled`、一个产出 `TOOL_OUTCOME_UNKNOWN` 的调用不出现在日志里（red），再让派发与落盘路径满足它（seam ②）
+- [x] 2.1 先写 seam ② 判据：`tests/test_tool_registry.py::test_the_outcome_vocabulary_has_sixteen_values_and_no_not_implemented` 改成 18 个取值并含 `ABORTED_BEFORE_DISPATCH` 与 `TOOL_OUTCOME_UNKNOWN`（red），再扩 `tools/registry.py` 的结果词表让它转绿。注意：`tests/test_vocabulary_reachability.py::test_every_tool_outcome_is_reachable` 从这一步起红着，直到 5.5 把两个生产者接进观察源
+- [x] 2.2 seam ② 护栏：新增 `test_the_pipeline_never_produces_the_two_kernel_only_outcomes`——工具与管线自己跑不出 `ABORTED_BEFORE_DISPATCH` 与 `TOOL_OUTCOME_UNKNOWN`（执行段逃出的异常只能塌成 `TOOL_TIMEOUT` / `TOOL_CANCELLED`）。**记录一处任务修正**：本条原写「未派发的调用不配 `tool/cancelled`、闭合码不出现在日志里」，那两半在 seam ② 上没有红切片可做（`dispatch_call` 没有取消入口、闭合不落盘），已分别落到 4.3 与 5.3；本条落地为护栏，写完即绿
 - [ ] 2.3 在 `GLOSSARY.md` 的「围栏与工具」一节补这两个结果词的一句话定义（含 `_Avoid_`：不要把 `ABORTED_BEFORE_DISPATCH` 读成失败、不要把 `TOOL_OUTCOME_UNKNOWN` 读成日志损坏），并确认 `tests/test_event_vocabulary.py` 仍绿
 
 ## 3. 结果在产生时落盘（seam ④ 与 seam ①）

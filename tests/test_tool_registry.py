@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any, get_args
 
@@ -83,10 +84,10 @@ def test_the_parameter_schema_a_model_sees_comes_from_the_dispatch_side_model() 
         assert tool.name in {"read", "write", "edit", "glob", "grep"}
 
 
-def test_the_outcome_vocabulary_has_sixteen_values_and_no_not_implemented() -> None:
+def test_the_outcome_vocabulary_has_eighteen_values_and_no_not_implemented() -> None:
     outcomes = set(get_args(ToolOutcome))
 
-    assert len(outcomes) == 16
+    assert len(outcomes) == 18
     assert "NOT_IMPLEMENTED" not in outcomes
     required = {
         "DENIED_BY_FENCE",
@@ -97,8 +98,76 @@ def test_the_outcome_vocabulary_has_sixteen_values_and_no_not_implemented() -> N
         "TOOL_TIMEOUT",
         "TOOL_CANCELLED",
         "NOT_A_DIRECTORY",
+        "ABORTED_BEFORE_DISPATCH",
+        "TOOL_OUTCOME_UNKNOWN",
     }
     assert required <= outcomes
+
+
+async def _raise_timeout(args: Any, context: DispatchContext) -> ToolResult:
+    raise TimeoutError("执行段超时")
+
+
+async def _raise_cancelled(args: Any, context: DispatchContext) -> ToolResult:
+    raise asyncio.CancelledError("执行段被打断")
+
+
+def _raising_registry(run: Any) -> ToolRegistry:
+    return ToolRegistry(
+        [
+            ToolDefinition(
+                name="stub",
+                description="执行段抛异常的桩工具",
+                args_model=_StubArgs,
+                mutates=False,
+                run=run,
+            )
+        ]
+    )
+
+
+class _DenyingGate:
+    async def request(self, *, tool_name: str, detail: str) -> ApprovalDecision:
+        return "DENIED"
+
+
+async def test_the_pipeline_never_produces_the_two_kernel_only_outcomes(
+    tmp_path: Path,
+) -> None:
+    """`ABORTED_BEFORE_DISPATCH` 与 `TOOL_OUTCOME_UNKNOWN` 是内核专用词：工具与管线自己跑不出它们。
+
+    这条护栏守的是「工具假装自己被取消了」：执行段逃出的异常只能塌成 `TOOL_TIMEOUT` 与
+    `TOOL_CANCELLED`，不能借这两个词绕过派发段。
+    """
+    observed: set[str] = set()
+
+    async def settle(name: str, arguments: dict[str, Any], **options: Any) -> None:
+        outcome = await dispatch_call(tmp_path, name, arguments, **options)
+        observed.add(outcome.result.outcome)
+
+    await settle("stub", {"file_path": "a.md"}, registry=_stub_registry(mutates=False))
+    await settle("stub", {}, registry=_stub_registry(mutates=False))
+    await settle("nosuch_tool", {})
+    await settle("stub", {"file_path": "a.md"}, registry=_raising_registry(_raise_timeout))
+    await settle("stub", {"file_path": "a.md"}, registry=_raising_registry(_raise_cancelled))
+    await settle("write", {"file_path": "a.md", "content": "x\n"}, sandbox="read-only")
+    await settle(
+        "write",
+        {"file_path": "new.md", "content": "x\n"},
+        approval="ask",
+        approval_gate=_DenyingGate(),
+    )
+
+    assert {"TOOL_TIMEOUT", "TOOL_CANCELLED"} <= observed
+    assert observed <= {
+        "OK",
+        "TOOL_ARGS_INVALID",
+        "UNKNOWN_TOOL",
+        "TOOL_TIMEOUT",
+        "TOOL_CANCELLED",
+        "DENIED_BY_FENCE",
+        "DENIED_BY_APPROVAL",
+    }
 
 
 async def test_invalid_arguments_skip_both_the_fence_and_the_execution(tmp_path: Path) -> None:
