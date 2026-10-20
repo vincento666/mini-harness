@@ -13,6 +13,7 @@ from tool_harness import (
     DONE,
     Intervals,
     call_ids,
+    cancel_after,
     full_registry,
     result_outcomes,
     run_session_fixture,
@@ -74,11 +75,6 @@ async def test_a_timed_out_call_does_not_stop_the_rest_of_the_batch(tmp_path: Pa
     assert outcome.stop_reason == "MODEL_COMPLETED"
 
 
-async def _cancel_after(cancel: asyncio.Event, seconds: float) -> None:
-    await asyncio.sleep(seconds)
-    cancel.set()
-
-
 async def test_a_cancel_interrupts_the_call_that_is_running(tmp_path: Path) -> None:
     """规格 scenario「取消打断正在执行的调用」：正在跑的那一条塌成 `TOOL_CANCELLED`。
 
@@ -87,7 +83,7 @@ async def test_a_cancel_interrupts_the_call_that_is_running(tmp_path: Path) -> N
     """
     (tmp_path / "loop.py").write_text(_LEAK_SCRIPT, encoding="utf-8")
     cancel = asyncio.Event()
-    watcher = asyncio.create_task(_cancel_after(cancel, 0.5))
+    watcher = asyncio.create_task(cancel_after(cancel, 0.5))
 
     log, outcome = await run_session_fixture(
         tmp_path,
@@ -129,7 +125,7 @@ async def test_no_call_has_a_tool_call_without_a_result_after_a_cancel(tmp_path:
     (tmp_path / "a.md").write_text("甲\n", encoding="utf-8")
     observed: Intervals = []
     cancel = asyncio.Event()
-    watcher = asyncio.create_task(_cancel_after(cancel, 0.5))
+    watcher = asyncio.create_task(cancel_after(cancel, 0.5))
 
     log, _ = await run_session_fixture(
         tmp_path,
@@ -171,7 +167,7 @@ async def test_the_undispatched_call_gets_no_tool_cancelled(tmp_path: Path) -> N
     (tmp_path / "a.md").write_text("甲\n", encoding="utf-8")
     observed: Intervals = []
     cancel = asyncio.Event()
-    watcher = asyncio.create_task(_cancel_after(cancel, 0.5))
+    watcher = asyncio.create_task(cancel_after(cancel, 0.5))
 
     log, _ = await run_session_fixture(
         tmp_path,
@@ -209,6 +205,108 @@ async def test_the_undispatched_call_gets_no_tool_cancelled(tmp_path: Path) -> N
     ] == ["ABORTED", "ABORTED"]
 
 
+async def test_a_read_queued_on_the_concurrency_limit_is_not_interrupted(tmp_path: Path) -> None:
+    """「未派发的调用不算被打断」的第二种形状：卡在只读并发额度上的那几条。
+
+    八条 `read` 同时在跑（额度 8），第九、第十条已经写了 `tool/call`、还卡在信号量上。
+    取消在这时置位：它们没开始过，结果词是 `ABORTED_BEFORE_DISPATCH`，不配 `tool/cancelled`
+    （design D5「被打断预设它开始过」）。
+    """
+    for index in range(1, 11):
+        (tmp_path / f"n{index}.md").write_text(f"{index}\n", encoding="utf-8")
+    observed: Intervals = []
+    cancel = asyncio.Event()
+    watcher = asyncio.create_task(cancel_after(cancel, 0.5))
+    delays = {f"n{index}.md": 2.0 for index in range(1, 9)}
+
+    log, _ = await run_session_fixture(
+        tmp_path,
+        "s-cancel-queued-read",
+        FixtureProvider(
+            entries=[
+                turn_entry(
+                    *(
+                        tool_call("read", f"c{index}", file_path=f"n{index}.md")
+                        for index in range(1, 11)
+                    )
+                ),
+                DONE,
+            ]
+        ),
+        registry=timed_registry(observed, delays=delays),
+        max_turns=4,
+        cancel=cancel,
+    )
+    await watcher
+
+    records = read_events(log.path)
+    assert isinstance(records, list)
+    assert call_ids(records, "tool/call") == [f"c{index}" for index in range(1, 11)]
+    outcomes = dict(result_outcomes(records))
+    assert [outcomes[f"c{index}"] for index in range(1, 9)] == ["TOOL_CANCELLED"] * 8
+    assert [outcomes[f"c{index}"] for index in range(9, 11)] == ["ABORTED_BEFORE_DISPATCH"] * 2
+    assert set(call_ids(records, "tool/cancelled")) == {f"c{index}" for index in range(1, 9)}
+
+
+class _DenyAndCancelGate:
+    """围栏拒绝与取消同时在场：提问当场拒绝，同时把取消置位。"""
+
+    def __init__(self, cancel: asyncio.Event) -> None:
+        self._cancel = cancel
+
+    async def request(self, *, tool_name: str, detail: str) -> ApprovalDecision:
+        self._cancel.set()
+        return "DENIED"
+
+
+async def test_cancel_wins_over_a_fence_denial_for_the_undispatched_call(tmp_path: Path) -> None:
+    """裁决「取消与围栏拒绝同时在场时取消优先到底」：未派发的落一对记录，回合以 `ABORTED` 收尾。
+
+    围栏单独在场时后面的调用连 `tool/call` 都不写（`test_a_fence_denial_does_not_swallow_the_calls_
+    dispatched_before_it`）；取消也在场时它要落一对 `ABORTED_BEFORE_DISPATCH`——「取消不再掀翻批次」
+    不因围栏在场而失效。收尾理由取取消，围栏拒绝的事实不丢：`error/fence` 在盘上，
+    `RunOutcome.failure_code` 仍是那个围栏码。
+    """
+    cancel = asyncio.Event()
+    gate = _DenyAndCancelGate(cancel)
+
+    log, outcome = await run_session_fixture(
+        tmp_path,
+        "s-cancel-and-fence",
+        FixtureProvider(
+            entries=[
+                turn_entry(
+                    tool_call("write", "c1", file_path="one.md", content="一\n"),
+                    tool_call("write", "c2", file_path="two.md", content="二\n"),
+                ),
+                DONE,
+            ]
+        ),
+        registry=full_registry(),
+        approval="ask",
+        approval_gate=gate,
+        cancel=cancel,
+        max_turns=4,
+    )
+
+    records = read_events(log.path)
+    assert isinstance(records, list)
+    assert call_ids(records, "tool/call") == ["c1", "c2"]
+    assert set(result_outcomes(records)) == {
+        ("c1", "DENIED_BY_APPROVAL"),
+        ("c2", "ABORTED_BEFORE_DISPATCH"),
+    }
+    assert call_ids(records, "tool/cancelled") == []
+    assert not (tmp_path / "one.md").exists() and not (tmp_path / "two.md").exists()
+    assert [record.type for record in records if record.type in {"error/fence", "error/abort"}] == [
+        "error/fence",
+        "error/abort",
+    ]
+    # 裁决：取消优先到底——收尾理由是取消，围栏拒绝的事实留在 `error/fence` 与 `failure_code` 里。
+    assert outcome.stop_reason == "ABORTED"
+    assert outcome.failure_code == "APPROVAL_DENIED"
+
+
 async def test_an_aborted_run_folds_into_balanced_tool_messages(tmp_path: Path) -> None:
     """取消收尾的回合折叠出来是配平的：每个工具请求消息都有对应的工具结果消息。
 
@@ -217,7 +315,7 @@ async def test_an_aborted_run_folds_into_balanced_tool_messages(tmp_path: Path) 
     """
     observed: Intervals = []
     cancel = asyncio.Event()
-    watcher = asyncio.create_task(_cancel_after(cancel, 0.5))
+    watcher = asyncio.create_task(cancel_after(cancel, 0.5))
 
     log, _ = await run_session_fixture(
         tmp_path,

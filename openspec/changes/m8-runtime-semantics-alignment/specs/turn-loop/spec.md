@@ -3,7 +3,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: 用户取消是 ABORTED 结果
-当运行期间收到取消信号时，系统 SHALL 终止**当前回合**而不是整批派发：已开始执行的调用被打断并塌成 `TOOL_CANCELLED`（配一条 `tool/cancelled`），尚未派发的每一个声明调用 SHALL 写一条 `tool/call` 与配对的 `tool/result`（`outcome: ABORTED_BEFORE_DISPATCH`）；随后写 `error/abort`（含 `turn_id` 与 `code: ABORTED`）与 `turn/end`（`stop_reason: ABORTED`）。内核 MUST NOT 把「会话是否结束」写进回合语义——会话终止由入口决定。一次性 `minihns run` 的入口 SHALL 在回合闭合后写 `session/end` 并以退出码 5 结束。
+当运行期间收到取消信号时，系统 SHALL 终止**当前回合**而不是整批派发：已开始执行的调用被打断并塌成 `TOOL_CANCELLED`（配一条 `tool/cancelled`），尚未派发的每一个声明调用 SHALL 写一条 `tool/call` 与配对的 `tool/result`（`outcome: ABORTED_BEFORE_DISPATCH`）；随后写 `error/abort`（含 `turn_id` 与 `code: ABORTED`）与 `turn/end`（`stop_reason: ABORTED`）。内核 MUST NOT 把「会话是否结束」写进回合语义：`session/end` 仍由内核在回合闭合后写出，一次性 `minihns run` 的入口据此以退出码 5 结束；会话是否继续由**入口策略**决定，REPL 与端点里会话继续归 M6 / M7（ADR-0011）。取消与围栏拒绝同时在场时取消优先到底——收尾理由是 `ABORTED`，围栏拒绝的事实留在 `error/fence` 与 `RunOutcome.failure_code` 里。
 
 #### Scenario: 回合进行中取消
 - **WHEN** 某回合尚未写 `turn/end` 时收到取消信号
@@ -16,6 +16,14 @@
 #### Scenario: 取消后没有无结果的 tool/call
 - **WHEN** 取消发生在一批并发只读调用正在执行时，该批还有尚未派发的调用
 - **THEN** 每一个已写出的 `tool/call` 都有一条配对的 `tool/result`，未派发的调用也各有一条 `tool/call` 与一条 `outcome: ABORTED_BEFORE_DISPATCH` 的 `tool/result`
+
+#### Scenario: 卡在并发额度上的调用不算被打断
+- **WHEN** 一批只读调用超过并发额度、靠后的调用已写 `tool/call` 但还排在额度后面，此时取消
+- **THEN** 这些调用的 `tool/result` 是 `ABORTED_BEFORE_DISPATCH`，日志里没有为它们写 `tool/cancelled`；真的在跑的那些仍是 `TOOL_CANCELLED` 加一条 `tool/cancelled`
+
+#### Scenario: 取消与围栏拒绝同时在场
+- **WHEN** 同一批次里一条调用被围栏拒绝、取消也在场
+- **THEN** 未派发的调用各落一对 `tool/call` 与 `tool/result(ABORTED_BEFORE_DISPATCH)`，`error/fence` 与 `error/abort` 都在盘上，`turn/end` 与 `session/end` 的 `stop_reason` 是 `ABORTED`，退出码为 5
 
 #### Scenario: 取消收尾的日志前缀是完整的
 - **WHEN** 对一次以 `ABORTED` 收尾的 run 的日志折叠

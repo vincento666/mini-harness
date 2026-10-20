@@ -300,14 +300,11 @@ async def _dispatch_batch(
                 outcome.denial_code = dispatched.fence_code
                 outcome.denial_detail = dispatched.result.content
 
-    def abandoned(index: int, call: ToolCall) -> None:
-        """取消置位后没轮到派发的调用：落一对记录，结果词 `ABORTED_BEFORE_DISPATCH`（ADR-0011）。
+    def not_dispatched(call: ToolCall) -> None:
+        """没开始的调用的那个结果词：`ABORTED_BEFORE_DISPATCH`（ADR-0011）。
 
-        它被声明过，就要在日志里有个交代——回合收尾后会话续跑时，assistant 的工具请求必须配平。
-        不配 `tool/cancelled`：「被打断」预设它开始过。
+        不配 `tool/cancelled`：「被打断」预设它开始过（design D5）。
         """
-        if not begin(index, call):
-            return
         settle(
             call,
             DispatchOutcome(
@@ -317,6 +314,15 @@ async def _dispatch_batch(
                 )
             ),
         )
+
+    def abandoned(index: int, call: ToolCall) -> None:
+        """取消置位后没轮到派发的调用：落一对记录。
+
+        它被声明过，就要在日志里有个交代——回合收尾后会话续跑时，assistant 的工具请求必须配平。
+        """
+        if not begin(index, call):
+            return
+        not_dispatched(call)
 
     async def one(index: int, call: ToolCall) -> None:
         try:
@@ -360,6 +366,10 @@ async def _dispatch_batch(
         if not begin(index, call):
             return
         async with read_slots:
+            # 拿到额度之后才决定要不要开始：排队期间「已声明」不等于「已派发」（design D5）。
+            if cancel.is_set():
+                not_dispatched(call)
+                return
             settle(
                 call,
                 await _race_with_cancel(call, registry, context, approval_gate, cancel, ask_logged),
