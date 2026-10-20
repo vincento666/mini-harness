@@ -73,7 +73,7 @@
 - [ ] 8.1 人手验收：真工作区 + 真模型办一件真事，观察压缩有没有按时触发、溢出收尾长什么样，记进 `docs/verification/m5-context-budget-compaction-manual.md`（人手跑，agent 出 runbook 并读日志）
 - [x] 8.2 变异测试一轮：改坏触发线 / 尾部保留 / 语法边界 / 遮蔽 honor / 溢出判定各一处，记进 `docs/verification/m5-context-budget-compaction-mutation.md`，还原前先看 `git status`
 - [x] 8.3 Learning Gate：扫本轮证据写进 `docs/lessons.md`；**收件箱已到 15 条上限，先消化再收**
-- [ ] 8.4 四道门禁按新顺序跑一遍（格式 → 风格 → 类型 → 测试与覆盖率）+ `openspec validate --all --strict`
+- [x] 8.4 四道门禁按新顺序跑一遍（格式 → 风格 → 类型 → 测试与覆盖率）+ `openspec validate --all --strict`
 - [x] 8.5 ADR 落档：0015（遮蔽是一条替换记录）、0016（预算读数两个来源、两条溢出触发路径）、0017（压缩范围不覆盖 `session/start`、摘要调用带 `purpose` 标记且不进表层）；ADR-0002 追加「单条工具结果的剪枝记账到 M10」与「每回合全量重读日志」，并把指向 M5 的旧指针按 M5 的实际范围改判（那些「处理时点：M5」写于 M5 还是 REPL 的旧分期）
 - [ ] 8.6 核对 `GLOSSARY.md` 的「遮蔽（shadowing）」条目并按 M5 的实际语义更正，补「触发线」「保留尾部」两个词；跑 `agents-md-slim`
 
