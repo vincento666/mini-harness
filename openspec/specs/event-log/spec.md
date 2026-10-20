@@ -73,7 +73,7 @@
 
 #### Scenario: 并发批次里不同调用的记录可以交错
 - **WHEN** 同一回合里一个只读调用与一个获批的会改动调用同批派发
-- **THEN** 每个 `tool_call_id` 自己的记录保持上面那个相对顺序，`tool/result` 之间按声明顺序；不同调用的组可以交错，规格不要求它们连续
+- **THEN** 每个 `tool_call_id` 自己的记录保持上面那个相对顺序，`tool/result` 之间按各自的完成顺序；不同调用的组可以交错，规格不要求它们连续
 
 #### Scenario: 无法归类的内部故障仍走 error 命名空间
 - **WHEN** 内核发生一个不属于任何既有 `namespace/method` 的故障
@@ -126,7 +126,7 @@
 - **THEN** 那条 `error/fence` 的 `code` 是 `SANDBOX_DENIES_WRITE`，`path` 与 `raw_path` 都是 `null`
 
 ### Requirement: tool/cancelled 记录被打断的工具调用
-系统 SHALL 为每一个被超时或被取消打断的工具调用写恰好一条 `tool/cancelled`，payload 含 `turn_id` 与 `tool_call_id`。它 MUST NOT 携带命令输出或文件内容；是超时还是取消由配对的 `tool/result.outcome` 区分。
+系统 SHALL 为每一个被超时或被取消**打断**的工具调用写恰好一条 `tool/cancelled`，payload 含 `turn_id` 与 `tool_call_id`。它 MUST NOT 携带命令输出或文件内容；是超时还是取消由配对的 `tool/result.outcome` 区分。尚未派发的调用不算被打断：`outcome: ABORTED_BEFORE_DISPATCH` 的调用 MUST NOT 有 `tool/cancelled`。
 
 #### Scenario: 一次超时一条记录
 - **WHEN** 一个调用因超时被打断
@@ -135,3 +135,7 @@
 #### Scenario: 没有打断就没有该记录
 - **WHEN** 跑完一次既没有超时也没有取消的 run
 - **THEN** 日志里没有任何 `tool/cancelled` 记录
+
+#### Scenario: 未派发的调用没有 tool/cancelled
+- **WHEN** 一次取消让同一批里声明的调用有未被派发的那些
+- **THEN** 这些 `tool_call_id` 各有一条 `tool/call` 与一条 `outcome: ABORTED_BEFORE_DISPATCH` 的 `tool/result`，且没有 `tool/cancelled`
