@@ -48,6 +48,7 @@ def test_every_stop_reason_maps_to_an_exit_code() -> None:
     assert STOP_REASONS_TO_EXIT_CODES["PROVIDER_ERROR"] == 1
     assert STOP_REASONS_TO_EXIT_CODES["FENCE_DENIED"] == 3
     assert STOP_REASONS_TO_EXIT_CODES["ABORTED"] == 5
+    assert 4 not in STOP_REASONS_TO_EXIT_CODES.values(), "4 是保留码：没有任何 stop_reason 映射到它"
     for stop_reason, exit_code in STOP_REASONS_TO_EXIT_CODES.items():
         assert (
             exit_code_for(RunOutcome(session_id="s", stop_reason=stop_reason, turns=1)) == exit_code
@@ -507,6 +508,95 @@ def test_sigint_in_a_real_subprocess_exits_with_five(tmp_path: Path) -> None:
     assert outcomes == ["TOOL_CANCELLED"]
     assert types[-3:] == ["error/abort", "turn/end", "session/end"]
     assert records[-1]["payload"]["stop_reason"] == "ABORTED"
+
+
+_TICKER = "import time\n\nfor _ in range(100):\n    time.sleep(0.1)\n"
+
+
+def _hard_kill_a_run(tmp_path: Path) -> Path:
+    """起一条真实 `minihns run`，轮询到那条挂着的命令的 `tool/call` 落盘就硬杀，返回日志路径。
+
+    杀点由日志定位：`tool/call` 出现时命令一定在跑。命令自己会在十秒后结束，硬杀之后即使
+    它成了孤儿也不会永远留着。Windows 的 `Popen.kill()` 与 Linux CI 的 `SIGKILL` 是同一个动作。
+    """
+    (tmp_path / "a.md").write_text("甲\n", encoding="utf-8")
+    (tmp_path / "ticker.py").write_text(_TICKER, encoding="utf-8")
+    fixture = tmp_path / "hardkill.json"
+    fixture.write_text(
+        json.dumps(
+            [
+                {
+                    "content": "先读一个文件，再跑一条挂着的命令",
+                    "finish_reason": "tool_calls",
+                    "tool_calls": [
+                        {"id": "c1", "name": "read", "arguments": {"file_path": "a.md"}},
+                        {
+                            "id": "c2",
+                            "name": "bash",
+                            "arguments": {"command": "python ticker.py", "timeout_seconds": 30},
+                        },
+                    ],
+                },
+                {"content": "不该走到这里", "finish_reason": "stop"},
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    process = _cli_process(
+        "run", "-p", "任务", "--provider", "mock", "--fixture", str(fixture), "--yes", cwd=tmp_path
+    )
+    for _ in range(400):
+        logs = _log_files(tmp_path)
+        if logs:
+            try:
+                records = [json.loads(line) for line in logs[0].read_text("utf-8").splitlines()]
+            except json.JSONDecodeError:
+                records = []
+            if any(
+                record["type"] == "tool/call" and record["payload"]["tool_call_id"] == "c2"
+                for record in records
+            ):
+                break
+        time.sleep(0.05)
+    else:
+        process.kill()
+        pytest.fail("子进程没有进入工具执行段")
+
+    process.kill()
+    process.wait(timeout=30)
+    return _log_files(tmp_path)[0]
+
+
+def test_a_hard_kill_leaves_no_half_written_line(tmp_path: Path) -> None:
+    """seam ⑥：进程被硬杀之后，日志里已落盘的每一行都还是完整的一条记录。
+
+    断言只挑与杀点无关的性质：每行独立可解析、文件以换行结尾、落了的 `tool/result` 字段齐全。
+    """
+    log_path = _hard_kill_a_run(tmp_path)
+
+    text = log_path.read_text(encoding="utf-8")
+    assert text.endswith("\n"), "最后一行也是完整的一条，不是半行"
+    records = [json.loads(line) for line in text.splitlines()]
+    types = [record["type"] for record in records]
+    results = [record for record in records if record["type"] == "tool/result"]
+    assert results, "先完成的那条读已经落了一条完整结果"
+    for record in results:
+        assert {"turn_id", "tool_call_id", "outcome", "content"} <= set(record["payload"])
+    assert "session/end" not in types, "内核被杀在半路，没人写收尾"
+
+
+def test_a_hard_killed_log_replays_without_appending(tmp_path: Path) -> None:
+    """seam ⑥：被硬杀的日志照样能逐点重放，且 replay 不往它后面追加任何东西。"""
+    log_path = _hard_kill_a_run(tmp_path)
+    before = log_path.read_bytes()
+
+    replay = _cli("replay", log_path.stem, cwd=tmp_path)
+
+    assert replay.returncode == 0
+    assert "verified seq=" in replay.stdout
+    assert log_path.read_bytes() == before
 
 
 class _SigintSpyProvider:

@@ -2,16 +2,30 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import shutil
 from pathlib import Path
+from typing import Any
 
 from cli_blackbox import _cli
+from mini_harness.events import EventLog, EventRecord, read_events
+from mini_harness.events.fold import assembled_payload, fold
+from mini_harness.provider import FixtureProvider
 from paths import (
     HELLO_SCENARIO,
     READ_THEN_WRITE_SCENARIO,
     TOOL_THEN_DONE_SCENARIO,
     copy_repo_to,
+)
+from tool_harness import (
+    DONE,
+    Intervals,
+    cancel_after,
+    run_session_fixture,
+    timed_registry,
+    tool_call,
+    turn_entry,
 )
 
 _PREFIX = "final_context: "
@@ -212,3 +226,95 @@ def test_replay_touches_no_file_and_loads_no_provider(tmp_path: Path) -> None:
     assert _snapshot(workspace) == before
     assert log_path.read_bytes() == log_before
     assert "model/request" not in replay.stdout
+
+
+def test_replay_of_a_half_log_derives_the_closer_without_touching_the_log(tmp_path: Path) -> None:
+    """规格 scenario「闭合不被重放成事件」：闭合只在折叠结果里，日志一个字节都不变。
+
+    手搓的半截日志：`call-1` 的 `tool/call` 落了盘却没有结果，之后另有一个回合开始并装配过一次
+    上下文——那次装配的结果里带着派生闭合，日志里却没有这样一条记录。
+    """
+    session_dir = tmp_path / "sessions"
+    log = EventLog.create(session_dir, session_id="s-half")
+    assert isinstance(log, EventLog)
+
+    def emit(event_type: str, payload: dict[str, Any]) -> EventRecord:
+        appended = log.append(event_type, payload)
+        assert isinstance(appended, EventRecord)
+        return appended
+
+    written: list[EventRecord] = []
+    written.append(emit("session/start", {"prompt": "任务", "tools": ["read"]}))
+    written.append(emit("turn/start", {"turn_id": "t1"}))
+    written.append(emit("context/assembled", assembled_payload("t1", fold(written))))
+    written.append(
+        emit(
+            "model/response",
+            {
+                "turn_id": "t1",
+                "content": "读一个文件",
+                "tool_calls": [
+                    {"id": "call-1", "name": "read", "arguments": {"file_path": "a.md"}}
+                ],
+                "finish_reason": "tool_calls",
+            },
+        )
+    )
+    written.append(emit("tool/call", {"turn_id": "t1", "tool_call_id": "call-1", "name": "read"}))
+    written.append(emit("turn/start", {"turn_id": "t2"}))
+    emit("context/assembled", assembled_payload("t2", fold(written)))
+    log_before = log.path.read_bytes()
+
+    replay = _cli("replay", "s-half", "--session-dir", str(session_dir), cwd=tmp_path)
+
+    assert replay.returncode == 0
+    assert log.path.read_bytes() == log_before
+    types = [json.loads(line)["type"] for line in log_before.decode("utf-8").splitlines()]
+    assert "tool/result" not in types, "闭合不是事件：日志里没有一条结果记录配这个调用"
+    assert "TOOL_OUTCOME_UNKNOWN" in replay.stdout
+
+
+async def test_a_log_that_ends_in_aborted_replays_without_a_derived_closer(tmp_path: Path) -> None:
+    """规格 scenario「取消收尾的日志前缀是完整的」的后半句：那份日志可被逐点重放，读方闭合不出现。
+
+    日志由 seam ① 的一次真实取消 run 产出（不是手搓的），再喂给 seam ⑥ 的 `replay` 黑盒。
+    与上一条的分别在那儿：半截日志的折叠要补闭合，重放出来的上下文里就有 `TOOL_OUTCOME_UNKNOWN`；
+    取消收尾的日志每条声明过的调用都有配对结果，折叠不需要补，重放也不该出现它。
+    """
+    session_dir = tmp_path / "sessions"
+    (tmp_path / "a.md").write_text("甲\n", encoding="utf-8")
+    observed: Intervals = []
+    cancel = asyncio.Event()
+    watcher = asyncio.create_task(cancel_after(cancel, 0.5))
+
+    _, outcome = await run_session_fixture(
+        tmp_path,
+        "s-aborted-replay",
+        FixtureProvider(
+            entries=[
+                turn_entry(
+                    tool_call("read", "c1", file_path="a.md"),
+                    tool_call("write", "c2", file_path="new.md", content="新\n"),
+                    tool_call("write", "c3", file_path="other.md", content="新\n"),
+                ),
+                DONE,
+            ]
+        ),
+        session_dir=session_dir,
+        registry=timed_registry(observed, delays={"new.md": 2.0}),
+        max_turns=4,
+        cancel=cancel,
+    )
+    await watcher
+    assert outcome.stop_reason == "ABORTED"
+
+    log_path = session_dir / "s-aborted-replay.jsonl"
+    replay = _cli("replay", "s-aborted-replay", "--session-dir", str(session_dir), cwd=tmp_path)
+
+    assert replay.returncode == 0
+    assert _verified_seqs(replay.stdout) == _recorded_seqs(log_path)
+    assert "REPLAY_MISMATCH" not in replay.stderr
+    records = read_events(log_path)
+    assert isinstance(records, list)
+    contents = [str(message.content) for message in fold(records).messages]
+    assert "TOOL_OUTCOME_UNKNOWN" not in contents

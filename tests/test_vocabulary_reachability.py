@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import get_args
 
 from mini_harness.events import EventLog, read_events
+from mini_harness.events.fold import fold
 from mini_harness.loop import STOP_REASONS
 from mini_harness.provider import AssistantTurn
 from mini_harness.tools import DispatchOutcome, ToolRegistry
@@ -30,6 +31,7 @@ from mini_harness.tools.registry import (
 from tool_harness import (
     DONE,
     dispatch_call,
+    result_outcomes,
     run_fixture_session,
     run_session_fixture,
     tool_call_entry,
@@ -174,6 +176,31 @@ async def test_every_tool_outcome_is_reachable(tmp_path: Path) -> None:
     observed.add(denied.result.outcome)
     await run("stub", {}, registry=_raising_registry("stub", _raise_timeout))
     await run("stub", {}, registry=_raising_registry("stub", _raise_cancelled))
+
+    # seam ①：取消在派发之前置位，声明了的调用没开始——那个取值只在回合循环里产出。
+    cancel = asyncio.Event()
+    cancel.set()
+    cancelled, _ = await run_fixture_session(
+        tmp_path,
+        "s-reach-cancel",
+        [tool_call_entry("write", "r1", file_path="one.md", content="一\n"), DONE],
+        cancel=cancel,
+    )
+    cancelled_records = read_events(cancelled.path)
+    assert isinstance(cancelled_records, list)
+    observed.update(outcome for _, outcome in result_outcomes(cancelled_records))
+
+    # seam ④：把上面那份日志里唯一一条结果抹掉，闭合由折叠派生——那个取值只在这里产出。
+    last_result = max(
+        index for index, record in enumerate(cancelled_records) if record.type == "tool/result"
+    )
+    half = [*cancelled_records[:last_result], *cancelled_records[last_result + 1 :]]
+    vocabulary = set(get_args(ToolOutcome))
+    observed.update(
+        message.content
+        for message in fold(half).messages
+        if message.role == "tool" and message.content in vocabulary
+    )
 
     assert observed == set(get_args(ToolOutcome)), "有取值没被跑出来，或词表里多了跑不到的取值"
 

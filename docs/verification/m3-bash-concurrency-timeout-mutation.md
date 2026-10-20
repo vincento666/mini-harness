@@ -25,6 +25,8 @@
 
 顺带把事实写清楚：`started` 链防的是「落盘将来会变成 awaitable」那种实现（例如日志写入换成 `asyncio.to_thread`）。到那一天它才成为可观察的护栏；现在它是护栏，不是判据能到达的地方。
 
+**2026-10-20 追记（M8 之后这条不再适用）**：M8 把落盘时机改成「产生即写」、落盘顺序从声明顺序改成完成顺序（ADR-0012），主规格里「工具调用与结果按声明顺序落盘」那条 Requirement 已 REMOVED。C2 守的正是那条声明顺序保证——它现在守一个规格不再要求的性质，重跑它没有意义。落盘时机这条在 M8 变异轮里有了判据：同方向的变异（结果回到批次末缓冲）被 seam ⑥ 的 `test_a_hard_kill_leaves_no_half_written_line` 杀死。`started` 链本身仍然不是判据能到达的地方。上面的原始判定保留不改。
+
 ## 存活的两条真缺口与补的判据
 
 **T1（默认超时 30 秒没人钉）**：上限那半边早就被 `timeout_seconds: 601 → TOOL_ARGS_INVALID` 钉住了，默认值改成就没人知道——全量一条都不红。补 seam ③ `test_the_timeout_numbers_are_the_ones_the_spec_names`：默认 30、上限 600 是规格里的数值，另判「省略 `timeout_seconds` 的调用实际拿到 30」（`BashArgs(command="true").timeout_seconds == 30`）。变异下红：`assert 45 == 30` ✓ 还原后绿 ✓。

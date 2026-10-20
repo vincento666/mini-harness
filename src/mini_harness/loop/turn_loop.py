@@ -147,9 +147,10 @@ async def _dispatch_batch(
 ) -> _BatchOutcome:
     """派发一个回合声明的工具调用批次：只读的并发、会改动文件的串行。
 
-    `tool/call` 由「前一个已经轮到过——开始派发或放弃」这条链保证按声明顺序落盘；结果缓冲到批次结束，
-    仍按声明顺序落盘。围栏拒绝之后，还没开始的调用不再派发（连 `tool/call` 都不写），
-    已经开始的照常跑完并落结果。取消置位之后同样不再派发，已经开始的被打断并落 `TOOL_CANCELLED`。
+    `tool/call` 由「前一个已经轮到过——开始派发或放弃」这条链保证按声明顺序落盘；结果在产生时落盘
+    （`settle`），所以 `tool/result` 之间是完成顺序。围栏拒绝之后，还没开始的调用不再派发
+    （连 `tool/call` 都不写），已经开始的照常跑完并落结果。取消置位之后不再派发：未派发的落一对
+    记录（`tool/call` 加 `ABORTED_BEFORE_DISPATCH`），已经开始的被打断并落 `TOOL_CANCELLED`。
     前缀只在本批次开始时取样一次，整批共用。
     """
     prefix = read_events(log.path)
@@ -160,7 +161,6 @@ async def _dispatch_batch(
         reads=reads_from_records(prefix, settings.workspace),
     )
 
-    outcomes: list[DispatchOutcome | None] = [None] * len(calls)
     # `started` 是「轮到过：开始派发或放弃」；`finished` 是「整个跑完」。
     started: list[asyncio.Event] = [asyncio.Event() for _ in calls]
     finished: list[asyncio.Event] = [asyncio.Event() for _ in calls]
@@ -237,59 +237,13 @@ async def _dispatch_batch(
         )
         stop.set()
 
-    async def one(index: int, call: ToolCall) -> None:
-        try:
-            await dispatch_one(index, call)
-        except Exception as error:
-            escaped(call, error)
-        finally:
-            # 放弃派发也要把这两条链传下去：否则排在它后面的调用会永远等一个不会开始的调用。
-            started[index].set()
-            finished[index].set()
+    def settle(call: ToolCall, dispatched: DispatchOutcome) -> None:
+        """结果在产生时落盘：一个调用跑完就把它的事件写进日志，不等同批其他调用（ADR-0012）。
 
-    async def dispatch_one(index: int, call: ToolCall) -> None:
-        if index > 0:
-            await started[index - 1].wait()
-            if mutating[index] or mutating[index - 1]:
-                # 只有一对相邻的只读调用允许同时在跑；沾上「要改动」的都排队。
-                # 于是「拒绝之后的调用不再派发」是这条规则保证的，不是碰巧的调度顺序。
-                await finished[index - 1].wait()
-        if mutating[index]:
-            async with mutating_slot:
-                # 拿到独占权之后才决定要不要开始：串行链上「已声明」不等于「已派发」。
-                if stop.is_set() or cancel.is_set():
-                    return
-                if not begin(index, call):
-                    return
-                outcomes[index] = await _race_with_cancel(
-                    call, registry, context, approval_gate, cancel, ask_logged
-                )
-            dispatched = outcomes[index]
-            if dispatched is not None and dispatched.fence_code is not None:
-                stop.set()
-            return
-        if stop.is_set() or cancel.is_set():
-            return
-        if not begin(index, call):
-            return
-        async with read_slots:
-            outcomes[index] = await _race_with_cancel(
-                call, registry, context, approval_gate, cancel, ask_logged
-            )
-        dispatched = outcomes[index]
-        if dispatched is not None and dispatched.fence_code is not None:
-            stop.set()
-
-    await asyncio.gather(*(one(index, call) for index, call in enumerate(calls)))
-    if outcome.failure is not None and not isinstance(outcome.failure, InternalFailure):
-        # 日志层坏了：后面的事件都写不出去。
-        return outcome
-
-    written: list[tuple[str, dict[str, Any]]] = []
-    for index, call in enumerate(calls):
-        dispatched = outcomes[index]
-        if dispatched is None:
-            continue
+        落盘顺序因此是完成顺序。单个调用自己的相对顺序不变：`approval/response` 在
+        `tool/result` 之前，`tool/cancelled` 紧跟它，`error/fence` 在配对的 `tool/result` 之后。
+        """
+        written: list[tuple[str, dict[str, Any]]] = []
         if dispatched.approval is not None:
             # `approval/request` 已经在提问之前落盘了（`ask_logged`），这里只补结论。
             written.append(
@@ -335,18 +289,98 @@ async def _dispatch_batch(
                 )
             )
 
-    failure = _append_all(log, written)
-    if failure is not None:
-        return _BatchOutcome(failure=failure)
-    if outcome.failure is not None:
-        # 执行段逃出来的异常：已经跑完的调用照常落结果，run 以内部错误收尾。
+        failure = _append_all(log, written)
+        if failure is not None:
+            outcome.failure = failure
+            stop.set()
+            return
+        if dispatched.fence_code is not None:
+            stop.set()
+            if outcome.denial_code is None:
+                outcome.denial_code = dispatched.fence_code
+                outcome.denial_detail = dispatched.result.content
+
+    def not_dispatched(call: ToolCall) -> None:
+        """没开始的调用的那个结果词：`ABORTED_BEFORE_DISPATCH`（ADR-0011）。
+
+        不配 `tool/cancelled`：「被打断」预设它开始过（design D5）。
+        """
+        settle(
+            call,
+            DispatchOutcome(
+                ToolResult(
+                    "ABORTED_BEFORE_DISPATCH",
+                    f"取消在派发之前置位，这个调用没有开始：{call.name}",
+                )
+            ),
+        )
+
+    def abandoned(index: int, call: ToolCall) -> None:
+        """取消置位后没轮到派发的调用：落一对记录。
+
+        它被声明过，就要在日志里有个交代——回合收尾后会话续跑时，assistant 的工具请求必须配平。
+        """
+        if not begin(index, call):
+            return
+        not_dispatched(call)
+
+    async def one(index: int, call: ToolCall) -> None:
+        try:
+            await dispatch_one(index, call)
+        except Exception as error:
+            escaped(call, error)
+        finally:
+            # 放弃派发也要把这两条链传下去：否则排在它后面的调用会永远等一个不会开始的调用。
+            started[index].set()
+            finished[index].set()
+
+    async def dispatch_one(index: int, call: ToolCall) -> None:
+        if index > 0:
+            await started[index - 1].wait()
+            if mutating[index] or mutating[index - 1]:
+                # 只有一对相邻的只读调用允许同时在跑；沾上「要改动」的都排队。
+                # 于是「拒绝之后的调用不再派发」是这条规则保证的，不是碰巧的调度顺序。
+                await finished[index - 1].wait()
+        if mutating[index]:
+            async with mutating_slot:
+                # 拿到独占权之后才决定要不要开始：串行链上「已声明」不等于「已派发」。
+                if cancel.is_set():
+                    abandoned(index, call)
+                    return
+                if stop.is_set():
+                    return
+                if not begin(index, call):
+                    return
+                settle(
+                    call,
+                    await _race_with_cancel(
+                        call, registry, context, approval_gate, cancel, ask_logged
+                    ),
+                )
+            return
+        if cancel.is_set():
+            abandoned(index, call)
+            return
+        if stop.is_set():
+            return
+        if not begin(index, call):
+            return
+        async with read_slots:
+            # 拿到额度之后才决定要不要开始：排队期间「已声明」不等于「已派发」（design D5）。
+            if cancel.is_set():
+                not_dispatched(call)
+                return
+            settle(
+                call,
+                await _race_with_cancel(call, registry, context, approval_gate, cancel, ask_logged),
+            )
+
+    await asyncio.gather(*(one(index, call) for index, call in enumerate(calls)))
+    if outcome.failure is not None and not isinstance(outcome.failure, InternalFailure):
+        # 日志层坏了：后面的事件都写不出去。
         return outcome
 
-    for dispatched in outcomes:
-        if dispatched is not None and dispatched.fence_code is not None:
-            return _BatchOutcome(
-                denial_code=dispatched.fence_code, denial_detail=dispatched.result.content
-            )
+    # 结果已经在 `settle` 里逐个落盘了；这里只交代批次结局。
     return outcome
 
 

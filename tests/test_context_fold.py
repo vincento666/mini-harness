@@ -101,6 +101,98 @@ def test_folding_the_same_events_twice_gives_identical_results() -> None:
     assert first.header_fingerprint == second.header_fingerprint
 
 
+def _half_log_events() -> list[EventRecord]:
+    """构造的半截日志：`call-2` 的 `tool/call` 落了盘却没有结果，之后还有既有消息。"""
+    return [
+        _rec(0, "turn/start", {"turn_id": "t1"}),
+        _rec(
+            1,
+            "model/response",
+            {
+                "turn_id": "t1",
+                "content": "读两个文件",
+                "tool_calls": [
+                    {"id": "call-1", "name": "read", "arguments": {"file_path": "a.md"}},
+                    {"id": "call-2", "name": "read", "arguments": {"file_path": "b.md"}},
+                ],
+                "finish_reason": "tool_calls",
+            },
+        ),
+        _rec(2, "tool/call", {"turn_id": "t1", "tool_call_id": "call-1", "name": "read"}),
+        _rec(
+            3,
+            "tool/result",
+            {"turn_id": "t1", "tool_call_id": "call-1", "outcome": "OK", "content": "甲\n"},
+        ),
+        _rec(4, "tool/call", {"turn_id": "t1", "tool_call_id": "call-2", "name": "read"}),
+        _rec(5, "turn/end", {"turn_id": "t1", "stop_reason": "ABORTED"}),
+        _rec(
+            6,
+            "model/response",
+            {"turn_id": "t2", "content": "接着说", "tool_calls": [], "finish_reason": "stop"},
+        ),
+    ]
+
+
+def test_an_unpaired_tool_call_folds_into_a_derived_closer() -> None:
+    """规格 scenario「半截日志折叠补出闭合」：有 `tool/call` 没 `tool/result` 时折叠补一条。
+
+    闭合消息排在它该在的位置——assistant 请求之后、该点之后的既有消息之前，不追加到末尾。
+    """
+    context = fold(_half_log_events())
+
+    assert [message.role for message in context.messages[1:]] == [
+        "assistant",
+        "tool",
+        "tool",
+        "assistant",
+    ]
+    closer = context.messages[3]
+    assert closer.tool_call_id == "call-2"
+    assert closer.content == "TOOL_OUTCOME_UNKNOWN"
+    assert context.messages[4].content == "接着说"
+
+
+def test_a_complete_log_derives_no_closer() -> None:
+    """规格 scenario「完整日志不派生闭合」：配平的日志折叠出来没有一条 `TOOL_OUTCOME_UNKNOWN`。"""
+    events = [
+        *_half_log_events()[:5],
+        _rec(
+            5,
+            "tool/result",
+            {"turn_id": "t1", "tool_call_id": "call-2", "outcome": "OK", "content": "乙\n"},
+        ),
+        _rec(6, "turn/end", {"turn_id": "t1", "stop_reason": "MODEL_COMPLETED"}),
+        _rec(
+            7,
+            "model/response",
+            {"turn_id": "t2", "content": "接着说", "tool_calls": [], "finish_reason": "stop"},
+        ),
+    ]
+
+    context = fold(events)
+
+    assert [message.role for message in context.messages[1:]] == [
+        "assistant",
+        "tool",
+        "tool",
+        "assistant",
+    ]
+    assert [message.content for message in context.messages].count("TOOL_OUTCOME_UNKNOWN") == 0
+
+
+def test_the_derived_closer_is_deterministic() -> None:
+    """规格 scenario「派生闭合是确定性的」：同一份半截日志折叠两次逐字段相等。
+
+    两份形状都要判：闭合被后面的消息冲掉的那一份，以及**以未配对的 `tool/call` 结尾**的那一份。
+    后者的 pending 只能靠折叠收尾清掉——折叠要是把它存在进程里，第二次折叠就多一条闭合。
+    """
+    for events in (_half_log_events(), _half_log_events()[:-1]):
+        first = fold(events).model_dump(mode="json")
+        second = fold([record.model_copy(deep=True) for record in events]).model_dump(mode="json")
+        assert first == second
+
+
 def test_fold_puts_the_system_prompt_first_and_keeps_the_body_in_order() -> None:
     events = [
         _rec(0, "turn/start", {"turn_id": "t1"}),

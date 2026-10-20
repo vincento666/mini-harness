@@ -50,6 +50,12 @@ def full_registry() -> ToolRegistry:
     return ToolRegistry([*file_tool_definitions(), *bash_tool_definitions()])
 
 
+async def cancel_after(cancel: asyncio.Event, seconds: float) -> None:
+    """在 `seconds` 之后置位取消：让「取消落在批次中途」这件事可控。"""
+    await asyncio.sleep(seconds)
+    cancel.set()
+
+
 def timed_registry(observed: Intervals, delays: dict[str, float] | None = None) -> ToolRegistry:
     """文件工具的契约原样保留，只把 `run` 包一层：先睡一小段，再记录执行区间。
 
