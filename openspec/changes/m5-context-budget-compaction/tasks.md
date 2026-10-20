@@ -27,14 +27,14 @@
 
 ## 4. 折叠的读方规则（seam ④）
 
-- [ ] 4.1 红：被 `shadowed_range` 覆盖的记录不产出消息；被遮蔽的 `tool/call` 不派生 `TOOL_OUTCOME_UNKNOWN` 闭合
-- [ ] 4.2 绿：`events/fold.py` honor 遮蔽
-- [ ] 4.3 红：摘要作为受保护头部之后的 `system` 消息；多条摘要按 `seq` 排列；不落盘
-- [ ] 4.4 绿
-- [ ] 4.5 红：`purpose` 为 `compaction` 的 `model/response` 不产出 assistant 消息；没有该标记的照常产出
-- [ ] 4.6 绿
-- [ ] 4.7 红：压缩过的折叠仍是确定性纯函数；同一份日志逐点重算与每条 `context/assembled` 逐字段相等
-- [ ] 4.8 绿
+- [x] 4.1 红：被 `shadowed_range` 覆盖的记录不产出消息；被遮蔽的 `tool/call` 不派生 `TOOL_OUTCOME_UNKNOWN` 闭合
+- [x] 4.2 绿：`events/fold.py` honor 遮蔽
+- [x] 4.3 红：摘要作为受保护头部与用户 prompt 之后的 `system` 消息；多条摘要按 `seq` 排列（不落盘那条由 5.x 在回合循环上判）
+- [x] 4.4 绿
+- [x] 4.5 红：`purpose` 为 `compaction` 的 `model/response` 不产出 assistant 消息；没有该标记的照常产出
+- [x] 4.6 绿
+- [x] 4.7 红：压缩过的折叠仍是确定性纯函数、不改入参；每个点只看它之前的前缀（与每条 `context/assembled` 逐字段相等那条端到端版本由 7.x 在 CLI 黑盒上判）
+- [x] 4.8 绿
 
 ## 5. 回合循环的压缩段（seam ①）
 

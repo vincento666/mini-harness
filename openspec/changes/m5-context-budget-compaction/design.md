@@ -54,7 +54,7 @@ mock provider 不需要新形状：摘要调用只是 fixture 序列里多一条
 
 可遮蔽范围 = 对话体里 `session/start` 之后、保留尾部之外的那些记录。尾部保留预算 = `floor(W × 0.16)`（DSH `DEFAULT_RETAIN_RATIO = .16`），从对话体末尾往前按**组**累计：一个 assistant 消息加它的工具结果组是一组，切点 MUST NOT 落在组内。
 
-DSH 保护的是 node 0（受保护的 `system/message`），压缩范围从「第一个不是 system/message 的节点」开始（compaction-basic README:113）。mini 的受保护头部与用户 prompt 都从 `session/start` **一条记录**派生，覆盖它等于同时拆掉头部与任务本身——这是 mini 与 DSH 的一处形状差异，不是简化。→ **ADR-0017**。
+DSH 保护的是 node 0（受保护的 `system/message`），压缩范围从「第一个不是 system/message 的节点」开始（compaction-basic README:113）。mini 的受保护头部与用户 prompt 都从 `session/start` **一条记录**派生，覆盖它等于同时拆掉头部与任务本身——这是 mini 与 DSH 的一处形状差异，不是简化。摘要消息因此落在头部与用户 prompt 之后，对应 DSH 里紧跟 node 0 的那个位置。→ **ADR-0017**。
 
 不拆散配对是硬要求：范围拆开一对 `tool/call` 与 `tool/result` 会让 fold 为那条调用派生 `TOOL_OUTCOME_UNKNOWN` 闭合，压缩反而把上下文弄得更怪。切点落在组内时**整组一起遮蔽**，而不是把整组拉进尾部——尾部是预算的目标，不是保证；把一条 25000 token 的 assistant 请求拉进 20480 的尾部等于这次压缩什么都没做。
 

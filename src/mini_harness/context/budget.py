@@ -1,6 +1,7 @@
-"""窗口预算的三个纯函数：触发线、估算 token、预算读数。
+"""窗口预算的纯函数：触发线、估算 token、预算读数、遮蔽范围。
 
-规格锚点：`context-budget` 的「触发线由固定公式给出」「预算读数有两个来源」。
+规格锚点：`context-budget` 的「触发线由固定公式给出」「预算读数有两个来源」
+「遮蔽范围保留尾部且不拆散配对」。
 估算不是真 token 数（见 ADR-0016）：harness 只用它决定要不要压缩，终止决策由 provider 的报错兜底。
 """
 
@@ -9,7 +10,7 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 
-from mini_harness.events.fold import Message
+from mini_harness.events.fold import PURPOSE_COMPACTION, Message
 from mini_harness.events.record import EventRecord
 
 # 触发线公式里的 headroom：照 DSH `dsh-compaction-basic` 的 `headroomTokens ?? 65536`。
@@ -21,9 +22,6 @@ CHARS_PER_TOKEN = 4
 # 触发线公式里的窗口比例：`W * 0.8`。
 TRIGGER_RATIO_NUMERATOR = 4
 TRIGGER_RATIO_DENOMINATOR = 5
-
-# 摘要那次模型调用的标记值：它的 `usage` 不参与校准。
-PURPOSE_COMPACTION = "compaction"
 
 # 遮蔽范围不覆盖的记录类型：头部与用户 prompt 来自 `session/start`，摘要链是压缩后仅存的长程记忆。
 PROTECTED_EVENT_TYPES: frozenset[str] = frozenset({"session/start", "compaction/summary"})

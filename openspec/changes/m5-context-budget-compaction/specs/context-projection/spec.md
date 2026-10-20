@@ -39,11 +39,11 @@
 - **THEN** 每条 `context/assembled` 都与其前缀的重算结果逐字段相等
 
 ### Requirement: 摘要作为头部之后的 system 消息进入表层
-系统 SHALL 把每条 `compaction/summary` 的 `summary` 文本作为一条 `role` 为 `system` 的消息进入折叠结果，位置在受保护头部之后、保留尾部的第一条消息之前；多条摘要 SHALL 按各自记录的 `seq` 顺序排列。该消息 MUST NOT 被写进日志。
+系统 SHALL 把每条 `compaction/summary` 的 `summary` 文本作为一条 `role` 为 `system` 的消息进入折叠结果，位置在受保护头部与 `session/start` 派生的那条 `user` 消息之后、保留尾部的第一条消息之前；多条摘要 SHALL 按各自记录的 `seq` 顺序排列。该消息 MUST NOT 被写进日志。
 
-#### Scenario: 一次压缩后头部之后是摘要
+#### Scenario: 一次压缩后用户 prompt 之后是摘要
 - **WHEN** 一份日志里有一条 `compaction/summary`
-- **THEN** 折叠结果的第二条消息 `role` 为 `system`、`content` 为该记录的 `summary` 原文
+- **THEN** 折叠结果里 `session/start` 派生的那条 `user` 消息之后那条消息 `role` 为 `system`、`content` 为该记录的 `summary` 原文
 
 #### Scenario: 两次压缩的摘要按 seq 排列
 - **WHEN** 一份日志里有两条 `compaction/summary`
