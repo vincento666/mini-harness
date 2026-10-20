@@ -40,7 +40,7 @@ async def test_sigint_handler_sets_the_cancel_event() -> None:
 
 def test_every_stop_reason_maps_to_an_exit_code() -> None:
     assert set(STOP_REASONS_TO_EXIT_CODES) == set(STOP_REASONS)
-    assert len(STOP_REASONS) == 6
+    assert len(STOP_REASONS) == 7
     assert "FENCE_DENIED" in STOP_REASONS
     assert STOP_REASONS_TO_EXIT_CODES["TOOL_CALLS"] == 0
     assert STOP_REASONS_TO_EXIT_CODES["MODEL_COMPLETED"] == 0
@@ -48,7 +48,8 @@ def test_every_stop_reason_maps_to_an_exit_code() -> None:
     assert STOP_REASONS_TO_EXIT_CODES["PROVIDER_ERROR"] == 1
     assert STOP_REASONS_TO_EXIT_CODES["FENCE_DENIED"] == 3
     assert STOP_REASONS_TO_EXIT_CODES["ABORTED"] == 5
-    assert 4 not in STOP_REASONS_TO_EXIT_CODES.values(), "4 是保留码：没有任何 stop_reason 映射到它"
+    # M5 起 4 是可达码：不变量 D 的溢出结果映射到它。
+    assert STOP_REASONS_TO_EXIT_CODES["CONTEXT_WINDOW_EXCEEDED"] == 4
     for stop_reason, exit_code in STOP_REASONS_TO_EXIT_CODES.items():
         assert (
             exit_code_for(RunOutcome(session_id="s", stop_reason=stop_reason, turns=1)) == exit_code

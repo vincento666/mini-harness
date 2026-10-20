@@ -18,6 +18,7 @@ from mini_harness.events import EventLog, LogReadFailure, LogWriteFailure, read_
 from mini_harness.events.fold import assembled_payload, fold
 from mini_harness.loop import (
     STOP_ABORTED,
+    STOP_CONTEXT_WINDOW_EXCEEDED,
     STOP_FENCE_DENIED,
     STOP_MAX_TURNS,
     STOP_MODEL_COMPLETED,
@@ -39,6 +40,7 @@ EXIT_OK = 0
 EXIT_INTERNAL_ERROR = 1
 EXIT_INVALID_ARGUMENT = 2
 EXIT_FENCE_DENIED = 3
+EXIT_CONTEXT_WINDOW_EXCEEDED = 4
 EXIT_ABORTED = 5
 
 STOP_REASONS_TO_EXIT_CODES: dict[str, int] = {
@@ -47,6 +49,7 @@ STOP_REASONS_TO_EXIT_CODES: dict[str, int] = {
     STOP_MAX_TURNS: EXIT_OK,
     STOP_PROVIDER_ERROR: EXIT_INTERNAL_ERROR,
     STOP_FENCE_DENIED: EXIT_FENCE_DENIED,
+    STOP_CONTEXT_WINDOW_EXCEEDED: EXIT_CONTEXT_WINDOW_EXCEEDED,
     STOP_ABORTED: EXIT_ABORTED,
 }
 

@@ -4,10 +4,10 @@
 
 ## 1. 词表与退出码先行（seam ②）
 
-- [ ] 1.1 红：`tests/test_event_vocabulary.py` 断言 `compaction/summary` 与 `error/context` 在事件词表内；`tests/test_vocabulary_reachability.py` 断言 `CONTEXT_WINDOW_EXCEEDED` 在 `STOP_REASONS` 里
-- [ ] 1.2 绿：`events/vocabulary.py` 加两个事件类型；`loop/turn_loop.py` 的 `StopReason` 加 `CONTEXT_WINDOW_EXCEEDED`（收 ADR-0002 第 5 条的剩余部分）
-- [ ] 1.3 红：`cli/main.py` 的 `STOP_REASONS_TO_EXIT_CODES` 缺 4 —— 断言 `exit_code_for` 对新值返回 4
-- [ ] 1.4 绿：加 `EXIT_CONTEXT_EXCEEDED = 4` 与映射
+- [x] 1.1 红：`tests/test_event_vocabulary.py` 断言 `compaction/summary` 与 `error/context` 在事件词表内；`tests/test_vocabulary_reachability.py` 断言 `CONTEXT_WINDOW_EXCEEDED` 在 `STOP_REASONS` 里
+- [x] 1.2 绿：`events/vocabulary.py` 加两个事件类型；`loop/turn_loop.py` 的 `StopReason` 加 `CONTEXT_WINDOW_EXCEEDED`（收 ADR-0002 第 5 条的剩余部分）
+- [x] 1.3 红：`cli/main.py` 的 `STOP_REASONS_TO_EXIT_CODES` 缺 4 —— 断言 `exit_code_for` 对新值返回 4
+- [x] 1.4 绿：加 `EXIT_CONTEXT_EXCEEDED = 4` 与映射
 
 ## 2. 预算读数与触发线（seam ①）
 
