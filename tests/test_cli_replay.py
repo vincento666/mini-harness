@@ -11,8 +11,9 @@ from typing import Any
 from cli_blackbox import _cli
 from mini_harness.events import EventLog, EventRecord, read_events
 from mini_harness.events.fold import assembled_payload, fold
-from mini_harness.provider import FixtureProvider
+from mini_harness.provider import FixtureProvider, load_fixture_provider
 from paths import (
+    COMPACTION_SCENARIO,
     HELLO_SCENARIO,
     READ_THEN_WRITE_SCENARIO,
     TOOL_THEN_DONE_SCENARIO,
@@ -22,6 +23,7 @@ from tool_harness import (
     DONE,
     Intervals,
     cancel_after,
+    file_registry,
     run_session_fixture,
     timed_registry,
     tool_call,
@@ -318,3 +320,38 @@ async def test_a_log_that_ends_in_aborted_replays_without_a_derived_closer(tmp_p
     assert isinstance(records, list)
     contents = [str(message.content) for message in fold(records).messages]
     assert "TOOL_OUTCOME_UNKNOWN" not in contents
+
+
+async def test_a_log_that_went_through_compaction_replays_pointwise(tmp_path: Path) -> None:
+    """发生过压缩的日志逐点重放：每条 `context/assembled` 都等于它自己前缀的重算结果。
+
+    日志由 seam ① 的一次真 run 产出（窗口 70000：触发线 4364、保留预算 11200），
+    遮蔽范围写在 `compaction/summary` 里；重放方只从日志读这条记录，不另算一份。
+    """
+    session_dir = tmp_path / "sessions"
+    # 50000 个字符 ≈ 12500 个估算 token：比保留预算大一倍，所以它该被遮蔽。
+    (tmp_path / "long.md").write_text("长" * 50000, encoding="utf-8")
+
+    _, outcome = await run_session_fixture(
+        tmp_path,
+        "s-compacted",
+        load_fixture_provider(COMPACTION_SCENARIO),
+        session_dir=session_dir,
+        registry=file_registry(),
+        max_turns=4,
+        window=70000,
+        reserve=100,
+    )
+    assert outcome.stop_reason == "MODEL_COMPLETED"
+
+    log_path = session_dir / "s-compacted.jsonl"
+    records = read_events(log_path)
+    assert isinstance(records, list)
+    assert "compaction/summary" in [record.type for record in records]
+
+    replay = _cli("replay", "s-compacted", "--session-dir", str(session_dir), cwd=tmp_path)
+
+    assert replay.returncode == 0
+    assert _verified_seqs(replay.stdout) == _recorded_seqs(log_path)
+    assert "REPLAY_MISMATCH" not in replay.stderr
+    assert "长" * 50000 not in replay.stdout

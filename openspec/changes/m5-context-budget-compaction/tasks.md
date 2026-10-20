@@ -60,13 +60,13 @@
 
 ## 7. CLI 参数、fixture 与黑盒（seam ⑥ 与 ②）
 
-- [ ] 7.1 红：`--window 4000 --reserve 500` 进 `session/start` payload；`--window 0` 退出码 2、stderr 含 `INVALID_ARGUMENT`、不建日志
-- [ ] 7.2 绿：`loop/settings.py` 加 `window` / `reserve`，`cli/main.py` 加两个参数与校验
-- [ ] 7.3 红：小 `--window` 的黑盒 run 以退出码 4 收尾且日志里有 `error/context`
-- [ ] 7.4 绿
-- [ ] 7.5 红：发生过压缩的 session 日志 `minihns replay` 逐点通过（退出码 0、无 `REPLAY_MISMATCH`）
-- [ ] 7.6 绿
-- [ ] 7.7 新增 fixture 场景 `tests/fixtures/scenarios/compaction/turns.json`；`tests/test_vocabulary_reachability.py` 扩到新事件类型与新 `StopReason` 值
+- [x] 7.1 红：`--window 4000 --reserve 500` 进 `session/start` payload；`--window 0` 退出码 2、stderr 含 `INVALID_ARGUMENT`、不建日志
+- [x] 7.2 绿：`loop/settings.py` 加 `window` / `reserve`，`cli/main.py` 加两个参数与校验
+- [x] 7.3 红：小 `--window` 的黑盒 run 以退出码 4 收尾且日志里有 `error/context`
+- [x] 7.4 绿
+- [x] 7.5 红：发生过压缩的 session 日志 `minihns replay` 逐点通过（退出码 0、无 `REPLAY_MISMATCH`）
+- [x] 7.6 绿
+- [x] 7.7 新增 fixture 场景 `tests/fixtures/scenarios/compaction/turns.json`；`tests/test_vocabulary_reachability.py` 扩到新事件类型与新 `StopReason` 值
 
 ## 8. 收尾
 

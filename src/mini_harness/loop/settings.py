@@ -10,6 +10,10 @@ from typing import Literal
 SandboxLevel = Literal["read-only", "workspace-write", "danger-full-access"]
 ApprovalMode = Literal["ask", "auto"]
 
+# 窗口预算的默认值只写在这里：CLI 的 `--window` / `--reserve` 默认值取自同一份。
+DEFAULT_WINDOW = 128000
+DEFAULT_RESERVE = 8192
+
 
 @dataclass(frozen=True)
 class SessionSettings:
@@ -21,9 +25,9 @@ class SessionSettings:
     sandbox: SandboxLevel = "workspace-write"
     approval: ApprovalMode = "ask"
     append_system_prompt: str = ""
-    # 窗口预算的两个参数（不变量 D）：`--window` 与 `--reserve`，默认值在 CLI 层与这里一致。
-    window: int = 128000
-    reserve: int = 8192
+    # 窗口预算的两个参数（不变量 D）：`--window` 与 `--reserve`。
+    window: int = DEFAULT_WINDOW
+    reserve: int = DEFAULT_RESERVE
     # 只有 openai 路径带这三条；`api_key_env` 记的是环境变量的名字，不是它的值。
     base_url: str | None = None
     model: str | None = None

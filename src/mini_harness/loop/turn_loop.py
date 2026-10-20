@@ -571,6 +571,8 @@ async def run_session(
         "prompt": prompt,
         "sandbox": settings.sandbox,
         "approval": settings.approval,
+        "window": settings.window,
+        "reserve": settings.reserve,
         "tools": [spec.name for spec in registry.specs()],
     }
     if settings.provider_name == "openai":

@@ -1,0 +1,9 @@
+[
+  {
+    "content": "先读那份长记录",
+    "finish_reason": "tool_calls",
+    "tool_calls": [{ "id": "c1", "name": "read", "arguments": { "file_path": "long.md" } }]
+  },
+  { "content": "此前对话：任务是读 long.md，已经读到它", "finish_reason": "stop" },
+  { "content": "收尾", "finish_reason": "stop" }
+]
