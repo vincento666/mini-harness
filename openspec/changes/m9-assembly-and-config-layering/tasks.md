@@ -31,10 +31,10 @@
 
 ## 4. `ProviderEndpoint` 与「是不是 openai」塌成一处（seam ① 与 ⑥）
 
-- [ ] 4.1 seam ①：红判据 `test_the_endpoint_fields_come_from_one_endpoint_object`——`SessionSettings(endpoint=ProviderEndpoint(...))` 时 `session/start` 的 payload 里 `base_url` / `model` / `api_key_env` 三条齐、mock 路径（`endpoint=None`）时三条都不在；实现 `loop/settings.py::ProviderEndpoint` 与 `turn_loop` 的 payload 派生（删掉 `provider_name == "openai"` 那处）
-- [ ] 4.2 seam ⑥：红判据 `test_the_cli_decides_the_endpoint_once`——一次 openai run 的 payload 三条与一次 mock run 的 payload 缺三条，都由装配处的同一个判断决定（既有 `test_openai_run_records_base_url_model_and_the_key_variable_name` 保持绿）；实现 CLI 装配段（`cli/main.py` 三处塌成一处）
-- [ ] 4.3 seam ⑥：红判据 `test_a_config_file_can_supply_the_endpoint`——配置写 `base_url` / `model` / `api_key_env` 且命令行未给时 payload 取自配置；实现端点三条的层叠
-- [ ] 4.4 seam ⑤：绿到即钉的守卫判据 `test_the_provider_still_accepts_no_key_and_sends_no_header`——`OpenAICompatProvider(api_key=None)` 仍能发出无鉴权请求（既有 `test_the_authorization_header_is_present_only_when_a_key_is_given` 保持绿）；provider 契约与 `generate` 签名不动
+- [x] 4.1 seam ①：红判据 `test_the_endpoint_fields_come_from_one_endpoint_object`——`SessionSettings(endpoint=ProviderEndpoint(...))` 时 `session/start` 的 payload 里 `base_url` / `model` / `api_key_env` 三条齐、mock 路径（`endpoint=None`）时三条都不在；实现 `loop/settings.py::ProviderEndpoint` 与 `turn_loop` 的 payload 派生（删掉 `provider_name == "openai"` 那处）
+- [x] 4.2 seam ⑥：判据 `test_the_cli_decides_the_endpoint_once`——一次 openai run 的 payload 三条与一次 mock run 的 payload 缺三条，都由装配处的同一个判断决定（既有 `test_openai_run_records_base_url_model_and_the_key_variable_name` 保持绿）；实现 CLI 装配段（`cli/main.py` 三处塌成一处）
+- [x] 4.3 seam ⑥：判据 `test_a_config_file_can_supply_the_endpoint`——配置写 `base_url` / `model` / `api_key_env` 且命令行未给时 payload 取自配置；端点三条的层叠随 2.2 的 `layer_settings` 一起到位
+- [x] 4.4 seam ⑤：绿到即钉的守卫判据 `test_the_provider_still_accepts_no_key_and_sends_no_header`——`OpenAICompatProvider(api_key=None)` 仍能发出无鉴权请求（既有 `test_the_authorization_header_is_present_only_when_a_key_is_given` 保持绿）；provider 契约与 `generate` 签名不动
 
 ## 5. 密钥是装配的必需项（seam ⑥）
 

@@ -575,11 +575,11 @@ async def run_session(
         "reserve": settings.reserve,
         "tools": [spec.name for spec in registry.specs()],
     }
-    if settings.provider_name == "openai":
+    if settings.endpoint is not None:
         # 记的是密钥环境变量的名字，不是它的值（cli spec：密钥 MUST NOT 进 payload）。
-        start_payload["base_url"] = settings.base_url
-        start_payload["model"] = settings.model
-        start_payload["api_key_env"] = settings.api_key_env
+        start_payload["base_url"] = settings.endpoint.base_url
+        start_payload["model"] = settings.endpoint.model
+        start_payload["api_key_env"] = settings.endpoint.api_key_env
 
     failure = _append_all(
         log,

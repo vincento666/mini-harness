@@ -32,6 +32,7 @@ from mini_harness.loop import (
     STOP_PROVIDER_ERROR,
     STOP_REASONS,
     STOP_TOOL_CALLS,
+    ProviderEndpoint,
     RunOutcome,
     SessionSettings,
     run_session,
@@ -198,6 +199,7 @@ def _run(args: argparse.Namespace) -> int:
         return _report_failure("INVALID_ARGUMENT", registry.detail, EXIT_INVALID_ARGUMENT)
 
     provider: Provider
+    endpoint: ProviderEndpoint | None = None
     if provider_name == "openai":
         if fixture is not None:
             return _report_failure(
@@ -209,10 +211,16 @@ def _run(args: argparse.Namespace) -> int:
         invalid = validate_base_url(layered.base_url)
         if invalid is not None:
             return _report_failure("INVALID_ARGUMENT", invalid, EXIT_INVALID_ARGUMENT)
-        provider = OpenAICompatProvider(
+        # 端点三条在这里塌成一个对象：payload 那三个字段由它派生，不再各判一遍。
+        endpoint = ProviderEndpoint(
             base_url=layered.base_url,
             model=layered.model,
-            api_key=os.environ.get(layered.api_key_env),
+            api_key_env=layered.api_key_env,
+        )
+        provider = OpenAICompatProvider(
+            base_url=endpoint.base_url,
+            model=endpoint.model,
+            api_key=os.environ.get(endpoint.api_key_env),
         )
     else:
         if fixture is None:
@@ -230,7 +238,6 @@ def _run(args: argparse.Namespace) -> int:
     if isinstance(log, LogWriteFailure):
         return _report_failure(log.code, log.detail, EXIT_INTERNAL_ERROR)
 
-    openai = provider_name == "openai"
     settings = SessionSettings(
         workspace=Path(layered.workspace) if layered.workspace is not None else Path.cwd(),
         provider_name=provider_name,
@@ -240,9 +247,7 @@ def _run(args: argparse.Namespace) -> int:
         append_system_prompt=layered.append_system_prompt,
         window=layered.window,
         reserve=layered.reserve,
-        base_url=layered.base_url if openai else None,
-        model=layered.model if openai else None,
-        api_key_env=layered.api_key_env if openai else None,
+        endpoint=endpoint,
     )
     outcome = asyncio.run(
         _await_session(

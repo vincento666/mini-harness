@@ -12,7 +12,7 @@ import httpx
 from mini_harness.config import build_registry
 from mini_harness.events import EventLog, EventRecord, read_events
 from mini_harness.events.fold import fold
-from mini_harness.loop import RunOutcome, SessionSettings, run_session
+from mini_harness.loop import ProviderEndpoint, RunOutcome, SessionSettings, run_session
 from mini_harness.provider import AssistantTurn, FixtureProvider, Provider
 from mini_harness.provider.openai_compat import OpenAICompatProvider
 from mini_harness.tools import ToolArgs, ToolDefinition, ToolRegistry, ToolResult
@@ -811,3 +811,36 @@ async def test_a_tool_call_is_unknown_when_the_whitelist_is_empty(tmp_path: Path
     assert result_outcomes(records) == [("c1", "UNKNOWN_TOOL")]
     assert [record.type for record in records].count("turn/end") == 2
     assert outcome.stop_reason == "MODEL_COMPLETED"
+
+
+async def test_the_endpoint_fields_come_from_one_endpoint_object(tmp_path: Path) -> None:
+    """端点三条是一个对象：有它就三条齐、没有就三条都不在，不靠「是不是 openai」各判一遍。"""
+    with_endpoint, _ = await run_session_fixture(
+        tmp_path,
+        "s-endpoint",
+        FixtureProvider(entries=[DONE]),
+        provider_name="openai",
+        endpoint=ProviderEndpoint(
+            base_url="https://example.test/v1",
+            model="test-model",
+            api_key_env="TEST_KEY",
+        ),
+    )
+    without, _ = await run_session_fixture(
+        tmp_path, "s-noendpoint", FixtureProvider(entries=[DONE])
+    )
+
+    start_with = next(
+        record.payload
+        for record in read_events(with_endpoint.path)
+        if record.type == "session/start"
+    )
+    start_without = next(
+        record.payload for record in read_events(without.path) if record.type == "session/start"
+    )
+    assert start_with["base_url"] == "https://example.test/v1"
+    assert start_with["model"] == "test-model"
+    assert start_with["api_key_env"] == "TEST_KEY"
+    assert "base_url" not in start_without
+    assert "model" not in start_without
+    assert "api_key_env" not in start_without

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from cli_blackbox import _cli
+from paths import HELLO_SCENARIO
 
 _KEY_ENV = "MINIHNS_TEST_KEY"
 _KEY_VALUE = "sk-test-0123456789abcdef"
@@ -182,6 +183,76 @@ def test_openai_run_records_base_url_model_and_the_key_variable_name(tmp_path: P
     assert start["payload"]["provider"] == "openai"
     assert start["payload"]["base_url"] == endpoint.base_url
     assert start["payload"]["model"] == "test-model"
+    assert start["payload"]["api_key_env"] == _KEY_ENV
+    assert _KEY_VALUE not in json.dumps(start["payload"])
+
+
+def test_the_cli_decides_the_endpoint_once(tmp_path: Path) -> None:
+    """两条路径的 payload 差别出自装配处那一个判断：openai 那次三条齐，mock 那次三条都不在。"""
+    openai_dir = tmp_path / "openai"
+    mock_dir = tmp_path / "mock"
+    openai_dir.mkdir()
+    mock_dir.mkdir()
+
+    with _FakeEndpoint(status=200, body=_STOP_BODY) as endpoint:
+        openai_run = _run_openai(openai_dir, endpoint.base_url, key_env_value=_KEY_VALUE)
+        mock_run = _cli(
+            "run",
+            "-p",
+            "任务",
+            "--provider",
+            "mock",
+            "--fixture",
+            str(HELLO_SCENARIO),
+            "--session-dir",
+            str(mock_dir),
+            "--yes",
+            cwd=mock_dir,
+        )
+
+    assert openai_run.returncode == 0, openai_run.stderr
+    assert mock_run.returncode == 0, mock_run.stderr
+    openai_start = next(
+        record for record in _session_records(openai_dir) if record["type"] == "session/start"
+    )
+    mock_start = next(
+        record for record in _session_records(mock_dir) if record["type"] == "session/start"
+    )
+    endpoint_keys = {"base_url", "model", "api_key_env"}
+    assert endpoint_keys <= set(openai_start["payload"])
+    assert not endpoint_keys & set(mock_start["payload"])
+
+
+def test_a_config_file_can_supply_the_endpoint(tmp_path: Path) -> None:
+    """配置写端点三条、命令行一条都没给：payload 取自配置那一层。"""
+    env = dict(os.environ)
+    env.pop(_KEY_ENV, None)
+    env[_KEY_ENV] = _KEY_VALUE
+
+    with _FakeEndpoint(status=200, body=_STOP_BODY) as endpoint:
+        (tmp_path / "mini.config.toml").write_text(
+            f'provider = "openai"\nbase_url = "{endpoint.base_url}"\n'
+            f'model = "config-model"\napi_key_env = "{_KEY_ENV}"\n',
+            encoding="utf-8",
+        )
+        result = _cli(
+            "run",
+            "-p",
+            "任务",
+            "--session-dir",
+            str(tmp_path),
+            "--yes",
+            cwd=tmp_path,
+            env=env,
+        )
+
+    assert result.returncode == 0, result.stderr
+    start = next(
+        record for record in _session_records(tmp_path) if record["type"] == "session/start"
+    )
+    assert start["payload"]["provider"] == "openai"
+    assert start["payload"]["base_url"] == endpoint.base_url
+    assert start["payload"]["model"] == "config-model"
     assert start["payload"]["api_key_env"] == _KEY_ENV
     assert _KEY_VALUE not in json.dumps(start["payload"])
 

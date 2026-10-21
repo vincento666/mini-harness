@@ -26,6 +26,18 @@ DEFAULT_APPEND_SYSTEM_PROMPT = ""
 
 
 @dataclass(frozen=True)
+class ProviderEndpoint:
+    """openai 兼容端点的三条事实：地址、模型名、密钥环境变量的名字。
+
+    它记的是环境变量的名字，不是它的值；`None`（没有这个对象）就是「本次运行没有端点」。
+    """
+
+    base_url: str
+    model: str
+    api_key_env: str
+
+
+@dataclass(frozen=True)
 class SessionSettings:
     """一次运行的全部设置（不含 prompt：prompt 是这一轮的内容，不是设置）。"""
 
@@ -38,7 +50,5 @@ class SessionSettings:
     # 窗口预算的两个参数（不变量 D）：`--window` 与 `--reserve`。
     window: int = DEFAULT_WINDOW
     reserve: int = DEFAULT_RESERVE
-    # 只有 openai 路径带这三条；`api_key_env` 记的是环境变量的名字，不是它的值。
-    base_url: str | None = None
-    model: str | None = None
-    api_key_env: str | None = None
+    # 端点三条结伴出现：payload 里那三个字段由这一个对象派生。
+    endpoint: ProviderEndpoint | None = None
