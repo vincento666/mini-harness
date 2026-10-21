@@ -5,7 +5,7 @@
 内核（`loop/`）不知道 REPL 存在。M5 之前 `run_session` 一个函数干完三件事：写 `session/start`、跑 `max_turns` 个回合、写 `session/end`。REPL 需要的是「开始一个会话 / 跑一个段 / 结束一个会话」三件事各自可调用，于是内核入口拆成三段（ADR-0011 的边界由此真正落地）：
 
 - **D1** `start_session(...)` 写 `session/start`；`run_turn_segment(env, first_turn_index)` 跑**一个段**（段内上限是有效 `max_turns`）并返回 `RunOutcome`，MUST NOT 写 `session/end`；`end_session(log, stop_reason)` 写 `session/end`。一次性 `run` = 开始 + 一个段 + 结束。日志形状由此多两条记录（段的边界，D3），其余逐行与 M5 之前相同。
-- **D2** 顺带收 ADR-0002 第 21 条：`provider` / `log` / `registry` / `settings` / `approval_gate` / `cancel` 收成一个冻结的**会话环境**入参，段调用不再一路结伴。第 3 条（`_replay` 摸事件层内部形状）由 D10 收。
+- **D2** 顺带收 ADR-0002 第 21 条：`provider` / `log` / `registry` / `settings` / `approval_gate` 收成一个冻结的**会话环境**入参，段调用不再一路结伴。`cancel` 不在这里——D7 要「取消当前段、会话继续」，一个会话一份事件置起之后没有地方放回去，所以它是段的入参而不是会话的（实现时的改判，记进 ADR-0002 第 47 条）。第 3 条（`_replay` 摸事件层内部形状）由 D10 收。
 
 ## 段：M6 补上 DSH 缺的那一层边界
 
