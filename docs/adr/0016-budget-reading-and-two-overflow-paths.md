@@ -8,4 +8,4 @@ status: accepted
 
 Considered options：引真正的 tokenizer（否：重依赖，且它的分词与目标模型的分词不一致，估出来的数照样要校准）；只信 provider 的 `usage`（否：装配发生在请求之前，请求还没发就没有数可信，而压缩必须在装配之内决定）；把 headroom 做成参数（否：它是实现常量，不是用户可调的窗口参数，`--window` / `--reserve` 两个够了）。
 
-Consequences：`字符数 ÷ 4` 对中文严重低估（一个汉字算 1 个字符、实际约 1 至 2 个 token），所以压缩触发偏晚，真实兜底是 provider 报错那条路径；这条偏差在 M5 的人手验收里可观察，不修——修它要先选一个与模型一致的分词器。
+Consequences：`字符数 ÷ 4` 对中文严重低估（一个汉字算 1 个字符、实际约 1 至 2 个 token），所以压缩触发偏晚，真实兜底是 provider 报错那条路径；这条偏差在 M5 的人手验收里可观察，不修——修它要先选一个与模型一致的分词器。M5 的模型层验收量到了实测值：同一次装配估算 19991、校准读数 33871、provider 事后回报真实 `input_tokens` 44873，估算偏小 2.24 倍，校准收窄到 1.32 倍——校准用的是上一次请求的数，天然滞后一回合（数字与出处见 `docs/verification/m5-context-budget-compaction-manual.md`）。

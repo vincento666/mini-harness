@@ -34,9 +34,10 @@
 - **CLI**：`--window` / `--reserve` 进 `session/start.payload`；两者小于 1 是 `INVALID_ARGUMENT` 且**不建日志**。
 - **规格**：新增能力 `context-budget`（8 条 Requirement / 22 个 Scenario），`context-projection` / `event-log` / `turn-loop` / `provider` / `cli` 五份各有 delta。sync 之后主规格 **9 个能力**：bash-tool 6 / cli 7 / **context-budget 8** / context-projection 11 / event-log 12 / fences 12 / file-tools 11 / provider 10 / turn-loop 15。
 
-## M5 的收尾（完成，8.1 的模型层那一半除外）
+## M5 的收尾（完成）
 
 - **人手验收 8.1**：harness 层三条真 run 跑完（窗口 68000 那条压缩发生在 t2 的 `context/assembled` 之前，`shadowed_range {1, 6}`，14796 → 45 token；窗口 4000 那条退出码 4、日志 5 条、没有 `model/request`；重放逐点 OK、表层只剩三条消息）。**模型层那一半等人跑**，runbook 与观察表在 `docs/verification/m5-context-budget-compaction-manual.md`。它抓到一处措辞缺陷：没有发生压缩的回合，stderr 写的是「压缩之后……」——已按 red → green 修掉，detail 由日志里有没有本回合的摘要决定。
+- **模型层那一半跑完（2026-10-21 17:53，人跑，真端点）**：窄窗口 `458576ac…`（`--window 32768 --reserve 4096`）触发线取 0，第一次装配读数 33 就越线 → 5 条记录、没有 `context/assembled` 也没有 `model/request`、stderr `无可遮蔽的内容，预算读数 33 已超过触发线 0`、退出码 4，`minihns replay` 打印 `no_context_assembled: 这份日志没有装配点` 且退出码 0——M5 审查轮修掉的那条守卫在真日志上成立。宽窗口 `f7fcaa2c…`（131072 / 4096，触发线 61440、保留尾部 20971）五回合跑完、`MODEL_COMPLETED` 收尾，**没有触发压缩**：t5 装配的估算读数 19991、校准读数 33871，离 61440 还差 27569。要看压缩真跑起来得换 `--window 73728 --reserve 4096`（触发线 4096、保留尾部 11796），runbook 已补进 manual。这一跑顺手量到估算偏差：provider 事后回报真实 `input_tokens` 44873，估算偏小 2.24 倍、校准收窄到 1.32 倍且滞后一回合——数字记进 ADR-0016 的 Consequences。
 - **变异轮 8.2**：七条变异全被杀死（触发线 / 尾部保留记账 / 切点不拆组 / 遮蔽 honor / 校准来源 / provider 超限识别 / CLI 窗口校验），见 `docs/verification/m5-context-budget-compaction-mutation.md`。其中一条是反过来撞出的**真 bug**：尾部累加器把字符当 token 计，改对之后全量测试全绿——按纪律算覆盖缺口，补了 `test_the_tail_budget_is_counted_in_tokens_not_characters` 并确认它在旧实现下红。
 - **Learning Gate 8.3**：新收 L-036 至 L-040，关闭 L-031 / L-032 / L-033，**AGENTS.md 本轮不晋升**，收件箱 8 条（空闲 7）。
 - **ADR**：新开 **0015**（遮蔽是一条替换记录）、**0016**（预算读数两个来源、溢出两条触发路径、54272 不是笔误）、**0017**（`session/start` 与既有摘要不进遮蔽范围、摘要调用带 `purpose` 且不进表层）。ADR-0002 十条写着「M5」的旧指针逐条改判，另新记第 31 条（单条工具结果的剪枝 → M10）与第 32 条（每回合全量重读日志 → M11）。
@@ -78,7 +79,7 @@
 
 ## 待办与已知缺口
 
-- **M9 的 6.5 还欠模型层那一半**（等人跑）：命令写在 `docs/verification/m9-assembly-and-config-layering-manual.md` 末尾的「待人跑的那一半（真模型）」——同一份工作区、同一份 fixture，分别在「没有配置文件」与「工作区根写着 `base_url` / `model` / `max_turns = 3` / `tools = ["read", "write"]`」两种情况下各跑一次，看 payload 与三条 `model/request` 的 `tools` 是否跟着配置文件换。
+- **M9 的 6.5 还欠模型层那一半**（等人跑）：判据形状是「同一份工作区，配置文件在与不在，payload 与三条 `model/request` 的 `tools` 跟着换」。第一次尝试（2026-10-21 17:20）撞在上一场留下的残留上——场景 E 写进工作区根的 `tools = ["read", "web_search"]` 还在，run 在发出任何请求之前就以退出码 2 失败（按规格：配置跨 run 生效、失败在 session 开始之前、不建日志）。已把 `.tmp/m9-manual/workspace/mini.config.toml` 换成第 1 场要的那份（`max_turns = 3`、`tools = ["read", "write"]`，无 BOM，mock 预跑验证过 payload 是 `tools = read, write` / `max_turns = 3`），manual 的「待人跑的那一半」补成三场并写明每场之间的重置，「别扭在哪」从四条补成五条，教训收进 L-046。
 - **UTF-8 BOM 的配置文件要不要剥**（待人裁决）：`tomllib` 不吃 BOM，Windows 上记事本与 PowerShell 5.1 默认写的 UTF-8 都带 BOM，于是「手写一份 `mini.config.toml`」第一次撞上的报错是 `Invalid statement (at line 1, column 1)`。M9 未动实现，记在 `docs/adr/0018-config-is-three-layer-override.md` 的 Consequences 与 M9 的 manual 文档里。
 - **M3 的人手验收跑完**（tasks 8.1–8.2，2026-10-19 20:08–20:11，人在真终端跑三个 session，观察记进 `docs/verification/m3-bash-concurrency-timeout-manual.md`）：真事 `c25136a7…` 52 条记录 / 31.92 s / 6 回合，三次 `bash` 提问都问到并得到 `APPROVED`，`counts.txt` 落在工作区根，t5 两条 `read` 是 `call c1`、`call c2`、`result c1`、`result c2`（两条结果同一毫秒）——10.4 的「可以交错」在真 run 里出现。超时 `4a2da4bf…` 实测 **30.07 s** 塌成 `TOOL_TIMEOUT` + `tool/cancelled`，之后三个回合继续，进程树收干净且是模型自己用 `tasklist` / `Get-CimInstance` 查出来的。Ctrl-C `30eae257…` 11 条记录 / 7.51 s，`TOOL_CANCELLED` → `tool/cancelled` → `error/abort(ABORTED)` → `session/end(ABORTED)`。两格没有终端侧直接证据：退出码 5 是从日志加映射表读出的，「同一回合里没开始的调用也各有一条结果」那一回合没撞到。不进 CI。
 - **Windows 的 Ctrl-C 黑盒不在 M3**：seam ① 注入 cancel 判据、seam ⑥ Linux 真实 SIGINT 黑盒、两端都跑得动的 seam ⑥ `bash` 超时黑盒（`test_a_bash_timeout_in_the_cli_is_a_result_word_and_the_run_continues`，`timeout_seconds: 1` + 一条不会自己停的命令）都有；Windows 真实控制台 Ctrl-C 没有判据，缺口与边界记在 `docs/verification/m3-bash-concurrency-timeout-manual.md`。ConPTY 路线本机走不通（`UpdateProcThreadAttribute` 恒返回 87），可用的替代形状是 `WriteConsoleInput` 投递 KEY_EVENT（M2 的 approval smoke 用过）。
@@ -98,7 +99,7 @@
   - **适配器只认 OpenAI 兼容的拼写**：`openai_compat.py` 只认 `choices[].message.tool_calls` 与 `usage.prompt_tokens` / `completion_tokens`，不读流式 SSE（ADR-0006 第 1 条）。
   - **`PROVIDER_ABORTED` 有词表值与判据、没有生产路径**：取消走回合边界的 `error/abort`（退出码 5），`src` 里没有「取消置位后再调 `generate()`」的地方。
   - **`Usage` 只落进日志、不参与预算**（**M5 已关闭**）：不变量 D 落地——`budget_reading` 取「估算」与「provider 报回的 usage」里较大的那个，`CONTEXT_WINDOW_EXCEEDED` 与退出码 4 都在（见上「M5 落地的东西」与 ADR-0016）。
-  - **预算估算对中文严重低估**（M5 留下的已知偏差，不修）：`ceil(字符数 / 4)` 把一个汉字算 1 个字符，实际约 1 至 2 个 token，所以压缩触发偏晚；真实兜底是 provider 报 `context_length_exceeded` 那条路径（ADR-0016）。修它要先选一个与目标模型一致的分词器，那是选型不是修补。
+  - **预算估算对中文严重低估**（M5 留下的已知偏差，不修）：`ceil(字符数 / 4)` 把一个汉字算 1 个字符，实际约 1 至 2 个 token，所以压缩触发偏晚；真实兜底是 provider 报 `context_length_exceeded` 那条路径（ADR-0016）。修它要先选一个与目标模型一致的分词器，那是选型不是修补。**M5 的模型层验收量到了实测值**：同一次装配估算 19991、校准读数 33871、provider 事后回报真实 `input_tokens` 44873，估算偏小 2.24 倍，校准收窄到 1.32 倍——校准用的是上一次请求的数，天然滞后一回合。
   - **压缩让日志变长，而回合循环每回合全量重读**（M5 新记，ADR-0002 第 32 条 → M11）：一次压缩多写三条记录，被遮蔽的记录仍在盘上、仍要在全量扫描里被跳过。当前量级测不出差别。
   - **多次压缩的遮蔽范围允许重叠**（实现现状，未裁决）：既有摘要不被遮蔽，新范围可以覆盖旧范围之外的段。规格没有判「两个范围重叠时读方该怎么读」，M11 做投影层时再裁。
   - **CAS 只比「读到的窗口」**：窗口之外的改动不触发 `STALE_EDIT`；取舍与收紧办法记在 `docs/adr/0004-cas-compares-the-read-window.md`。
