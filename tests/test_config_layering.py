@@ -6,7 +6,9 @@ seam ⑥ 的黑盒判据分不开「禁用的键」与「未知的键」：两�
 
 from __future__ import annotations
 
-from mini_harness.config import ConfigFailure, validate_config
+from pathlib import Path
+
+from mini_harness.config import ConfigFailure, build_registry, load_config, validate_config
 
 
 def test_a_prompt_is_forbidden_not_merely_unknown() -> None:
@@ -32,3 +34,31 @@ def test_a_wrong_typed_value_is_a_distinct_failure() -> None:
 
 def test_a_settings_shaped_config_validates() -> None:
     assert validate_config({"max_turns": 3, "tools": ["read", "bash"]}) is None
+
+
+def test_every_config_failure_code_is_reachable(tmp_path: Path) -> None:
+    """失败码表不是装饰：六个码逐个构造一次，构造不出来的那个就是死码。"""
+
+    def code_of(result: object) -> str:
+        assert isinstance(result, ConfigFailure)
+        return result.code
+
+    broken = tmp_path / "broken.toml"
+    broken.write_text("max_turns = [1, 2", encoding="utf-8")
+
+    reached = {
+        code_of(load_config(tmp_path / "nope.toml")),
+        code_of(load_config(broken)),
+        code_of(validate_config({"mode": "yolo"})),
+        code_of(validate_config({"max_turns": "three"})),
+        code_of(validate_config({"prompt": "任务"})),
+        code_of(build_registry(["web_search"])),
+    }
+    assert reached == {
+        "CONFIG_NOT_FOUND",
+        "CONFIG_INVALID_TOML",
+        "CONFIG_UNKNOWN_KEY",
+        "CONFIG_INVALID_VALUE",
+        "CONFIG_FORBIDDEN_KEY",
+        "UNKNOWN_TOOL_NAME",
+    }

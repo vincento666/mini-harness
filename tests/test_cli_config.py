@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from cli_blackbox import _cli
 from paths import HELLO_SCENARIO
+
+_NO_KEY_ENV = "MINIHNS_CONFIG_TEST_KEY"
 
 
 def _session_records(cwd: Path) -> list[dict[str, object]]:
@@ -420,3 +423,91 @@ def test_a_boolean_where_a_number_is_expected_is_an_argument_error(tmp_path: Pat
     assert "INVALID_ARGUMENT" in result.stderr
     assert "max_turns" in result.stderr
     assert list((tmp_path / "sessions").glob("*.jsonl")) == []
+
+
+def test_the_same_cli_under_two_config_files_yields_different_payloads(tmp_path: Path) -> None:
+    """完成判据：命令行一字不差，配置文件换一份，payload 就跟着换。"""
+    with_config = tmp_path / "with-config"
+    without_config = tmp_path / "no-config"
+    with_config.mkdir()
+    without_config.mkdir()
+    (with_config / "mini.config.toml").write_text(
+        'max_turns = 2\ntools = ["read"]\n', encoding="utf-8"
+    )
+
+    argv = (
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--yes",
+    )
+    configured = _cli(*argv, cwd=with_config)
+    plain = _cli(*argv, cwd=without_config)
+
+    assert configured.returncode == 0, configured.stderr
+    assert plain.returncode == 0, plain.stderr
+    assert _start_payload(with_config)["max_turns"] == 2
+    assert _start_payload(without_config)["max_turns"] == 8
+    assert _start_payload(with_config)["tools"] == ["read"]
+    assert _start_payload(without_config)["tools"] == [
+        "read",
+        "write",
+        "edit",
+        "glob",
+        "grep",
+        "bash",
+    ]
+
+
+def test_a_missing_required_item_leaves_no_log_file(tmp_path: Path) -> None:
+    """完成判据：缺必需项时目录里一个文件都不多——既有的日志也不动。"""
+    key_case = tmp_path / "key"
+    toml_case = tmp_path / "toml"
+    for directory in (key_case, toml_case):
+        (directory / "sessions").mkdir(parents=True)
+        (directory / "sessions" / "existing.jsonl").write_text(
+            '{"type":"session/start"}\n', encoding="utf-8"
+        )
+    (toml_case / "mini.config.toml").write_text("max_turns = [1, 2", encoding="utf-8")
+
+    before = sorted(path.relative_to(tmp_path).as_posix() for path in tmp_path.rglob("*"))
+
+    env = dict(os.environ)
+    env.pop(_NO_KEY_ENV, None)
+    missing_key = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "openai",
+        "--base-url",
+        "http://127.0.0.1:9/v1",
+        "--api-key-env",
+        _NO_KEY_ENV,
+        "--yes",
+        cwd=key_case,
+        env=env,
+    )
+    broken_toml = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--yes",
+        cwd=toml_case,
+    )
+
+    after = sorted(path.relative_to(tmp_path).as_posix() for path in tmp_path.rglob("*"))
+    assert missing_key.returncode == 2
+    assert "INVALID_ARGUMENT" in missing_key.stderr
+    assert _NO_KEY_ENV in missing_key.stderr
+    assert broken_toml.returncode == 2
+    assert "INVALID_ARGUMENT" in broken_toml.stderr
+    assert after == before
