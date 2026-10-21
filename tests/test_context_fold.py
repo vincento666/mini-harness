@@ -98,6 +98,126 @@ def test_user_prompt_is_the_first_body_message_after_the_header() -> None:
     assert context.messages[1].content == "写一份报告"
 
 
+def test_a_user_message_folds_into_the_conversation_in_seq_order() -> None:
+    """REPL 的输入是一条 `user/message` 记录：折成 `role: user` 消息，按 `seq` 进对话体。"""
+    events = [
+        _rec(0, "session/start", {"append_system_prompt": "", "tools": [], "prompt": ""}),
+        _rec(1, "segment/start", {"segment_id": "s1"}),
+        _rec(2, "user/message", {"segment_id": "s1", "content": "第一条输入"}),
+        _rec(3, "turn/start", {"turn_id": "t1"}),
+        _rec(
+            4,
+            "model/response",
+            {"turn_id": "t1", "content": "回答一", "tool_calls": [], "finish_reason": "stop"},
+        ),
+        _rec(5, "turn/end", {"turn_id": "t1", "stop_reason": "MODEL_COMPLETED"}),
+        _rec(6, "segment/end", {"segment_id": "s1", "stop_reason": "MODEL_COMPLETED", "turns": 1}),
+        _rec(7, "segment/start", {"segment_id": "s2"}),
+        _rec(8, "user/message", {"segment_id": "s2", "content": "第二条输入"}),
+        _rec(9, "turn/start", {"turn_id": "t2"}),
+        _rec(
+            10,
+            "model/response",
+            {"turn_id": "t2", "content": "回答二", "tool_calls": [], "finish_reason": "stop"},
+        ),
+        _rec(11, "turn/end", {"turn_id": "t2", "stop_reason": "MODEL_COMPLETED"}),
+        _rec(12, "segment/end", {"segment_id": "s2", "stop_reason": "MODEL_COMPLETED", "turns": 1}),
+    ]
+
+    context = fold(events)
+
+    assert context.messages[0].role == "system"
+    assert [(message.role, message.content) for message in context.messages[1:]] == [
+        ("user", "第一条输入"),
+        ("assistant", "回答一"),
+        ("user", "第二条输入"),
+        ("assistant", "回答二"),
+    ]
+
+
+def _one_turn_with_segments() -> list[EventRecord]:
+    """同一个回合，外面套一段：段的边界是记账记录。"""
+    return [
+        _rec(0, "session/start", {"append_system_prompt": "", "tools": []}),
+        _rec(1, "segment/start", {"segment_id": "s1"}),
+        _rec(2, "turn/start", {"turn_id": "t1"}),
+        _rec(
+            3,
+            "model/response",
+            {"turn_id": "t1", "content": "hi", "tool_calls": [], "finish_reason": "stop"},
+        ),
+        _rec(4, "turn/end", {"turn_id": "t1", "stop_reason": "MODEL_COMPLETED"}),
+        _rec(5, "segment/end", {"segment_id": "s1", "stop_reason": "MODEL_COMPLETED", "turns": 1}),
+    ]
+
+
+def test_segment_records_produce_no_messages() -> None:
+    """`segment/start` 与 `segment/end` 与 `turn/*` 一样不产出消息：加与不加，折叠结果相同。"""
+    without = fold(_one_turn_events())
+    with_segments = fold(_one_turn_with_segments())
+
+    assert [message.role for message in with_segments.messages] == [
+        message.role for message in without.messages
+    ]
+    assert with_segments.messages == without.messages
+    assert with_segments.header_fingerprint == without.header_fingerprint
+
+
+def test_a_shadowed_user_message_does_not_enter_the_conversation() -> None:
+    """被遮蔽的输入不进对话体；遮蔽段的边界对折叠结果没有效果。"""
+    shadowed = [
+        _rec(0, "session/start", {"append_system_prompt": "", "tools": [], "prompt": ""}),
+        _rec(1, "segment/start", {"segment_id": "s1"}),
+        _rec(2, "user/message", {"segment_id": "s1", "content": "第一条输入"}),
+        _rec(3, "turn/start", {"turn_id": "t1"}),
+        _rec(
+            4,
+            "model/response",
+            {"turn_id": "t1", "content": "回答一", "tool_calls": [], "finish_reason": "stop"},
+        ),
+        _rec(5, "turn/end", {"turn_id": "t1", "stop_reason": "MODEL_COMPLETED"}),
+        _rec(6, "segment/end", {"segment_id": "s1", "stop_reason": "MODEL_COMPLETED", "turns": 1}),
+        _rec(
+            7,
+            "compaction/summary",
+            {
+                "turn_id": "t2",
+                "shadowed_range": {"start": 1, "end": 6},
+                "summary": "第一段已被摘要",
+                "tokens_before": 900,
+                "tokens_after": 300,
+            },
+        ),
+        _rec(8, "segment/start", {"segment_id": "s2"}),
+        _rec(9, "user/message", {"segment_id": "s2", "content": "第二条输入"}),
+        _rec(10, "turn/start", {"turn_id": "t2"}),
+        _rec(
+            11,
+            "model/response",
+            {"turn_id": "t2", "content": "回答二", "tool_calls": [], "finish_reason": "stop"},
+        ),
+        _rec(12, "turn/end", {"turn_id": "t2", "stop_reason": "MODEL_COMPLETED"}),
+    ]
+
+    context = fold(shadowed)
+    # 遮蔽范围只盖正文（不盖段的边界）时，折叠结果必须一模一样。
+    body_only = [
+        record.model_copy(
+            update={"payload": {**record.payload, "shadowed_range": {"start": 2, "end": 5}}}
+        )
+        if record.type == "compaction/summary"
+        else record
+        for record in shadowed
+    ]
+
+    assert [(message.role, message.content) for message in context.messages[1:]] == [
+        ("user", "第二条输入"),
+        ("system", "第一段已被摘要"),
+        ("assistant", "回答二"),
+    ]
+    assert fold(body_only).messages == context.messages
+
+
 def test_folding_the_same_events_twice_gives_identical_results() -> None:
     events = _one_turn_events()
 

@@ -77,6 +77,9 @@ def _body_message(event: EventRecord) -> Message | None:
         if isinstance(prompt, str) and prompt:
             return Message(role="user", content=prompt)
         return None
+    if event.type == "user/message":
+        # REPL 的一条输入：`entry` 为 `chat` 的会话里，人话只住在 `user/message` 里。
+        return Message(role="user", content=str(event.payload.get("content", "")))
     if event.type == "model/response":
         if event.payload.get("purpose") == PURPOSE_COMPACTION:
             # 摘要那次调用的记账，不是对话：它的内容已经作为 `system` 摘要在表层里了。

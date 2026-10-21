@@ -4,10 +4,10 @@
 
 ## 1. 词表与折叠：三个新值
 
-- [ ] 1.1 词表加 `user/message`、`segment/start`、`segment/end`，并补「每个值可达」判据：run 产出两个段记录而不产出 `user/message`，chat 三者都产出。seam ④（`tests/test_event_vocabulary.py`、`tests/test_vocabulary_reachability.py`）
-- [ ] 1.2 折叠把 `user/message` 折成 `role: user` 消息、按 `seq` 进对话体、头部之后第一条仍是它。seam ④（`tests/test_context_fold.py`）
-- [ ] 1.3 `segment/start` 与 `segment/end` 不产出上下文里的消息（加与不加它们，折叠结果相同）。seam ④（`tests/test_context_fold.py`）
-- [ ] 1.4 落在 `shadowed_range` 里的 `user/message` 不进对话体；遮蔽 `segment/*` 对折叠结果没有效果。seam ④（`tests/test_context_fold.py`）
+- [x] 1.1 词表加 `user/message`、`segment/start`、`segment/end`：已知类型判据 + 写进日志不被标 `unrecognized_type`。可达判据分两处落——run 侧的两个段记录由 2.3 落，chat 侧的三个值由 6.2 落。seam ④（`tests/test_event_vocabulary.py`）
+- [x] 1.2 折叠把 `user/message` 折成 `role: user` 消息、按 `seq` 进对话体、头部之后第一条仍是它。seam ④（`tests/test_context_fold.py`）
+- [x] 1.3 `segment/start` 与 `segment/end` 不产出上下文里的消息（加与不加它们，折叠结果相同）。seam ④（`tests/test_context_fold.py`）
+- [x] 1.4 落在 `shadowed_range` 里的 `user/message` 不进对话体；遮蔽 `segment/*` 对折叠结果没有效果。seam ④（`tests/test_context_fold.py`）
 
 ## 2. 内核入口拆成「开始会话 / 跑一个段 / 结束会话」
 
