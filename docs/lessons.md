@@ -65,7 +65,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Evidence: `docs/verification/m1-mutation.md`；补测试提交 `1a7c912`（抽出 `exit_code_for`）
 - Next use: 规格里每条失败路径 Scenario 都要能指到一条测试；指不到就是缺口。同族的两条已并进来：L-017（一条规则有多个输入维度时按维度逐个变异）、L-028（规格里写死的数值与边界）
 - Promotion candidate: verifier/eval
-- Status: inbox（家族头：L-005 失败路径 / L-017 维度 / L-028 数值与边界）
+- Status: inbox（家族头：L-005 失败路径 / L-017 维度 / L-028 数值与边界 / L-038 单位与边界。M6 的三条存活变异全在这一族里：窗口校验 `<= 0` 的「恰为 0」那一格、`session/end.turns` 的「减不减一都一样」、stdout 的 `purpose` 过滤「这个入口里从没发生过压缩」。见 `docs/verification/m6-chat-repl-mutation.md`）
 
 ### L-006
 - Date: 2026-10-16
@@ -191,7 +191,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Evidence: 本轮 `tests/test_tool_registry.py` 的 def 行被粘坏过一次；`dispatch.py` / `fences.py` / `file_tools.py` 各撞过一次「file changed since it was read」；M3 变异轮每次 `git checkout --` 之后重读，三次先 edit 后报错
 - Next use: 锚点选正文里唯一的两行组合，不选 def 行；每次 `git checkout --` 之后先 read 再 edit
 - Promotion candidate: 无需进 AGENTS.md（工具用法，不是项目规则）
-- Status: inbox
+- Status: inbox（家族头：L-019 重读与 def 行 / L-044 追加锚点。M6 又踩两次：一次 `ruff format` 之后 edit 报「file changed since it was read」，一次把 `old_string` 与 `new_string` 写反、报「old_string was not found」）
 
 ### L-020
 - Date: 2026-10-17
@@ -411,7 +411,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Evidence: `src/mini_harness/context/budget.py` 的 `total = _tokens(_record_chars(candidates[-1]))`；判据 `test_the_tail_budget_is_counted_in_tokens_not_characters`（窗口 9375 → 保留预算 1500 token，尾部 4000 字符 + 100 字符 = 1025 token 装得下 → 无可遮蔽）
 - Next use: 任何「按 token 计」的预算代码都让单位出现在名字里，并在边界值上写判据
 - Promotion candidate: 与 L-005 家族（数值与边界）同族
-- Status: inbox
+- Status: merged into L-005（2026-10-22 M6 收尾消化：M6 没再动 `budget.py` 的字符 / token 交界，那条判据 `test_the_tail_budget_is_counted_in_tokens_not_characters` 仍在门禁里钉着；剩下的「边界值上写判据」就是 L-005 这一族）
 
 ### L-039
 - Date: 2026-10-21
@@ -477,7 +477,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Evidence: 本轮 `tests/test_cli_provider.py` 与 `tests/test_turn_loop.py` 的两次返工（`test_a_dead_endpoint_collapses_into_a_transport_result` 的正文一度孤儿化）
 - Next use: 用 `edit` 插入内容时，锚点选上一段的末行；若必须以下一段作锚，就把那一行原样写进 `new_string`
 - Promotion candidate: 工具用法，无需进 AGENTS.md
-- Status: inbox
+- Status: merged into L-019（2026-10-22 M6 收尾消化：同一件事——`edit` 的锚点纪律。M6 往 `tests/test_cli_chat.py` 与 `tests/test_cli_run.py` 插判据时照「上一条末行作锚、必要时把下一行原样写回」做了，没再踩；本轮另记一次反向错误进 L-019）
 
 ### L-045
 - Date: 2026-10-21
@@ -510,6 +510,40 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 收件箱：13 条（L-005 / L-019 / L-025 / L-036 / L-037 / L-038 / L-039 / L-040 / L-041 / L-042 / L-043 / L-044 / L-045），额度空闲 2 条。
 
 **归档后补记（2026-10-21，M9 的 6.5 模型层第一次尝试）**：新收一条 L-046（runbook 没写明跨 run 生效的工件与场间重置），收件箱 **14 条**、空闲 1 条；AGENTS.md 不晋升——这条的去处是 `docs/verification/` 的 runbook 写法，不是全局规则。
+
+### L-047
+- Date: 2026-10-21
+- Context: M6 收尾 8.1 的 Spec 轴，主规格 context-projection 的「每次模型调用前记录 `context/assembled`」
+- Observation: 带全称量词的 Requirement 只按「正常回合」那一条路径核对过，就漏掉两条不写快照的调用：带 `purpose` 的摘要调用（M5 起就没有快照）与请求级压缩之后的重试（M6 新加）。M5 的审查轴同样没抓到。核对的正确单位是**实现里那个动作的调用点清单**，不是规格里的 scenario 清单
+- Evidence: `turn_loop.py` 里 `provider.generate` 三处调用，核对时逐点看「前面有没有快照」；补的 MODIFIED Requirement 与判据在提交 `013e469`，取舍记进 `docs/adr/0019-overflow-closes-the-turn-and-the-entry-decides-the-session.md` 的裁决段
+- Next use: 写或审「每次 X 之前都写 Y」「所有 A 都 B」这类 Requirement 时，先 grep 出实现里那个动作的全部调用点，逐点问「这条路径写了吗」；没写的路径要么补写，要么在规格里写明它是「不写的那一个」
+- Promotion candidate: 与 Active Lesson 2 不同族，是「规格 ↔ 实现怎么核对」的方法；本轮不占 AGENTS.md 额度
+- Status: inbox
+
+### L-048
+- Date: 2026-10-22
+- Context: M6 变异轮三条存活变异（stdout 的 `purpose` 过滤 / `session/end.turns` / 窗口校验 `<= 0`）
+- Observation: 三条存活同形：既有判据覆盖的是**这个入口常见的形状**，缺口在「这个入口里从没发生过的那件事」与「边界那一格」。chat 的判据里从来没有一次真压缩，所以「摘要那条不打」在 seam ⑥ 上没人守；`turn_index - 1` 减不减所有断言都一样；三个测试窗口（32768 / 4096、70000 / 4096、66000 / 100）都不落在 0 上
+- Evidence: `docs/verification/m6-chat-repl-mutation.md` 的变异 3 / 5 / 8 与「补的判据」一节（四条新判据，每条在变异下先确认红）
+- Next use: 新入口（M7 的 `serve`、M10 的委派）落地后，把 run 与 chat 各自钉住的事件形状——压缩、溢出、取消、启动期失败——在新入口里各补一条判据；边界判据要含「恰为 0」与「恰为上限」
+- Promotion candidate: 与 L-005 家族（数值与边界）同族，本轮不占额度
+- Status: inbox
+
+### M6 收尾轮的消化记录（2026-10-22，tasks 8.3）
+
+**合并两条**：L-044 并入 L-019（同一件事——`edit` 的锚点纪律）、L-038 并入 L-005（「边界值上写判据」就是数值与边界那一族）。
+
+**留存十二条**：L-005（家族头，M6 三条存活变异挂在它下面）、L-019（本轮又踩两次）、L-025（模型层那一半仍等人类跑完 runbook）、L-036（M6 两条 user-visible 文案判据都判前缀常量）、L-037（M6 没有「修完不引起红」的事件）、L-039（本轮两条 chat 守卫按它如实标注为守卫）、L-040（M6 的手动脚手架全程 ASCII 路径，没再踩）、L-041（M6 补的 `entry` 判据正是判值的断言）、L-042（本轮 12 个变异全部跑全量，没有定向轮）、L-043（配置文件的 BOM 仍未裁决，与 ADR-0018 的 Consequences 一起待办）、L-045（M6 的 tasks 6.3 一类前置条件都先对齐规格再写判据）、L-046（M6 的 manual 文档照它逐场写工件内容与场间重置）。
+
+**Active Lesson 1 补一条证据**（不占收件箱额度）：M6 新增的 `session/start.payload.entry` 有两个取值，实现之后只有 `chat` 那一半有判据——变异「不写 `entry`」只让 chat 那条变红，`run` 那一半到变异轮才补上。「每个值可达」在新增的 payload 字段上同样成立，且**两个入口各要一条**。
+
+**新收两条**：L-047、L-048。
+
+**AGENTS.md 本轮不晋升（NO-PROMOTION）**：一进一出的额度只剩 1 条空闲，而本轮三条候选（L-047 全称量词按调用点核对、L-048 新入口要重跑旧入口的事件形状、`entry` 两个值各一条判据）分别是 Active Lesson 1 / 2 与 L-005 家族的收紧，不是独立的新规则。
+
+**提交纪律的欠账记进 ADR-0002，不在这里立规则**：`cf1543d` / `0f49b39` 没有门禁行，`62ccd00` / `0afa628` / `ce87b9a` 只记了四道里的一到两道。AGENTS.md「一次提交算完成 = 四道全绿」本来就写着，本轮是没照自己写的做，属执行纪律不是新规则。
+
+收件箱：14 条（L-005 / L-019 / L-025 / L-036 / L-037 / L-039 / L-040 / L-041 / L-042 / L-043 / L-045 / L-046 / L-047 / L-048），空闲 1 条。
 
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 - 每个里程碑收尾扫一次，**允许输出 `NO-PROMOTION`**（没有可复用信号就不写条目）。

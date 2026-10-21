@@ -62,6 +62,6 @@
 
 - [x] 8.1 `code-review` 两轴（Standards / Spec，固定点 `main`，14 提交 / 37 文件 / +2218 −160）。Standards 轴 10 条、Spec 轴 4 条，逐条核过事实；判断项记账不动代码（ADR-0002 第 17 / 21 / 34 / 39 条更正，新增第 51 / 52 条，提交纪律与判据欠账各一节）。两条由人裁决：① 请求级重试之前补一条 `context/assembled`、摘要调用不补（ADR-0019 的裁决段）——落地是 seam ① 一条真红过的判据加 delta 的 context-projection 新增一份 MODIFIED Requirement；② 术语统一成「段」——delta 的 Requirement 名与 proposal / design / tasks 一起改，GLOSSARY 的 _Avoid_ 记旧写法。Spec 轴另两条直接补：delta 的 context-budget MODIFIED「触发线由固定公式给出」（两个 scenario 名全保留，「小窗口下每次装配都越线」换成合法的 `70000 / 100`），seam ⑥ 补两条 chat 守卫（chat 的参数表 = run 的减 `--prompt` 与 `--events`；chat 的「会话开始之前失败」不建日志）。
 - [x] 8.2 变异测试一轮并记进 `docs/verification/m6-chat-repl-mutation.md`：12 个变异全部被杀死；存活的三个（stdout 的 `purpose` 过滤、`session/end.turns` 那一格、窗口校验 `<= 0` 的 0 那一格）与暴露的一个（`entry` 的 `run` 那一半没有判据）补了四条判据，每条都在变异下先确认红。
-- [ ] 8.3 Learning Gate：扫本轮证据，可复用教训进 `docs/lessons.md` 收件箱；没有信号写 `NO-PROMOTE`（NO-PROMOTION）。
+- [x] 8.3 Learning Gate：扫本轮证据——合并两条旧条目（L-044 → L-019、L-038 → L-005）、留存十二条、新收两条（L-047 全称量词按调用点核对、L-048 新入口要重跑旧入口的事件形状）；AGENTS.md 不晋升（NO-PROMOTION），收件箱 14 条、空闲 1 条。
 - [ ] 8.4 在 change 分支上 sync delta 进主规格、移 `changeRoot` 到 `openspec/changes/archive/`、`openspec validate --all --strict` 全绿。
 - [ ] 8.5 门禁四道全绿后，**先征求人的批准**再 `--no-ff` 合入 `main` 并推远端、打 tag `m6`、删 change 分支。
