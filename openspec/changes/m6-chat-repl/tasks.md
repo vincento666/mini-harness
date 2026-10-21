@@ -52,7 +52,7 @@
 
 - [x] 7.1 ADR-0019：溢出的入口边界（内核只写回合级收尾）+ 请求级压缩与一次重试 + 窗口预算不成立是启动期配置错误；写清「DSH 这么做」与「mini 版故意简化」的分界。
 - [x] 7.2 ADR-0020：REPL 的会话边界、词表三个新值、`entry` 字段、会话收尾复用 `MODEL_COMPLETED`、run 的 prompt 仍住在 `session/start` 这处不对称。
-- [x] 7.3 `GLOSSARY.md`：新增词条「回合段（segment）」，改掉「本项目没有 DSH 的 turn / step 双层」那句（本项目的一个回合 = DSH 的 step，一个段 = DSH 的 turn）。
+- [x] 7.3 `GLOSSARY.md`：新增词条「段（segment）」（收尾轮按裁决统一用「段」，旧的「回合段」记在 _Avoid_），改掉「本项目没有 DSH 的 turn / step 双层」那句（本项目的一个回合 = DSH 的 step，一个段 = DSH 的 turn）。
 - [x] 7.4 ADR-0002 新记三条：DSH 的「压缩失败 warn 并继续回合」推到 M10 / M11；工具事件的终端投影归 M7 之后的事件流消费者；DSH 的 `next-step` 输入排队不做。并更正第 3、21 条为「M6 已处理」。
 - [x] 7.5 `docs/verification/m6-chat-repl-manual.md`：人手验收（真工作区、真模型跑一次 chat，至少两条输入、一次取消、一次段用完上限）。
 - [x] 7.6 更正 `docs/verification/m5-context-budget-compaction-manual.md`：「窗口 32768 → 退出码 4」被启动期校验取代，标注而不删。
@@ -60,7 +60,7 @@
 
 ## 8. 收尾
 
-- [ ] 8.1 `code-review` 两轴（Standards / Spec，固定点 `main`），判断项记账不动代码。
+- [x] 8.1 `code-review` 两轴（Standards / Spec，固定点 `main`，14 提交 / 37 文件 / +2218 −160）。Standards 轴 10 条、Spec 轴 4 条，逐条核过事实；判断项记账不动代码（ADR-0002 第 17 / 21 / 34 / 39 条更正，新增第 51 / 52 条，提交纪律与判据欠账各一节）。两条由人裁决：① 请求级重试之前补一条 `context/assembled`、摘要调用不补（ADR-0019 的裁决段）——落地是 seam ① 一条真红过的判据加 delta 的 context-projection 新增一份 MODIFIED Requirement；② 术语统一成「段」——delta 的 Requirement 名与 proposal / design / tasks 一起改，GLOSSARY 的 _Avoid_ 记旧写法。Spec 轴另两条直接补：delta 的 context-budget MODIFIED「触发线由固定公式给出」（两个 scenario 名全保留，「小窗口下每次装配都越线」换成合法的 `70000 / 100`），seam ⑥ 补两条 chat 守卫（chat 的参数表 = run 的减 `--prompt` 与 `--events`；chat 的「会话开始之前失败」不建日志）。
 - [ ] 8.2 变异测试一轮并记进 `docs/verification/m6-chat-repl-mutation.md`：每个变异都被至少一条测试杀死，存活的算覆盖缺口并补判据。
 - [ ] 8.3 Learning Gate：扫本轮证据，可复用教训进 `docs/lessons.md` 收件箱；没有信号写 `NO-PROMOTE`（NO-PROMOTION）。
 - [ ] 8.4 在 change 分支上 sync delta 进主规格、移 `changeRoot` 到 `openspec/changes/archive/`、`openspec validate --all --strict` 全绿。

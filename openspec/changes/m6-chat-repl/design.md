@@ -9,7 +9,7 @@
 
 ## 段：M6 补上 DSH 缺的那一层边界
 
-- **D3** 段的边界 durable（照 DSH 的 `turn` 边界）：段开始写 `segment/start`（payload `segment_id`），段结束写 `segment/end`（payload `segment_id`、该段最后一个回合的 `stop_reason`、该段实际跑掉的回合数 `turns`）。`segment_id` 与 `turn_id` 都在会话内连续编号，段起始编号由入口给（`first_turn_index`），内核不数段、不数输入。`segment/*` 与 `turn/*` 一样不产出上下文里的消息。DSH 那边：`turn = phase.turn + 1` 后 `session.append("turn/start", {turn})`（`dsh-agent-loop/lib/index.js:941-947`），编号单调且落日志；turn 之内 `while (true) { step = phase.step + 1; … }`（:951-957）。**本项目的「回合」仍是 DSH 的 `step`，本项目的「段」是 DSH 的 `turn`**——GLOSSARY 第 17-19 行那句「本项目没有 DSH 的 turn / step 双层」由此作废，M6 补上缺的那一层并新增词条「回合段（segment）」。
+- **D3** 段的边界 durable（照 DSH 的 `turn` 边界）：段开始写 `segment/start`（payload `segment_id`），段结束写 `segment/end`（payload `segment_id`、该段最后一个回合的 `stop_reason`、该段实际跑掉的回合数 `turns`）。`segment_id` 与 `turn_id` 都在会话内连续编号，段起始编号由入口给（`first_turn_index`），内核不数段、不数输入。`segment/*` 与 `turn/*` 一样不产出上下文里的消息。DSH 那边：`turn = phase.turn + 1` 后 `session.append("turn/start", {turn})`（`dsh-agent-loop/lib/index.js:941-947`），编号单调且落日志；turn 之内 `while (true) { step = phase.step + 1; … }`（:951-957）。**本项目的「回合」仍是 DSH 的 `step`，本项目的「段」是 DSH 的 `turn`**——GLOSSARY 第 17-19 行那句「本项目没有 DSH 的 turn / step 双层」由此作废，M6 补上缺的那一层并新增词条「段（segment）」（收尾轮按裁决统一用「段」，提案与规划产物里旧的「回合段」是同一个东西，GLOSSARY 的 _Avoid_ 里写明）。
 - **D4** `max_turns` 判的是**段**，会话级不设上限。DSH 的交互循环对 `turn` 与 `step` 都不设轮数上限——`dsh-agent-loop` 的全部数值配置只有 `maxParallelToolCalls`（默认 10，:1534）与每 agent 的 `maxTokens`（:1541）。DSH 唯一带轮数上限的地方是委派工具 `dsh-tool-ralph` 的 `maxRounds`（默认 256，用完返回 `{status: "budget-limited", roundsStarted}`），那对应本项目的 seam ⑦ / M15「目标轮次与 `blocked`」，**MUST NOT 与 `max_turns` 混名**。保留 `max_turns` 是 mini 的故意简化：headless 一次性 run 需要一个默认终止条件（`MAX_TURNS` 是已落地的 `stop_reason`，CI 判据靠它）。一次性 run 恰一个段，所以「一次 run 的上限」与「段内上限」在那里是同一个数——变掉的只是「一次会话只有一条输入」这个前提。
 
 ## 输入即记录
@@ -36,7 +36,7 @@
 | ④ 日志追加与折叠 | `tests/test_event_vocabulary.py`、`tests/test_vocabulary_reachability.py`、`tests/test_context_fold.py`、`tests/test_cli_replay.py` | 三个新词表值可达；`user/message` 折成 `user` 消息、`segment/*` 不产出消息；遮蔽里的输入不进表层；replay 的扫描逻辑住在事件层 |
 | ⑥ CLI 黑盒 | `tests/test_cli_run.py`、新增 `tests/test_cli_chat.py` | 管道喂行 → 一份日志两条输入两个段；空 stdin；段用完 `max_turns` 回到提示符且下一条输入额度完整；段级失败不退出；stdout 只打模型回复正文；启动期窗口校验退出码 2；SIGINT 两级（Linux 上跑，Windows 侧沿用 M3 的边界：真实控制台 Ctrl-C 无判据） |
 
-seam ②③⑤⑦ 不动：工具契约、文件工具、provider 接口、委派都不因 REPL 改变形状（provider 的 `PROVIDER_CONTEXT_OVERFLOW` 取值 M5 已有）。钉死事件序列的既有判据共 6 处（`test_turn_loop.py` 四处、`test_event_log_append.py:70`、`test_event_vocabulary.py:36`），前四处因 run 也写段边界而改——这是 D3 的已计代价，不是回归。
+seam ②③⑤⑦ 不动：工具契约、文件工具、provider 接口、委派都不因 REPL 改变形状（provider 的 `PROVIDER_CONTEXT_OVERFLOW` 取值 M5 已有）。钉死事件序列的既有判据共 6 处（`test_turn_loop.py` 四处、`test_event_log_append.py:70`、`test_event_vocabulary.py:36`），前四处因 run 也写段边界而改——这是 D3 的已计代价，不是回归。**收尾轮按实况更正（2026-10-21）**：受影响的是 **8 个测试文件、约 21 个测试函数、47 行新增断言**（逐文件的数字见 ADR-0020）；这张表列的 `test_event_log_append.py` 一行没改，`test_context_fold.py`、`test_turn_compaction.py`、`test_cli_run.py`、`test_turn_cancel.py`、`test_approval_gate.py`、`test_cli_replay.py` 不在表上。④ 那行的落点 `test_vocabulary_reachability.py` 本轮没动，三个新词表值的可达性判据实际落在 `test_event_vocabulary.py`（seam ④）与 `test_cli_run.py` / `test_cli_chat.py`（seam ⑥）；2.5 的 seam ② 落点 `test_tool_dispatch.py` 同样没动。
 
 ## 已知风险与边界
 
