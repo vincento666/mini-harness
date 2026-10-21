@@ -297,3 +297,87 @@ async def test_a_provider_reported_overflow_collapses_into_the_same_result(tmp_p
     assert _records_of(log.path, "tool/call") == []
     assert outcome.stop_reason == "CONTEXT_WINDOW_EXCEEDED"
     assert outcome.failure_code == "CONTEXT_WINDOW_EXCEEDED"
+
+
+class _OverflowOnceProvider:
+    """模型层报出上下文超限：第 `fail_plain_calls` 次**带工具表**的回合调用报失败。
+
+    摘要那次调用不带工具表（design D2），所以它照常从 fixture 取条目。
+    """
+
+    def __init__(
+        self, entries: list[dict[str, object]], *, fail_plain_calls: tuple[int, ...]
+    ) -> None:
+        self._fixture = FixtureProvider(entries=entries)
+        self._fail_plain_calls = fail_plain_calls
+        self._plain_calls = 0
+
+    async def generate(self, messages: object, tools: object, signal: asyncio.Event) -> object:
+        if tools:
+            self._plain_calls += 1
+            if self._plain_calls in self._fail_plain_calls:
+                return ProviderFailure(
+                    code="PROVIDER_CONTEXT_OVERFLOW", detail="HTTP 400 上下文超限"
+                )
+        return await self._fixture.generate(messages, tools, signal)
+
+
+async def test_a_provider_reported_overflow_is_compacted_once_and_retried(
+    tmp_path: Path,
+) -> None:
+    """请求级压缩救回一次：压一次、重试一次，回合以正常的 `model/response` 继续（ADR-0019）。"""
+    log, outcome = await run_session_fixture(
+        tmp_path,
+        "s-request-compaction",
+        _OverflowOnceProvider([_big_turn(), _summary_entry(), DONE_ENTRY], fail_plain_calls=(2,)),
+        max_turns=3,
+    )
+    records = read_events(log.path)
+    turn_two = [record for record in records if record.payload.get("turn_id") == "t2"]
+
+    assert outcome.stop_reason == "MODEL_COMPLETED"
+    summaries = _records_of(log.path, "compaction/summary")
+    assert [record.payload["turn_id"] for record in summaries] == ["t2"]
+    # 压完之后重试那一次是又一次真实的调用：t2 有两条不带 purpose 的 `model/request`。
+    plain_requests = [
+        record
+        for record in turn_two
+        if record.type == "model/request" and "purpose" not in record.payload
+    ]
+    plain_responses = [
+        record
+        for record in turn_two
+        if record.type == "model/response" and "purpose" not in record.payload
+    ]
+    assert len(plain_requests) == 2
+    assert [record.payload["content"] for record in plain_responses] == ["收尾"]
+    assert _records_of(log.path, "error/context") == []
+    assert _records_of(log.path, "error/model") == []
+    assert [record.payload["stop_reason"] for record in records if record.type == "turn/end"] == [
+        "TOOL_CALLS",
+        "MODEL_COMPLETED",
+    ]
+
+
+async def test_a_provider_reported_overflow_that_survives_the_retry_collapses(
+    tmp_path: Path,
+) -> None:
+    """重试仍报同一失败：上限 1 次用完，塌成同一个溢出结果，没有 `error/model`。"""
+    log, outcome = await run_session_fixture(
+        tmp_path,
+        "s-request-compaction-fails",
+        _OverflowOnceProvider([_big_turn(), _summary_entry()], fail_plain_calls=(2, 3)),
+        max_turns=3,
+    )
+    records = read_events(log.path)
+
+    assert len(_records_of(log.path, "compaction/summary")) == 1
+    assert [record.type for record in records][-4:] == [
+        "error/context",
+        "turn/end",
+        "segment/end",
+        "session/end",
+    ]
+    assert _records_of(log.path, "error/model") == []
+    assert outcome.stop_reason == "CONTEXT_WINDOW_EXCEEDED"
+    assert outcome.failure_code == "CONTEXT_WINDOW_EXCEEDED"

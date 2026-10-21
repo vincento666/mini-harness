@@ -27,8 +27,8 @@
 
 - [x] 4.1 启动期校验：`window − reserve − 65536 ≤ 0` → 退出码 2、stderr 指出三个数、不建日志；`--window 70000 --reserve 4096` 照跑。seam ⑥（`tests/test_cli_run.py`）
 - [x] 4.2 既有 cli 判据里 `--window 4000 --reserve 500` 那三条换成合法窗口（规格 scenario 同步）。seam ⑥（`tests/test_cli_run.py`）
-- [ ] 4.3 请求级压缩：provider 报 `PROVIDER_CONTEXT_OVERFLOW` 且有可遮蔽内容 → 恰一条 `compaction/summary` + 重试一次 + 回合正常继续。seam ①（`tests/test_turn_compaction.py`——同 3.1，`test_context_budget.py` 不开新缝）
-- [ ] 4.4 无可遮蔽或重试仍失败 → 不写 `compaction/summary`、塌成溢出、没有 `error/model`。seam ①（`tests/test_turn_compaction.py`；「无可遮蔽」那半由既有判据 `test_a_provider_reported_overflow_collapses_into_the_same_result` 守着）
+- [x] 4.3 请求级压缩：provider 报 `PROVIDER_CONTEXT_OVERFLOW` 且有可遮蔽内容 → 恰一条 `compaction/summary` + 重试一次 + 回合正常继续。seam ①（`tests/test_turn_compaction.py`——同 3.1，`test_context_budget.py` 不开新缝）
+- [x] 4.4 无可遮蔽或重试仍失败 → 不写 `compaction/summary`、塌成溢出、没有 `error/model`。seam ①（`tests/test_turn_compaction.py`；「无可遮蔽」那半由既有判据 `test_a_provider_reported_overflow_collapses_into_the_same_result` 守着）
 
 ## 5. replay 的扫描逻辑下沉（ADR-0002 第 3 条）
 

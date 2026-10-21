@@ -60,6 +60,9 @@ STOP_FENCE_DENIED = "FENCE_DENIED"
 STOP_CONTEXT_WINDOW_EXCEEDED = "CONTEXT_WINDOW_EXCEEDED"
 STOP_REASONS: frozenset[str] = frozenset(get_args(StopReason))
 
+# provider 失败码里只有这一种触发请求级压缩与一次重试（ADR-0019）。
+PROVIDER_CONTEXT_OVERFLOW = "PROVIDER_CONTEXT_OVERFLOW"
+
 # 同一回合里同时在跑的只读调用上限；会改动文件的调用不吃这个额度，它们串行。
 MAX_PARALLEL_TOOLS = 8
 
@@ -515,6 +518,86 @@ async def _context_overflow(
     )
 
 
+@dataclass(frozen=True)
+class _RetriedRequest:
+    """请求级压缩之后重试拿回的那一次调用：结果连同它带回的重试事实。"""
+
+    generated: AssistantTurn
+    retry_events: list[tuple[str, dict[str, Any]]]
+
+
+async def _recover_overflowed_request(
+    *,
+    log: EventLog,
+    turn_id: str,
+    turns: int,
+    settings: SessionSettings,
+    provider: Provider,
+    registry: ToolRegistry,
+    cancel: asyncio.Event,
+    events: Sequence[EventRecord],
+    context: AssembledContext,
+    failure: ProviderFailure,
+    retry_events: Sequence[tuple[str, dict[str, Any]]],
+) -> _RetriedRequest | SegmentOutcome:
+    """provider 报出上下文超限时先压一次、再重试一次，上限 1 次（ADR-0019）。
+
+    照 DSH 的 `agent/request-error`：只有上下文超限这一种失败触发这种重试，上限是它的
+    `maxOverflowRetries` 默认 1。压不动（没有可遮蔽的内容）就直接把原失败塌成溢出；
+    重试仍报同一失败也一样塌。两条路都不写 `error/model`。
+    """
+    compacted = await _compact_if_over_line(
+        log=log,
+        turn_id=turn_id,
+        settings=settings,
+        provider=provider,
+        cancel=cancel,
+        events=events,
+        context=context,
+    )
+    if isinstance(compacted, (LogWriteFailure, LogReadFailure)):
+        return _segment_failure(compacted, turns)
+    if isinstance(compacted, ProviderFailure):
+        return await _provider_error(log, turn_id, compacted, turns, [])
+
+    reread = read_events(log.path)
+    if isinstance(reread, LogReadFailure):
+        return _segment_failure(reread, turns)
+    # `_compact_if_over_line` 的 `None` 只说「没失败」：真压没压要看日志里这条回合的摘要记录。
+    compacted_here = any(
+        event.type == "compaction/summary" and event.payload.get("turn_id") == turn_id
+        for event in reread
+    )
+    if not compacted_here:
+        return await _context_overflow(
+            log,
+            turn_id,
+            turns,
+            f"provider 报出上下文超限且无可遮蔽的内容：{failure.detail}",
+            retry_events,
+        )
+
+    folded = fold(reread)
+    tool_names = [spec.name for spec in registry.specs()]
+    written = _append_all(log, [("model/request", {"turn_id": turn_id, "tools": tool_names})])
+    if written is not None:
+        return _segment_failure(written, turns)
+
+    generated = await provider.generate(folded.messages, registry.specs(), cancel)
+    attempts = _retry_events(turn_id, generated)
+    if isinstance(generated, ProviderFailure):
+        if generated.code == PROVIDER_CONTEXT_OVERFLOW:
+            return await _context_overflow(
+                log,
+                turn_id,
+                turns,
+                f"请求级压缩之后 provider 仍报上下文超限：{generated.detail}",
+                attempts,
+            )
+        return await _provider_error(log, turn_id, generated, turns, attempts)
+    return _RetriedRequest(generated=generated, retry_events=attempts)
+
+
 async def _compact_if_over_line(
     *,
     log: EventLog,
@@ -726,16 +809,27 @@ async def _run_turns(
         # 重试事实由 provider 带回、由循环写进日志：provider 不碰日志（不变量 A）。
         retry_events = _retry_events(turn_id, generated)
         if isinstance(generated, ProviderFailure):
-            if generated.code == "PROVIDER_CONTEXT_OVERFLOW":
-                # provider 报出的超限与估算兜底是同一个结果（不变量 D）：不写 `error/model`。
-                return await _context_overflow(
-                    log,
-                    turn_id,
-                    turns,
-                    f"provider 报出上下文超限：{generated.detail}",
-                    retry_events,
+            if generated.code == PROVIDER_CONTEXT_OVERFLOW:
+                # provider 报出的超限先压一次再重试一次；救不动时与估算兜底同一个结果
+                # （不变量 D）：不写 `error/model`。
+                recovered = await _recover_overflowed_request(
+                    log=log,
+                    turn_id=turn_id,
+                    turns=turns,
+                    settings=settings,
+                    provider=provider,
+                    registry=registry,
+                    cancel=cancel,
+                    events=events,
+                    context=context,
+                    failure=generated,
+                    retry_events=retry_events,
                 )
-            return await _provider_error(log, turn_id, generated, turns, retry_events)
+                if isinstance(recovered, SegmentOutcome):
+                    return recovered
+                generated, retry_events = recovered.generated, recovered.retry_events
+            if isinstance(generated, ProviderFailure):
+                return await _provider_error(log, turn_id, generated, turns, retry_events)
 
         failure = _append_all(
             log,
