@@ -5,7 +5,7 @@
 
 #### Scenario: 两条输入一份日志
 - **WHEN** 一次 chat 里人输入两条内容后结束会话
-- **THEN** 只创建一份 session 日志，里面恰有一条 `session/start` 与一条 `session/end`，两条输入各是一条 `user/message`
+- **THEN** 只创建一份 session 日志，里面恰有一条 `session/start` 与一条 `session/end`，两条输入各开一个段
 
 #### Scenario: chat 与 run 共用配置层叠
 - **WHEN** 工作区根写着 `max_turns = 2` 与 `tools = ["read"]`，执行 `minihns chat`
@@ -16,36 +16,36 @@
 - **THEN** 退出码为 2、stderr 指出变量名，且没有创建任何 session 日志
 
 ### Requirement: REPL 的每条输入是一条 user/message
-系统 SHALL 把 REPL 里每一条非空输入写成一条 `user/message` 记录，payload 含 `turn_id`（该输入开启的那个回合段的第一个回合）与 `content`（原文），位置在该段的 `turn/start` 之后、该段的 `context/assembled` 之前。空输入 MUST NOT 产生记录，也 MUST NOT 开启回合段。REPL 的 `session/start.payload.prompt` MUST 是空串：一个会话的人话只住在 `user/message` 里。
+系统 SHALL 把 REPL 里每一条非空输入写成一条 `user/message` 记录，payload 含 `segment_id`（该输入开启的那个段）与 `content`（原文），位置在该段的 `segment/start` 之后、该段的第一个 `turn/start` 之前。空输入 MUST NOT 产生记录，也 MUST NOT 开启段。REPL 的 `session/start.payload.prompt` MUST 是空串：一个会话的人话只住在 `user/message` 里。
 
 #### Scenario: 输入按顺序折成 user 消息
 - **WHEN** 一次 chat 有两条输入
 - **THEN** 第二次输入时的折叠结果里，对话体中恰有两条 `role` 为 `user` 的消息，顺序与输入顺序一致
 
-#### Scenario: 空输入不开回合
+#### Scenario: 空输入不开段
 - **WHEN** 人在提示符上只提交空白内容
-- **THEN** 日志里没有新的 `user/message`，也没有新的 `turn/start`
+- **THEN** 日志里没有新的 `user/message`，也没有新的 `segment/start`
 
-### Requirement: 每条输入是一个回合段，段内上限是 max_turns
-系统 SHALL 把一条输入展开成一个回合段：段内回合数上限是有效 `max_turns`（默认 8），`turn_id` 在整个会话里连续编号（`t1`、`t2`…）且 MUST NOT 跨段重置。一段用完 `max_turns` MUST NOT 结束会话，系统 SHALL 回到提示符等下一条输入。
+### Requirement: 每条输入是一个段，段内上限是 max_turns
+系统 SHALL 让一条输入开一个段（`segment/start` … `segment/end`，见 `turn-loop`）：段内回合数上限是有效 `max_turns`（默认 8），`segment_id` 与 `turn_id` 都在整个会话里连续编号且 MUST NOT 跨段重置。一段用完 `max_turns` MUST NOT 结束会话，系统 SHALL 回到提示符等下一条输入，下一条输入照样有完整的 `max_turns` 额度。
 
 #### Scenario: 段用完上限会话继续
 - **WHEN** 一条输入的段跑满了 `max_turns = 2`
-- **THEN** 该段有两个 `turn/end`、最后一个 `stop_reason` 是 `MAX_TURNS`、日志里没有 `session/end`，下一条输入开启 `t3`
+- **THEN** 该段有两个 `turn/end`、`segment/end` 的 `stop_reason` 是 `MAX_TURNS` 且 `turns` 为 2、日志里没有 `session/end`，下一条输入开 `s2` 并从 `t3` 起编号
 
-#### Scenario: turn_id 跨段连续
+#### Scenario: 两个编号都在会话内连续
 - **WHEN** 一次 chat 跑两个段共 5 个回合
-- **THEN** 日志里 `turn_id` 恰为 `t1` 至 `t5`，每个恰对应一条 `turn/start` 与一条 `turn/end`
+- **THEN** 日志里 `segment_id` 恰为 `s1` 与 `s2`，`turn_id` 恰为 `t1` 至 `t5`，每个 `turn_id` 恰对应一条 `turn/start` 与一条 `turn/end`
 
 ### Requirement: REPL 里取消终止当前段而不是会话
-当回合段进行中收到取消信号时，系统 SHALL 按既有的回合级取消形状收尾（`error/abort` 与 `turn/end`（`stop_reason: ABORTED`））并 MUST NOT 写 `session/end`，会话 SHALL 回到提示符等下一条输入。当没有回合段在跑时收到取消信号，系统 SHALL 结束会话：写 `session/end`（`stop_reason: MODEL_COMPLETED`）、退出码 0。
+当段进行中收到取消信号时，系统 SHALL 按既有的回合级取消形状收尾（`error/abort`、`turn/end`（`stop_reason: ABORTED`）与 `segment/end`（`stop_reason: ABORTED`））并 MUST NOT 写 `session/end`，会话 SHALL 回到提示符等下一条输入。当没有段在跑时收到取消信号，系统 SHALL 结束会话：写 `session/end`（`stop_reason: MODEL_COMPLETED`）、退出码 0。
 
 #### Scenario: 段中取消会话继续
-- **WHEN** 一个回合段进行中收到 SIGINT
-- **THEN** 该段以 `error/abort` 与 `turn/end`（`stop_reason: ABORTED`）收尾，日志里没有 `session/end`，进程不退出
+- **WHEN** 一个段进行中收到 SIGINT
+- **THEN** 该段以 `error/abort`、`turn/end`（`stop_reason: ABORTED`）与 `segment/end`（`stop_reason: ABORTED`）收尾，日志里没有 `session/end`，进程不退出
 
 #### Scenario: 提示符上取消是正常收尾
-- **WHEN** 没有回合在跑时收到 SIGINT
+- **WHEN** 没有段在跑时收到 SIGINT
 - **THEN** 日志以 `session/end`（`stop_reason: MODEL_COMPLETED`）收尾，退出码为 0
 
 ### Requirement: chat 在 stdin 不是终端时照跑
@@ -53,11 +53,11 @@
 
 #### Scenario: 管道喂行
 - **WHEN** stdin 是管道且含两行非空内容
-- **THEN** 日志里有两条 `user/message`，会话以 `session/end` 收尾，退出码为 0
+- **THEN** 日志里有两条 `user/message` 与两个段，会话以 `session/end` 收尾，退出码为 0
 
 #### Scenario: 空 stdin 也是合法会话
 - **WHEN** stdin 立刻 EOF
-- **THEN** 日志里只有 `session/start` 与 `session/end`，没有任何 `turn/start`，退出码为 0
+- **THEN** 日志里只有 `session/start` 与 `session/end`，没有任何 `segment/start` 与 `turn/start`，退出码为 0
 
 ### Requirement: chat 的 stdout 只打印模型回复正文
 系统 SHALL 在 stdout 上按发生顺序打印每条 `model/response` 的 `content` 原文，并打印一行固定提示符；MUST NOT 打印工具结果、`context/assembled` 或日志的其它投影。

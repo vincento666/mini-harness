@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: 折叠产出形状为受保护头部加保留尾部
-系统 SHALL 把受保护头部（内置系统提示 + 工具块 + 追加文本）放在折叠结果最前，其后按事件发生顺序保留对话体：`role` 为 `user` 的消息有两个来源——一次性 `run` 的 `session/start` payload 里的 prompt（对话体第一条），以及 REPL 的 `user/message` 记录（按 `seq` 顺序进对话体）。随后是 assistant 消息与工具结果消息。`user/message` 与其它正文记录一样可进遮蔽范围。被 `compaction/summary` 遮蔽的记录不进入对话体（见「遮蔽范围由 compaction/summary 记录定义」）。
+系统 SHALL 把受保护头部（内置系统提示 + 工具块 + 追加文本）放在折叠结果最前，其后按事件发生顺序保留对话体：`role` 为 `user` 的消息有两个来源——一次性 `run` 的 `session/start` payload 里的 prompt（对话体第一条），以及 REPL 的 `user/message` 记录（按 `seq` 顺序进对话体）。随后是 assistant 消息与工具结果消息。`user/message` 与其它正文记录一样可进遮蔽范围。`segment/start` 与 `segment/end` 与 `turn/*` 一样是记账记录，MUST NOT 产出上下文里的消息，遮蔽它们对折叠结果没有效果。被 `compaction/summary` 遮蔽的记录不进入对话体（见「遮蔽范围由 compaction/summary 记录定义」）。
 
 #### Scenario: 用户 prompt 是对话体第一条
 - **WHEN** 一次 run 的 `session/start` payload 里 `prompt` 为「写一份报告」
