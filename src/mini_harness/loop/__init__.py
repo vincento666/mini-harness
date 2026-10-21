@@ -9,6 +9,8 @@ from mini_harness.loop.settings import (
     SessionSettings,
 )
 from mini_harness.loop.turn_loop import (
+    ENTRY_CHAT,
+    ENTRY_RUN,
     STOP_ABORTED,
     STOP_CONTEXT_WINDOW_EXCEEDED,
     STOP_FENCE_DENIED,
@@ -30,6 +32,8 @@ __all__ = [
     "APPROVAL_MODES",
     "DEFAULT_RESERVE",
     "DEFAULT_WINDOW",
+    "ENTRY_CHAT",
+    "ENTRY_RUN",
     "SANDBOX_LEVELS",
     "STOP_ABORTED",
     "STOP_CONTEXT_WINDOW_EXCEEDED",

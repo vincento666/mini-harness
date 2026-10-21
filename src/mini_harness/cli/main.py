@@ -10,6 +10,7 @@ import os
 import signal
 import sys
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from types import FrameType
 from typing import Any, NoReturn
@@ -26,6 +27,7 @@ from mini_harness.events import EventLog, LogReadFailure, LogWriteFailure, read_
 from mini_harness.events.fold import assembled_payload, assembly_points, fold
 from mini_harness.loop import (
     APPROVAL_MODES,
+    ENTRY_CHAT,
     SANDBOX_LEVELS,
     STOP_ABORTED,
     STOP_CONTEXT_WINDOW_EXCEEDED,
@@ -37,8 +39,12 @@ from mini_harness.loop import (
     STOP_TOOL_CALLS,
     ProviderEndpoint,
     RunOutcome,
+    SessionEnv,
     SessionSettings,
+    end_session,
     run_session,
+    run_turn_segment,
+    start_session,
 )
 from mini_harness.provider import FixtureLoadFailure, load_fixture_provider
 from mini_harness.provider.contract import Provider
@@ -79,29 +85,42 @@ class _ArgumentParser(argparse.ArgumentParser):
         raise SystemExit(EXIT_INVALID_ARGUMENT)
 
 
+def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
+    """`run` 与 `chat` 共用同一份 flag。
+
+    可配字段的 flag 默认值一律是 `None` 哨兵：内置默认只住在 `loop/settings.py`（design D2）。
+    """
+    parser.add_argument("--config", default=None)
+    parser.add_argument("--workspace", default=None)
+    parser.add_argument("--session-dir", default=None)
+    parser.add_argument("--provider", default=None)
+    parser.add_argument("--fixture", default=None)
+    parser.add_argument("--base-url", default=None)
+    parser.add_argument("--model", default=None)
+    parser.add_argument("--api-key-env", default=None)
+    parser.add_argument("--max-turns", type=int, default=None)
+    parser.add_argument("--window", type=int, default=None)
+    parser.add_argument("--reserve", type=int, default=None)
+    parser.add_argument("--append-system-prompt", default=None)
+    parser.add_argument("--sandbox", choices=SANDBOX_LEVELS, default=None)
+    parser.add_argument("--yes", action="store_true")
+
+
 def build_parser() -> argparse.ArgumentParser:
     """构造顶层解析器。"""
     parser = _ArgumentParser(prog="minihns", description="mini-harness：headless agent harness")
     subcommands = parser.add_subparsers(dest="command", required=True)
 
-    run = subcommands.add_parser("run", help="跑完一个 session")
-    # 可配字段的 flag 默认值一律是 `None` 哨兵：内置默认只住在 `loop/settings.py`（design D2）。
+    shared = _ArgumentParser(add_help=False)
+    _add_shared_flags(shared)
+
+    run = subcommands.add_parser("run", help="跑完一个 session", parents=[shared])
     run.add_argument("-p", "--prompt", default=None)
-    run.add_argument("--config", default=None)
-    run.add_argument("--workspace", default=None)
-    run.add_argument("--session-dir", default=None)
-    run.add_argument("--provider", default=None)
-    run.add_argument("--fixture", default=None)
-    run.add_argument("--base-url", default=None)
-    run.add_argument("--model", default=None)
-    run.add_argument("--api-key-env", default=None)
-    run.add_argument("--max-turns", type=int, default=None)
-    run.add_argument("--window", type=int, default=None)
-    run.add_argument("--reserve", type=int, default=None)
-    run.add_argument("--append-system-prompt", default=None)
     run.add_argument("--events", choices=("jsonl",), default=None)
-    run.add_argument("--sandbox", choices=SANDBOX_LEVELS, default=None)
-    run.add_argument("--yes", action="store_true")
+
+    # `chat` 没有 `-p/--prompt`，也没有 `--events`：一个会话的人话从 stdin 按行进来，
+    # stdout 上只有模型回复正文与提示符（chat-repl 规格）。
+    subcommands.add_parser("chat", help="跑一个连续会话的 REPL", parents=[shared])
 
     replay = subcommands.add_parser("replay", help="重放一个 session 的日志")
     replay.add_argument("session_id")
@@ -155,12 +174,22 @@ async def _await_session(
         signal.signal(signal.SIGINT, previous)
 
 
-def _run(args: argparse.Namespace) -> int:
-    prompt: str | None = args.prompt
-    fixture: str | None = args.fixture
+@dataclass(frozen=True)
+class _Prepared:
+    """装配好的会话材料：`run` 与 `chat` 共用同一条装配路（design D1）。"""
 
-    if prompt is None or prompt == "":
-        return _report_failure("INVALID_ARGUMENT", "-p/--prompt 必填且非空", EXIT_INVALID_ARGUMENT)
+    provider: Provider
+    settings: SessionSettings
+    log: EventLog
+    registry: ToolRegistry
+
+
+def _prepare_or_fail(args: argparse.Namespace) -> _Prepared | int:
+    """参数校验 → 配置层叠 → 装配 → 开日志：`run` 与 `chat` 走同一条路。
+
+    失败当场打成 stderr 并返回退出码；所有失败都在 session 日志创建之前（cli 规格）。
+    """
+    fixture: str | None = args.fixture
     # 配置文件发现用的工作区是「`--workspace` 或当前目录」这一层，不来自配置文件（design D7）。
     discovery_workspace = Path(args.workspace) if args.workspace is not None else Path.cwd()
     config: dict[str, Any] = {}
@@ -278,9 +307,25 @@ def _run(args: argparse.Namespace) -> int:
         reserve=layered.reserve,
         endpoint=endpoint,
     )
+    return _Prepared(provider=provider, settings=settings, log=log, registry=registry)
+
+
+def _run(args: argparse.Namespace) -> int:
+    """一次性 run：装配、跑内核、把结果映射成退出码。"""
+    prompt: str | None = args.prompt
+    if prompt is None or prompt == "":
+        return _report_failure("INVALID_ARGUMENT", "-p/--prompt 必填且非空", EXIT_INVALID_ARGUMENT)
+    prepared = _prepare_or_fail(args)
+    if isinstance(prepared, int):
+        return prepared
+
     outcome = asyncio.run(
         _await_session(
-            prompt=prompt, provider=provider, settings=settings, log=log, registry=registry
+            prompt=prompt,
+            provider=prepared.provider,
+            settings=prepared.settings,
+            log=prepared.log,
+            registry=prepared.registry,
         )
     )
 
@@ -291,7 +336,7 @@ def _run(args: argparse.Namespace) -> int:
         )
 
     if args.events == "jsonl":
-        for line in log.path.read_text(encoding="utf-8").splitlines():
+        for line in prepared.log.path.read_text(encoding="utf-8").splitlines():
             if line.strip():
                 print(line)
     else:
@@ -303,6 +348,123 @@ def _run(args: argparse.Namespace) -> int:
             outcome.failure_code or outcome.stop_reason, outcome.detail, exit_code
         )
     return exit_code
+
+
+_CHAT_PROMPT = "> "
+
+
+@dataclass
+class _ChatSignals:
+    """Ctrl-C 的落点：段在跑就取消那个段，没有段在跑就结束会话（design D7）。"""
+
+    active: asyncio.Event | None = None
+
+
+def _chat_sigint_handler(signals: _ChatSignals) -> Callable[[int, FrameType | None], None]:
+    def handle(signum: int, frame: FrameType | None) -> None:
+        if signals.active is not None:
+            # 段在跑：取消当前段，会话继续。
+            signals.active.set()
+            return
+        # 提示符上：没有段在跑，Ctrl-C 与 EOF 同一条路。
+        raise KeyboardInterrupt
+
+    return handle
+
+
+def _print_new_replies(log: EventLog, printed: int) -> int | LogReadFailure:
+    """把日志里新增的模型回复正文按发生顺序打到 stdout（design D11）。
+
+    stdout 是日志的一个投影，不是第二真源：读回来打，内核就不需要知道有人在看着。
+    带 `purpose` 的那次 `model/response` 是请求级压缩的内部摘要，不是给人的回复，不打。
+    """
+    events = read_events(log.path)
+    if isinstance(events, LogReadFailure):
+        return events
+    seen = 0
+    for event in events:
+        if event.type != "model/response" or "purpose" in event.payload:
+            continue
+        seen += 1
+        if seen > printed:
+            print(str(event.payload.get("content", "")))
+    return seen
+
+
+async def _chat_session(prepared: _Prepared) -> int:
+    """读一行、开一个段、回到提示符；EOF 或提示符上的 Ctrl-C 收尾整个会话。"""
+    env = SessionEnv(
+        provider=prepared.provider,
+        log=prepared.log,
+        registry=prepared.registry,
+        settings=prepared.settings,
+    )
+    started = start_session(prompt="", entry=ENTRY_CHAT, env=env)
+    if started is not None:
+        return _report_failure(
+            started.failure_code or started.stop_reason, started.detail, EXIT_INTERNAL_ERROR
+        )
+
+    signals = _ChatSignals()
+    previous = signal.getsignal(signal.SIGINT)
+    signal.signal(signal.SIGINT, _chat_sigint_handler(signals))
+    segments = 0
+    turn_index = 1
+    printed = 0
+    try:
+        while True:
+            print(_CHAT_PROMPT)
+            line = sys.stdin.readline()
+            if line == "":
+                # EOF：会话正常收尾。
+                break
+            text = line.strip()
+            if not text:
+                # 空白输入不写记录，也不开段。
+                continue
+            segments += 1
+            cancel = asyncio.Event()
+            signals.active = cancel
+            try:
+                segment = await run_turn_segment(
+                    env=env,
+                    segment_id=f"s{segments}",
+                    first_turn_index=turn_index,
+                    cancel=cancel,
+                    user_message=text,
+                )
+            finally:
+                signals.active = None
+            if segment.stop_reason not in STOP_REASONS:
+                # 内核坏了：不再回到提示符，按内部错误收尾。
+                return _report_failure(
+                    segment.failure_code or segment.stop_reason, segment.detail, EXIT_INTERNAL_ERROR
+                )
+            turn_index += segment.turns
+            replies = _print_new_replies(prepared.log, printed)
+            if isinstance(replies, LogReadFailure):
+                return _report_failure(replies.code, replies.detail, EXIT_INTERNAL_ERROR)
+            printed = replies
+    except KeyboardInterrupt:
+        # 提示符上的 Ctrl-C：与 EOF 同一条路，写 `session/end`、退出码 0。
+        pass
+    finally:
+        signal.signal(signal.SIGINT, previous)
+
+    ended = end_session(env=env, stop_reason=STOP_MODEL_COMPLETED, turns=turn_index - 1)
+    if ended is not None:
+        return _report_failure(
+            ended.failure_code or ended.stop_reason, ended.detail, EXIT_INTERNAL_ERROR
+        )
+    return EXIT_OK
+
+
+def _chat(args: argparse.Namespace) -> int:
+    """一个会话的 REPL：装配与 run 同一条路，之后只多「读行」这一件事。"""
+    prepared = _prepare_or_fail(args)
+    if isinstance(prepared, int):
+        return prepared
+    return asyncio.run(_chat_session(prepared))
 
 
 def _replay(args: argparse.Namespace) -> int:
@@ -345,7 +507,8 @@ def _replay(args: argparse.Namespace) -> int:
 
 
 def _reconfigure_streams() -> None:
-    for stream in (sys.stdout, sys.stderr):
+    # stdin 也算：`chat` 按行读人的输入，编码不能看运行环境的脸色。
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
         if isinstance(stream, io.TextIOWrapper):
             stream.reconfigure(encoding="utf-8")
 
@@ -357,6 +520,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "run":
         return _run(args)
+    if args.command == "chat":
+        return _chat(args)
     return _replay(args)
 
 

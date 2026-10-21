@@ -13,6 +13,7 @@ from mini_harness.config import build_registry
 from mini_harness.events import EventLog, EventRecord, read_events
 from mini_harness.events.fold import fold
 from mini_harness.loop import (
+    ENTRY_RUN,
     ProviderEndpoint,
     RunOutcome,
     SessionSettings,
@@ -87,7 +88,7 @@ async def test_two_segments_number_segments_and_turns_continuously(tmp_path: Pat
         max_turns=3,
     )
 
-    assert start_session(prompt="第一条输入", env=env) is None
+    assert start_session(prompt="第一条输入", entry=ENTRY_RUN, env=env) is None
     first = await run_turn_segment(
         env=env, segment_id="s1", first_turn_index=1, cancel=asyncio.Event()
     )

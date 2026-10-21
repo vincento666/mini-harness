@@ -7,7 +7,7 @@ from pathlib import Path
 
 from mini_harness.events import EventRecord, read_events
 from mini_harness.events.fold import TOOL_OUTCOME_UNKNOWN
-from mini_harness.loop import run_turn_segment, start_session
+from mini_harness.loop import ENTRY_RUN, run_turn_segment, start_session
 from mini_harness.provider import FixtureProvider, ProviderFailure
 from mini_harness.tools import ToolRegistry
 from tool_harness import build_session_env, run_fixture_session, run_session_fixture
@@ -174,7 +174,7 @@ async def test_an_overflow_closes_the_segment_not_the_session(tmp_path: Path) ->
         max_turns=4,
     )
 
-    assert start_session(prompt="任务", env=env) is None
+    assert start_session(prompt="任务", entry=ENTRY_RUN, env=env) is None
     segment = await run_turn_segment(
         env=env, segment_id="s1", first_turn_index=1, cancel=asyncio.Event()
     )

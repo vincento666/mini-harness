@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: minihns chat 是一个会话的 REPL
-系统 SHALL 提供 `minihns chat`：与 `minihns run` 共用同一份参数表、同一套配置层叠与同一个内核入口，跑一个**连续会话**——一次 chat 恰有一份 session 日志、恰有一个 `session_id`，`session/start` 在第一条输入之前写出，`session/end` 只在会话收尾时写出。会话是否继续由**入口**决定，内核 MUST NOT 知道 REPL 的存在（ADR-0011）。`session/start` 的 payload 里 `entry` 为 `chat`、`prompt` 为空串。
+系统 SHALL 提供 `minihns chat`：与 `minihns run` 共用同一份参数表、同一套配置层叠与同一个内核入口——`chat` 只少两个 flag：没有 `-p/--prompt`（人话从 stdin 按行进来），也没有 `--events`（stdout 上只有模型回复正文与提示符）。它跑一个**连续会话**：一次 chat 恰有一份 session 日志、恰有一个 `session_id`，`session/start` 在第一条输入之前写出，`session/end` 只在会话收尾时写出。会话是否继续由**入口**决定，内核 MUST NOT 知道 REPL 的存在（ADR-0011）。`session/start` 的 payload 里 `entry` 为 `chat`、`prompt` 为空串。
 
 #### Scenario: 两条输入一份日志
 - **WHEN** 一次 chat 里人输入两条内容后结束会话
@@ -60,11 +60,15 @@
 - **THEN** 日志里只有 `session/start` 与 `session/end`，没有任何 `segment/start` 与 `turn/start`，退出码为 0
 
 ### Requirement: chat 的 stdout 只打印模型回复正文
-系统 SHALL 在 stdout 上按发生顺序打印每条 `model/response` 的 `content` 原文，并打印一行固定提示符；MUST NOT 打印工具结果、`context/assembled` 或日志的其它投影。
+系统 SHALL 在 stdout 上按发生顺序打印每条**不带 `purpose`** 的 `model/response` 的 `content` 原文，并打印一行固定提示符；MUST NOT 打印工具结果、`context/assembled` 或日志的其它投影。带 `purpose` 的那次 `model/response` 是请求级压缩产出的内部摘要，不是给人的回复。
 
 #### Scenario: 工具结果不上 stdout
 - **WHEN** 一个回合派发一次 `read` 并拿到结果
 - **THEN** stdout 里没有出现该工具结果的内容，只有模型回复正文与提示符
+
+#### Scenario: 请求级压缩的摘要不上 stdout
+- **WHEN** 一次请求级压缩写出带 `purpose` 的 `model/response`
+- **THEN** stdout 里没有那条摘要的内容
 
 #### Scenario: 收尾不打印日志
 - **WHEN** 一次 chat 正常结束

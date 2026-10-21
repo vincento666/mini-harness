@@ -7,7 +7,7 @@ from pathlib import Path
 
 from mini_harness.events import EventRecord, read_events
 from mini_harness.events.fold import fold
-from mini_harness.loop import end_session, run_turn_segment, start_session
+from mini_harness.loop import ENTRY_RUN, end_session, run_turn_segment, start_session
 from mini_harness.provider import FixtureProvider
 from mini_harness.tools.fences import ApprovalDecision
 from tool_harness import (
@@ -440,7 +440,7 @@ async def test_a_cancel_closes_the_segment_and_the_entry_closes_the_session(tmp_
         max_turns=4,
     )
 
-    assert start_session(prompt="任务", env=env) is None
+    assert start_session(prompt="任务", entry=ENTRY_RUN, env=env) is None
     segment = await run_turn_segment(env=env, segment_id="s1", first_turn_index=1, cancel=cancel)
 
     records = read_events(log.path)

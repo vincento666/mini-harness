@@ -60,6 +60,11 @@ STOP_FENCE_DENIED = "FENCE_DENIED"
 STOP_CONTEXT_WINDOW_EXCEEDED = "CONTEXT_WINDOW_EXCEEDED"
 STOP_REASONS: frozenset[str] = frozenset(get_args(StopReason))
 
+# 哪个入口开的这个会话：`session/start.payload.entry` 只有这两个值（design D1）。
+SessionEntry = Literal["run", "chat"]
+ENTRY_RUN: SessionEntry = "run"
+ENTRY_CHAT: SessionEntry = "chat"
+
 # provider 失败码里只有这一种触发请求级压缩与一次重试（ADR-0019）。
 PROVIDER_CONTEXT_OVERFLOW = "PROVIDER_CONTEXT_OVERFLOW"
 
@@ -668,10 +673,11 @@ async def _compact_if_over_line(
     return None
 
 
-def start_session(*, prompt: str, env: SessionEnv) -> SegmentOutcome | None:
+def start_session(*, prompt: str, entry: SessionEntry, env: SessionEnv) -> SegmentOutcome | None:
     """写 `session/start`。成功返回 None，日志层坏了就返回失败结果。"""
     settings = env.settings
     start_payload: dict[str, Any] = {
+        "entry": entry,
         "workspace": str(Path(settings.workspace).resolve()),
         "provider": settings.provider_name,
         "max_turns": settings.max_turns,
@@ -701,14 +707,25 @@ def start_session(*, prompt: str, env: SessionEnv) -> SegmentOutcome | None:
 
 
 async def run_turn_segment(
-    *, env: SessionEnv, segment_id: str, first_turn_index: int, cancel: asyncio.Event
+    *,
+    env: SessionEnv,
+    segment_id: str,
+    first_turn_index: int,
+    cancel: asyncio.Event,
+    user_message: str | None = None,
 ) -> SegmentOutcome:
     """跑一个回合段：一条输入展开的那串往返。段内上限是 `max_turns`，会话级没有上限。
 
     段的边界在这里落盘——`segment/start` 在第一个 `turn/start` 之前、`segment/end` 在最后一个
     `turn/end` 之后（design D3）。这里不写 `session/end`：会话是否结束由入口决定（ADR-0011）。
+
+    `user_message` 是开启这个段的那条输入：给了就写成一条 `user/message`，落在段边界之内
+    （design D5）。不给是 `run`——它的人话住在 `session/start`（design D6 记的不对称）。
     """
-    failure = _append_all(env.log, [("segment/start", {"segment_id": segment_id})])
+    opening: list[tuple[str, dict[str, Any]]] = [("segment/start", {"segment_id": segment_id})]
+    if user_message is not None:
+        opening.append(("user/message", {"segment_id": segment_id, "content": user_message}))
+    failure = _append_all(env.log, opening)
     if failure is not None:
         return _segment_failure(failure, 0)
 
@@ -939,7 +956,7 @@ async def run_session(
         settings=settings,
         approval_gate=approval_gate,
     )
-    started = start_session(prompt=prompt, env=env)
+    started = start_session(prompt=prompt, entry=ENTRY_RUN, env=env)
     if started is not None:
         return _run_outcome(log, started)
     segment = await run_turn_segment(env=env, segment_id="s1", first_turn_index=1, cancel=cancel)
