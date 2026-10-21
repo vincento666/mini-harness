@@ -1,6 +1,6 @@
 # 记账：各里程碑留下的坏味道与设计缺口，到对应里程碑再动
 
-这一条不是待办清单的优先级排序，而是 code-review 修复轮（change `m1-event-log-and-turn-loop` 的 tasks 第 11 节）留下的**账**：审查里确认存在的重复与泄漏，M1 里改它们只会增加改动面、不会增加判据，因此只记账不动代码。任何一条到 M2 都可以按新证据改判——但改判要发生在 M2 的 change 里，不是顺手改。第 9 至 12 条来自 M2（change `m2-file-tools-and-fences`）的 `code-review` 两轴审查，第 13 至 17 条来自 M4（change `m4-real-provider`）的同一轮审查；处理方式同样是记账。M3（change `m3-bash-concurrency-timeout`）的收尾轮对第 1、8 至 17 条逐条改判，判词写在各条末尾：已处理 4 条（1、9、10、11），改判为长期形态 3 条（8、12、16），未处理推到 M5 2 条（14、15），未触发 1 条（17）。第 18 至 29 条来自 M3 的 `code-review` 两轴审查——Standards 轴确认存在但「改它不增加判据」的判断项，加两条规格 ↔ 实现的判断（第 28、29 条）——处理方式同样是记账：八条推到 M5，两条判为不动（25、27），两条按现状留着并写明何时才动（28、29）。第 30 条来自 M3 的人手验收（cmd.exe 的 GBK 输出碎成 U+FFFD），同样是记账。最后一节记提交纪律的三处措辞欠账：历史提交不改写，只把与 AGENTS.md 原文不符的地方更正在这里。它前面那节是 M8 审查轮（2026-10-20）的账：提交粒度三处超数没写打包理由、三个 docs 提交没有门禁行、派发段两条未定形状推到 M10，第 18 与 19 条改判。M5 收尾轮（2026-10-21）把写着「M5」的旧处理时点逐条核实改判：五条推到 M10（19、20、22、26、29，其中 29 的触发条件已成立）、四条推到 M6 / M7（21、24、28、30，其中 30 的条件已成立、解码选型要人裁决）、一条按「不动」结案（25）；另新记第 31 条（单条工具结果的剪枝 → M10）与第 32 条（每回合全量重读日志 → M11）。
+这一条不是待办清单的优先级排序，而是 code-review 修复轮（change `m1-event-log-and-turn-loop` 的 tasks 第 11 节）留下的**账**：审查里确认存在的重复与泄漏，M1 里改它们只会增加改动面、不会增加判据，因此只记账不动代码。任何一条到 M2 都可以按新证据改判——但改判要发生在 M2 的 change 里，不是顺手改。第 9 至 12 条来自 M2（change `m2-file-tools-and-fences`）的 `code-review` 两轴审查，第 13 至 17 条来自 M4（change `m4-real-provider`）的同一轮审查；处理方式同样是记账。M3（change `m3-bash-concurrency-timeout`）的收尾轮对第 1、8 至 17 条逐条改判，判词写在各条末尾：已处理 4 条（1、9、10、11），改判为长期形态 3 条（8、12、16），未处理推到 M5 2 条（14、15），未触发 1 条（17）。第 18 至 29 条来自 M3 的 `code-review` 两轴审查——Standards 轴确认存在但「改它不增加判据」的判断项，加两条规格 ↔ 实现的判断（第 28、29 条）——处理方式同样是记账：八条推到 M5，两条判为不动（25、27），两条按现状留着并写明何时才动（28、29）。第 30 条来自 M3 的人手验收（cmd.exe 的 GBK 输出碎成 U+FFFD），同样是记账。最后一节记提交纪律的三处措辞欠账：历史提交不改写，只把与 AGENTS.md 原文不符的地方更正在这里。它前面那节是 M8 审查轮（2026-10-20）的账：提交粒度三处超数没写打包理由、三个 docs 提交没有门禁行、派发段两条未定形状推到 M10，第 18 与 19 条改判。M5 收尾轮（2026-10-21）把写着「M5」的旧处理时点逐条核实改判：五条推到 M10（19、20、22、26、29，其中 29 的触发条件已成立）、四条推到 M6 / M7（21、24、28、30，其中 30 的条件已成立、解码选型要人裁决）、一条按「不动」结案（25）；另新记第 31 条（单条工具结果的剪枝 → M10）与第 32 条（每回合全量重读日志 → M11）。M9 审查轮（2026-10-21）先当场动三条规格 ↔ 实现的缺口（`--config` 指向目录、配置写错档位跳过工作区边界、file-tools 那条 scenario 缺判据），再新记第 38 至 45 条与提交纪律三处欠账。
 
 ## 1. `run_session` 的九个关键字参数就是 `session/start` 的 payload
 
@@ -334,3 +334,72 @@ GLOSSARY 立了「遮蔽范围」这个词，代码里它是 `dict[str, int]`（
 - `251e093` 打包了 task 7.1–7.7，跨 seam ⑥ 与 ②，**没有写打包理由**——违 AGENTS.md「一个提交最多覆盖同一 seam 上相邻的 3 个 task；超过就写明理由」。当时能写的真实理由是「7.5 与 7.7 是把组 5 已经打通的形状钉成 seam ⑥ 与 ② 的判据，拆开会产出只有断言没有实现的提交」，但这句话当时没写进提交信息。
 - `a91a2d2` 自述「组 2 的六条判据是一次写完再实现的」——违「一条判据先红、再绿，一次一个切片」。它当时已诚实写在提交信息里，且组 3 起恢复交替；记在这里是为了让下一轮不再靠自述补救。
 - 本轮（组 9）新增的两条判据里，413 那条写出来就是绿的（实现早已如此），按纪律写明它不是红绿对、是把「已经成立」钉成判据。
+
+## M9 两轴审查轮：已当场动的与八条新账（2026-10-21）
+
+同一 change 的 `code-review` 两轴（固定点 `main` = `338319e`，12 个提交）。先记已动的四条，再记账。
+
+- **`--config` 指向目录或读不动的路径**：`load_config` 原本只 catch `FileNotFoundError` 与 `tomllib.TOMLDecodeError`，指向目录走的是 `PermissionError` → traceback、退出码 1、没有 `INVALID_ARGUMENT`。违 cli delta「配置层失败都在 session 开始之前」与 config-layering「配置文件不是合法 TOML……退出码 2」。当场补 `except OSError` → `CONFIG_NOT_FOUND`（detail 指路径与原因），判据 `test_a_config_path_that_is_not_a_file_is_an_argument_error` 先红后绿。
+- **配置写错档位跳过工作区边界那一支**：`fences.py` 按 `== "read-only"` / `== "workspace-write"` / `== "ask"` 判定，所以配置里 `sandbox = "banana"` 两条都不成立、边界那一支整个跳过，**等价 `danger-full-access`**；`approval = "yolo"` 落到不问人。比 ADR-0018 原先那句「写错档位会一路走到运行期」重，已按实况改写 ADR-0018 的 Consequences。当场在 CLI 加词表判据（退出码 2、`INVALID_ARGUMENT`），词表 `SANDBOX_LEVELS` / `APPROVAL_MODES` 立在 `loop/settings.py`，argparse 的 `--sandbox` 的 `choices` 改用它（原来命令行与设置层各写一遍）。判据 `test_a_fence_level_outside_the_vocabulary_is_an_argument_error` 先红（`sandbox` 那一例 `assert 0 == 2`）后绿。
+- **file-tools delta 的 scenario「被白名单筛掉的文件工具不在工具表里」没有任何判据**：实现本来就对，判据缺一半（只有 turn-loop 的空白名单那条）。补 `test_a_builtin_tool_filtered_out_by_the_whitelist_is_unknown`（seam ①，写出来就是绿的：白名单 `["read"]` 加一次 `grep` 调用 → `UNKNOWN_TOOL`、两条 `turn/end`、`MODEL_COMPLETED`）。
+- **design D1 的签名与实况分叉**：D1 写 `layer_settings(args, config) -> SessionSettings | ConfigFailure`，实现返回新立的 `EffectiveSettings` 且永不返回 `ConfigFailure`，下界与词表判断留在 `cli/main.py`。已在 design.md 的 D1 下补一段「实现时的改判」写明形状与理由，代价记在下面第 39 条。
+
+### 38. 可配字段名四处平行列出：`add_argument` / `BUILTIN_DEFAULTS` / `SETTINGS_FIELDS` / `EffectiveSettings`
+
+13 个字段名在四处各写一遍，加一个字段要改四处，漏哪处工具看不见——`layer_settings` 用 `getattr(args, name, None)` 与 `EffectiveSettings(**values)`（`dict[str, Any]`），mypy strict 全程不拦，「键名逐字相同」只写在注释里。基线里的 Shotgun Surgery 与 Primitive Obsession 指同一处。
+
+- 记账不动的理由：正确的收法是一份字段表当唯一来源、argparse 与 dataclass 都由它生成；那要把 CLI 的参数表从声明式改成生成式，M9 的判据面不因此多一条。
+- 处理时点：**M6**（REPL 要复用同一份设置面时最疼）。
+
+### 39. `EffectiveSettings` 与 `SessionSettings` 字段高度重叠
+
+层叠产出一份、日志字段表要另一份，两份的字段几乎同名同型。基线里的 Data Clumps。
+
+- 记账不动的理由：让层叠直接产出 `SessionSettings` 会把「日志字段表」与「三层取值」绑死（design D1 的改判理由）；合并要连 `session/start.payload` 的字段表一起动。
+- 处理时点：**M6**，与第 38 条同一处收。
+
+### 40. `ConfigFailure.code` 是裸 `str`，没有 `Literal` 与词表常量
+
+六个值各有可达性判据（`test_every_config_failure_code_is_reachable`），但没有类型。与第 5 条同族（`stop_reason` / `outcome` / `role`）。
+
+- 记账不动的理由：加 `Literal` 要先决定「CLI 层的 `INVALID_ARGUMENT` / `UNKNOWN_PROVIDER` 与这六个是不是同一张词表」，而那张对外失败码表 M9 没有判它。
+- 处理时点：**M6 / M7**（失败码表要对外稳定、REPL 与 serve 要复用那张表时）。
+
+### 41. 「装配」这个词在 GLOSSARY 里是五步，在代码里只有一步住在 `config/`
+
+`config/assembly.py` 只装工具表；发现 / 层叠 / 选 provider / 建设置四步住在 `cli/main.py::_run`，`_run` 因此因四个原因被编辑（基线里的 Divergent Change + Mysterious Name）。
+
+- 记账不动的理由：M9 的判据全在 seam ② 与 ⑥，把 `_run` 的装配段抽出来不增加判据，只搬代码。
+- 处理时点：**M6**——REPL 进来时要么把 `_run` 的装配段抽进 `config/`，要么把 GLOSSARY 那个词收窄成「工具表与设置的产出」，二者取一。
+
+### 42. `build_registry(names)` 的 `names` 没说它是白名单
+
+基线里的 Mysterious Name，轻。
+
+- 处理时点：**M6** 顺手改名 `whitelist`。
+
+### 43. `_FakeEndpoint` 与 `ProviderEndpoint` 共用「端点」这个词
+
+测试里那个是一个真在监听的服务端，实现里那个是端点的三条事实。GLOSSARY 的「端点」指的是后者。
+
+- 处理时点：下次动 `tests/test_cli_provider.py` 时改名 `_FakeServer`。
+
+### 44. seam ⑥ 的配置判据里的三处重复
+
+`tests/test_cli_config.py` 19 条判据里同一串 `_cli(... --fixture HELLO_SCENARIO ...)` 出现 21 次、`INVALID_ARGUMENT` 12 次、「没有日志」19 次且两种拼法（`tmp_path.glob` 与 `(tmp_path / "sessions").glob`）；`_session_records` 在 `test_cli_config.py` 与 `test_cli_provider.py` 各一份、返回类型还不同。与第 4 条（三个测试文件各一份 `_cli`）同形。
+
+- 记账不动的理由：黑盒判据的可读性靠每条把命令行与断言写全；收成 helper 会让「哪条判据判什么」变模糊。两种「无日志」拼法里只有 6.2 那条用全树快照，那是它要钉的形状。
+- 处理时点：与第 4 条同一处收（测试面整理那一轮）。
+
+### 45. `CONFIG_FILE_NAME` 与测试里硬写的 `"mini.config.toml"` 有两个家
+
+`config/__init__.py` 导出的 `CONFIG_FILE_NAME` 与 `EffectiveSettings` 包外无人用，测试里 20 处硬写那个文件名（基线里的 Speculative Generality + Duplicated Code）。
+
+- 记账不动的理由：测试硬写文件名是刻意的——它判的是「CLI 真去找这个名字」，从常量读就等于让判据跟着实现走。真正多余的是那两个包外无人用的导出。
+- 处理时点：**M6**（有人用就用，没人用就从 `__all__` 撤掉）。
+
+### M9 审查轮的提交纪律欠账（历史提交不改写，只记账）
+
+- `22e8480`、`ada6446` 两个提交的信息里没有门禁那一行——与上面「提交纪律」那节和 M8 那节同一条规矩（四道是「一次提交算完成」的定义，不分代码与文档），本轮是第三次。
+- `7b5e6c8` 的信息自述「门禁数字记在下一条提交里」——四道确实在那个提交之前跑过，但证据不对应该提交。
+- 变异编号 1–9 跑的是受影响的三到四个测试文件，不是全量。编号 10–13 跑全量，其中层叠顺序、白名单被忽略、密钥判据、端点派生四条等于把 1–9 里的对应变异在全量下重跑了一遍；编号 2（配置层整个删掉）、8（工作区根那份不认）、9（未知名不判）三条没有全量复跑。AGENTS.md 的原文是「收尾跑一轮变异测试……跑全量测试」：收尾那轮合规，中途那九条是额外动作，记在这里以免下一轮把「定向轮」当成合规做法。

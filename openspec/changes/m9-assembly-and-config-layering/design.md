@@ -16,6 +16,8 @@
 
 **D1 装配点是一个新模块 `config/`，不是 CLI 里的一串 if。** `load_config(path) -> dict[str, Any] | ConfigFailure`、`layer_settings(args, config) -> SessionSettings | ConfigFailure`、`build_registry(names) -> ToolRegistry | ConfigFailure` 三个入口，CLI 只在 `EventLog.start` 之前调用它们并把 `ConfigFailure` 映射成 `INVALID_ARGUMENT` + 退出码 2。备选：把层叠写进 `cli/main.py`（否：M6 的 REPL 与 M7 的 serve 会各自复制一遍，正是本里程碑要消除的东西）。
 
+- **实现时的改判（M9 实现轮，`code-review` Spec 轴查出后补记）**：`layer_settings` 实际返回新立的 `EffectiveSettings`，且它不返回 `ConfigFailure`——层叠只决定「这个值取哪一层」，数值下界与词表（`max_turns ≥ 1`、`window` / `reserve ≥ 1`、`provider ∈ {mock, openai}`、`sandbox` / `approval` 的档位词表）留在 CLI 那一层判。理由：`SessionSettings` 是 `session/start.payload` 的唯一来源（ADR-0002 第 1 条的处理结果），让层叠直接产出它会把「日志字段表」与「三层取值」绑在一处，而 M6 的 REPL 要复用层叠、不复用 payload 形状。代价：`EffectiveSettings` 与 `SessionSettings` 字段高度重叠，记进 ADR-0002。
+
 **D2 「命令行显式给出」用 `default=None` 哨兵判断。** argparse 的每个可层叠开关默认值改成 `None`，内置默认只住在 `loop/settings.py`；层叠顺序 内置默认 ← 配置文件 ← 显式 flag。备选：`default=DEFAULT_WINDOW` 这类真实默认（否：「显式给了与默认相同的值」与「没给」不可区分，而 `config-layering` 的 scenario「与默认同值的命令行开关仍是显式值」判的正是这件事）。代价：`--sandbox` 的合法取值仍由 argparse `choices` 判，非法取值仍是 `INVALID_ARGUMENT` + 2，这条形状不变。
 
 **D3 配置文件用标准库 `tomllib`，非法形状是结果不是异常。** 语法错、未知键、类型不对、出现 `prompt` / `fixture` / `api_key` 都返回 `ConfigFailure(code, detail)`，detail 带键名或 TOML 的行列。备选：让 `tomllib.TOMLDecodeError` 冒到 CLI（否：不变量 B 的读法是失败也是结果；且异常里没有我们要的「哪个键」这条事实）。

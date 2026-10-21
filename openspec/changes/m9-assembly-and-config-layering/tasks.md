@@ -62,7 +62,7 @@
 - [x] 8.1 seam ⑥：`--config` 指向目录 / 读不动的路径也是参数错误——红判据 `test_a_config_path_that_is_not_a_file_is_an_argument_error`（先红：`PermissionError` traceback、退出码 1），绿法 `load_config` 加 `except OSError` → `CONFIG_NOT_FOUND`
 - [x] 8.2 seam ⑥：配置写错档位不再跳过工作区边界——红判据 `test_a_fence_level_outside_the_vocabulary_is_an_argument_error`（先红：`sandbox = "banana"` 那一例退出码 0），绿法词表 `SANDBOX_LEVELS` / `APPROVAL_MODES` 立在 `loop/settings.py`、CLI 在 session 之前判、argparse 的 `choices` 改用同一份
 - [x] 8.3 seam ①：file-tools delta 那条 scenario「被白名单筛掉的文件工具不在工具表里」补判据 `test_a_builtin_tool_filtered_out_by_the_whitelist_is_unknown`（写出来就是绿的：实现早已如此，缺的是判据）
-- [ ] 8.4 文档：design.md 的 D1 补「实现时的改判」；ADR-0018 的 Consequences 按实况改写档位那半句；ADR-0002 新记第 38–45 条与提交纪律三处欠账
+- [x] 8.4 文档：design.md 的 D1 补「实现时的改判」；ADR-0018 的 Consequences 按实况改写档位那半句；ADR-0002 新记第 38–45 条与提交纪律三处欠账
 
 ## Workflow follow-up
 
