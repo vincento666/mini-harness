@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from cli_blackbox import _cli
+from paths import WRITE_OUTSIDE_SCENARIO
 
 
 def _log_files(cwd: Path) -> list[Path]:
@@ -97,3 +98,66 @@ def test_an_empty_stdin_is_a_legal_session(tmp_path: Path) -> None:
 
     assert result.returncode == 0
     assert _types(tmp_path) == ["session/start", "session/end"]
+
+
+def test_blank_input_writes_no_record_and_opens_no_segment(tmp_path: Path) -> None:
+    """seam ⑥：空白输入既不写 `user/message`，也不开段。"""
+    fixture = _fixture(
+        tmp_path,
+        "two.json",
+        [
+            {"content": "回复一", "finish_reason": "stop"},
+            {"content": "回复二", "finish_reason": "stop"},
+        ],
+    )
+
+    result = _chat("--fixture", fixture, cwd=tmp_path, stdin_text="   \n第一条\n\n第二条\n")
+
+    assert result.returncode == 0
+    records = _records(tmp_path)
+    assert [str(record["type"]) for record in records].count("segment/start") == 2
+    messages = [record["payload"] for record in records if record["type"] == "user/message"]
+    assert [message["content"] for message in messages] == ["第一条", "第二条"]
+
+
+def test_a_segment_that_uses_up_max_turns_returns_to_the_prompt(tmp_path: Path) -> None:
+    """seam ⑥：`max_turns` 是段内上限；用完回到提示符，下一条输入额度完整、编号不重置。"""
+    entries = [
+        {
+            "content": f"第 {index} 次读",
+            "finish_reason": "tool_calls",
+            "tool_calls": [
+                {"id": f"c{index}", "name": "read", "arguments": {"file_path": "a.md"}}
+            ],
+        }
+        for index in range(1, 5)
+    ]
+    fixture = _fixture(tmp_path, "exhaust.json", entries)
+
+    result = _chat(
+        "--fixture", fixture, "--max-turns", "2", cwd=tmp_path, stdin_text="第一条\n第二条\n"
+    )
+
+    assert result.returncode == 0
+    records = _records(tmp_path)
+    segments = [record["payload"] for record in records if record["type"] == "segment/end"]
+    assert [segment["segment_id"] for segment in segments] == ["s1", "s2"]
+    assert [segment["stop_reason"] for segment in segments] == ["MAX_TURNS", "MAX_TURNS"]
+    assert [segment["turns"] for segment in segments] == [2, 2]
+    # 回合编号在整个会话里连续：第二个段从 t3 起，不重置。
+    turn_ids = [record["payload"]["turn_id"] for record in records if record["type"] == "turn/start"]
+    assert turn_ids == ["t1", "t2", "t3", "t4"]
+    assert records[-1]["type"] == "session/end"
+
+
+def test_a_segment_failure_does_not_end_the_session(tmp_path: Path) -> None:
+    """seam ⑥：围栏拒绝落在盘上，会话继续；EOF 收尾是退出码 0。"""
+    result = _chat("--fixture", str(WRITE_OUTSIDE_SCENARIO), cwd=tmp_path, stdin_text="越界写\n")
+
+    assert result.returncode == 0
+    records = _records(tmp_path)
+    types = [str(record["type"]) for record in records]
+    assert "error/fence" in types
+    assert types[-2:] == ["segment/end", "session/end"]
+    assert records[-2]["payload"]["stop_reason"] == "FENCE_DENIED"
+    assert records[-1]["payload"]["stop_reason"] == "MODEL_COMPLETED"
