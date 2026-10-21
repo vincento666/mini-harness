@@ -584,7 +584,14 @@ async def _recover_overflowed_request(
 
     folded = fold(reread)
     tool_names = [spec.name for spec in registry.specs()]
-    written = _append_all(log, [("model/request", {"turn_id": turn_id, "tools": tool_names})])
+    # 重试发出去的是遮蔽之后那份表层：快照先落，日志说的就是实际发出去的（ADR-0019）。
+    written = _append_all(
+        log,
+        [
+            ("context/assembled", assembled_payload(turn_id, folded)),
+            ("model/request", {"turn_id": turn_id, "tools": tool_names}),
+        ],
+    )
     if written is not None:
         return _segment_failure(written, turns)
 

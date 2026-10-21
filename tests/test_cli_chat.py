@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import signal
 import sys
 import time
@@ -47,6 +48,11 @@ def _fixture(cwd: Path, name: str, entries: list[dict[str, Any]]) -> str:
 
 def _chat(*args: str, cwd: Path, stdin_text: str) -> Any:
     return _cli("chat", "--provider", "mock", *args, cwd=cwd, stdin_text=stdin_text)
+
+
+def _flags(help_text: str) -> set[str]:
+    """从 `--help` 的输出里取出所有选项串：参数表比对靠这个，不靠手抄一份清单。"""
+    return set(re.findall(r"(?<![^\s])-{1,2}[a-z][a-z0-9-]*", help_text))
 
 
 def test_chat_shares_the_flag_table_and_the_layering(tmp_path: Path) -> None:
@@ -345,3 +351,36 @@ def test_an_overflowed_segment_returns_to_the_prompt(tmp_path: Path) -> None:
     ]
     assert types.count("session/end") == 1
     assert records[-1]["payload"]["stop_reason"] == "MODEL_COMPLETED"
+
+
+def test_chats_flag_table_is_runs_flag_table_minus_two(tmp_path: Path) -> None:
+    """seam ⑥：chat 的参数表就是 run 的那份减 `--prompt` 与 `--events`（task 6.1）。"""
+    run_help = _cli("run", "--help", cwd=tmp_path)
+    chat_help = _cli("chat", "--help", cwd=tmp_path)
+
+    assert run_help.returncode == 0
+    assert chat_help.returncode == 0
+    assert _flags(chat_help.stdout) == _flags(run_help.stdout) - {"-p", "--prompt", "--events"}
+
+    for rejected in (("-p", "写一份报告"), ("--prompt", "写一份报告"), ("--events", "jsonl")):
+        result = _cli("chat", *rejected, cwd=tmp_path)
+        assert result.returncode == 2
+        assert "unrecognized arguments" in result.stderr
+    assert _log_files(tmp_path) == []
+
+
+def test_a_chat_that_cannot_start_leaves_no_log(tmp_path: Path) -> None:
+    """seam ⑥：chat 的「会话开始之前失败」与 run 同一条路——退出码 2、不建日志。"""
+    result = _cli(
+        "chat",
+        "--provider",
+        "openai",
+        "--api-key-env",
+        "MINIHNS_ABSENT_KEY",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert "MINIHNS_ABSENT_KEY" in result.stderr
+    assert _log_files(tmp_path) == []

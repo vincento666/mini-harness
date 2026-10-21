@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
-### Requirement: 一条输入开一个回合段，段的边界在日志里
-系统 SHALL 把一条输入（一次性 run 的 prompt、REPL 的一条输入）展开成一个**回合段**，并把段的边界 durable 写进日志：段开始时写 `segment/start`（payload 含 `segment_id`），段结束时写 `segment/end`（payload 含 `segment_id`、该段最后一个回合的 `stop_reason`、该段实际跑掉的回合数 `turns`）。`segment_id` 在会话内连续编号（`s1`、`s2`…）且 MUST NOT 重复。一次性 `minihns run` 恰有一个段。`segment/*` MUST NOT 产出上下文里的消息。照 DSH：段的边界对应 DSH 的 `turn` 边界（`turn = phase.turn + 1` 后 `session.append("turn/start", {turn})`，编号单调且落日志），本项目的「回合」仍是 DSH 的 `step`（GLOSSARY）。
+### Requirement: 一条输入开一个段，段的边界在日志里
+系统 SHALL 把一条输入（一次性 run 的 prompt、REPL 的一条输入）展开成一个**段**，并把段的边界 durable 写进日志：段开始时写 `segment/start`（payload 含 `segment_id`），段结束时写 `segment/end`（payload 含 `segment_id`、该段最后一个回合的 `stop_reason`、该段实际跑掉的回合数 `turns`）。`segment_id` 在会话内连续编号（`s1`、`s2`…）且 MUST NOT 重复。一次性 `minihns run` 恰有一个段。`segment/*` MUST NOT 产出上下文里的消息。照 DSH：段的边界对应 DSH 的 `turn` 边界（`turn = phase.turn + 1` 后 `session.append("turn/start", {turn})`，编号单调且落日志），本项目的「回合」仍是 DSH 的 `step`（GLOSSARY）。
 
 #### Scenario: 一次 run 恰一个段
 - **WHEN** 一次 run 跑了一个回合就正常结束
@@ -33,7 +33,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: 回合数上限由 --max-turns 决定
-系统 SHALL 用 `--max-turns` 限制**一个回合段**的回合数，默认 8，取值 MUST 是 ≥ 1 的整数；非法取值 SHALL 以退出码 2 结束且在 session 开始之前失败。会话级 MUST NOT 设回合数上限：一次性 `minihns run` 恰一个段，`minihns chat` 里每条输入是一个段，段用完上限 MUST NOT 结束会话（见 `chat-repl`）。照 DSH：DSH 的交互循环对 `turn` 与 `step` 都不设轮数上限（`dsh-agent-loop` 的全部数值配置只有 `maxParallelToolCalls` 默认 10 与每 agent 的 `maxTokens`），带轮数上限的只有委派工具的 `maxRounds`（默认 256，用完返回 `budget-limited`）——那对应本项目的 seam ⑦ / M15 的「目标轮次与 `blocked`」，MUST NOT 与这里的 `max_turns` 混名。
+系统 SHALL 用 `--max-turns` 限制**一个段**的回合数，默认 8，取值 MUST 是 ≥ 1 的整数；非法取值 SHALL 以退出码 2 结束且在 session 开始之前失败。会话级 MUST NOT 设回合数上限：一次性 `minihns run` 恰一个段，`minihns chat` 里每条输入是一个段，段用完上限 MUST NOT 结束会话（见 `chat-repl`）。照 DSH：DSH 的交互循环对 `turn` 与 `step` 都不设轮数上限（`dsh-agent-loop` 的全部数值配置只有 `maxParallelToolCalls` 默认 10 与每 agent 的 `maxTokens`），带轮数上限的只有委派工具的 `maxRounds`（默认 256，用完返回 `budget-limited`）——那对应本项目的 seam ⑦ / M15 的「目标轮次与 `blocked`」，MUST NOT 与这里的 `max_turns` 混名。
 
 #### Scenario: 非法 max-turns 不产生日志
 - **WHEN** 执行 `minihns run -p "x" --max-turns 0`

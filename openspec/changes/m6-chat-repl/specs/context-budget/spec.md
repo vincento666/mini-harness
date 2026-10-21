@@ -13,6 +13,17 @@
 
 ## MODIFIED Requirements
 
+### Requirement: 触发线由固定公式给出
+系统 SHALL 用 `floor(min(W × 0.8, W − O − 65536))` 给出压缩触发线（W 是 `window`、O 是 `reserve`）；65536 是实现常量，MUST NOT 有命令行开关。该公式算出负数时触发线 SHALL 取 0——触发线对任意合法的 W 与 O 都是全函数。`W − O − 65536 ≤ 0` 的窗口组合进不了会话（接替见「窗口预算不成立的配置在 session 开始之前失败」），所以 CLI 路径上取 0 这一支走不到。
+
+#### Scenario: 默认参数下的触发线是一个可断言的数
+- **WHEN** `window` 为 128000、`reserve` 为 8192
+- **THEN** 触发线为 54272（`W − O − 65536` 比 `W × 0.8` 小）
+
+#### Scenario: 小窗口下每次装配都越线
+- **WHEN** 一次 run 的 `--window` 为 70000、`--reserve` 为 100（触发线 4364，比保留预算 11200 还小）
+- **THEN** 每一个需要装配的回合都进入压缩判定，且触发线本身是 4364 而不是负数
+
 ### Requirement: 越线时压缩发生在装配之内
 当一次装配的预算读数超过触发线时，系统 SHALL 在写出该点的 `context/assembled` 之前完成一次压缩：生成摘要、写一条 `compaction/summary`、再按新的日志前缀重新折叠。**同一次装配之内** MUST NOT 压缩多于一次；未越线的装配 MUST NOT 写 `compaction/summary`。provider 报出上下文超限触发的**请求级压缩**是另一次尝试，上限 1 次（见「provider 报出的上下文超限塌成同一个溢出结果」与 ADR-0019），不受「一次装配最多一次」约束。
 

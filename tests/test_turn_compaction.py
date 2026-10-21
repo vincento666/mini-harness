@@ -6,7 +6,7 @@ import asyncio
 from pathlib import Path
 
 from mini_harness.events import EventRecord, read_events
-from mini_harness.events.fold import TOOL_OUTCOME_UNKNOWN
+from mini_harness.events.fold import TOOL_OUTCOME_UNKNOWN, assembly_points, fold
 from mini_harness.loop import ENTRY_RUN, run_turn_segment, start_session
 from mini_harness.provider import FixtureProvider, ProviderFailure
 from mini_harness.tools import ToolRegistry
@@ -357,6 +357,36 @@ async def test_a_provider_reported_overflow_is_compacted_once_and_retried(
         "TOOL_CALLS",
         "MODEL_COMPLETED",
     ]
+
+
+async def test_the_request_level_retry_records_the_context_it_actually_sent(
+    tmp_path: Path,
+) -> None:
+    """请求级重试之前补一条 `context/assembled`：那条快照说的是重试实际发出去的那份表层。"""
+    log, _outcome = await run_session_fixture(
+        tmp_path,
+        "s-request-retry-snapshot",
+        _OverflowOnceProvider([_big_turn(), _summary_entry(), DONE_ENTRY], fail_plain_calls=(2,)),
+        max_turns=3,
+    )
+    records = read_events(log.path)
+    points = [point for point in assembly_points(records) if point.turn_id == "t2"]
+
+    assert len(points) == 2
+    for point in points:
+        following = records[len(point.prefix) + 1]
+        assert following.type == "model/request"
+        assert "purpose" not in following.payload
+    # 两条都按各自的前缀重算得出来：新形状没有给 replay 添新规则。
+    for point in points:
+        recomputed = fold(point.prefix).model_dump(mode="json")
+        payload = {key: value for key, value in point.record.payload.items() if key != "turn_id"}
+        assert recomputed == payload
+    # 第二条说的是遮蔽之后那份表层：摘要在里面，第一条里没有。
+    second = [str(message["content"]) for message in points[1].record.payload["messages"]]
+    first = [str(message["content"]) for message in points[0].record.payload["messages"]]
+    assert SUMMARY_TEXT in second
+    assert SUMMARY_TEXT not in first
 
 
 async def test_a_provider_reported_overflow_that_survives_the_retry_collapses(

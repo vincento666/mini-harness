@@ -22,3 +22,18 @@
 #### Scenario: 被遮蔽的输入不进对话体
 - **WHEN** 一条 `user/message` 落在某条 `compaction/summary` 的 `shadowed_range` 内
 - **THEN** 折叠结果里没有它对应的 `user` 消息，该摘要的 `system` 消息在表层里
+
+### Requirement: 每次模型调用前记录 context/assembled
+系统 SHALL 在每次给人跑的回合调用 Provider 之前写入一条 `context/assembled` 记录，payload 含本次进入模型的完整消息序列与头部指纹（内容哈希）。带 `purpose: compaction` 的摘要调用 MUST NOT 写这条记录：它的上下文是该回合装配点的表层再加一条固定的摘要指令。请求级压缩之后的那次重试 SHALL 在它之前再写一条 `context/assembled`，内容是遮蔽之后重新折叠的那份表层。照 DSH：一次 provider 尝试一条记录（`assistant/attempt`，`dsh-agent-loop/lib/index.js:1101-1134`），上下文记录只在表层变化之后补一条（`request/header` 只在头部变化时写，同文件 :1214-1225）。
+
+#### Scenario: 每回合恰有一条
+- **WHEN** 一次 run 跑了 N 个回合，且没有回合走到请求级重试
+- **THEN** 日志里恰有 N 条 `context/assembled`，且每条都紧接在其对应的 `model/request` 之前
+
+#### Scenario: 请求级重试之前还有一条
+- **WHEN** 某回合的模型调用得到 `PROVIDER_CONTEXT_OVERFLOW`，请求级压缩之后重试成功
+- **THEN** 该回合有两条 `context/assembled`，第二条紧接在重试那条 `model/request` 之前，它的消息序列含那条摘要、第一条不含
+
+#### Scenario: 摘要调用不写装配记录
+- **WHEN** 某回合完成了一次请求级压缩
+- **THEN** 那条带 `purpose: compaction` 的 `model/request` 之前没有 `context/assembled`

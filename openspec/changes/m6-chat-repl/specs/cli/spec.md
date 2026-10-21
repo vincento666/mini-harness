@@ -59,5 +59,5 @@
 - **THEN** 退出码为 4，且日志里有 `error/context` 记录
 
 #### Scenario: chat 的正常收尾是 0
-- **WHEN** 一次 `minihns chat` 以 EOF 结束，且其中某个回合段以 `FENCE_DENIED` 收尾
+- **WHEN** 一次 `minihns chat` 以 EOF 结束，且其中某个段以 `FENCE_DENIED` 收尾
 - **THEN** 进程退出码为 0，日志里 `error/fence` 在盘上而 `session/end` 的 `stop_reason` 是 `MODEL_COMPLETED`
