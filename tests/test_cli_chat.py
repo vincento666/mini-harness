@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import signal
+import sys
+import time
 from pathlib import Path
 from typing import Any
 
-from cli_blackbox import _cli
+import pytest
+
+from cli_blackbox import _cli, _cli_process
+from mini_harness.cli.main import _chat_sigint_handler, _ChatSignals
 from paths import WRITE_OUTSIDE_SCENARIO
 
 
@@ -126,9 +133,7 @@ def test_a_segment_that_uses_up_max_turns_returns_to_the_prompt(tmp_path: Path) 
         {
             "content": f"第 {index} 次读",
             "finish_reason": "tool_calls",
-            "tool_calls": [
-                {"id": f"c{index}", "name": "read", "arguments": {"file_path": "a.md"}}
-            ],
+            "tool_calls": [{"id": f"c{index}", "name": "read", "arguments": {"file_path": "a.md"}}],
         }
         for index in range(1, 5)
     ]
@@ -145,7 +150,9 @@ def test_a_segment_that_uses_up_max_turns_returns_to_the_prompt(tmp_path: Path) 
     assert [segment["stop_reason"] for segment in segments] == ["MAX_TURNS", "MAX_TURNS"]
     assert [segment["turns"] for segment in segments] == [2, 2]
     # 回合编号在整个会话里连续：第二个段从 t3 起，不重置。
-    turn_ids = [record["payload"]["turn_id"] for record in records if record["type"] == "turn/start"]
+    turn_ids = [
+        record["payload"]["turn_id"] for record in records if record["type"] == "turn/start"
+    ]
     assert turn_ids == ["t1", "t2", "t3", "t4"]
     assert records[-1]["type"] == "session/end"
 
@@ -160,4 +167,181 @@ def test_a_segment_failure_does_not_end_the_session(tmp_path: Path) -> None:
     assert "error/fence" in types
     assert types[-2:] == ["segment/end", "session/end"]
     assert records[-2]["payload"]["stop_reason"] == "FENCE_DENIED"
+    assert records[-1]["payload"]["stop_reason"] == "MODEL_COMPLETED"
+
+
+_WINDOWS_CTRL_C_REASON = (
+    "Windows 的 Ctrl-C 黑盒不在本项目范围：缺口沿用 M3 的边界，"
+    "记进 docs/verification/m3-bash-concurrency-timeout-manual.md"
+)
+
+
+def _wait_until_log_contains(tmp_path: Path, process: Any, marker: str, what: str) -> None:
+    """等子进程把某个标记写进日志：黑盒里的「等到它真跑到那儿」。"""
+    for _ in range(200):
+        logs = _log_files(tmp_path)
+        if logs and marker in logs[0].read_text(encoding="utf-8"):
+            return
+        time.sleep(0.1)
+    process.kill()
+    pytest.fail(f"子进程没有{what}")
+
+
+async def test_the_chat_handler_cancels_the_running_segment() -> None:
+    """seam ⑥：段在跑时 Ctrl-C 只取消当前段——这条不看平台脸色。"""
+    cancel = asyncio.Event()
+    signals = _ChatSignals(active=cancel)
+
+    _chat_sigint_handler(signals)(signal.SIGINT, None)
+    await asyncio.sleep(0)
+
+    assert cancel.is_set()
+
+
+async def test_the_chat_handler_ends_the_session_when_no_segment_is_running() -> None:
+    """seam ⑥：提示符上 Ctrl-C 是「结束会话」，不是取消——这条也不看平台脸色。"""
+    signals = _ChatSignals(active=None)
+
+    with pytest.raises(KeyboardInterrupt):
+        _chat_sigint_handler(signals)(signal.SIGINT, None)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason=_WINDOWS_CTRL_C_REASON)
+def test_sigint_mid_segment_cancels_the_segment_not_the_session(tmp_path: Path) -> None:
+    """seam ⑥：段进行中的 SIGINT 只终止当前段，进程不退出，会话回到提示符。"""
+    fixture = _fixture(
+        tmp_path,
+        "sleep.json",
+        [
+            {
+                "content": "跑一条挂很久的命令",
+                "finish_reason": "tool_calls",
+                "tool_calls": [
+                    {
+                        "id": "c1",
+                        "name": "bash",
+                        "arguments": {"command": "sleep 30", "timeout_seconds": 30},
+                    }
+                ],
+            },
+            {"content": "第二条输入的回复", "finish_reason": "stop"},
+        ],
+    )
+
+    process = _cli_process(
+        "chat",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(fixture),
+        "--yes",
+        cwd=tmp_path,
+        keep_stdin_open=True,
+    )
+    assert process.stdin is not None
+    process.stdin.write("第一条\n")
+    process.stdin.flush()
+
+    _wait_until_log_contains(tmp_path, process, '"tool/call"', "进入工具执行段")
+    process.send_signal(signal.SIGINT)
+    _wait_until_log_contains(tmp_path, process, '"segment/end"', "写出被取消段的段边界")
+
+    assert process.poll() is None, "取消当前段之后进程不该退出"
+
+    process.stdin.write("第二条\n")
+    process.stdin.flush()
+    process.communicate(timeout=30)
+
+    assert process.returncode == 0
+    records = _records(tmp_path)
+    types = [str(record["type"]) for record in records]
+    assert "error/abort" in types
+    segments = [record["payload"] for record in records if record["type"] == "segment/end"]
+    assert segments[0] == {"segment_id": "s1", "stop_reason": "ABORTED", "turns": 1}
+    # 会话还在：`session/end` 只在 stdin 关闭之后出现一次。
+    assert types.count("session/end") == 1
+    assert types[-2:] == ["segment/end", "session/end"]
+    assert records[-1]["payload"]["stop_reason"] == "MODEL_COMPLETED"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason=_WINDOWS_CTRL_C_REASON)
+def test_sigint_at_the_prompt_ends_the_session_cleanly(tmp_path: Path) -> None:
+    """seam ⑥：提示符上的 SIGINT 与 EOF 同一条路——写 `session/end`、退出码 0。"""
+    fixture = _fixture(tmp_path, "unused.json", [{"content": "不该出现", "finish_reason": "stop"}])
+
+    process = _cli_process(
+        "chat", "--provider", "mock", "--fixture", str(fixture), cwd=tmp_path, keep_stdin_open=True
+    )
+    _wait_until_log_contains(
+        tmp_path, process, '"session/start"', "在第一条输入之前写出 session/start"
+    )
+
+    process.send_signal(signal.SIGINT)
+    process.communicate(timeout=30)
+
+    assert process.returncode == 0
+    assert _types(tmp_path) == ["session/start", "session/end"]
+
+
+def test_stdout_carries_only_model_reply_text_and_the_prompt(tmp_path: Path) -> None:
+    """seam ⑥：stdout 是日志的一个投影——只有模型回复正文与提示符。"""
+    (tmp_path / "a.md").write_text("工具结果的内容不该出现在 stdout\n", encoding="utf-8")
+    fixture = _fixture(
+        tmp_path,
+        "tool.json",
+        [
+            {
+                "content": "先读一下",
+                "finish_reason": "tool_calls",
+                "tool_calls": [{"id": "c1", "name": "read", "arguments": {"file_path": "a.md"}}],
+            },
+            {"content": "这是回复正文", "finish_reason": "stop"},
+        ],
+    )
+
+    result = _chat("--fixture", fixture, cwd=tmp_path, stdin_text="读一下 a.md\n")
+
+    assert result.returncode == 0
+    assert result.stdout.splitlines() == ["> ", "先读一下", "这是回复正文", "> "]
+    assert "工具结果的内容不该出现在 stdout" not in result.stdout
+    assert "context/assembled" not in result.stdout
+
+
+def test_an_overflowed_segment_returns_to_the_prompt(tmp_path: Path) -> None:
+    """seam ⑥：溢出塌成回合级收尾，会话继续，下一条输入开新段（ADR-0019）。"""
+    fixture = _fixture(
+        tmp_path,
+        "two.json",
+        [
+            {"content": "摘要一", "finish_reason": "stop"},
+            {"content": "摘要二", "finish_reason": "stop"},
+        ],
+    )
+
+    result = _chat(
+        "--fixture",
+        fixture,
+        "--window",
+        "66000",
+        "--reserve",
+        "100",
+        "--append-system-prompt",
+        "说明" * 1000,
+        cwd=tmp_path,
+        stdin_text="第一条\n第二条\n",
+    )
+
+    assert result.returncode == 0
+    records = _records(tmp_path)
+    types = [str(record["type"]) for record in records]
+    assert types.count("error/context") == 2
+    # 溢出走自己那条路，不冒充 provider 失败。
+    assert "error/model" not in types
+    segments = [record["payload"] for record in records if record["type"] == "segment/end"]
+    assert [segment["segment_id"] for segment in segments] == ["s1", "s2"]
+    assert [segment["stop_reason"] for segment in segments] == [
+        "CONTEXT_WINDOW_EXCEEDED",
+        "CONTEXT_WINDOW_EXCEEDED",
+    ]
+    assert types.count("session/end") == 1
     assert records[-1]["payload"]["stop_reason"] == "MODEL_COMPLETED"

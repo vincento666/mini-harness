@@ -43,10 +43,10 @@
 - [x] 6.4 空白行不写记录、不开段。seam ⑥（`tests/test_cli_chat.py`）
 - [x] 6.5 段用完 `max_turns` 回到提示符：`segment/end` 的 `stop_reason` 是 `MAX_TURNS`、`turns` 为上限值，下一条输入开 `s2` 并照样有完整额度。seam ⑥（`tests/test_cli_chat.py`）
 - [x] 6.6 段级失败不退出进程：一条输入触发围栏拒绝 → `error/fence` 与 `segment/end(FENCE_DENIED)` 在盘上、会话继续、EOF 收尾退出码 0。seam ⑥（`tests/test_cli_chat.py`）
-- [ ] 6.7 段进行中 SIGINT：`error/abort` + `turn/end(ABORTED)` + `segment/end(ABORTED)`、没有 `session/end`、进程不退出（Linux runner 上跑，Windows 侧按 M3 的边界 skip）。seam ⑥（`tests/test_cli_chat.py`）
-- [ ] 6.8 提示符上 SIGINT 与 EOF 都是正常收尾：`session/end(MODEL_COMPLETED)`、退出码 0。seam ⑥（`tests/test_cli_chat.py`）
-- [ ] 6.9 stdout 只打模型回复正文与提示符，工具结果内容不出现在 stdout。seam ⑥（`tests/test_cli_chat.py`）
-- [ ] 6.10 chat 溢出后会话继续：`error/context` + `turn/end` + `segment/end(CONTEXT_WINDOW_EXCEEDED)`、没有 `session/end`、下一条输入开新段。seam ⑥（`tests/test_cli_chat.py`）
+- [x] 6.7 段进行中 SIGINT：`error/abort` + `turn/end(ABORTED)` + `segment/end(ABORTED)`、没有 `session/end`、进程不退出（Linux runner 上跑，Windows 侧按 M3 的边界 skip）。seam ⑥（`tests/test_cli_chat.py`）
+- [x] 6.8 提示符上 SIGINT 与 EOF 都是正常收尾：`session/end(MODEL_COMPLETED)`、退出码 0。seam ⑥（`tests/test_cli_chat.py`）
+- [x] 6.9 stdout 只打模型回复正文与提示符，工具结果内容不出现在 stdout。seam ⑥（`tests/test_cli_chat.py`）
+- [x] 6.10 chat 溢出后会话继续：`error/context` + `turn/end` + `segment/end(CONTEXT_WINDOW_EXCEEDED)`、没有 `session/end`、下一条输入开新段。seam ⑥（`tests/test_cli_chat.py`）
 
 ## 7. 文档与决策
 
