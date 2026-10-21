@@ -101,6 +101,8 @@ def test_two_inputs_make_one_log_two_segments_and_two_user_messages(tmp_path: Pa
     assert [message["segment_id"] for message in messages] == ["s1", "s2"]
     assert records[-1]["type"] == "session/end"
     assert records[-1]["payload"]["stop_reason"] == "MODEL_COMPLETED"
+    # `session/end.turns` 是会话跑掉的回合数，不是回合编号。
+    assert records[-1]["payload"]["turns"] == 2
 
 
 def test_an_empty_stdin_is_a_legal_session(tmp_path: Path) -> None:
@@ -111,6 +113,7 @@ def test_an_empty_stdin_is_a_legal_session(tmp_path: Path) -> None:
 
     assert result.returncode == 0
     assert _types(tmp_path) == ["session/start", "session/end"]
+    assert _records(tmp_path)[-1]["payload"]["turns"] == 0
 
 
 def test_blank_input_writes_no_record_and_opens_no_segment(tmp_path: Path) -> None:
@@ -351,6 +354,40 @@ def test_an_overflowed_segment_returns_to_the_prompt(tmp_path: Path) -> None:
     ]
     assert types.count("session/end") == 1
     assert records[-1]["payload"]["stop_reason"] == "MODEL_COMPLETED"
+
+
+def test_a_segments_summary_never_appears_on_stdout(tmp_path: Path) -> None:
+    """seam ⑥：段里真发生一次压缩时，那条摘要回复不打到 stdout。"""
+    (tmp_path / "a.md").write_text("x" * 100000, encoding="utf-8")
+    fixture = _fixture(
+        tmp_path,
+        "compact.json",
+        [
+            {
+                "content": "先读一下",
+                "finish_reason": "tool_calls",
+                "tool_calls": [{"id": "c1", "name": "read", "arguments": {"file_path": "a.md"}}],
+            },
+            {"content": "那是摘要不该出现", "finish_reason": "stop"},
+            {"content": "这是回复", "finish_reason": "stop"},
+        ],
+    )
+
+    result = _chat(
+        "--fixture",
+        fixture,
+        "--window",
+        "70000",
+        "--reserve",
+        "100",
+        cwd=tmp_path,
+        stdin_text="读一下 a.md\n",
+    )
+
+    assert result.returncode == 0
+    assert "compaction/summary" in _types(tmp_path)
+    assert "那是摘要不该出现" not in result.stdout
+    assert result.stdout.splitlines() == ["> ", "先读一下", "这是回复", "> "]
 
 
 def test_chats_flag_table_is_runs_flag_table_minus_two(tmp_path: Path) -> None:

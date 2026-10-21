@@ -773,6 +773,22 @@ def test_the_default_window_and_reserve_land_in_the_session_start_payload(tmp_pa
     assert payload["reserve"] == 8192
 
 
+def test_a_run_records_which_entry_opened_the_session(tmp_path: Path) -> None:
+    """seam ⑥：`entry` 的两个值各有判据——`run` 这一半在这儿，`chat` 那一半在 `test_cli_chat.py`。"""
+    _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        cwd=tmp_path,
+    )
+
+    assert _session_start(_log_files(tmp_path)[0])["entry"] == "run"
+
+
 def test_window_and_reserve_flags_land_in_the_session_start_payload(tmp_path: Path) -> None:
     """规格 scenario「窗口与预留进 payload」。这条只看 payload：两个数都是合法取值，
     会话正常收尾；窗口小到每次装配都越线的那条判据在下面。"""
@@ -840,6 +856,31 @@ def test_a_window_that_leaves_no_pressure_budget_is_a_parameter_error(tmp_path: 
     assert "INVALID_ARGUMENT" in result.stderr
     # stderr 要点出那三个数：窗口、预留、headroom 余量。
     assert all(number in result.stderr for number in ("32768", "4096", "65536"))
+    assert _log_files(tmp_path) == []
+
+
+def test_a_window_that_leaves_exactly_zero_pressure_budget_is_a_parameter_error(
+    tmp_path: Path,
+) -> None:
+    """`W - O - 65536` 恰为 0 也是「没有剩余压力预算」：触发线 0，任何非空上下文都越线。"""
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--window",
+        "70000",
+        "--reserve",
+        "4464",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert all(number in result.stderr for number in ("70000", "4464", "65536"))
     assert _log_files(tmp_path) == []
 
 
