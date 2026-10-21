@@ -63,9 +63,9 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Context: 第 11 轮变异 `P`
 - Observation: 删掉 `_run` 的内核失败映射分支后仍 exit 1（KeyError 兜底），59 个测试全绿 —— 存活原因是**没有 CLI 黑盒测试覆盖 `LOG_WRITE_FAILED`**，而规格里它有两条 Scenario
 - Evidence: `docs/verification/m1-mutation.md`；补测试提交 `1a7c912`（抽出 `exit_code_for`）
-- Next use: 规格里每条失败路径 Scenario 都要能指到一条测试；指不到就是缺口
+- Next use: 规格里每条失败路径 Scenario 都要能指到一条测试；指不到就是缺口。同族的两条已并进来：L-017（一条规则有多个输入维度时按维度逐个变异）、L-028（规格里写死的数值与边界）
 - Promotion candidate: verifier/eval
-- Status: inbox
+- Status: inbox（家族头：L-005 失败路径 / L-017 维度 / L-028 数值与边界）
 
 ### L-006
 - Date: 2026-10-16
@@ -146,7 +146,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Evidence: `uv run ruff format --diff src tests` → exit 0 + stderr「27 files already formatted」
 - Next use: 写进 AGENTS.md 的每一条判据都要当场跑一次并记下真实输出；判据优先写成「退出码」而不是「输出长什么样」
 - Promotion candidate: 无需进 AGENTS.md（判据本身已改对）
-- Status: inbox
+- Status: closed（2026-10-20 M5 开工前消化：AGENTS.md 命令段的判据已按实测写死成「退出码」，M4 之后每轮门禁都在跑，没有待办）
 
 ### L-015
 - Date: 2026-10-17
@@ -173,7 +173,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Evidence: 存活与补测记录 `a146f8c`；变异下的红：`assert ['OK', 'OK', ... 'STALE_EDIT'] == ['OK', 'OK', 'OK', 'OK']`、`assert ['OK', 'STALE_EDIT'] == ['OK', 'WRITE_WITHOUT_READ']`
 - Next use: 一条规则有多个输入维度时，变异按维度逐个做；同一函数连续两条存活就是「只测了端点」的信号
 - Promotion candidate: AGENTS.md 流程节的变异段（若要晋升就与「一次只改一处」那句合并，不新增句子）
-- Status: inbox
+- Status: merged into L-005（2026-10-20 M5 开工前消化：同一件事——规格里的事实要有判据钉住，这条是它的「输入维度」版）
 
 ### L-018
 - Date: 2026-10-17
@@ -209,7 +209,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Evidence: 同一份脚手架三次返工：共用工作区时 `stale-edit` 报 `EDIT_TARGET_NOT_FOUND, EDIT_TARGET_NOT_FOUND`；缺收尾回合时 `io-failure` 报 exit 1；修完 11 个场景 `mismatches=0`
 - Next use: M3 的手测清单直接沿用这份的形状（场景表 + 一键脚本 + `mismatches=0`），别新写一套
 - Promotion candidate: 无需进 AGENTS.md（写验证文档的做法，细节已在 `docs/verification/`）
-- Status: inbox
+- Status: closed（2026-10-20 M5 开工前消化：那三条已在 `docs/verification/m1-m2-manual-smoke.md` 与 M8 的 `-manual.md` 里成型，M5 的 8.1 直接照现有形状写，不需要这条常驻）
 
 ### L-022
 - Date: 2026-10-18
@@ -242,7 +242,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Evidence: `.tmp/dbg_proxy.py` 三情形实测（默认 → InvalidURL；`trust_env=False` → 正常；删掉 `NO_PROXY` → 正常）；provider delta 新增「适配器不继承代理环境变量」；ADR-0006 第 2 条记代价
 - Next use: 接任何第三方网络库先问「它默认读哪些环境变量与配置文件」，并把「哪些异常类不在你的捕获族里」当成捕获契约的一部分检查
 - Promotion candidate: 无需进 AGENTS.md（已由 ADR-0006 与那条 Requirement 承载）
-- Status: inbox
+- Status: closed（2026-10-20 M5 开工前消化：`trust_env` 那条已由 ADR-0006 与「适配器不继承代理环境变量」承载；M5 只改这个适配器的失败分类，不接新库）
 
 ### L-025
 - Date: 2026-10-18
@@ -260,7 +260,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Evidence: 第一次摘要 13 行全空；改成 `foreach ($r in $recs) { $p = $r.payload; switch ($r.type) { … } }` 后同一份日志 13 行全对
 - Next use: 在 `switch` 里访问原对象一律先赋给命名变量；与 Active 5 同族——读取端把真相弄错，不是被读的东西坏了
 - Promotion candidate: 无需进 AGENTS.md（工具用法，不是项目规则）
-- Status: inbox
+- Status: merged into Active 5（2026-10-20 M5 开工前消化：与 L-022 同法并入，Active 5 已写「读也要显式 `-Encoding UTF8`」）
 
 ### M4 收尾轮的消化记录（2026-10-18，tasks 8.3）
 
@@ -284,7 +284,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Evidence: 变异下的红：`assert 45 == 30`、`assert 16401 == 16384`（16384 + 17 字节的标记）；补测提交 `e4b03ea`
 - Next use: 规格里出现数值（默认值、上限、超时、预算）就问一句「哪条判据会因为改这个数而红」；指不到就是缺口。与 L-017 同族：一条规则有多个输入维度时按维度逐个变异
 - Promotion candidate: 与 L-005 同族（「规格里每条失败路径 Scenario 都要能指到一条测试」的数值版）；本轮不占 AGENTS.md 额度
-- Status: inbox（与 L-017 同族，M5 若再出现同类就合并）
+- Status: merged into L-005（2026-10-20 M5 开工前消化：同一件事的「数值与边界」版。M5 的触发线 54272、尾部保留 16%、8192 预留都是规格里写死的数值，判据照 L-005 这一族写）
 
 ### L-029
 - Date: 2026-10-19
@@ -293,7 +293,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Evidence: `docs/verification/m3-bash-concurrency-timeout-mutation.md` 的 P1 行与「P1 的附带事实」一节；两次全量跑被手动终止
 - Next use: 任何 `asyncio` 子进程 + PIPE 的代码，收尾都要问「谁还握着这两个管道」；只杀父进程不等于执行段会返回
 - Promotion candidate: 无需进 AGENTS.md（本仓 `bash` 工具与 asyncio 的具体行为，已由 ADR-0009 与那两条判据承载）
-- Status: inbox
+- Status: closed（2026-10-20 M5 开工前消化：已由 ADR-0009 与两条判据承载；「谁还握着管道」到 M10 补协作式取消时再查那份 ADR，不常驻收件箱）
 
 ### L-030
 - Date: 2026-10-19
@@ -346,7 +346,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Evidence: `tests/test_cli_run.py` 的 `_hard_kill_a_run()`；变异 F（结果回到批次末缓冲）正是被这条判据杀死
 - Next use: M15（OS 级拦截）与任何要判「进程被硬杀之后日志什么形状」的判据都照这三条写
 - Promotion candidate: 无需进 AGENTS.md（判据写法，不是项目规则）
-- Status: inbox
+- Status: closed（2026-10-20 M5 开工前消化：那三条形状约束已在 `tests/test_cli_run.py` 的 `_hard_kill_a_run()` 里成型，M15 直接照代码写，不需要这条常驻）
 
 ### L-035
 - Date: 2026-10-20
@@ -355,7 +355,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Evidence: 本轮 tasks 7.2 的记录；`openspec validate --all --strict` 直接跑是 `Totals: 9 passed, 0 failed (9 items)`
 - Next use: OpenSpec 系列命令不加 `uv run` 前缀
 - Promotion candidate: 无需进 AGENTS.md（工具用法）
-- Status: inbox
+- Status: closed（2026-10-20 M5 开工前消化：M8 之后每轮都直接跑全局 `openspec`，M5 的 propose 轮再次确认没有再踩；AGENTS.md 命令段只列四道门禁，不占额度）
 
 ### M8 收尾轮的消化记录（2026-10-20，tasks 8.3）
 
@@ -364,6 +364,84 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 **AGENTS.md 本轮不晋升**：一进一出的额度没有空闲，而本轮三条最值钱的信号里，「守卫判据可以红着穿过中间任务」与 Active Lesson 1 同族、「确定性判据要判到清理的那条路径」与 Active Lesson 3 同族、「否定式约束要先找到能违反它的 run 形状」是 L-005 那条已晋升规则的镜像面——三条都不够新到值得挤掉现有五条里的任何一条。
 
 收件箱：15 条（L-005 / L-014 / L-017 / L-019 / L-021 / L-024 / L-025 / L-026 / L-028 / L-029 / L-031 / L-032 / L-033 / L-034 / L-035），到 15 条上限；下一个 change 收尾先消化再收。本轮关闭两条：L-027、L-030。
+
+### M5 开工前的收件箱消化（2026-10-21，apply 之前）
+
+收件箱 15 条已到上限，按收敛纪律先消化再收。本轮不是里程碑收尾：只消化，不收新条目。
+
+**合并三条**：L-017 与 L-028 并入 L-005——同一件事的三个面（失败路径 / 输入维度 / 数值与边界），L-005 做家族头；L-026 并入 Active Lesson 5（与 L-022 同法）。
+
+**关闭六条**（已被代码、规格或 ADR 自证）：L-014（AGENTS.md 命令段的判据已按实测写成退出码）、L-021（手测脚手架的三条形状已在 `docs/verification/` 成型）、L-024（ADR-0006 与「适配器不继承代理环境变量」承载）、L-029（ADR-0009 与两条判据承载，M10 补协作式取消时再查）、L-034（`tests/test_cli_run.py` 的 `_hard_kill_a_run()` 就是它的代码形状）、L-035（全局 `openspec` 已成习惯，M5 的 propose 轮确认）。
+
+**AGENTS.md 本轮不晋升（NO-PROMOTION）**：一进一出的额度没有空闲，而本轮没有新信号。L-025 的「人手验收记录分 harness 层与模型层两栏」要等 M5 的 8.1 真跑过一次真实模型再决定——凭 M4 一次观察就晋升，正是 Active Lesson 3 警告的那种「写下即绿」。
+
+留存的 6 条对 M5 直接有用，实现时照它们做：
+
+- **L-005（家族头）**：触发线 54272、尾部保留 16%、`reserve` 8192、`--window` 默认 128000 都是规格里写死的数值，每条都要指到一条「改这个数就红」的判据。
+- **L-019**：变异轮每次 `git checkout --` 之后先 read 再 edit。
+- **L-025**：8.1 的验收记录分两栏（harness 层必须一致，模型层只观察不修）。
+- **L-031**：1.1 的词表守卫判据预计红着穿过 1 到 5 组（`CONTEXT_WINDOW_EXCEEDED` 要等 5.5 才可达），每个中间提交写明哪条红、谁让它绿。
+- **L-032**：4.7 的确定性判据至少喂两份输入，其中一份的遮蔽只能靠收尾那条记录清掉。
+- **L-033**：M5 有一批否定式约束（「MUST NOT 写 `compaction/summary`」「MUST NOT 覆盖 `session/start`」「MUST NOT 拆散配对」），先找出能违反它的那个 run 形状再写判据。
+
+收件箱：6 条（L-005 / L-019 / L-025 / L-031 / L-032 / L-033），额度回到 9 条空闲。
+
+### L-036
+- Date: 2026-10-21
+- Context: M5 组 5 写 `test_overflow_when_nothing_can_be_shadowed` 里 `error/context` 的 detail 断言，8.1 人手验收时暴露
+- Observation: 那条断言写成 `assert error.payload == {"turn_id": "t1", "code": ..., "detail": error.payload["detail"]}`——待判的值同时写在两侧，恒真。人手验收读 stderr 时才看见真正的缺陷：没有发生压缩的回合，stderr 写的是「压缩之后预算读数 …」
+- Evidence: 换成两条判前缀的断言（「无可遮蔽的内容」/「压缩之后」），先红后绿；`docs/verification/m5-context-budget-compaction-manual.md` 的「这一栏里发现的一处缺陷」
+- Next use: 断言的一侧必须是常量或另一个来源的值；user-visible 文案的判据判「措辞与日志事实一致」
+- Promotion candidate: 是四规 #4「把任务写成可验证的判据」的收紧，本轮不占额度
+- Status: inbox
+
+### L-037
+- Date: 2026-10-21
+- Context: M5 变异轮准备阶段读到 `shadowed_range` 的尾部累加器
+- Observation: 把一处实现改对（`total = _record_chars(last)` → `total = _tokens(_record_chars(last))`）之后跑全量测试**283 条全绿**——没有任何判据注意到这个差别。这与 L-033 那条「变异下前 207 条全绿」是同一个信号的另一面：不只变异存活是缺口，**修复不引起任何红也是缺口**
+- Evidence: `docs/verification/m5-context-budget-compaction-mutation.md` 的「一处存活的变异变成一处真 bug」；补的判据放回变异下确认它红，再还原
+- Next use: 任何时候「修完 bug 全量全绿」都当覆盖缺口处理，补一条能区分对错的判据并确认它在旧实现下红
+- Promotion candidate: 与 AGENTS.md 变异段「存活的算覆盖缺口」同族，本轮不占额度
+- Status: inbox
+
+### L-038
+- Date: 2026-10-21
+- Context: 同 L-037，`context/budget.py` 里 `_record_chars` 与 `_tokens` 的交界处
+- Observation: 同一个累加器里混字符与 token，mypy strict 抓不到（两边都是 `int`），测试也抓不到（结果只是「遮蔽得多了一点」）。名字带单位是唯一防线，混用点必须有判据钉住
+- Evidence: `src/mini_harness/context/budget.py` 的 `total = _tokens(_record_chars(candidates[-1]))`；判据 `test_the_tail_budget_is_counted_in_tokens_not_characters`（窗口 9375 → 保留预算 1500 token，尾部 4000 字符 + 100 字符 = 1025 token 装得下 → 无可遮蔽）
+- Next use: 任何「按 token 计」的预算代码都让单位出现在名字里，并在边界值上写判据
+- Promotion candidate: 与 L-005 家族（数值与边界）同族
+- Status: inbox
+
+### L-039
+- Date: 2026-10-21
+- Context: M5 组 6 / 组 7 里那批「写出来就是绿的」守卫判据（400 的另两种形状、发生过压缩的日志逐点重放、新事件类型的词表可达）
+- Observation: 变异 6（任何 400 都算上下文超限）被三条测试杀死，其中两条正是那批绿着写出来的守卫——它们的价值到变异轮才兑现。与 L-031（守卫红着穿过中间任务）是同一件事的两面：红着写与绿着写都算数，前提是在提交信息里如实标注它不是红绿对
+- Evidence: `docs/verification/m5-context-budget-compaction-mutation.md` 变异 6；`test_a_400_with_any_other_error_code_is_still_an_http_status_result`、`test_a_400_with_an_unreadable_body_is_still_an_http_status_result`
+- Next use: 既有行为的守卫照写，提交信息里写明「这条写出来就是绿的，它是防下一步把分类改宽的守卫」
+- Promotion candidate: 与 L-031 同族，本轮不占额度
+- Status: inbox
+
+### L-040
+- Date: 2026-10-21
+- Context: M5 task 8.1 搭人手验收的工作区
+- Observation: harness 的 pwsh 子进程里，命令行上写中文路径会被编码掉：`Get-Content -Raw -Encoding UTF8 "docs\DSH逆向分析报告.md"` 报「找不到路径」，而同一个文件用 `Get-ChildItem docs -Filter 'DSH*.md'` 或内置 read / glob 工具都正常
+- Evidence: 本轮搭 `.tmp/m5-manual/ws` 时的第一次尝试
+- Next use: 命令行上不写非 ASCII 路径；要读非 ASCII 文件名就走内置工具或 ASCII 通配符
+- Promotion candidate: 工具用法，无需进 AGENTS.md
+- Status: inbox
+
+### M5 收尾轮的消化记录（2026-10-21，tasks 8.3）
+
+**关闭三条**：L-031（它的预测兑现了——词表守卫确实红着穿过 1 到 5 组，每个中间提交都写明了谁让它绿，M5 的提交信息就是承载）、L-032（4.7 的确定性判据确实喂了两份输入，代码就是它的形状）、L-033（M5 的三条否定式约束都先找到了能违反它的 run 形状：溢出回合没有 `model/request`、遮蔽范围不覆盖 `session/start`、切点落组内时整组一起遮蔽）。
+
+**留存三条**：L-005（家族头，M5 的数值判据都挂在它下面）、L-019（本轮变异轮又踩到「file changed since it was read」，规则仍然在起作用）、L-025（两栏记录已成型，但模型层那一半要等人类跑完才能判断它是否值得晋升）。
+
+**新收五条**：L-036 到 L-040。
+
+**AGENTS.md 本轮不晋升（NO-PROMOTION）**：本轮最值钱的三条（L-036 断言两侧不能同源、L-037 修复不引起红也是缺口、L-039 绿着写出来的守卫照写）都是四规 #4 与变异段现有句子的收紧，不是新规则；一进一出的额度要留给真正独立的内容。
+
+收件箱：8 条（L-005 / L-019 / L-025 / L-036 / L-037 / L-038 / L-039 / L-040），额度空闲 7 条。
 
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 

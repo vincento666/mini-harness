@@ -8,11 +8,29 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, get_args
 
-from mini_harness.events.fold import assembled_payload, fold
+from mini_harness.context.budget import (
+    budget_reading,
+    estimate_tokens,
+    shadowed_range,
+    trigger_line,
+)
+from mini_harness.events.fold import (
+    PURPOSE_COMPACTION,
+    AssembledContext,
+    Message,
+    assembled_payload,
+    fold,
+)
 from mini_harness.events.reader import LogReadFailure, read_events
+from mini_harness.events.record import EventRecord
 from mini_harness.events.writer import EventLog, LogWriteFailure
 from mini_harness.loop.settings import SessionSettings
-from mini_harness.provider.contract import Provider, ProviderFailure, ToolCall
+from mini_harness.provider.contract import (
+    AssistantTurn,
+    Provider,
+    ProviderFailure,
+    ToolCall,
+)
 from mini_harness.tools.dispatch import ApprovalAsked, DispatchOutcome, dispatch_tool_call
 from mini_harness.tools.fences import (
     STDIN_APPROVAL_GATE,
@@ -30,6 +48,7 @@ StopReason = Literal[
     "PROVIDER_ERROR",
     "ABORTED",
     "FENCE_DENIED",
+    "CONTEXT_WINDOW_EXCEEDED",
 ]
 
 STOP_MODEL_COMPLETED = "MODEL_COMPLETED"
@@ -38,6 +57,7 @@ STOP_MAX_TURNS = "MAX_TURNS"
 STOP_PROVIDER_ERROR = "PROVIDER_ERROR"
 STOP_ABORTED = "ABORTED"
 STOP_FENCE_DENIED = "FENCE_DENIED"
+STOP_CONTEXT_WINDOW_EXCEEDED = "CONTEXT_WINDOW_EXCEEDED"
 STOP_REASONS: frozenset[str] = frozenset(get_args(StopReason))
 
 # 同一回合里同时在跑的只读调用上限；会改动文件的调用不吃这个额度，它们串行。
@@ -384,6 +404,154 @@ async def _dispatch_batch(
     return outcome
 
 
+# 摘要那次调用的指令文本：它进摘要调用的上下文，不进任何回合的上下文。
+SUMMARY_INSTRUCTION = (
+    "把上面的对话压缩成一段摘要：任务是什么、已经做了什么、下一步是什么；保留文件路径与关键结论。"
+)
+
+
+def _retry_events(
+    turn_id: str, turn: AssistantTurn | ProviderFailure
+) -> list[tuple[str, dict[str, Any]]]:
+    """重试事实随结果回到回合循环，由循环写进日志（不变量 A）。"""
+    return [
+        ("model/retry", {"turn_id": turn_id, "attempt": attempt.attempt, "status": attempt.status})
+        for attempt in turn.attempts
+    ]
+
+
+async def _provider_error(
+    log: EventLog,
+    turn_id: str,
+    failure: ProviderFailure,
+    turns: int,
+    retry_events: Sequence[tuple[str, dict[str, Any]]],
+) -> RunOutcome:
+    """provider 失败作为结果收尾：`error/model` + `turn/end` + `session/end`（design D7）。"""
+    written = _append_all(
+        log,
+        [
+            *retry_events,
+            ("error/model", {"turn_id": turn_id, "code": failure.code, "detail": failure.detail}),
+            ("turn/end", {"turn_id": turn_id, "stop_reason": STOP_PROVIDER_ERROR}),
+            ("session/end", {"stop_reason": STOP_PROVIDER_ERROR, "turns": turns}),
+        ],
+    )
+    if written is not None:
+        return _kernel_failure(log, written, turns)
+    return RunOutcome(
+        session_id=log.session_id,
+        stop_reason=STOP_PROVIDER_ERROR,
+        turns=turns,
+        failure_code=failure.code,
+        detail=failure.detail,
+    )
+
+
+async def _context_overflow(
+    log: EventLog,
+    turn_id: str,
+    turns: int,
+    detail: str,
+    retry_events: Sequence[tuple[str, dict[str, Any]]] = (),
+) -> RunOutcome:
+    """上下文装不下时是结果不是异常（不变量 D）：不调回合模型，直接收尾。
+
+    两条触发路径共用这里——估算兜底与 provider 报出的超限产出同一个停止理由。
+    """
+    written = _append_all(
+        log,
+        [
+            *retry_events,
+            (
+                "error/context",
+                {"turn_id": turn_id, "code": STOP_CONTEXT_WINDOW_EXCEEDED, "detail": detail},
+            ),
+            ("turn/end", {"turn_id": turn_id, "stop_reason": STOP_CONTEXT_WINDOW_EXCEEDED}),
+            ("session/end", {"stop_reason": STOP_CONTEXT_WINDOW_EXCEEDED, "turns": turns}),
+        ],
+    )
+    if written is not None:
+        return _kernel_failure(log, written, turns)
+    return RunOutcome(
+        session_id=log.session_id,
+        stop_reason=STOP_CONTEXT_WINDOW_EXCEEDED,
+        turns=turns,
+        failure_code=STOP_CONTEXT_WINDOW_EXCEEDED,
+        detail=detail,
+    )
+
+
+async def _compact_if_over_line(
+    *,
+    log: EventLog,
+    turn_id: str,
+    settings: SessionSettings,
+    provider: Provider,
+    cancel: asyncio.Event,
+    events: Sequence[EventRecord],
+    context: AssembledContext,
+) -> ProviderFailure | LogWriteFailure | LogReadFailure | None:
+    """越线时压缩一次：调模型生成摘要、写一条 `compaction/summary`（design D1 与 D2）。
+
+    没有可遮蔽的内容时什么都不写、返回 `None`：调用方重新读数，那条路通向溢出。
+    """
+    rng = shadowed_range(events, settings.window)
+    if rng is None:
+        return None
+    tokens_before = budget_reading(events, context.messages)
+    written = _append_all(
+        log,
+        [("model/request", {"turn_id": turn_id, "tools": [], "purpose": PURPOSE_COMPACTION})],
+    )
+    if written is not None:
+        return written
+
+    generated = await provider.generate(
+        [*context.messages, Message(role="user", content=SUMMARY_INSTRUCTION)],
+        [],
+        cancel,
+    )
+    if isinstance(generated, ProviderFailure):
+        return generated
+
+    # `tokens_after` 量的是遮蔽之后那份表层：把被遮蔽的记录滤掉，再补上摘要本身。
+    surviving = [event for event in events if event.seq < rng["start"] or event.seq > rng["end"]]
+    tokens_after = budget_reading(surviving, fold(surviving).messages) + estimate_tokens(
+        [Message(role="system", content=generated.content)]
+    )
+    written = _append_all(
+        log,
+        [
+            *_retry_events(turn_id, generated),
+            (
+                "model/response",
+                {
+                    "turn_id": turn_id,
+                    "content": generated.content,
+                    "tool_calls": [],
+                    "usage": generated.usage.model_dump(mode="json"),
+                    "finish_reason": generated.finish_reason,
+                    "purpose": PURPOSE_COMPACTION,
+                },
+            ),
+            (
+                "compaction/summary",
+                {
+                    "turn_id": turn_id,
+                    "shadowed_range": rng,
+                    "summary": generated.content,
+                    "tokens_before": tokens_before,
+                    "tokens_after": tokens_after,
+                },
+            ),
+        ],
+    )
+    if written is not None:
+        return written
+    return None
+
+
 async def run_session(
     *,
     prompt: str,
@@ -403,6 +571,8 @@ async def run_session(
         "prompt": prompt,
         "sandbox": settings.sandbox,
         "approval": settings.approval,
+        "window": settings.window,
+        "reserve": settings.reserve,
         "tools": [spec.name for spec in registry.specs()],
     }
     if settings.provider_name == "openai":
@@ -437,6 +607,40 @@ async def run_session(
         if isinstance(events, LogReadFailure):
             return _kernel_failure(log, events, turns)
         context = fold(events)
+        # 装配之内的一次压缩（design D5）：越线才压缩，一次装配最多一次，取消在场时不压缩。
+        line = trigger_line(settings.window, settings.reserve)
+        if budget_reading(events, context.messages) > line and not cancel.is_set():
+            compacted = await _compact_if_over_line(
+                log=log,
+                turn_id=turn_id,
+                settings=settings,
+                provider=provider,
+                cancel=cancel,
+                events=events,
+                context=context,
+            )
+            if isinstance(compacted, (LogWriteFailure, LogReadFailure)):
+                return _kernel_failure(log, compacted, turns)
+            if isinstance(compacted, ProviderFailure):
+                return await _provider_error(log, turn_id, compacted, turns, [])
+            events = read_events(log.path)
+            if isinstance(events, LogReadFailure):
+                return _kernel_failure(log, events, turns)
+            context = fold(events)
+            reading = budget_reading(events, context.messages)
+            if reading > line:
+                # 措辞跟着日志里的事实走：这一回合真写过摘要才说「压缩之后」。
+                compacted_here = any(
+                    event.type == "compaction/summary" and event.payload.get("turn_id") == turn_id
+                    for event in events
+                )
+                detail = (
+                    f"压缩之后预算读数 {reading} 仍超过触发线 {line}"
+                    if compacted_here
+                    else f"无可遮蔽的内容，预算读数 {reading} 已超过触发线 {line}"
+                )
+                return await _context_overflow(log, turn_id, turns, detail)
+
         failure = _append_all(
             log,
             [
@@ -449,35 +653,18 @@ async def run_session(
 
         generated = await provider.generate(context.messages, registry.specs(), cancel)
         # 重试事实由 provider 带回、由循环写进日志：provider 不碰日志（不变量 A）。
-        retry_events: list[tuple[str, dict[str, Any]]] = [
-            (
-                "model/retry",
-                {"turn_id": turn_id, "attempt": attempt.attempt, "status": attempt.status},
-            )
-            for attempt in generated.attempts
-        ]
+        retry_events = _retry_events(turn_id, generated)
         if isinstance(generated, ProviderFailure):
-            failure = _append_all(
-                log,
-                [
-                    *retry_events,
-                    (
-                        "error/model",
-                        {"turn_id": turn_id, "code": generated.code, "detail": generated.detail},
-                    ),
-                    ("turn/end", {"turn_id": turn_id, "stop_reason": STOP_PROVIDER_ERROR}),
-                    ("session/end", {"stop_reason": STOP_PROVIDER_ERROR, "turns": turns}),
-                ],
-            )
-            if failure is not None:
-                return _kernel_failure(log, failure, turns)
-            return RunOutcome(
-                session_id=log.session_id,
-                stop_reason=STOP_PROVIDER_ERROR,
-                turns=turns,
-                failure_code=generated.code,
-                detail=generated.detail,
-            )
+            if generated.code == "PROVIDER_CONTEXT_OVERFLOW":
+                # provider 报出的超限与估算兜底是同一个结果（不变量 D）：不写 `error/model`。
+                return await _context_overflow(
+                    log,
+                    turn_id,
+                    turns,
+                    f"provider 报出上下文超限：{generated.detail}",
+                    retry_events,
+                )
+            return await _provider_error(log, turn_id, generated, turns, retry_events)
 
         failure = _append_all(
             log,

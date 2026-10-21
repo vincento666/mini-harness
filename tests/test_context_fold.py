@@ -7,7 +7,12 @@ from pathlib import Path
 from typing import Any
 
 from mini_harness.events import EventLog, EventRecord
-from mini_harness.events.fold import SYSTEM_PROMPT, fold
+from mini_harness.events.fold import (
+    SYSTEM_PROMPT,
+    TOOL_OUTCOME_UNKNOWN,
+    AssembledContext,
+    fold,
+)
 from mini_harness.events.reader import read_events
 
 _SESSION_ID = "s-fold"
@@ -362,3 +367,180 @@ def test_an_unanswered_approval_request_leaves_the_fold_unchanged() -> None:
     half_pair = [record for record in asked if record.type != "approval/response"]
 
     assert fold(half_pair).model_dump(mode="json") == fold(asked).model_dump(mode="json")
+
+
+# ---- M5：折叠 honor 遮蔽、摘要进表层、`purpose` 标记跳过 ----
+
+
+def _compacted_events() -> list[EventRecord]:
+    """一份压缩过的日志：seq 1 到 5 被遮蔽，保留尾部从 seq 7 起。"""
+    return [
+        _rec(0, "session/start", {"prompt": "写一份报告", "tools": ["read"]}),
+        _rec(1, "turn/start", {"turn_id": "t1"}),
+        _rec(
+            2,
+            "model/response",
+            {"turn_id": "t1", "content": "第一段", "tool_calls": [], "finish_reason": "stop"},
+        ),
+        _rec(
+            3,
+            "tool/call",
+            {
+                "turn_id": "t1",
+                "tool_call_id": "c1",
+                "name": "read",
+                "arguments": {"file_path": "a.md"},
+            },
+        ),
+        _rec(
+            4,
+            "tool/result",
+            {"turn_id": "t1", "tool_call_id": "c1", "outcome": "OK", "content": "结果一"},
+        ),
+        _rec(
+            5,
+            "model/response",
+            {
+                "turn_id": "t2",
+                "content": "摘要文本",
+                "tool_calls": [],
+                "finish_reason": "stop",
+                "purpose": "compaction",
+            },
+        ),
+        _rec(
+            6,
+            "compaction/summary",
+            {
+                "turn_id": "t2",
+                "shadowed_range": {"start": 1, "end": 5},
+                "summary": "摘要文本",
+                "tokens_before": 900,
+                "tokens_after": 30,
+            },
+        ),
+        _rec(
+            7,
+            "model/response",
+            {"turn_id": "t2", "content": "第二段", "tool_calls": [], "finish_reason": "stop"},
+        ),
+    ]
+
+
+def _contents(context: AssembledContext) -> list[str]:
+    return [message.content for message in context.messages]
+
+
+def test_shadowed_records_produce_no_messages() -> None:
+    contents = _contents(fold(_compacted_events()))
+
+    assert "第一段" not in contents
+    assert "结果一" not in contents
+    assert "第二段" in contents
+
+
+def test_a_shadowed_tool_call_does_not_derive_a_closer() -> None:
+    """被遮蔽的 `tool/call` 不进 pending：压缩不制造 `TOOL_OUTCOME_UNKNOWN`。"""
+    contents = _contents(fold(_compacted_events()))
+
+    assert TOOL_OUTCOME_UNKNOWN not in contents
+
+
+def test_the_summary_sits_after_the_user_prompt() -> None:
+    messages = fold(_compacted_events()).messages
+
+    assert messages[0].role == "system"
+    assert messages[1].role == "user"
+    assert messages[1].content == "写一份报告"
+    assert messages[2].role == "system"
+    assert messages[2].content == "摘要文本"
+    assert messages[3].role == "assistant"
+    assert messages[3].content == "第二段"
+
+
+def test_two_summaries_are_ordered_by_their_seq() -> None:
+    events = [
+        *_compacted_events(),
+        _rec(
+            8,
+            "model/response",
+            {
+                "turn_id": "t3",
+                "content": "第二份摘要正文",
+                "tool_calls": [],
+                "finish_reason": "stop",
+                "purpose": "compaction",
+            },
+        ),
+        _rec(
+            9,
+            "compaction/summary",
+            {
+                "turn_id": "t3",
+                "shadowed_range": {"start": 7, "end": 8},
+                "summary": "第二份摘要",
+                "tokens_before": 800,
+                "tokens_after": 40,
+            },
+        ),
+    ]
+
+    systems = [message.content for message in fold(events).messages if message.role == "system"]
+
+    assert systems[1:] == ["摘要文本", "第二份摘要"]
+    assert "第二段" not in [message.content for message in fold(events).messages]
+
+
+def test_a_compaction_purpose_response_produces_no_assistant_message() -> None:
+    messages = fold(_compacted_events()).messages
+
+    assert [m.content for m in messages if m.role == "assistant"] == ["第二段"]
+    assert sum(1 for m in messages if m.content == "摘要文本") == 1
+
+
+def test_an_unmarked_response_still_produces_an_assistant_message() -> None:
+    """同一份日志里既有普通回合回复又有压缩回复：只有带标记的那条不产出消息。"""
+    events = [
+        _rec(0, "session/start", {"prompt": "写一份报告", "tools": ["read"]}),
+        _rec(
+            1,
+            "model/response",
+            {"turn_id": "t1", "content": "普通回复", "tool_calls": [], "finish_reason": "stop"},
+        ),
+        _rec(
+            2,
+            "model/response",
+            {
+                "turn_id": "t2",
+                "content": "摘要文本",
+                "tool_calls": [],
+                "finish_reason": "stop",
+                "purpose": "compaction",
+            },
+        ),
+    ]
+
+    assert [m.content for m in fold(events).messages if m.role == "assistant"] == ["普通回复"]
+
+
+def test_folding_a_compacted_log_is_deterministic_and_leaves_the_log_untouched() -> None:
+    events = _compacted_events()
+    before = [record.model_dump() for record in events]
+
+    first = fold(events)
+    second = fold([EventRecord(**payload) for payload in before])
+
+    assert first == second
+    assert [record.model_dump() for record in events] == before
+
+
+def test_the_fold_at_each_point_sees_only_its_prefix() -> None:
+    """遮蔽只来自该点之前已落盘的 `compaction/summary`：压缩之前的每个点折叠出完整对话。"""
+    events = _compacted_events()
+
+    before_compaction = fold(events[:6])
+    after_compaction = fold(events)
+
+    assert "第一段" in _contents(before_compaction)
+    assert "结果一" in _contents(before_compaction)
+    assert "第一段" not in _contents(after_compaction)

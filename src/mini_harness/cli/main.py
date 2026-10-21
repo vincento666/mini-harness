@@ -17,7 +17,10 @@ from typing import NoReturn
 from mini_harness.events import EventLog, LogReadFailure, LogWriteFailure, read_events
 from mini_harness.events.fold import assembled_payload, fold
 from mini_harness.loop import (
+    DEFAULT_RESERVE,
+    DEFAULT_WINDOW,
     STOP_ABORTED,
+    STOP_CONTEXT_WINDOW_EXCEEDED,
     STOP_FENCE_DENIED,
     STOP_MAX_TURNS,
     STOP_MODEL_COMPLETED,
@@ -39,6 +42,7 @@ EXIT_OK = 0
 EXIT_INTERNAL_ERROR = 1
 EXIT_INVALID_ARGUMENT = 2
 EXIT_FENCE_DENIED = 3
+EXIT_CONTEXT_WINDOW_EXCEEDED = 4
 EXIT_ABORTED = 5
 
 STOP_REASONS_TO_EXIT_CODES: dict[str, int] = {
@@ -47,6 +51,7 @@ STOP_REASONS_TO_EXIT_CODES: dict[str, int] = {
     STOP_MAX_TURNS: EXIT_OK,
     STOP_PROVIDER_ERROR: EXIT_INTERNAL_ERROR,
     STOP_FENCE_DENIED: EXIT_FENCE_DENIED,
+    STOP_CONTEXT_WINDOW_EXCEEDED: EXIT_CONTEXT_WINDOW_EXCEEDED,
     STOP_ABORTED: EXIT_ABORTED,
 }
 
@@ -82,6 +87,8 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--model", default="deepseek-chat")
     run.add_argument("--api-key-env", default="DEEPSEEK_API_KEY")
     run.add_argument("--max-turns", type=int, default=8)
+    run.add_argument("--window", type=int, default=DEFAULT_WINDOW)
+    run.add_argument("--reserve", type=int, default=DEFAULT_RESERVE)
     run.add_argument("--append-system-prompt", default="")
     run.add_argument("--events", choices=("jsonl",), default=None)
     run.add_argument(
@@ -160,6 +167,12 @@ def _run(args: argparse.Namespace) -> int:
             f"--provider 只接受 mock 或 openai，收到 {provider_name}",
             EXIT_INVALID_ARGUMENT,
         )
+    # 窗口预算的两个参数在 session 开始之前判掉：非法取值不产生日志（context-budget 规格）。
+    for flag, value in (("--window", args.window), ("--reserve", args.reserve)):
+        if value < 1:
+            return _report_failure(
+                "INVALID_ARGUMENT", f"{flag} 至少为 1，收到 {value}", EXIT_INVALID_ARGUMENT
+            )
 
     provider: Provider
     if provider_name == "openai":
@@ -203,6 +216,8 @@ def _run(args: argparse.Namespace) -> int:
         sandbox=args.sandbox,
         approval="auto" if args.yes else "ask",
         append_system_prompt=args.append_system_prompt,
+        window=args.window,
+        reserve=args.reserve,
         base_url=args.base_url if openai else None,
         model=args.model if openai else None,
         api_key_env=args.api_key_env if openai else None,
@@ -251,11 +266,9 @@ def _replay(args: argparse.Namespace) -> int:
         if record.type == "context/assembled"
     ]
     if not assembled:
-        return _report_failure(
-            "REPLAY_MISMATCH",
-            f"error/replay 日志里没有任何 context/assembled：{path}",
-            EXIT_INTERNAL_ERROR,
-        )
+        # 溢出与取消都能在第一次装配之前就把回合收掉，那份日志是合法的：
+        # 没有可重算的点不等于重算不一致，但要说明它，不能冒充「一条都验过」。
+        print("no_context_assembled: 这份日志没有装配点")
 
     for index, record in assembled:
         preceding_turn = next(
@@ -277,7 +290,8 @@ def _replay(args: argparse.Namespace) -> int:
     for record in records:
         if record.type == "turn/end":
             print(f"turn {record.payload['turn_id']}: {record.payload['stop_reason']}")
-    print("final_context: " + json.dumps(assembled[-1][1].payload, ensure_ascii=False))
+    if assembled:
+        print("final_context: " + json.dumps(assembled[-1][1].payload, ensure_ascii=False))
     return EXIT_OK
 
 

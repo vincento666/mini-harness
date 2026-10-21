@@ -306,3 +306,63 @@ async def test_the_model_request_carries_a_120_second_timeout() -> None:
         "write": 120.0,
         "pool": 120.0,
     }
+
+
+async def test_a_400_saying_context_length_exceeded_is_a_context_overflow() -> None:
+    """design D8：只认 `error.code == "context_length_exceeded"` 这一个值。
+    400 不是重试的理由，所以这里一次请求、零次重试。"""
+    provider, seen = _provider(
+        handler=lambda request: httpx.Response(
+            400,
+            json={"error": {"code": "context_length_exceeded", "message": "too many tokens"}},
+        )
+    )
+
+    outcome = await _generate(provider)
+
+    assert len(seen) == 1
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_CONTEXT_OVERFLOW"
+    assert outcome.attempts == []
+
+
+async def test_a_413_saying_context_length_exceeded_collapses_to_the_same_overflow() -> None:
+    """超限的线上事实是那个 `error.code`，不是状态码：413 带同一个码也塌成溢出，
+    而不是落到 `PROVIDER_HTTP_STATUS` 让退出码变成 1。"""
+    provider, seen = _provider(
+        handler=lambda request: httpx.Response(
+            413,
+            json={"error": {"code": "context_length_exceeded", "message": "payload too large"}},
+        )
+    )
+
+    outcome = await _generate(provider)
+
+    assert len(seen) == 1
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_CONTEXT_OVERFLOW"
+    assert outcome.attempts == []
+
+
+async def test_a_400_with_any_other_error_code_is_still_an_http_status_result() -> None:
+    """不猜 `message` 文本：`error.code` 不是那个值就沿用既有分类。"""
+    provider, _ = _provider(
+        handler=lambda request: httpx.Response(
+            400, json={"error": {"code": "invalid_request_error", "message": "bad tools"}}
+        )
+    )
+
+    outcome = await _generate(provider)
+
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_HTTP_STATUS"
+
+
+async def test_a_400_with_an_unreadable_body_is_still_an_http_status_result() -> None:
+    """读不出 JSON 不是「超限」，也不是崩溃：分类要落在既有那个码上。"""
+    provider, _ = _provider(handler=lambda request: httpx.Response(400, text="not json"))
+
+    outcome = await _generate(provider)
+
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_HTTP_STATUS"

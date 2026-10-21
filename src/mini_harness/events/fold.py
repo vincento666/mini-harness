@@ -20,6 +20,9 @@ SYSTEM_PROMPT = (
 # 这里不 import 它，因为 `events` 不依赖 `tools`（依赖方向是工具读事件）。
 TOOL_OUTCOME_UNKNOWN = "TOOL_OUTCOME_UNKNOWN"
 
+# 摘要那次模型调用的标记值：它的回复不产出 assistant 消息，它的 `usage` 不参与预算校准。
+PURPOSE_COMPACTION = "compaction"
+
 
 class Message(BaseModel):
     """进入模型的一条消息。"""
@@ -75,6 +78,9 @@ def _body_message(event: EventRecord) -> Message | None:
             return Message(role="user", content=prompt)
         return None
     if event.type == "model/response":
+        if event.payload.get("purpose") == PURPOSE_COMPACTION:
+            # 摘要那次调用的记账，不是对话：它的内容已经作为 `system` 摘要在表层里了。
+            return None
         return Message(
             role="assistant",
             content=str(event.payload.get("content", "")),
@@ -100,8 +106,37 @@ def _call_id_of(event: EventRecord) -> str | None:
     return tool_call_id if isinstance(tool_call_id, str) else None
 
 
+def shadowed_seqs(events: Sequence[EventRecord]) -> set[int]:
+    """既有 `compaction/summary` 遮蔽了哪些 `seq`（闭区间的并集）。
+
+    遮蔽是一条替换记录：日志不删，读方跳过。摘要记录自己与 `session/start` 不进遮蔽（规格）。
+    """
+    shadowed: set[int] = set()
+    for event in events:
+        if event.type != "compaction/summary":
+            continue
+        raw = event.payload.get("shadowed_range")
+        if not isinstance(raw, dict):
+            continue
+        start, end = raw.get("start"), raw.get("end")
+        if isinstance(start, int) and isinstance(end, int):
+            shadowed.update(range(start, end + 1))
+    return shadowed
+
+
+def _summary_message(event: EventRecord) -> Message | None:
+    """一条 `compaction/summary` 折成的那条 `system` 消息（不落盘，只在表层里）。"""
+    summary = event.payload.get("summary")
+    if not isinstance(summary, str) or not summary:
+        return None
+    return Message(role="system", content=summary)
+
+
 def fold(events: Sequence[EventRecord]) -> AssembledContext:
-    """折叠事件序列。不截断、不遮蔽、不摘要；没有配对结果的 `tool/call` 由这里派生闭合。
+    """折叠事件序列：不截断、不新造遮蔽、不自己摘要。
+
+    既有的遮蔽由 `compaction/summary` 定义，落在范围内的记录不产出消息，也不进配对队列——压缩不制造
+    `TOOL_OUTCOME_UNKNOWN`。每条摘要作为 `system` 消息进表层，位置在受保护头部与用户 prompt 之后。
 
     闭合排在它该在的位置：未配对的调用先闭合，再轮到它之后的那条消息。于是半截日志折叠出来的
     上下文仍然配平——assistant 的工具请求后面跟着工具结果，之后才是既有消息。
@@ -111,9 +146,18 @@ def fold(events: Sequence[EventRecord]) -> AssembledContext:
         append_system_prompt=append_system_prompt,
         tool_names=tool_names,
     )
+    shadowed = shadowed_seqs(events)
     body: list[Message] = []
+    summaries: list[Message] = []
     pending: list[str] = []
     for event in events:
+        if event.type == "compaction/summary":
+            summary = _summary_message(event)
+            if summary is not None:
+                summaries.append(summary)
+            continue
+        if event.seq in shadowed and event.type != "session/start":
+            continue
         if event.type == "tool/call":
             call_id = _call_id_of(event)
             if call_id is not None:
@@ -131,6 +175,8 @@ def fold(events: Sequence[EventRecord]) -> AssembledContext:
             pending.clear()
         body.append(message)
     body.extend(_closer(call_id) for call_id in pending)
+    insert_at = 1 if body and body[0].role == "user" else 0
+    body = [*body[:insert_at], *summaries, *body[insert_at:]]
     fingerprint = hashlib.sha256(
         "\n".join(message.content for message in header).encode("utf-8")
     ).hexdigest()

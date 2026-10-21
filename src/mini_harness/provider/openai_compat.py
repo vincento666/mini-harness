@@ -28,6 +28,9 @@ from mini_harness.provider.contract import (
 # 决策 15：模型请求的超时是实现常量 120 秒，`minihns run` 没有改变它的开关。
 _TIMEOUT_S = 120.0
 
+# 上下文超限在 OpenAI 兼容协议里的错误码；只有它塌成 `PROVIDER_CONTEXT_OVERFLOW`。
+CONTEXT_OVERFLOW_ERROR_CODE = "context_length_exceeded"
+
 
 def _wire_messages(messages: Sequence[Message]) -> list[dict[str, Any]]:
     """内核的消息形状 → chat completions 的消息形状（`arguments` 在协议里是 JSON 字符串）。"""
@@ -111,6 +114,22 @@ async def _post(
 
 def _schema_failure(detail: str, attempts: Sequence[ProviderAttempt]) -> ProviderFailure:
     return ProviderFailure(code="PROVIDER_SCHEMA_INVALID", detail=detail, attempts=attempts)
+
+
+def _reports_context_overflow(response: httpx.Response) -> bool:
+    """design D8：只认 `error.code == "context_length_exceeded"` 这一个值。
+
+    不猜 `message` 的文本、也不按状态码猜——各家兼容端点的措辞不一样，而 400 里绝大多数
+    不是超限。读不出 body 就当不是。
+    """
+    try:
+        payload = response.json()
+    except ValueError:
+        return False
+    if not isinstance(payload, dict):
+        return False
+    error = payload.get("error")
+    return isinstance(error, dict) and error.get("code") == CONTEXT_OVERFLOW_ERROR_CODE
 
 
 def _parse_response(
@@ -247,6 +266,12 @@ class OpenAICompatProvider:
                     )
 
         if response.status_code >= 400:
+            if _reports_context_overflow(response):
+                return ProviderFailure(
+                    code="PROVIDER_CONTEXT_OVERFLOW",
+                    detail=f"HTTP {response.status_code}：上下文超出窗口",
+                    attempts=attempts,
+                )
             return ProviderFailure(
                 code="PROVIDER_HTTP_STATUS",
                 detail=f"HTTP {response.status_code}",

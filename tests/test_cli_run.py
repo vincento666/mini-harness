@@ -40,7 +40,7 @@ async def test_sigint_handler_sets_the_cancel_event() -> None:
 
 def test_every_stop_reason_maps_to_an_exit_code() -> None:
     assert set(STOP_REASONS_TO_EXIT_CODES) == set(STOP_REASONS)
-    assert len(STOP_REASONS) == 6
+    assert len(STOP_REASONS) == 7
     assert "FENCE_DENIED" in STOP_REASONS
     assert STOP_REASONS_TO_EXIT_CODES["TOOL_CALLS"] == 0
     assert STOP_REASONS_TO_EXIT_CODES["MODEL_COMPLETED"] == 0
@@ -48,7 +48,8 @@ def test_every_stop_reason_maps_to_an_exit_code() -> None:
     assert STOP_REASONS_TO_EXIT_CODES["PROVIDER_ERROR"] == 1
     assert STOP_REASONS_TO_EXIT_CODES["FENCE_DENIED"] == 3
     assert STOP_REASONS_TO_EXIT_CODES["ABORTED"] == 5
-    assert 4 not in STOP_REASONS_TO_EXIT_CODES.values(), "4 是保留码：没有任何 stop_reason 映射到它"
+    # M5 起 4 是可达码：不变量 D 的溢出结果映射到它。
+    assert STOP_REASONS_TO_EXIT_CODES["CONTEXT_WINDOW_EXCEEDED"] == 4
     for stop_reason, exit_code in STOP_REASONS_TO_EXIT_CODES.items():
         assert (
             exit_code_for(RunOutcome(session_id="s", stop_reason=stop_reason, turns=1)) == exit_code
@@ -318,6 +319,8 @@ _RUN_SWITCHES = {
     "--model",
     "--api-key-env",
     "--max-turns",
+    "--window",
+    "--reserve",
     "--append-system-prompt",
     "--events",
     "--sandbox",
@@ -331,6 +334,8 @@ def test_the_run_argument_table_holds_no_switch_for_a_bounded_number(tmp_path: P
     判据是整张表：列出来的就是全部（`-h` / `--help` 是 argparse 自带的）。哪天加一个
     `--bash-timeout` 或 `--max-parallel-tools`，这条立刻红——那正是要的信号。
     `--max-turns` 的默认值也是 8，那是回合上限，与并发上限无关。
+    `--window` / `--reserve` 在这一栏：它们是规格里的窗口预算参数，不是实现常量的开关
+    （触发线公式里那个 65536 才是实现常量，没有开关）。
     """
     result = _cli("run", "--help", cwd=tmp_path)
 
@@ -714,3 +719,125 @@ def test_sandbox_and_yes_flags_land_in_the_session_start_payload(tmp_path: Path)
     assert result.returncode == 0
     assert payload["sandbox"] == "danger-full-access"
     assert payload["approval"] == "auto"
+
+
+def _session_start(log_path: Path) -> dict[str, object]:
+    records = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+    started: dict[str, object] = next(
+        record["payload"] for record in records if record["type"] == "session/start"
+    )
+    return started
+
+
+def test_the_default_window_and_reserve_land_in_the_session_start_payload(tmp_path: Path) -> None:
+    _cli("run", "-p", "任务", "--provider", "mock", "--fixture", str(HELLO_SCENARIO), cwd=tmp_path)
+
+    payload = _session_start(_log_files(tmp_path)[0])
+    assert payload["window"] == 128000
+    assert payload["reserve"] == 8192
+
+
+def test_window_and_reserve_flags_land_in_the_session_start_payload(tmp_path: Path) -> None:
+    """规格 scenario「窗口与预留进 payload」。这条只看 payload：窗口小到每次装配都越线，
+    那次 run 怎么收尾由下面那条判据管。"""
+    _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--window",
+        "4000",
+        "--reserve",
+        "500",
+        cwd=tmp_path,
+    )
+
+    payload = _session_start(_log_files(tmp_path)[0])
+    assert payload["window"] == 4000
+    assert payload["reserve"] == 500
+
+
+@pytest.mark.parametrize("flag", ["--window", "--reserve"])
+def test_a_budget_argument_below_one_is_a_parameter_error_with_no_log(
+    tmp_path: Path, flag: str
+) -> None:
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        flag,
+        "0",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    # 参数错误发生在 session 开始之前：连日志都不该有。
+    assert _log_files(tmp_path) == []
+
+
+def test_a_run_that_cannot_fit_its_window_exits_four_with_an_error_context(tmp_path: Path) -> None:
+    """窗口小到无可遮蔽：溢出收尾是结果，退出码 4，日志里有 `error/context`。"""
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--window",
+        "4000",
+        "--reserve",
+        "500",
+        cwd=tmp_path,
+    )
+
+    lines = _log_files(tmp_path)[0].read_text(encoding="utf-8").splitlines()
+    records = [json.loads(line) for line in lines]
+    types = [record["type"] for record in records]
+
+    assert result.returncode == 4
+    assert "CONTEXT_WINDOW_EXCEEDED" in result.stderr
+    assert types[-3:] == ["error/context", "turn/end", "session/end"]
+    assert "model/request" not in types
+    assert records[-3]["payload"]["code"] == "CONTEXT_WINDOW_EXCEEDED"
+
+
+def test_a_log_that_overflowed_before_any_assembly_still_replays(tmp_path: Path) -> None:
+    """溢出发生在第一次装配之前：那份日志照样可重放，退出码 0。"""
+    run = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--window",
+        "4000",
+        "--reserve",
+        "500",
+        cwd=tmp_path,
+    )
+    assert run.returncode == 4
+
+    log_path = _log_files(tmp_path)[0]
+    replay = _cli("replay", log_path.stem, "--session-dir", str(log_path.parent), cwd=tmp_path)
+    printed = replay.stdout.splitlines()
+
+    assert replay.returncode == 0
+    assert "REPLAY_MISMATCH" not in replay.stderr
+    # 没有装配点要说清，不能靠「一条都没验」冒充验过。
+    assert any("没有装配点" in line for line in printed)
+    assert any(
+        line.startswith("turn ") and line.endswith(": CONTEXT_WINDOW_EXCEEDED") for line in printed
+    )
+    assert not any(line.startswith("final_context") for line in printed)

@@ -12,7 +12,13 @@ from mini_harness.events.vocabulary import ERROR_EVENT_TYPES, is_known_type
 from mini_harness.loop import STOP_REASONS
 from mini_harness.loop.turn_loop import StopReason
 
-M2_ERROR_TYPES = {"error/model", "error/internal", "error/abort", "error/fence"}
+DECLARED_ERROR_TYPES = {
+    "error/model",
+    "error/internal",
+    "error/abort",
+    "error/fence",
+    "error/context",
+}
 
 
 def test_approval_types_are_in_the_vocabulary() -> None:
@@ -44,8 +50,34 @@ def test_model_retry_and_tool_cancelled_are_in_the_vocabulary(tmp_path: Path) ->
 
 
 def test_error_fence_is_a_declared_error_type() -> None:
-    assert ERROR_EVENT_TYPES == M2_ERROR_TYPES
+    assert ERROR_EVENT_TYPES == DECLARED_ERROR_TYPES
     assert is_known_type("error/fence")
+
+
+def test_compaction_summary_and_error_context_are_in_the_vocabulary(tmp_path: Path) -> None:
+    """M5 把 `compaction/summary` 与 `error/context` 收进词表（不变量 D）。"""
+    assert is_known_type("compaction/summary")
+    assert is_known_type("error/context")
+
+    log = EventLog.create(session_dir=tmp_path, session_id="sess-v4")
+    log.append(
+        "compaction/summary",
+        {
+            "turn_id": "t2",
+            "shadowed_range": {"start": 3, "end": 9},
+            "summary": "前九条记录的摘要",
+            "tokens_before": 900,
+            "tokens_after": 300,
+        },
+    )
+
+    written = json.loads(log.path.read_text(encoding="utf-8").splitlines()[0])
+    assert written["type"] == "compaction/summary"
+    assert "unrecognized_type" not in written["payload"]
+
+
+def test_context_window_exceeded_is_a_stop_reason() -> None:
+    assert "CONTEXT_WINDOW_EXCEEDED" in STOP_REASONS
 
 
 def test_a_record_type_outside_the_vocabulary_is_a_read_failure(tmp_path: Path) -> None:

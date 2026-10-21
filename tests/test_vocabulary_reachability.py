@@ -13,7 +13,7 @@ from typing import get_args
 from mini_harness.events import EventLog, read_events
 from mini_harness.events.fold import fold
 from mini_harness.loop import STOP_REASONS
-from mini_harness.provider import AssistantTurn
+from mini_harness.provider import AssistantTurn, load_fixture_provider
 from mini_harness.tools import DispatchOutcome, ToolRegistry
 from mini_harness.tools.fences import (
     ApprovalDecision,
@@ -28,9 +28,11 @@ from mini_harness.tools.registry import (
     ToolOutcome,
     ToolResult,
 )
+from paths import COMPACTION_SCENARIO
 from tool_harness import (
     DONE,
     dispatch_call,
+    file_registry,
     result_outcomes,
     run_fixture_session,
     run_session_fixture,
@@ -291,4 +293,53 @@ async def test_every_stop_reason_is_reachable(tmp_path: Path) -> None:
     )
     observed |= _stop_reasons(log)
 
+    overflow = tmp_path / "overflow"
+    overflow.mkdir()
+    log, _ = await run_fixture_session(
+        overflow,
+        "s-overflow",
+        [],
+        prompt="x" * 100000,
+        registry=ToolRegistry(),
+        window=70000,
+        reserve=100,
+        max_turns=1,
+    )
+    observed |= _stop_reasons(log)
+
     assert observed == set(STOP_REASONS)
+
+
+async def test_the_new_event_types_are_reached_by_a_real_run(tmp_path: Path) -> None:
+    """M5 加进词表的两个事件类型各被跑出来一次：`compaction/summary` 与 `error/context`。
+
+    同一份 fixture 场景、两个窗口：窗口 70000（触发线 4364、保留预算 11200）时装得下但需要压缩，
+    窗口 4000（触发线 0）时装不下且无可遮蔽。
+    """
+    compacted = tmp_path / "compacted"
+    compacted.mkdir()
+    (compacted / "long.md").write_text("长" * 50000, encoding="utf-8")
+    compacted_log, _ = await run_session_fixture(
+        compacted,
+        "s-compaction",
+        load_fixture_provider(COMPACTION_SCENARIO),
+        registry=file_registry(),
+        window=70000,
+        reserve=100,
+        max_turns=4,
+    )
+
+    overflow = tmp_path / "overflow"
+    overflow.mkdir()
+    overflow_log, _ = await run_session_fixture(
+        overflow,
+        "s-overflow",
+        load_fixture_provider(COMPACTION_SCENARIO),
+        registry=file_registry(),
+        window=4000,
+        reserve=500,
+        max_turns=4,
+    )
+
+    assert "compaction/summary" in {r.type for r in read_events(compacted_log.path)}
+    assert "error/context" in {r.type for r in read_events(overflow_log.path)}

@@ -17,18 +17,20 @@ CONCRETE_EVENT_TYPES: frozenset[str] = frozenset(
         "tool/cancelled",
         "approval/request",
         "approval/response",
+        "compaction/summary",
     }
 )
 
 ERROR_NAMESPACE = "error/"
 
-# `error/*` 作为命名空间是开放的（无法归类的内部故障照走它），但本词表声明的具体错误类型只有这四个。
+# `error/*` 作为命名空间是开放的（无法归类的内部故障照走它），但本词表声明的具体错误类型只有这五个。
 ERROR_EVENT_TYPES: frozenset[str] = frozenset(
     {
         "error/model",
         "error/internal",
         "error/abort",
         "error/fence",
+        "error/context",
     }
 )
 

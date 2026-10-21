@@ -14,6 +14,7 @@ REPO_ROOT = TESTS_DIR.parent
 PYPROJECT_TOML = REPO_ROOT / "pyproject.toml"
 FIXTURES_DIR = TESTS_DIR / "fixtures"
 SCENARIOS_DIR = FIXTURES_DIR / "scenarios"
+COMPACTION_SCENARIO = SCENARIOS_DIR / "compaction" / "turns.json"
 HELLO_SCENARIO = SCENARIOS_DIR / "hello" / "turns.json"
 TOOL_THEN_DONE_SCENARIO = SCENARIOS_DIR / "tool_then_done" / "turns.json"
 TOOL_THEN_EXHAUST_SCENARIO = SCENARIOS_DIR / "tool_then_exhaust" / "turns.json"
@@ -40,6 +41,7 @@ def copy_repo_to(destination: Path) -> Path:
 
 
 __all__ = [
+    "COMPACTION_SCENARIO",
     "EDIT_FIVE_MD_SCENARIO",
     "FIXTURES_DIR",
     "FIXTURE_REPO_DIR",

@@ -53,7 +53,8 @@ class ToolSpec(BaseModel):
 
 class ProviderFailure:
     """Provider 失败也是结果：`PROVIDER_EXHAUSTED` / `PROVIDER_SCHEMA_INVALID` /
-    `PROVIDER_HTTP_STATUS` / `PROVIDER_TIMEOUT`。"""
+    `PROVIDER_HTTP_STATUS` / `PROVIDER_CONTEXT_OVERFLOW` / `PROVIDER_TIMEOUT` /
+    `PROVIDER_TRANSPORT` / `PROVIDER_ABORTED`。"""
 
     def __init__(
         self,
