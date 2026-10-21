@@ -401,7 +401,12 @@ async def test_a_cancel_interrupts_a_question_the_human_has_not_answered(tmp_pat
     assert call_ids(records, "approval/request") == ["c1"]
     assert call_ids(records, "approval/response") == []
     assert result_outcomes(records) == [("c1", "TOOL_CANCELLED")]
-    assert [record.type for record in records][-3:] == ["error/abort", "turn/end", "session/end"]
+    assert [record.type for record in records][-4:] == [
+        "error/abort",
+        "turn/end",
+        "segment/end",
+        "session/end",
+    ]
     assert outcome.stop_reason == "ABORTED"
     assert not (tmp_path / "a.md").exists()
 

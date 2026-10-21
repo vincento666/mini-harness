@@ -234,6 +234,38 @@ def test_happy_path_prints_session_id_and_writes_the_log(tmp_path: Path) -> None
     assert (tmp_path / "sessions" / f"{session_id}.jsonl").is_file()
 
 
+def test_a_one_shot_run_writes_exactly_one_segment(tmp_path: Path) -> None:
+    """一次性 run 恰一个段：段的边界在盘上，其余逐行与 M5 之前相同。"""
+    result = _cli(
+        "run", "-p", "任务", "--provider", "mock", "--fixture", str(HELLO_SCENARIO), cwd=tmp_path
+    )
+
+    records = [
+        json.loads(line)
+        for line in _log_files(tmp_path)[0].read_text(encoding="utf-8").splitlines()
+    ]
+    segments = [record for record in records if record["type"].startswith("segment/")]
+
+    assert result.returncode == 0
+    assert [record["type"] for record in records] == [
+        "session/start",
+        "segment/start",
+        "turn/start",
+        "context/assembled",
+        "model/request",
+        "model/response",
+        "turn/end",
+        "segment/end",
+        "session/end",
+    ]
+    assert segments[0]["payload"] == {"segment_id": "s1"}
+    assert segments[1]["payload"] == {
+        "segment_id": "s1",
+        "stop_reason": "MODEL_COMPLETED",
+        "turns": 1,
+    }
+
+
 def test_events_jsonl_stdout_matches_the_log_line_by_line(tmp_path: Path) -> None:
     result = _cli(
         "run",
@@ -515,7 +547,7 @@ def test_sigint_in_a_real_subprocess_exits_with_five(tmp_path: Path) -> None:
     assert types.count("tool/cancelled") == 1
     outcomes = [r["payload"]["outcome"] for r in records if r["type"] == "tool/result"]
     assert outcomes == ["TOOL_CANCELLED"]
-    assert types[-3:] == ["error/abort", "turn/end", "session/end"]
+    assert types[-4:] == ["error/abort", "turn/end", "segment/end", "session/end"]
     assert records[-1]["payload"]["stop_reason"] == "ABORTED"
 
 
@@ -810,9 +842,9 @@ def test_a_run_that_cannot_fit_its_window_exits_four_with_an_error_context(tmp_p
 
     assert result.returncode == 4
     assert "CONTEXT_WINDOW_EXCEEDED" in result.stderr
-    assert types[-3:] == ["error/context", "turn/end", "session/end"]
+    assert types[-4:] == ["error/context", "turn/end", "segment/end", "session/end"]
     assert "model/request" not in types
-    assert records[-3]["payload"]["code"] == "CONTEXT_WINDOW_EXCEEDED"
+    assert records[-4]["payload"]["code"] == "CONTEXT_WINDOW_EXCEEDED"
 
 
 def test_a_log_that_overflowed_before_any_assembly_still_replays(tmp_path: Path) -> None:

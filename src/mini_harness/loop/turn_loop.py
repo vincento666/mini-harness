@@ -78,6 +78,30 @@ class RunOutcome:
     detail: str = ""
 
 
+@dataclass(frozen=True)
+class SessionEnv:
+    """一次会话的冻结环境：段调用不再一路结伴（ADR-0002 第 21 条）。
+
+    `cancel` 故意不在这里——每个段一个取消事件（design D7），它是段的入参而不是会话的。
+    """
+
+    provider: Provider
+    log: EventLog
+    registry: ToolRegistry
+    settings: SessionSettings
+    approval_gate: ApprovalGate = STDIN_APPROVAL_GATE
+
+
+@dataclass(frozen=True)
+class SegmentOutcome:
+    """一个段怎么停的。会话是否继续由入口决定（ADR-0011），内核只报这一段。"""
+
+    stop_reason: str
+    turns: int
+    failure_code: str | None = None
+    detail: str = ""
+
+
 def _append_all(
     log: EventLog, events: Sequence[tuple[str, dict[str, Any]]]
 ) -> LogWriteFailure | None:
@@ -101,17 +125,27 @@ class InternalFailure:
     tool_call_id: str | None = None
 
 
-def _kernel_failure(
-    log: EventLog, failure: LogWriteFailure | LogReadFailure | InternalFailure, turns: int
-) -> RunOutcome:
-    """内核失败作为结果结束。`stop_reason` 取失败码，它不是 `turn/end` 的词表值：
-    内核坏了就写不出 `turn/end`。"""
-    return RunOutcome(
-        session_id=log.session_id,
+def _segment_failure(
+    failure: LogWriteFailure | LogReadFailure | InternalFailure, turns: int
+) -> SegmentOutcome:
+    """内核失败作为段的结果。`stop_reason` 取失败码，它不是 `turn/end` 的词表值：
+    内核坏了就写不出 `turn/end`，也就写不出 `segment/end`。"""
+    return SegmentOutcome(
         stop_reason=failure.code,
         turns=turns,
         failure_code=failure.code,
         detail=failure.detail,
+    )
+
+
+def _run_outcome(log: EventLog, outcome: SegmentOutcome) -> RunOutcome:
+    """段的结果加上 session id 就是一次运行的结果。"""
+    return RunOutcome(
+        session_id=log.session_id,
+        stop_reason=outcome.stop_reason,
+        turns=outcome.turns,
+        failure_code=outcome.failure_code,
+        detail=outcome.detail,
     )
 
 
@@ -426,21 +460,22 @@ async def _provider_error(
     failure: ProviderFailure,
     turns: int,
     retry_events: Sequence[tuple[str, dict[str, Any]]],
-) -> RunOutcome:
-    """provider 失败作为结果收尾：`error/model` + `turn/end` + `session/end`（design D7）。"""
+) -> SegmentOutcome:
+    """provider 失败作为**回合**收尾：`error/model` + `turn/end`（design D7）。
+
+    段的边界与 `session/end` 不在这里——它们归段与入口（ADR-0011）。
+    """
     written = _append_all(
         log,
         [
             *retry_events,
             ("error/model", {"turn_id": turn_id, "code": failure.code, "detail": failure.detail}),
             ("turn/end", {"turn_id": turn_id, "stop_reason": STOP_PROVIDER_ERROR}),
-            ("session/end", {"stop_reason": STOP_PROVIDER_ERROR, "turns": turns}),
         ],
     )
     if written is not None:
-        return _kernel_failure(log, written, turns)
-    return RunOutcome(
-        session_id=log.session_id,
+        return _segment_failure(written, turns)
+    return SegmentOutcome(
         stop_reason=STOP_PROVIDER_ERROR,
         turns=turns,
         failure_code=failure.code,
@@ -454,10 +489,10 @@ async def _context_overflow(
     turns: int,
     detail: str,
     retry_events: Sequence[tuple[str, dict[str, Any]]] = (),
-) -> RunOutcome:
-    """上下文装不下时是结果不是异常（不变量 D）：不调回合模型，直接收尾。
+) -> SegmentOutcome:
+    """上下文装不下时是**回合**终止结果不是异常（不变量 D）：不调回合模型，直接收尾。
 
-    两条触发路径共用这里——估算兜底与 provider 报出的超限产出同一个停止理由。
+    两条触发路径共用这里——估算兜底与 provider 报出的超限产出同一个停止理由。会话是否结束归入口。
     """
     written = _append_all(
         log,
@@ -468,13 +503,11 @@ async def _context_overflow(
                 {"turn_id": turn_id, "code": STOP_CONTEXT_WINDOW_EXCEEDED, "detail": detail},
             ),
             ("turn/end", {"turn_id": turn_id, "stop_reason": STOP_CONTEXT_WINDOW_EXCEEDED}),
-            ("session/end", {"stop_reason": STOP_CONTEXT_WINDOW_EXCEEDED, "turns": turns}),
         ],
     )
     if written is not None:
-        return _kernel_failure(log, written, turns)
-    return RunOutcome(
-        session_id=log.session_id,
+        return _segment_failure(written, turns)
+    return SegmentOutcome(
         stop_reason=STOP_CONTEXT_WINDOW_EXCEEDED,
         turns=turns,
         failure_code=STOP_CONTEXT_WINDOW_EXCEEDED,
@@ -552,17 +585,9 @@ async def _compact_if_over_line(
     return None
 
 
-async def run_session(
-    *,
-    prompt: str,
-    provider: Provider,
-    log: EventLog,
-    registry: ToolRegistry,
-    settings: SessionSettings,
-    cancel: asyncio.Event,
-    approval_gate: ApprovalGate = STDIN_APPROVAL_GATE,
-) -> RunOutcome:
-    """跑完一个 session 的全部回合。"""
+def start_session(*, prompt: str, env: SessionEnv) -> SegmentOutcome | None:
+    """写 `session/start`。成功返回 None，日志层坏了就返回失败结果。"""
+    settings = env.settings
     start_payload: dict[str, Any] = {
         "workspace": str(Path(settings.workspace).resolve()),
         "provider": settings.provider_name,
@@ -573,7 +598,7 @@ async def run_session(
         "approval": settings.approval,
         "window": settings.window,
         "reserve": settings.reserve,
-        "tools": [spec.name for spec in registry.specs()],
+        "tools": [spec.name for spec in env.registry.specs()],
     }
     if settings.endpoint is not None:
         # 记的是密钥环境变量的名字，不是它的值（cli spec：密钥 MUST NOT 进 payload）。
@@ -582,30 +607,76 @@ async def run_session(
         start_payload["api_key_env"] = settings.endpoint.api_key_env
 
     failure = _append_all(
-        log,
+        env.log,
         [
             ("session/start", start_payload),
         ],
     )
     if failure is not None:
-        return _kernel_failure(log, failure, 0)
+        return _segment_failure(failure, 0)
+    return None
 
+
+async def run_turn_segment(
+    *, env: SessionEnv, segment_id: str, first_turn_index: int, cancel: asyncio.Event
+) -> SegmentOutcome:
+    """跑一个回合段：一条输入展开的那串往返。段内上限是 `max_turns`，会话级没有上限。
+
+    段的边界在这里落盘——`segment/start` 在第一个 `turn/start` 之前、`segment/end` 在最后一个
+    `turn/end` 之后（design D3）。这里不写 `session/end`：会话是否结束由入口决定（ADR-0011）。
+    """
+    failure = _append_all(env.log, [("segment/start", {"segment_id": segment_id})])
+    if failure is not None:
+        return _segment_failure(failure, 0)
+
+    outcome = await _run_turns(env=env, first_turn_index=first_turn_index, cancel=cancel)
+    if outcome.stop_reason not in STOP_REASONS:
+        # 内核坏了：写不出 `turn/end`，也就不写 `segment/end`。
+        return outcome
+    written = _append_all(
+        env.log,
+        [
+            (
+                "segment/end",
+                {
+                    "segment_id": segment_id,
+                    "stop_reason": outcome.stop_reason,
+                    "turns": outcome.turns,
+                },
+            ),
+        ],
+    )
+    if written is not None:
+        return _segment_failure(written, outcome.turns)
+    return outcome
+
+
+async def _run_turns(
+    *, env: SessionEnv, first_turn_index: int, cancel: asyncio.Event
+) -> SegmentOutcome:
+    """段内的显式回合循环：记账 → 装配上下文 → 调模型 → 派发工具 → 判定停止。"""
+    log = env.log
+    provider = env.provider
+    registry = env.registry
+    settings = env.settings
+    approval_gate = env.approval_gate
     stop_reason = STOP_MODEL_COMPLETED
     denial_code: str | None = None
     denial_detail = ""
     turns = 0
-    for turn_index in range(1, settings.max_turns + 1):
-        turns = turn_index
+    for offset in range(settings.max_turns):
+        turn_index = first_turn_index + offset
+        turns = offset + 1
         turn_id = f"t{turn_index}"
         tool_names = [spec.name for spec in registry.specs()]
 
         failure = _append_all(log, [("turn/start", {"turn_id": turn_id})])
         if failure is not None:
-            return _kernel_failure(log, failure, turns)
+            return _segment_failure(failure, turns)
 
         events = read_events(log.path)
         if isinstance(events, LogReadFailure):
-            return _kernel_failure(log, events, turns)
+            return _segment_failure(events, turns)
         context = fold(events)
         # 装配之内的一次压缩（design D5）：越线才压缩，一次装配最多一次，取消在场时不压缩。
         line = trigger_line(settings.window, settings.reserve)
@@ -620,12 +691,12 @@ async def run_session(
                 context=context,
             )
             if isinstance(compacted, (LogWriteFailure, LogReadFailure)):
-                return _kernel_failure(log, compacted, turns)
+                return _segment_failure(compacted, turns)
             if isinstance(compacted, ProviderFailure):
                 return await _provider_error(log, turn_id, compacted, turns, [])
             events = read_events(log.path)
             if isinstance(events, LogReadFailure):
-                return _kernel_failure(log, events, turns)
+                return _segment_failure(events, turns)
             context = fold(events)
             reading = budget_reading(events, context.messages)
             if reading > line:
@@ -649,7 +720,7 @@ async def run_session(
             ],
         )
         if failure is not None:
-            return _kernel_failure(log, failure, turns)
+            return _segment_failure(failure, turns)
 
         generated = await provider.generate(context.messages, registry.specs(), cancel)
         # 重试事实由 provider 带回、由循环写进日志：provider 不碰日志（不变量 A）。
@@ -685,7 +756,7 @@ async def run_session(
             ],
         )
         if failure is not None:
-            return _kernel_failure(log, failure, turns)
+            return _segment_failure(failure, turns)
 
         fence_denied = False
         batch = await _dispatch_batch(
@@ -698,7 +769,7 @@ async def run_session(
             cancel=cancel,
         )
         if batch.failure is not None:
-            return _kernel_failure(log, batch.failure, turns)
+            return _segment_failure(batch.failure, turns)
         if batch.denial_code is not None:
             fence_denied = True
             denial_code = batch.denial_code
@@ -710,7 +781,7 @@ async def run_session(
             stop_reason = STOP_FENCE_DENIED
         elif not generated.tool_calls:
             stop_reason = STOP_MODEL_COMPLETED
-        elif turn_index == settings.max_turns:
+        elif turns == settings.max_turns:
             stop_reason = STOP_MAX_TURNS
         else:
             stop_reason = STOP_TOOL_CALLS
@@ -727,23 +798,60 @@ async def run_session(
 
         failure = _append_all(log, closing_events)
         if failure is not None:
-            return _kernel_failure(log, failure, turns)
+            return _segment_failure(failure, turns)
 
         if (
             cancel.is_set()
             or fence_denied
             or not generated.tool_calls
-            or turn_index == settings.max_turns
+            or turns == settings.max_turns
         ):
             break
 
-    failure = _append_all(log, [("session/end", {"stop_reason": stop_reason, "turns": turns})])
-    if failure is not None:
-        return _kernel_failure(log, failure, turns)
-    return RunOutcome(
-        session_id=log.session_id,
+    return SegmentOutcome(
         stop_reason=stop_reason,
         turns=turns,
         failure_code=denial_code,
         detail=denial_detail,
     )
+
+
+def end_session(*, env: SessionEnv, stop_reason: str, turns: int) -> SegmentOutcome | None:
+    """写 `session/end`。成功返回 None，日志层坏了就返回失败结果。"""
+    failure = _append_all(env.log, [("session/end", {"stop_reason": stop_reason, "turns": turns})])
+    if failure is not None:
+        return _segment_failure(failure, turns)
+    return None
+
+
+async def run_session(
+    *,
+    prompt: str,
+    provider: Provider,
+    log: EventLog,
+    registry: ToolRegistry,
+    settings: SessionSettings,
+    cancel: asyncio.Event,
+    approval_gate: ApprovalGate = STDIN_APPROVAL_GATE,
+) -> RunOutcome:
+    """一次性 run：开始会话、恰一个段、结束会话。
+
+    段编号与回合编号都从 1 起；REPL 自己数段、给下一个段起始编号（design D3）。
+    """
+    env = SessionEnv(
+        provider=provider,
+        log=log,
+        registry=registry,
+        settings=settings,
+        approval_gate=approval_gate,
+    )
+    started = start_session(prompt=prompt, env=env)
+    if started is not None:
+        return _run_outcome(log, started)
+    segment = await run_turn_segment(env=env, segment_id="s1", first_turn_index=1, cancel=cancel)
+    if segment.stop_reason not in STOP_REASONS:
+        return _run_outcome(log, segment)
+    ended = end_session(env=env, stop_reason=segment.stop_reason, turns=segment.turns)
+    if ended is not None:
+        return _run_outcome(log, ended)
+    return _run_outcome(log, segment)

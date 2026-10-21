@@ -135,9 +135,10 @@ async def test_overflow_when_nothing_can_be_shadowed(tmp_path: Path) -> None:
     )
     records = read_events(log.path)
 
-    assert [record.type for record in records][-3:] == [
+    assert [record.type for record in records][-4:] == [
         "error/context",
         "turn/end",
+        "segment/end",
         "session/end",
     ]
     assert _records_of(log.path, "model/request") == []
@@ -181,9 +182,10 @@ async def test_one_compaction_then_overflow_when_the_context_still_does_not_fit(
         and record.payload.get("purpose") != "compaction"
     ]
     assert turn_two == []
-    assert [record.type for record in records][-3:] == [
+    assert [record.type for record in records][-4:] == [
         "error/context",
         "turn/end",
+        "segment/end",
         "session/end",
     ]
     # 这一条压缩真的发生过，措辞就该是「压缩之后」。
@@ -247,9 +249,10 @@ async def test_a_provider_reported_overflow_collapses_into_the_same_result(tmp_p
     )
     records = read_events(log.path)
 
-    assert [record.type for record in records][-3:] == [
+    assert [record.type for record in records][-4:] == [
         "error/context",
         "turn/end",
+        "segment/end",
         "session/end",
     ]
     assert _records_of(log.path, "error/model") == []

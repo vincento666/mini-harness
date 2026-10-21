@@ -11,11 +11,11 @@
 
 ## 2. 内核入口拆成「开始会话 / 跑一个段 / 结束会话」
 
-- [ ] 2.1 先立回归判据：拆分之前后，一次性 run 的日志除新增的两条段边界外逐行相同、退出码不变。seam ⑥（`tests/test_cli_run.py`）
-- [ ] 2.2 拆出 `start_session` / `run_turn_segment` / `end_session`，`run_session` 变成三者的组合；段调用不写 `session/end`。seam ①（`tests/test_turn_loop.py`）
-- [ ] 2.3 段边界进日志：run 恰一个段，`segment/start` 在第一个 `turn/start` 之前、`segment/end` 在最后一个 `turn/end` 之后，payload 含 `segment_id`、`stop_reason`、`turns`。同步 `test_turn_loop.py` 里四处钉死序列的判据。seam ①（`tests/test_turn_loop.py`）
-- [ ] 2.4 `segment_id` 与 `turn_id` 跨段连续（两段共 5 个回合是 `s1`/`s2` 与 `t1`…`t5`）；段用完 `max_turns` 不结束会话，下一条输入额度完整。seam ①（`tests/test_turn_loop.py`）
-- [ ] 2.5 收 ADR-0002 第 21 条：会话环境收成一个冻结入参，段调用不再一路结伴（判据不变，只改注入形状）。seam ①②（`tests/test_turn_loop.py`、`tests/test_tool_dispatch.py`）
+- [x] 2.1 先立回归判据：拆分之前后，一次性 run 的日志除新增的两条段边界外逐行相同、退出码不变。seam ⑥（`tests/test_cli_run.py`）
+- [x] 2.2 拆出 `start_session` / `run_turn_segment` / `end_session`，`run_session` 变成三者的组合；段调用不写 `session/end`。seam ①（`tests/test_turn_loop.py`）
+- [x] 2.3 段边界进日志：run 恰一个段，`segment/start` 在第一个 `turn/start` 之前、`segment/end` 在最后一个 `turn/end` 之后，payload 含 `segment_id`、`stop_reason`、`turns`。同步 `test_turn_loop.py` 里四处钉死序列的判据。seam ①（`tests/test_turn_loop.py`）
+- [x] 2.4 `segment_id` 与 `turn_id` 跨段连续（两段共 5 个回合是 `s1`/`s2` 与 `t1`…`t5`）；段用完 `max_turns` 不结束会话，下一条输入额度完整。seam ①（`tests/test_turn_loop.py`）
+- [x] 2.5 收 ADR-0002 第 21 条：会话环境收成一个冻结入参，段调用不再一路结伴（判据不变，只改注入形状）。seam ①②（`tests/test_turn_loop.py`、`tests/test_tool_dispatch.py`）
 
 ## 3. 溢出与取消的收尾边界
 

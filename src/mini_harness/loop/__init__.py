@@ -18,7 +18,12 @@ from mini_harness.loop.turn_loop import (
     STOP_REASONS,
     STOP_TOOL_CALLS,
     RunOutcome,
+    SegmentOutcome,
+    SessionEnv,
+    end_session,
     run_session,
+    run_turn_segment,
+    start_session,
 )
 
 __all__ = [
@@ -36,6 +41,11 @@ __all__ = [
     "STOP_TOOL_CALLS",
     "ProviderEndpoint",
     "RunOutcome",
+    "SegmentOutcome",
+    "SessionEnv",
     "SessionSettings",
+    "end_session",
     "run_session",
+    "run_turn_segment",
+    "start_session",
 ]
