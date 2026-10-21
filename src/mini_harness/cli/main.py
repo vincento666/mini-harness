@@ -12,8 +12,9 @@ import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from types import FrameType
-from typing import NoReturn
+from typing import Any, NoReturn
 
+from mini_harness.config import discover_config, load_config
 from mini_harness.events import EventLog, LogReadFailure, LogWriteFailure, read_events
 from mini_harness.events.fold import assembled_payload, fold
 from mini_harness.loop import (
@@ -79,6 +80,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     run = subcommands.add_parser("run", help="跑完一个 session")
     run.add_argument("-p", "--prompt", default=None)
+    run.add_argument("--config", default=None)
     run.add_argument("--workspace", default=None)
     run.add_argument("--session-dir", default=None)
     run.add_argument("--provider", default="mock")
@@ -157,6 +159,15 @@ def _run(args: argparse.Namespace) -> int:
 
     if prompt is None or prompt == "":
         return _report_failure("INVALID_ARGUMENT", "-p/--prompt 必填且非空", EXIT_INVALID_ARGUMENT)
+    # 配置文件里的设置先落到本地变量上，之后的校验判的是层叠之后的有效值。
+    workspace = Path(args.workspace) if args.workspace is not None else Path.cwd()
+    config: dict[str, Any] = {}
+    config_path = discover_config(workspace, args.config)
+    if config_path is not None:
+        config = load_config(config_path)
+    configured_turns: object = config.get("max_turns")
+    if isinstance(configured_turns, int):
+        max_turns = configured_turns
     if max_turns < 1:
         return _report_failure(
             "INVALID_ARGUMENT", f"--max-turns 至少为 1，收到 {max_turns}", EXIT_INVALID_ARGUMENT
@@ -207,10 +218,9 @@ def _run(args: argparse.Namespace) -> int:
     if isinstance(log, LogWriteFailure):
         return _report_failure(log.code, log.detail, EXIT_INTERNAL_ERROR)
 
-    workspace: str | None = args.workspace
     openai = provider_name == "openai"
     settings = SessionSettings(
-        workspace=Path(workspace) if workspace is not None else Path.cwd(),
+        workspace=workspace,
         provider_name=provider_name,
         max_turns=max_turns,
         sandbox=args.sandbox,

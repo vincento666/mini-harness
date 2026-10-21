@@ -2,9 +2,9 @@
 
 ## 1. 配置文件的读与非法形状（seam ⑥）
 
-- [ ] 1.1 seam ⑥：先写红判据 `test_an_explicit_config_file_sets_the_settings`——`minihns run -p "x" --config <dir>/other.toml`（文件写 `max_turns = 3`，工作区根同时有一份 `mini.config.toml`）后 `session/start` 的 payload 里 `max_turns` 为 3 且取自 `other.toml`；实现 `--config` 开关与 `config/load.py::load_config`，判据转绿
-- [ ] 1.2 seam ⑥：红判据 `test_the_workspace_root_config_file_is_picked_up`——未给 `--config` 且工作区根有 `mini.config.toml` 时其设置生效；实现发现顺序的第二级，判据转绿
-- [ ] 1.3 seam ⑥：绿到即钉的守卫判据 `test_no_config_file_means_builtin_defaults`——两处都没有时 payload 与 M8 之后的形状逐字段相同（含 `tools` 六个名字）；只加判据，实现不动
+- [x] 1.1 seam ⑥：先写红判据 `test_an_explicit_config_file_sets_the_settings`——`minihns run -p "x" --config <dir>/other.toml`（文件写 `max_turns = 3`，工作区根同时有一份 `mini.config.toml`）后 `session/start` 的 payload 里 `max_turns` 为 3 且取自 `other.toml`；实现 `--config` 开关与 `config/load.py::load_config`，判据转绿
+- [x] 1.2 seam ⑥：红判据 `test_the_workspace_root_config_file_is_picked_up`——未给 `--config` 且工作区根有 `mini.config.toml` 时其设置生效；实现发现顺序的第二级，判据转绿
+- [x] 1.3 seam ⑥：绿到即钉的守卫判据 `test_no_config_file_means_builtin_defaults`——两处都没有时 payload 与 M8 之后的形状逐字段相同（含 `tools` 六个名字）；只加判据，实现不动
 - [ ] 1.4 seam ⑥：红判据 `test_a_missing_explicit_config_file_is_an_argument_error`——`--config` 指向不存在的路径时退出码 2、stderr 含 `INVALID_ARGUMENT` 与所查找路径、`tmp_path.glob("*.jsonl") == []`；实现 `ConfigFailure("CONFIG_NOT_FOUND", ...)` 到退出码 2 的映射
 - [ ] 1.5 seam ⑥：红判据 `test_a_malformed_config_file_is_an_argument_error`——内容 `max_turns = = 3` 时退出码 2、stderr 含 `INVALID_ARGUMENT` 与行号、无日志；实现 `tomllib` 的解码失败塌成 `ConfigFailure("CONFIG_INVALID_TOML", ...)`
 - [ ] 1.6 seam ⑥：红判据两条 `test_an_unknown_key_is_an_argument_error` 与 `test_a_wrong_typed_value_is_an_argument_error`（`max_turns = "three"` 与 `max_turns = true` 各一条）；实现字段表校验，detail 带键名
