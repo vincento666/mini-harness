@@ -54,8 +54,8 @@
 
 ## 7. 收尾门禁
 
-- [ ] 7.1 变异测试一轮：改坏 `config/` 与装配段的实现（层叠顺序、白名单筛选、密钥判据、端点派生各至少一处），跑全量 `uv run pytest -q`，把「变异 / 改法 / 哪些测试变红」记进 `docs/verification/m9-assembly-and-config-layering-mutation.md`，还原前先看 `git status`，还原后确认回到基线
-- [ ] 7.2 Learning Gate：扫本轮证据（红过的测试、存活的变异、返工过的规格、工具坑）写进 `docs/lessons.md` 收件箱；无可复用信号则写 `NO-PROMOTION`
+- [x] 7.1 变异测试一轮：改坏 `config/` 与装配段的实现（层叠顺序、白名单筛选、密钥判据、端点派生各至少一处），跑全量 `uv run pytest -q`，把「变异 / 改法 / 哪些测试变红」记进 `docs/verification/m9-assembly-and-config-layering-mutation.md`，还原前先看 `git status`，还原后确认回到基线。**13 条变异全部被杀**：编号 1–9 是各组实现落地时顺手跑的定向轮（记录也在提交信息里），编号 10–13 是收尾全量轮（层叠顺序互换 / 白名单被忽略 / 密钥不是必需项 / payload 不写端点三条），无存活项、无 dud mutant。还原后基线确认：323 passed / 2 skipped、`TOTAL 1505 / 69 / 95%`
+- [x] 7.2 Learning Gate：扫本轮证据（红过的测试、存活的变异、返工过的规格、工具坑）写进 `docs/lessons.md` 收件箱；无可复用信号则写 `NO-PROMOTION`。新收五条 L-041–L-045，关闭零条，留存八条，**AGENTS.md 本轮不晋升（NO-PROMOTION）**；收件箱 13 条
 
 ## Workflow follow-up
 
