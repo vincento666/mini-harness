@@ -774,8 +774,8 @@ def test_the_default_window_and_reserve_land_in_the_session_start_payload(tmp_pa
 
 
 def test_window_and_reserve_flags_land_in_the_session_start_payload(tmp_path: Path) -> None:
-    """规格 scenario「窗口与预留进 payload」。这条只看 payload：窗口小到每次装配都越线，
-    那次 run 怎么收尾由下面那条判据管。"""
+    """规格 scenario「窗口与预留进 payload」。这条只看 payload：两个数都是合法取值，
+    会话正常收尾；窗口小到每次装配都越线的那条判据在下面。"""
     _cli(
         "run",
         "-p",
@@ -785,15 +785,15 @@ def test_window_and_reserve_flags_land_in_the_session_start_payload(tmp_path: Pa
         "--fixture",
         str(HELLO_SCENARIO),
         "--window",
-        "4000",
+        "131072",
         "--reserve",
-        "500",
+        "4096",
         cwd=tmp_path,
     )
 
     payload = _session_start(_log_files(tmp_path)[0])
-    assert payload["window"] == 4000
-    assert payload["reserve"] == 500
+    assert payload["window"] == 131072
+    assert payload["reserve"] == 4096
 
 
 @pytest.mark.parametrize("flag", ["--window", "--reserve"])
@@ -819,8 +819,8 @@ def test_a_budget_argument_below_one_is_a_parameter_error_with_no_log(
     assert _log_files(tmp_path) == []
 
 
-def test_a_run_that_cannot_fit_its_window_exits_four_with_an_error_context(tmp_path: Path) -> None:
-    """窗口小到无可遮蔽：溢出收尾是结果，退出码 4，日志里有 `error/context`。"""
+def test_a_window_that_leaves_no_pressure_budget_is_a_parameter_error(tmp_path: Path) -> None:
+    """窗口减去预留与 headroom 没有剩余：配置期就失败，连日志都不建（ADR-0019）。"""
     result = _cli(
         "run",
         "-p",
@@ -830,9 +830,63 @@ def test_a_run_that_cannot_fit_its_window_exits_four_with_an_error_context(tmp_p
         "--fixture",
         str(HELLO_SCENARIO),
         "--window",
-        "4000",
+        "32768",
         "--reserve",
-        "500",
+        "4096",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    # stderr 要点出那三个数：窗口、预留、headroom 余量。
+    assert all(number in result.stderr for number in ("32768", "4096", "65536"))
+    assert _log_files(tmp_path) == []
+
+
+def test_the_smallest_window_with_a_positive_trigger_line_runs(tmp_path: Path) -> None:
+    """触发线为正的最小窗口照跑：`session/start` 里 `window` 与 `reserve` 是传进去的那两个数。"""
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--window",
+        "70000",
+        "--reserve",
+        "4096",
+        cwd=tmp_path,
+    )
+
+    payload = _session_start(_log_files(tmp_path)[0])
+    assert result.returncode == 0
+    assert payload["window"] == 70000
+    assert payload["reserve"] == 4096
+
+
+# 触发线 364：`66000 - 100 - 65536` 比 `66000 * 4 // 5` 小，所以它是触发线。
+# 2000 个字符约 500 个估算 token，比触发线大；对话体里又无可遮蔽的内容。
+_TIGHT_WINDOW = "66000"
+_TIGHT_RESERVE = "100"
+_OVERFLOW_PROMPT = "任务" * 1000
+
+
+def test_a_run_that_cannot_fit_its_window_exits_four_with_an_error_context(tmp_path: Path) -> None:
+    """窗口小到无可遮蔽：溢出收尾是结果，退出码 4，日志里有 `error/context`。"""
+    result = _cli(
+        "run",
+        "-p",
+        _OVERFLOW_PROMPT,
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--window",
+        _TIGHT_WINDOW,
+        "--reserve",
+        _TIGHT_RESERVE,
         cwd=tmp_path,
     )
 
@@ -852,15 +906,15 @@ def test_a_log_that_overflowed_before_any_assembly_still_replays(tmp_path: Path)
     run = _cli(
         "run",
         "-p",
-        "任务",
+        _OVERFLOW_PROMPT,
         "--provider",
         "mock",
         "--fixture",
         str(HELLO_SCENARIO),
         "--window",
-        "4000",
+        _TIGHT_WINDOW,
         "--reserve",
-        "500",
+        _TIGHT_RESERVE,
         cwd=tmp_path,
     )
     assert run.returncode == 4

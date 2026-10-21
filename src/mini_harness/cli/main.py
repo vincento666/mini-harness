@@ -21,6 +21,7 @@ from mini_harness.config import (
     layer_settings,
     load_config,
 )
+from mini_harness.context.budget import CONTEXT_HEADROOM_TOKENS
 from mini_harness.events import EventLog, LogReadFailure, LogWriteFailure, read_events
 from mini_harness.events.fold import assembled_payload, fold
 from mini_harness.loop import (
@@ -201,6 +202,17 @@ def _run(args: argparse.Namespace) -> int:
             return _report_failure(
                 "INVALID_ARGUMENT", f"{flag} 至少为 1，收到 {value}", EXIT_INVALID_ARGUMENT
             )
+    # 窗口减去预留与 headroom 之后没有剩余压力预算时触发线是 0：任何非空上下文都越线、
+    # 压缩救不动。照 DSH，这是配置解析期的错误，不是运行期才发现的溢出（ADR-0019）。
+    if layered.window - layered.reserve - CONTEXT_HEADROOM_TOKENS <= 0:
+        return _report_failure(
+            "INVALID_ARGUMENT",
+            (
+                f"--window {layered.window} 减去 --reserve {layered.reserve} 与余量 "
+                f"{CONTEXT_HEADROOM_TOKENS} 之后没有剩余压力预算"
+            ),
+            EXIT_INVALID_ARGUMENT,
+        )
 
     # 工具表从装配来：内置六定义按配置的白名单筛，未知名与别的配置失败同形。
     registry = build_registry(layered.tools)
