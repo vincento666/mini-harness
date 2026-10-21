@@ -10,6 +10,10 @@ from typing import Literal
 SandboxLevel = Literal["read-only", "workspace-write", "danger-full-access"]
 ApprovalMode = Literal["ask", "auto"]
 
+# 词表在运行期也要有一份：`--sandbox` / `--approval` 的 choices 与配置文件读进来的值都判这一份。
+SANDBOX_LEVELS: tuple[SandboxLevel, ...] = ("read-only", "workspace-write", "danger-full-access")
+APPROVAL_MODES: tuple[ApprovalMode, ...] = ("ask", "auto")
+
 # 窗口预算的默认值只写在这里：CLI 的 `--window` / `--reserve` 默认值取自同一份。
 DEFAULT_WINDOW = 128000
 DEFAULT_RESERVE = 8192

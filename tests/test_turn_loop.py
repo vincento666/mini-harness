@@ -844,3 +844,28 @@ async def test_the_endpoint_fields_come_from_one_endpoint_object(tmp_path: Path)
     assert "base_url" not in start_without
     assert "model" not in start_without
     assert "api_key_env" not in start_without
+
+
+async def test_a_builtin_tool_filtered_out_by_the_whitelist_is_unknown(tmp_path: Path) -> None:
+    """内置不等于在册：白名单只留 `read` 时，内置的 `grep` 照样是 `UNKNOWN_TOOL`，回合照常闭合。"""
+    log, outcome = await run_session_fixture(
+        tmp_path,
+        "s-grep-filtered",
+        FixtureProvider(
+            entries=[
+                {
+                    "content": "用 grep 找一下",
+                    "finish_reason": "tool_calls",
+                    "tool_calls": [{"id": "c1", "name": "grep", "arguments": {"pattern": "x"}}],
+                },
+                {"content": "算了", "finish_reason": "stop"},
+            ]
+        ),
+        registry=build_registry(["read"]),
+        max_turns=8,
+    )
+
+    records = read_events(log.path)
+    assert result_outcomes(records) == [("c1", "UNKNOWN_TOOL")]
+    assert [record.type for record in records].count("turn/end") == 2
+    assert outcome.stop_reason == "MODEL_COMPLETED"

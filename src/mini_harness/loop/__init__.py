@@ -1,8 +1,10 @@
 """回合层：显式主循环。"""
 
 from mini_harness.loop.settings import (
+    APPROVAL_MODES,
     DEFAULT_RESERVE,
     DEFAULT_WINDOW,
+    SANDBOX_LEVELS,
     ProviderEndpoint,
     SessionSettings,
 )
@@ -20,8 +22,10 @@ from mini_harness.loop.turn_loop import (
 )
 
 __all__ = [
+    "APPROVAL_MODES",
     "DEFAULT_RESERVE",
     "DEFAULT_WINDOW",
+    "SANDBOX_LEVELS",
     "STOP_ABORTED",
     "STOP_CONTEXT_WINDOW_EXCEEDED",
     "STOP_FENCE_DENIED",

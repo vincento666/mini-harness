@@ -62,6 +62,9 @@ def load_config(path: Path) -> dict[str, Any] | ConfigFailure:
             values = tomllib.load(handle)
     except FileNotFoundError:
         return ConfigFailure("CONFIG_NOT_FOUND", f"找不到配置文件：{path}")
+    except OSError as error:
+        # 路径在但读不成（指向目录、权限不够）：同一条「读不到」，不是 traceback。
+        return ConfigFailure("CONFIG_NOT_FOUND", f"读不到配置文件：{path}（{error}）")
     except tomllib.TOMLDecodeError as error:
         return ConfigFailure("CONFIG_INVALID_TOML", f"{path}: {error}")
     failure = validate_config(values)

@@ -24,6 +24,8 @@ from mini_harness.config import (
 from mini_harness.events import EventLog, LogReadFailure, LogWriteFailure, read_events
 from mini_harness.events.fold import assembled_payload, fold
 from mini_harness.loop import (
+    APPROVAL_MODES,
+    SANDBOX_LEVELS,
     STOP_ABORTED,
     STOP_CONTEXT_WINDOW_EXCEEDED,
     STOP_FENCE_DENIED,
@@ -97,11 +99,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--reserve", type=int, default=None)
     run.add_argument("--append-system-prompt", default=None)
     run.add_argument("--events", choices=("jsonl",), default=None)
-    run.add_argument(
-        "--sandbox",
-        choices=("read-only", "workspace-write", "danger-full-access"),
-        default=None,
-    )
+    run.add_argument("--sandbox", choices=SANDBOX_LEVELS, default=None)
     run.add_argument("--yes", action="store_true")
 
     replay = subcommands.add_parser("replay", help="重放一个 session 的日志")
@@ -186,6 +184,17 @@ def _run(args: argparse.Namespace) -> int:
             f"--provider 只接受 mock 或 openai，收到 {provider_name}",
             EXIT_INVALID_ARGUMENT,
         )
+    # 围栏两条轴的取值词表由围栏规定：配置文件写错档位不是「运行期再说」，是参数错误。
+    for key, level, allowed in (
+        ("sandbox", layered.sandbox, SANDBOX_LEVELS),
+        ("approval", layered.approval, APPROVAL_MODES),
+    ):
+        if level not in allowed:
+            return _report_failure(
+                "INVALID_ARGUMENT",
+                f"{key} 只接受 {' / '.join(allowed)}，收到 {level}",
+                EXIT_INVALID_ARGUMENT,
+            )
     # 窗口预算的两个参数在 session 开始之前判掉：非法取值不产生日志（context-budget 规格）。
     for flag, value in (("--window", layered.window), ("--reserve", layered.reserve)):
         if value < 1:

@@ -511,3 +511,55 @@ def test_a_missing_required_item_leaves_no_log_file(tmp_path: Path) -> None:
     assert broken_toml.returncode == 2
     assert "INVALID_ARGUMENT" in broken_toml.stderr
     assert after == before
+
+
+def test_a_config_path_that_is_not_a_file_is_an_argument_error(tmp_path: Path) -> None:
+    """`--config` 指向目录：也是参数错误，不是 traceback 与退出码 1。"""
+    directory = tmp_path / "configs"
+    directory.mkdir()
+
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--config",
+        str(directory),
+        "--yes",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 2, result.stderr
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert str(directory) in result.stderr
+    assert not list((tmp_path / "sessions").glob("*.jsonl"))
+
+
+def test_a_fence_level_outside_the_vocabulary_is_an_argument_error(tmp_path: Path) -> None:
+    """档位与审批的词表由围栏规定：配置文件不能往词表外面写。"""
+    cases: dict[str, str] = {"sandbox": 'sandbox = "banana"', "approval": 'approval = "yolo"'}
+    for name, line in cases.items():
+        case = tmp_path / name
+        case.mkdir()
+        (case / "mini.config.toml").write_text(f"{line}\n", encoding="utf-8")
+
+        result = _cli(
+            "run",
+            "-p",
+            "任务",
+            "--provider",
+            "mock",
+            "--fixture",
+            str(HELLO_SCENARIO),
+            "--yes",
+            cwd=case,
+        )
+
+        assert result.returncode == 2, f"{name}: {result.stderr}"
+        assert "INVALID_ARGUMENT" in result.stderr
+        assert name in result.stderr
+
+    assert not list(tmp_path.rglob("*.jsonl"))

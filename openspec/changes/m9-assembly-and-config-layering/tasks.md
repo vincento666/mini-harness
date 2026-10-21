@@ -57,6 +57,13 @@
 - [x] 7.1 变异测试一轮：改坏 `config/` 与装配段的实现（层叠顺序、白名单筛选、密钥判据、端点派生各至少一处），跑全量 `uv run pytest -q`，把「变异 / 改法 / 哪些测试变红」记进 `docs/verification/m9-assembly-and-config-layering-mutation.md`，还原前先看 `git status`，还原后确认回到基线。**13 条变异全部被杀**：编号 1–9 是各组实现落地时顺手跑的定向轮（记录也在提交信息里），编号 10–13 是收尾全量轮（层叠顺序互换 / 白名单被忽略 / 密钥不是必需项 / payload 不写端点三条），无存活项、无 dud mutant。还原后基线确认：323 passed / 2 skipped、`TOTAL 1505 / 69 / 95%`
 - [x] 7.2 Learning Gate：扫本轮证据（红过的测试、存活的变异、返工过的规格、工具坑）写进 `docs/lessons.md` 收件箱；无可复用信号则写 `NO-PROMOTION`。新收五条 L-041–L-045，关闭零条，留存八条，**AGENTS.md 本轮不晋升（NO-PROMOTION）**；收件箱 13 条
 
+## 8. code-review 两轴之后的修复（2026-10-21，审查后补）
+
+- [x] 8.1 seam ⑥：`--config` 指向目录 / 读不动的路径也是参数错误——红判据 `test_a_config_path_that_is_not_a_file_is_an_argument_error`（先红：`PermissionError` traceback、退出码 1），绿法 `load_config` 加 `except OSError` → `CONFIG_NOT_FOUND`
+- [x] 8.2 seam ⑥：配置写错档位不再跳过工作区边界——红判据 `test_a_fence_level_outside_the_vocabulary_is_an_argument_error`（先红：`sandbox = "banana"` 那一例退出码 0），绿法词表 `SANDBOX_LEVELS` / `APPROVAL_MODES` 立在 `loop/settings.py`、CLI 在 session 之前判、argparse 的 `choices` 改用同一份
+- [x] 8.3 seam ①：file-tools delta 那条 scenario「被白名单筛掉的文件工具不在工具表里」补判据 `test_a_builtin_tool_filtered_out_by_the_whitelist_is_unknown`（写出来就是绿的：实现早已如此，缺的是判据）
+- [ ] 8.4 文档：design.md 的 D1 补「实现时的改判」；ADR-0018 的 Consequences 按实况改写档位那半句；ADR-0002 新记第 38–45 条与提交纪律三处欠账
+
 ## Workflow follow-up
 
 - 在 change 分支上跑 `code-review`（Standards / Spec 两轴，固定点 `main`）并处理或记账发现。
