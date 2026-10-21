@@ -7,9 +7,10 @@ from pathlib import Path
 
 from mini_harness.events import EventRecord, read_events
 from mini_harness.events.fold import TOOL_OUTCOME_UNKNOWN
+from mini_harness.loop import run_turn_segment, start_session
 from mini_harness.provider import FixtureProvider, ProviderFailure
 from mini_harness.tools import ToolRegistry
-from tool_harness import run_fixture_session, run_session_fixture
+from tool_harness import build_session_env, run_fixture_session, run_session_fixture
 
 # 触发线 4364（`W - O - 65536` 比 `W * 0.8` 小）、保留预算 11200。
 TIGHT_WINDOW = 70000
@@ -152,11 +153,47 @@ async def test_overflow_when_nothing_can_be_shadowed(tmp_path: Path) -> None:
     closers = [
         record.payload["stop_reason"]
         for record in records
-        if record.type in {"turn/end", "session/end"}
+        if record.type in {"turn/end", "segment/end", "session/end"}
     ]
-    assert closers == ["CONTEXT_WINDOW_EXCEEDED", "CONTEXT_WINDOW_EXCEEDED"]
+    assert closers == ["CONTEXT_WINDOW_EXCEEDED"] * 3
     assert outcome.stop_reason == "CONTEXT_WINDOW_EXCEEDED"
     assert outcome.failure_code == "CONTEXT_WINDOW_EXCEEDED"
+
+
+async def test_an_overflow_closes_the_segment_not_the_session(tmp_path: Path) -> None:
+    """溢出是**回合**终止结果：段自己只写到 `segment/end`，会话是否结束归入口（ADR-0011）。
+
+    一次性 run 的入口接着写 `session/end` 并映射退出码 4，那条判据在 `tests/test_cli_run.py`。
+    """
+    log, env = build_session_env(
+        tmp_path,
+        "s-overflow-segment",
+        FixtureProvider(entries=[DONE_ENTRY]),
+        window=4000,
+        reserve=500,
+        max_turns=4,
+    )
+
+    assert start_session(prompt="任务", env=env) is None
+    segment = await run_turn_segment(
+        env=env, segment_id="s1", first_turn_index=1, cancel=asyncio.Event()
+    )
+
+    records = read_events(log.path)
+    assert segment.stop_reason == "CONTEXT_WINDOW_EXCEEDED"
+    assert [record.type for record in records] == [
+        "session/start",
+        "segment/start",
+        "turn/start",
+        "error/context",
+        "turn/end",
+        "segment/end",
+    ]
+    assert records[-1].payload == {
+        "segment_id": "s1",
+        "stop_reason": "CONTEXT_WINDOW_EXCEEDED",
+        "turns": 1,
+    }
 
 
 async def test_one_compaction_then_overflow_when_the_context_still_does_not_fit(

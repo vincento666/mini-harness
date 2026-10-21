@@ -19,9 +19,9 @@
 
 ## 3. 溢出与取消的收尾边界
 
-- [ ] 3.1 先红：溢出回合只写 `error/context` + `turn/end` + `segment/end`，`session/end` 由入口写（一次性 run 照写、退出码 4）。seam ①（`tests/test_context_budget.py`）
-- [ ] 3.2 取消同形复核：段收尾不写 `session/end` 时，`run` 入口补写并映射退出码 5；段中取消写 `segment/end(ABORTED)`。seam ①⑥（`tests/test_turn_cancel.py`、`tests/test_cli_run.py`）
-- [ ] 3.3 溢出收尾的日志照样逐点重放、退出码 0（既有守卫不退化）。seam ⑥（`tests/test_cli_replay.py`）
+- [x] 3.1 溢出回合只写 `error/context` + `turn/end` + `segment/end`，`session/end` 由入口写（一次性 run 照写、退出码 4）。seam ①（`tests/test_turn_compaction.py`——`test_context_budget.py` 只判纯函数，不开新缝）
+- [x] 3.2 取消同形复核：段收尾不写 `session/end` 时，`run` 入口补写并映射退出码 5；段中取消写 `segment/end(ABORTED)`。seam ①⑥（`tests/test_turn_cancel.py`、`tests/test_cli_run.py`）
+- [x] 3.3 溢出收尾的日志照样逐点重放、退出码 0（既有守卫不退化）。seam ⑥（`tests/test_cli_replay.py`）
 
 ## 4. 预算的两条 DSH 校正
 
