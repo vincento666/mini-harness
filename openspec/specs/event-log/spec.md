@@ -65,7 +65,7 @@
 - **THEN** `minihns replay` 以退出码 1 结束，stderr 含 `LOG_UNREADABLE`，且进程没有未捕获异常
 
 ### Requirement: 事件类型只取自当前事件词表
-系统 SHALL 只发出当前词表中的事件类型：`session/start`、`session/end`、`turn/start`、`turn/end`、`context/assembled`、`model/request`、`model/retry`、`model/response`、`tool/call`、`tool/result`、`tool/cancelled`、`approval/request`、`approval/response`、`compaction/summary`、`error/*`。`error/*` 用到的具体类型是 `error/model`、`error/internal`、`error/abort`、`error/fence`、`error/context`。词表外的事实 MUST NOT 通过临时新造类型表达。`model/retry` 自 M4 起可达；`tool/cancelled` 自 M3 起可达；`compaction/summary` 与 `error/context` 自 M5 起可达。
+系统 SHALL 只发出当前词表中的事件类型：`session/start`、`session/end`、`segment/start`、`segment/end`、`turn/start`、`turn/end`、`context/assembled`、`model/request`、`model/retry`、`model/response`、`user/message`、`tool/call`、`tool/result`、`tool/cancelled`、`approval/request`、`approval/response`、`compaction/summary`、`error/*`。`error/*` 用到的具体类型是 `error/model`、`error/internal`、`error/abort`、`error/fence`、`error/context`。词表外的事实 MUST NOT 通过临时新造类型表达。
 
 #### Scenario: 一次带审批的写的事件序列
 - **WHEN** 一次 run 的某回合派发一次获批的 `edit`
@@ -94,6 +94,18 @@
 #### Scenario: 一次压缩一条 compaction/summary
 - **WHEN** 一次装配越线并完成压缩
 - **THEN** 日志里恰有一条 `compaction/summary`，它不被记为 `unrecognized_type`
+
+#### Scenario: 一次 REPL 输入一条 user/message
+- **WHEN** 一次 chat 里人提交一条非空输入
+- **THEN** 日志里恰有一条 `user/message`，payload 含 `segment_id` 与 `content`，它不被记为 `unrecognized_type`
+
+#### Scenario: 段的边界不被记为 unrecognized_type
+- **WHEN** 跑完一次 `minihns run`
+- **THEN** 日志里恰有一条 `segment/start` 与一条 `segment/end`，两者都不被记为 `unrecognized_type`
+
+#### Scenario: 一次性 run 不产生 user/message
+- **WHEN** 跑完一次 `minihns run`
+- **THEN** 日志里没有任何 `user/message` 记录
 
 ### Requirement: approval 事件记录问与答
 系统 SHALL 在**向人提问之前**写一条 `approval/request`（含 `turn_id`、`tool_call_id`、工具名、关键参数），并在得到结论时立刻写一条 `approval/response`（含同样的 `turn_id` 与 `tool_call_id`，`decision` 取 `APPROVED`、`DENIED`、`UNAVAILABLE`）。在非 `ABORTED` 收尾的 session 里，每条 `approval/request` MUST 有且只有一条配对的 `approval/response`。以 `error/abort` 收尾的 session 里允许一条没有配对的 `approval/request`，它读成「未回答」。

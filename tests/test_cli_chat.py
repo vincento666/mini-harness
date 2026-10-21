@@ -179,6 +179,40 @@ def test_a_segment_failure_does_not_end_the_session(tmp_path: Path) -> None:
     assert records[-1]["payload"]["stop_reason"] == "MODEL_COMPLETED"
 
 
+def test_a_provider_failure_inside_a_segment_leaves_the_session_running(tmp_path: Path) -> None:
+    """seam ⑥：provider 失败是段级收尾——`error/model` 在盘上，会话继续，编号不重置。"""
+    entries = [
+        {
+            "content": f"第 {index} 次读",
+            "finish_reason": "tool_calls",
+            "tool_calls": [{"id": f"c{index}", "name": "read", "arguments": {"file_path": "a.md"}}],
+        }
+        for index in (1, 2)
+    ]
+    fixture = _fixture(tmp_path, "two_then_none.json", entries)
+
+    result = _chat(
+        "--fixture", fixture, "--max-turns", "4", cwd=tmp_path, stdin_text="第一条\n第二条\n"
+    )
+
+    assert result.returncode == 0
+    records = _records(tmp_path)
+    failures = [record for record in records if record["type"] == "error/model"]
+    assert len(failures) == 2, "两个段各撞上一次 fixture 耗尽"
+    assert {str(record["payload"]["code"]) for record in failures} == {"PROVIDER_EXHAUSTED"}
+    segments = [record["payload"] for record in records if record["type"] == "segment/end"]
+    assert [(segment["segment_id"], segment["stop_reason"]) for segment in segments] == [
+        ("s1", "PROVIDER_ERROR"),
+        ("s2", "PROVIDER_ERROR"),
+    ]
+    turn_ids = [
+        record["payload"]["turn_id"] for record in records if record["type"] == "turn/start"
+    ]
+    assert turn_ids == ["t1", "t2", "t3", "t4"]
+    assert records[-1]["type"] == "session/end"
+    assert records[-1]["payload"]["stop_reason"] == "MODEL_COMPLETED"
+
+
 _WINDOWS_CTRL_C_REASON = (
     "Windows 的 Ctrl-C 黑盒不在本项目范围：缺口沿用 M3 的边界，"
     "记进 docs/verification/m3-bash-concurrency-timeout-manual.md"

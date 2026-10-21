@@ -68,3 +68,10 @@
 #### Scenario: 请求级压缩救回一次
 - **WHEN** 某回合的模型调用得到 `PROVIDER_CONTEXT_OVERFLOW`，而对话体里有可遮蔽的较早往返
 - **THEN** 日志里恰有一条 `compaction/summary`，该请求被重试一次，该回合以正常的 `model/response` 继续而不是以溢出收尾
+
+### Requirement: 摘要调用失败沿用 provider 失败结果
+生成摘要的那次模型调用失败时，系统 SHALL 沿用既有的 provider 失败形状：写 `error/model`（含 `code`）与 `turn/end`（`stop_reason: PROVIDER_ERROR`）。`session/end` 与退出码由入口决定：一次性 `minihns run` 写 `session/end` 并以退出码 1 结束，`minihns chat` 里这是段级收尾（见 `turn-loop` 的「Provider 失败是回合终止结果」）。此时 MUST NOT 写 `compaction/summary`，也 MUST NOT 产出 `CONTEXT_WINDOW_EXCEEDED`。
+
+#### Scenario: fixture 里没有摘要回复
+- **WHEN** 一次性 run 里装配越线但 fixture 的回复条目已耗尽
+- **THEN** 日志写 `error/model`（`code: PROVIDER_EXHAUSTED`）与 `session/end`，退出码为 1，且日志里没有任何 `compaction/summary`

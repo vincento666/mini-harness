@@ -16,6 +16,11 @@
 | 10 | `loop/turn_loop.py:687` `start_session` | `session/start` 不写 `entry` | 只有 `test_cli_chat.py::test_chat_shares_the_flag_table_and_the_layering` | 杀死，但**暴露缺口** |
 | 11 | `loop/turn_loop.py:751` `run_turn_segment` | `segment/end.turns` 恒 1 | `test_cli_chat.py::test_a_segment_that_uses_up_max_turns_returns_to_the_prompt`、`test_turn_loop.py::test_two_segments_number_segments_and_turns_continuously` | 杀死 |
 | 12 | `cli/main.py:365` `_chat_sigint_handler` | `signals.active is not None` 换成 `False`（Ctrl-C 永不取消当前段） | `test_cli_chat.py::test_the_chat_handler_cancels_the_running_segment`：判据把 `KeyboardInterrupt` 抛穿到 pytest，整轮中止（exit 2，30 passed 后中断） | 杀死（形状特殊） |
+| 13 | `cli/main.py:443` `_chat_session` | 段以 `PROVIDER_ERROR` 收尾时 `break`（把段级收尾当成会话结束） | `test_cli_chat.py::test_a_provider_failure_inside_a_segment_leaves_the_session_running`（1 failed / 357 passed） | 杀死 |
+
+## 追加一条（8.4 sync 时补的判据，先做非空转核对）
+
+8.4 把 delta sync 进主规格时发现 turn-loop 主规格里有四条 Requirement 还在断言会话级收尾，照原样合会自相矛盾，于是给 delta 补了三份 MODIFIED 与一个新 scenario「REPL 里 provider 失败是段级收尾」。配套判据 `test_a_provider_failure_inside_a_segment_leaves_the_session_running` 在基线下**直接是绿的**——它是守卫，不是红绿循环。按变异纪律跑变异 13 证明它不是空转：把「provider 失败结束会话」这个错误形状装上去，只有它变红（`assert 1 == 2`，两个段各撞一次 fixture 耗尽变成只撞一次）。变异已还原，`git diff --stat src` 为空。
 
 ## 三个存活的与一个暴露的缺口，补的判据
 
@@ -36,6 +41,6 @@
 
 ## 基线确认与门禁
 
-还原后 `git diff --stat src` 为空（只剩本轮新增的判据在 `tests/`）。门禁四道：`ruff format --diff` 0（67 files already formatted）、`ruff check` 0、`mypy --strict src` Success（28 source files）、`357 passed / 4 skipped`、`TOTAL 1704 语句 / 84 未覆盖 / 95%`（地板 95%，`--fail-under=95` 退出码 0）。
+还原后 `git diff --stat src` 为空（只剩本轮新增的判据在 `tests/`）。门禁四道：`ruff format --diff` 0（67 files already formatted）、`ruff check` 0、`mypy --strict src` Success（28 source files）、`358 passed / 4 skipped`、`TOTAL 1704 语句 / 84 未覆盖 / 95%`（地板 95%，`--fail-under=95` 退出码 0）。
 
-判据达成：12 个变异全部被杀死，其中三个存活变异与一个暴露的缺口由本轮补的四条判据杀死（`fold.py` 98%、`turn_loop.py` 90% 未变——补的判据都在 seam ⑥ 与 seam ① 的既有低覆盖处之外）。
+判据达成：13 个变异全部被杀死，其中三个存活变异与一个暴露的缺口由本轮补的四条判据杀死（`fold.py` 98%、`turn_loop.py` 90% 未变——补的判据都在 seam ⑥ 与 seam ① 的既有低覆盖处之外）。

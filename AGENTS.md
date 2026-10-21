@@ -28,7 +28,7 @@
 ## 命令
 
 ```bash
-# 便宜的在前：格式 / 风格 / 类型约 20 秒，测试带覆盖率记账约 66 秒
+# 便宜的在前：格式 / 风格 / 类型最省，测试带覆盖率记账最贵
 uv run ruff format --diff src tests
 uv run ruff check src tests
 uv run mypy --strict src
@@ -92,7 +92,7 @@ Python **>= 3.12** · **uv** · `src/mini_harness/` 布局 · **mypy strict** ·
 
 ## MVP 分两阶段（ADR-0010）
 
-**第一阶段**（内核 / 工件 / 组合 / 能力 / 模型的基础，围栏有雏形）：剩余 **M6 → M7**；进度看 `docs/CURRENT.md`。**第二阶段**（补全成**没有 web / Electron 外壳**的完整类 DSH 形态）：**M10 → M11 → M12 → M13 → M14 → M15**。**第三阶段**（加壳）等前两阶段做完再规划。每个里程碑做什么见 `docs/roadmap.md` 的表。**始终不做**：PTC 工具面塌缩、多模型路由与重试策略、独立工单与 triage 标签体系。
+**第一阶段**（内核 / 工件 / 组合 / 能力 / 模型的基础，围栏有雏形）：剩余 **M7**；进度看 `docs/CURRENT.md`。**第二阶段**（补全成**没有 web / Electron 外壳**的完整类 DSH 形态）：**M10 → M11 → M12 → M13 → M14 → M15**。**第三阶段**（加壳）等前两阶段做完再规划。每个里程碑做什么见 `docs/roadmap.md` 的表。**始终不做**：PTC 工具面塌缩、多模型路由与重试策略、独立工单与 triage 标签体系。
 
 ---
 
