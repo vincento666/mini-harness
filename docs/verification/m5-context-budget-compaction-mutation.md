@@ -39,4 +39,5 @@ for event in reversed(candidates[:-1]):
 ## 还原后的基线
 
 `git status` 只剩这两处本轮改动：`src/mini_harness/context/budget.py`（1 行修复）与
-`tests/test_context_budget.py`（+20 行新判据）。全量门禁回到 282 passed, 2 skipped。
+`tests/test_context_budget.py`（+20 行新判据）。全量门禁回到 283 passed, 2 skipped——
+比上面那条基线多出的那一条，就是补上的判据。

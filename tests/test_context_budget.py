@@ -1,4 +1,5 @@
-"""seam ①：窗口预算——触发线公式、估算 token、预算读数的两个来源。"""
+"""窗口预算的算术：`context/budget.py` 的纯函数直接判。
+seam ① 的回合循环判据在 `tests/test_turn_compaction.py`，这里不开新的缝。"""
 
 from __future__ import annotations
 

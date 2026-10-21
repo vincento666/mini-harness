@@ -283,3 +283,52 @@ M5 的压缩遮蔽的是**一段历史**。DSH 还做另一件事，mini 版没�
 
 - 记账不动的理由：没有判据需要它变，且当前量级（一个会话几十条记录）测不出差别；先做增量读会把 replay 依赖的「任何前缀可重算」这条形状改松。
 - 处理时点：**M11**（日志读取与投影层）。那时先看「增量读 + 已算过的遮蔽范围可复用」能不能立成一个读方接口，再决定全量重读是否只留作 replay 的实现。
+
+## M5 两轴审查轮：已动的与四条新账（2026-10-21）
+
+同一 change 的 `code-review` 两轴（固定点 `main`）。先记已动的三条，再记账。
+
+- **溢出收尾的日志重放**：实现把「没有任何 `context/assembled`」判成 `REPLAY_MISMATCH` 退出码 1，而 delta 规格那条 scenario 写的是退出码 0。人裁决改实现——溢出与取消都能在第一次装配之前把回合收掉，那是合法日志，不是损坏日志；replay 现在打印一行「没有装配点」的说明、不打印最后一次装配的上下文，并以退出码 0 结束。那条守卫原本没有任何测试守着（全仓 grep 无判据），这也是它能悄悄存在到 M5 的原因。
+- **provider 超限的判定范围**：规格写「状态码 400」，实现是「4xx 里看 `error.code`」。人裁决改规格措辞并补 413 的 scenario 与判据：线上的事实是那个 code。顺带核出一处审查报告没说准的地方——重试耗尽的 5xx 与 429 在实现里更早返回（`openai_compat.py:261`），带同一个 code 也**不会**塌成溢出；这条现在写进规格正文。
+- **design D2 与测试策略表**：D2 原写「送被遮蔽那段」，实现送整份表层；表里 seam ⑥ 的落点是一份不存在的 `test_cli_budget.py`。两处都是措辞与实况分叉，已按实况更正，`tests/test_context_budget.py` 的 docstring 也不再自称 seam ①。
+
+### 33. 「遮蔽范围」在代码里是一个 dict：M5 记账，M11 收
+
+GLOSSARY 立了「遮蔽范围」这个词，代码里它是 `dict[str, int]`（`shadowed_range` 产出、`fold.shadowed_seqs` 又用 `isinstance` 把它解析一遍），`compaction/summary` 的 payload 也带同名键。基线里的 Primitive Obsession 与 Data Clumps 都指到这里：它值得一个小类型。
+
+- 记账不动的理由：现在只有一个产出方和一个读方，改名与加类型要连 payload 形状、replay 的逐字段比对、以及 `test_context_budget.py` 的十几条断言一起动。
+- 处理时点：**M11**（投影层）。届时遮蔽范围是投影层的输入，类型自然要立。
+
+### 34. 「这条记录是不是摘要回复」在四处各判一遍
+
+`purpose == PURPOSE_COMPACTION` 加上 `event.type` 的同一套判断出现在 `budget._record_chars`、`budget._produces_message`、`budget.budget_reading` 与 `fold._body_message`。基线里的 Repeated Switches 与 Duplicated Code。
+
+- 记账不动的理由：四处都属于「读方怎么看待一条记录」，正确的收法是把这条谓词放到事件层（或投影层的一个读方接口），而 M5 只允许 fold 加读方规则、不允许动事件层的形状。
+- 处理时点：**M11**。与第 33 条同一处收。
+
+### 35. 预算模块在重建工具往返的配对，而那份知识住在折叠里
+
+`budget._round_owner` 与 `_round_end` 从 payload 里重建 `tool_call_id → assistant 记录` 的配对，这件事 `fold.py` 已经会做（`_call_id_of` 与它的 pending 表）；且 `_round_end` 每次调用重建一份 `by_seq`，在 `shadowed_range` 的 while 循环里是 O(n²)。基线里的 Feature Envy。
+
+- 记账不动的理由：判据只要求「切点不拆散一组工具往返」，没有一条判据需要这份配对来自折叠；当前量级（几十条记录）下 O(n²) 测不出差别。
+- 处理时点：**M11**。若第 32 条的「增量读 + 可复用的遮蔽范围」立成接口，这份配对自然由那个接口提供。
+
+### 36. `retain_line` 这个名字没说它是「保留尾部的预算额度」
+
+基线里的 Mysterious Name，轻。函数返回的是保留预算（token 数），名字读起来像一条 seq 线。
+
+- 记账不动的理由：改名要连 19 条判据、design D4、GLOSSARY 与 `docs/CURRENT.md` 一起动，M5 收尾轮不该为一条命名账跑这些。
+- 处理时点：**M11**，与第 33 条一起顺手收。
+
+### 37. provider 报 `PROVIDER_ABORTED` 时塌成 `PROVIDER_ERROR`：未决
+
+`openai_compat.py:222` 与 `:250` 会在取消信号已置位时返回 `PROVIDER_ABORTED`；回合循环把任何 provider 失败都走 `error/model` + `PROVIDER_ERROR` + 退出码 1。而主规格与 M5 的 scenario 都说「内核置位取消时走的是 `error/abort` 与退出码 5」。当前没有生产路径会撞上它（回合循环在调 `generate` 之前就先看取消），所以 `docs/CURRENT.md` 记的是「有词表值与判据、没有生产路径」。
+
+- 记账不动的理由：把它塌成 `ABORTED` 要决定「provider 自己报的取消」与「内核置位的取消」是不是同一件事，那是 M10 派生信号与执行段立缝时的裁决。
+- 处理时点：**M10**（ADR-0013 的执行段）。
+
+### 提交纪律的两处欠账（历史提交不改写，只记账）
+
+- `251e093` 打包了 task 7.1–7.7，跨 seam ⑥ 与 ②，**没有写打包理由**——违 AGENTS.md「一个提交最多覆盖同一 seam 上相邻的 3 个 task；超过就写明理由」。当时能写的真实理由是「7.5 与 7.7 是把组 5 已经打通的形状钉成 seam ⑥ 与 ② 的判据，拆开会产出只有断言没有实现的提交」，但这句话当时没写进提交信息。
+- `a91a2d2` 自述「组 2 的六条判据是一次写完再实现的」——违「一条判据先红、再绿，一次一个切片」。它当时已诚实写在提交信息里，且组 3 起恢复交替；记在这里是为了让下一轮不再靠自述补救。
+- 本轮（组 9）新增的两条判据里，413 那条写出来就是绿的（实现早已如此），按纪律写明它不是红绿对、是把「已经成立」钉成判据。

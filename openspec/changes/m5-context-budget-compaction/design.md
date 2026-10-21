@@ -36,7 +36,9 @@ DSH 的事实：`SurfaceOp = 'append' | {op:'replace', startSeq, endSeq}`，`com
 
 ### D2 摘要由模型生成，走同一个 `generate`
 
-摘要请求的消息 = 受保护头部 + 被遮蔽那段折出来的消息 + 一条固定的 user 指令；`tools` 传空列表（摘要不需要工具）。那次调用照常落 `model/request` 与 `model/response`，payload 带 `purpose: "compaction"`；fold 对带这个标记的 `model/response` 不产出 assistant 消息。
+摘要请求的消息 = 受保护头部 + **当时那份整份表层**（含保留尾部）折出来的消息 + 一条固定的 user 指令；`tools` 传空列表（摘要不需要工具）。那次调用照常落 `model/request` 与 `model/response`，payload 带 `purpose: "compaction"`；fold 对带这个标记的 `model/response` 不产出 assistant 消息。
+
+这一句在实现核对后改过（原写的是「被遮蔽那段折出来的消息」，`code-review` 的 Spec 轴指出实现送的是整份表层）。改措辞而不是改实现：fold 是整份日志的读方，要它折一个 seq 子区间就得给它加参数，正是 D9 避开的事。代价写清楚——摘要会重述保留尾部里仍在场的内容，那次调用的 input 比「只量被遮蔽段」更大，换来的是摘要与仍在场的内容之间有连续性。
 
 为什么不落盘：不变量 F（全程可观测）与 A（provider 不碰日志、由内核落）。为什么不进表层：否则摘要文本在上下文里出现两次——一次是 `system` 摘要，一次是 assistant 回复。考虑过的替代：不落 `model/*`、把 usage 与重试塞进 `compaction/summary` 的 payload——省两条记录，代价是那次调用的重试与失败事实没有既有形状可挂。
 
@@ -88,11 +90,14 @@ OpenAI 兼容端点的稳定字段。按 message 文本匹配会把一种误判�
 
 | seam | 判据落点 | 判什么 |
 | --- | --- | --- |
-| ① 回合循环 | `tests/test_context_budget.py`（新） | 触发线数值；小 W 触发压缩且 `compaction/summary` 在 `context/assembled` 之前；一次装配只一次；兜底溢出 → `error/context` + `turn/end` + 退出码 4；取消在场不压缩；摘要失败沿用 `PROVIDER_ERROR`；溢出回合没有 `model/request` |
+| ① 回合循环 | `tests/test_turn_compaction.py`（新） | 小 W 触发压缩且 `compaction/summary` 在 `context/assembled` 之前；一次装配只一次；兜底溢出 → `error/context` + `turn/end` + 退出码 4；取消在场不压缩；摘要失败沿用 `PROVIDER_ERROR`；溢出回合没有 `model/request` |
+| ① 之内（不是新缝） | `tests/test_context_budget.py`（新） | 触发线公式与保留预算的数值、估算 token、读数的两个来源、遮蔽范围的边界与「无可遮蔽内容」——`context/budget.py` 的纯函数直接判，因为回合循环走不到公式的每一个分支 |
 | ④ 日志追加与折叠 | `tests/test_context_fold.py`（扩） | 被遮蔽的记录不产出消息；不拆散配对；被遮蔽的调用不派生闭合；摘要 `system` 消息的位置与多条顺序；`purpose: compaction` 的回复不进表层；确定性；压缩过的日志逐点重放 |
-| ⑤ Provider 接口 | `tests/test_provider_openai.py`（扩） | 400 + `context_length_exceeded` → `PROVIDER_CONTEXT_OVERFLOW` 且无 `model/retry`；其它 400 仍 `PROVIDER_HTTP_STATUS` |
-| ⑥ CLI 黑盒 | `tests/test_cli_budget.py`（新） | `--window` / `--reserve` 进 payload；非法取值退出码 2 且不建日志；退出码 4 可达；压缩过的日志 `minihns replay` 逐点通过 |
+| ⑤ Provider 接口 | `tests/test_provider_openai.py`（扩） | 4xx + `context_length_exceeded` → `PROVIDER_CONTEXT_OVERFLOW` 且无 `model/retry`；其它 4xx 仍 `PROVIDER_HTTP_STATUS` |
+| ⑥ CLI 黑盒 | `tests/test_cli_run.py`（扩）与 `tests/test_cli_replay.py`（扩） | `--window` / `--reserve` 进 payload；非法取值退出码 2 且不建日志；退出码 4 可达；压缩过的日志与溢出收尾的日志 `minihns replay` 逐点通过 |
 | ② 工具注册与管线 | `tests/test_vocabulary_reachability.py`（扩） | 新事件类型与新 `StopReason` 值可达，词表外不写出 |
+
+这张表在实现核对后改过两处（`code-review` 两轴都指出表与实况不符）：seam ⑥ 的落点原本写的是不存在的 `tests/test_cli_budget.py`，实际判据落在既有的 `test_cli_run.py` 与 `test_cli_replay.py` 里——CLI 黑盒只有一个入口，为窗口参数另开一个文件只会把同一个黑盒劈成两半。seam ① 原本把「触发线数值」也记在 `test_context_budget.py` 名下，而那份文件判的是纯函数、不经回合循环：它不是第八个缝，是缝 ① 的机器内部的算术，所以单列一行并写明它为什么直接判。
 
 fixture：新增 `tests/fixtures/scenarios/compaction/turns.json`（小 W 下触发一次压缩的回复序列）。
 

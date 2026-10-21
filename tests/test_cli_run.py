@@ -809,3 +809,35 @@ def test_a_run_that_cannot_fit_its_window_exits_four_with_an_error_context(tmp_p
     assert types[-3:] == ["error/context", "turn/end", "session/end"]
     assert "model/request" not in types
     assert records[-3]["payload"]["code"] == "CONTEXT_WINDOW_EXCEEDED"
+
+
+def test_a_log_that_overflowed_before_any_assembly_still_replays(tmp_path: Path) -> None:
+    """溢出发生在第一次装配之前：那份日志照样可重放，退出码 0。"""
+    run = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--window",
+        "4000",
+        "--reserve",
+        "500",
+        cwd=tmp_path,
+    )
+    assert run.returncode == 4
+
+    log_path = _log_files(tmp_path)[0]
+    replay = _cli("replay", log_path.stem, "--session-dir", str(log_path.parent), cwd=tmp_path)
+    printed = replay.stdout.splitlines()
+
+    assert replay.returncode == 0
+    assert "REPLAY_MISMATCH" not in replay.stderr
+    # 没有装配点要说清，不能靠「一条都没验」冒充验过。
+    assert any("没有装配点" in line for line in printed)
+    assert any(
+        line.startswith("turn ") and line.endswith(": CONTEXT_WINDOW_EXCEEDED") for line in printed
+    )
+    assert not any(line.startswith("final_context") for line in printed)

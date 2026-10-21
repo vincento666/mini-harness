@@ -266,11 +266,9 @@ def _replay(args: argparse.Namespace) -> int:
         if record.type == "context/assembled"
     ]
     if not assembled:
-        return _report_failure(
-            "REPLAY_MISMATCH",
-            f"error/replay 日志里没有任何 context/assembled：{path}",
-            EXIT_INTERNAL_ERROR,
-        )
+        # 溢出与取消都能在第一次装配之前就把回合收掉，那份日志是合法的：
+        # 没有可重算的点不等于重算不一致，但要说明它，不能冒充「一条都验过」。
+        print("no_context_assembled: 这份日志没有装配点")
 
     for index, record in assembled:
         preceding_turn = next(
@@ -292,7 +290,8 @@ def _replay(args: argparse.Namespace) -> int:
     for record in records:
         if record.type == "turn/end":
             print(f"turn {record.payload['turn_id']}: {record.payload['stop_reason']}")
-    print("final_context: " + json.dumps(assembled[-1][1].payload, ensure_ascii=False))
+    if assembled:
+        print("final_context: " + json.dumps(assembled[-1][1].payload, ensure_ascii=False))
     return EXIT_OK
 
 

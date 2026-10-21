@@ -78,3 +78,22 @@
 #### Scenario: 预算溢出映射到退出码 4
 - **WHEN** 一次 run 以 `stop_reason: CONTEXT_WINDOW_EXCEEDED` 结束
 - **THEN** 退出码为 4，且日志里有 `error/context` 记录
+
+### Requirement: minihns replay 逐点重算折叠并断言相等
+系统 SHALL 提供 `minihns replay <session-id>`：定位该 session 的日志，对日志里每一条 `context/assembled` 用它之前的日志前缀重算折叠结果，并与该记录的 payload 逐字段比对；重算的入参 MUST NOT 取自该点之后的事件，且 MUST 全部可从该前缀派生（含当时的工具名列表）。replay SHALL 打印逐回合序列与最后一次装配的上下文；没有任何装配点时 SHALL 打印一行说明并以退出码 0 结束。replay MUST NOT 调用 Provider，MUST NOT 修改被重放的日志，也 MUST NOT 执行任何工具。重放不一致时 MUST NOT 往被重放的日志追加任何事件（含 `error/*`）：只往 stderr 写一行 `REPLAY_MISMATCH: <detail>` 并以退出码 1 结束。`error/replay` 不在事件词表里、从不进日志，是「每个非零退出都有 `error/*`」的例外之一（见 ADR-0001）。
+
+#### Scenario: 每个装配点都重算相等
+- **WHEN** 先跑一次带工具调用与审批记录的 run，再对同一 session id 执行 replay
+- **THEN** 日志里每条 `context/assembled` 都与其前缀的重算结果逐字段相等，replay 以退出码 0 结束
+
+#### Scenario: 装配点不一致是失败结果
+- **WHEN** 被重放的日志里某条 `context/assembled` 与其前缀的重算结果不一致
+- **THEN** replay 往 stderr 写一行 `REPLAY_MISMATCH: <detail>`（含该记录的 `seq`）并以退出码 1 结束；被重放的日志既不被改写、也不被追加
+
+#### Scenario: replay 不重新调用模型
+- **WHEN** 对一个用 mock fixture 跑出的 session 执行 replay
+- **THEN** 过程中没有任何 Provider 调用发生，且工作区里没有任何文件被创建或修改（replay 也不执行工具）
+
+#### Scenario: 没有装配点的日志不是重放不一致
+- **WHEN** 被重放的日志里没有任何 `context/assembled`（第一次装配之前就溢出或取消收尾）
+- **THEN** replay 打印逐回合序列与一行「没有装配点」的说明、不打印最后一次装配的上下文，并以退出码 0 结束

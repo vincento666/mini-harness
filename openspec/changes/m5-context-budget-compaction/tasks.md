@@ -1,4 +1,4 @@
-# Tasks
+ Tasks
 
 红绿纪律：一条判据先红、再绿，一次一个切片。下面每一组内部就是实现顺序；组与组之间不许水平切片（不许「先把所有测试写完再实现」）。
 
@@ -78,3 +78,13 @@
 - [x] 8.6 核对 `GLOSSARY.md` 的「遮蔽（shadowing）」条目并按 M5 的实际语义更正，补「触发线」「保留尾部」两个词；跑 `agents-md-slim`
 
 `code-review` 两轴在 apply 之后跑；修出的问题回到本文件加第 9 组，编号写进提交信息。
+
+## 9. `code-review` 两轴的修复轮（2026-10-21，固定点 `main`）
+
+- [x] 9.1 seam ⑥ 先写红判据：以 `CONTEXT_WINDOW_EXCEEDED` 收尾、没有任何 `context/assembled` 的日志，`minihns replay` 以退出码 0 结束、打印逐回合序列与一行「没有装配点」、不打印最后一次装配的上下文；改 `_replay` 那条守卫（人裁决：改实现，合法日志不该被叫成重放不一致）
+- [x] 9.2 provider delta 措辞更正为「4xx（429 除外）里 `error.code` 为 `context_length_exceeded`」并补 413 的 scenario；seam ⑤ 补一条 413 判据（人裁决：改规格措辞，保留实现）
+- [x] 9.3 design D2 措辞按实况更正：摘要请求送的是「受保护头部 + 当时整份表层 + 一条固定指令」，并写明代价（人裁决：改措辞，保留实现）
+- [x] 9.4 design 测试策略表与实况对齐（seam ⑥ 落点是 `test_cli_run.py` 与 `test_cli_replay.py`；seam ① 拆成「回合循环判据」与「缝内的算术判据」）+ `tests/test_context_budget.py` 的 docstring 不再自称 seam ①
+- [x] 9.5 `context-budget` 的「溢出收尾的日志可被重放」scenario 补上「第一次装配之前就溢出时没有装配点」那一半；mutation 记录末行的 282 更正为 283
+- [x] 9.6 ADR-0002 记 M5 两轴审查轮：已动的三条 + 四条新账（遮蔽范围的 dict、摘要回复的判定在四处重复、预算模块重建工具往返配对与 `O(n²)`、`retain_line` 命名）+ `PROVIDER_ABORTED` 塌成 `PROVIDER_ERROR` 的未决点（M10）+ 提交纪律两处欠账（`251e093` 没写打包理由、`a91a2d2` 组 2 一次写完六条判据）
+- [x] 9.7 修复轮之后重跑四道门禁 + `openspec validate --all --strict`

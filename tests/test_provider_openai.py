@@ -326,8 +326,26 @@ async def test_a_400_saying_context_length_exceeded_is_a_context_overflow() -> N
     assert outcome.attempts == []
 
 
+async def test_a_413_saying_context_length_exceeded_collapses_to_the_same_overflow() -> None:
+    """超限的线上事实是那个 `error.code`，不是状态码：413 带同一个码也塌成溢出，
+    而不是落到 `PROVIDER_HTTP_STATUS` 让退出码变成 1。"""
+    provider, seen = _provider(
+        handler=lambda request: httpx.Response(
+            413,
+            json={"error": {"code": "context_length_exceeded", "message": "payload too large"}},
+        )
+    )
+
+    outcome = await _generate(provider)
+
+    assert len(seen) == 1
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_CONTEXT_OVERFLOW"
+    assert outcome.attempts == []
+
+
 async def test_a_400_with_any_other_error_code_is_still_an_http_status_result() -> None:
-    """不猜 `message` 文本、不看状态码范围：`error.code` 不是那个值就沿用既有分类。"""
+    """不猜 `message` 文本：`error.code` 不是那个值就沿用既有分类。"""
     provider, _ = _provider(
         handler=lambda request: httpx.Response(
             400, json={"error": {"code": "invalid_request_error", "message": "bad tools"}}
