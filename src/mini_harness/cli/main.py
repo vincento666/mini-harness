@@ -14,7 +14,7 @@ from pathlib import Path
 from types import FrameType
 from typing import Any, NoReturn
 
-from mini_harness.config import discover_config, load_config
+from mini_harness.config import ConfigFailure, discover_config, load_config
 from mini_harness.events import EventLog, LogReadFailure, LogWriteFailure, read_events
 from mini_harness.events.fold import assembled_payload, fold
 from mini_harness.loop import (
@@ -164,7 +164,11 @@ def _run(args: argparse.Namespace) -> int:
     config: dict[str, Any] = {}
     config_path = discover_config(workspace, args.config)
     if config_path is not None:
-        config = load_config(config_path)
+        loaded_config = load_config(config_path)
+        if isinstance(loaded_config, ConfigFailure):
+            # 配置层失败与参数错误同形：退出码 2，且在日志创建之前。
+            return _report_failure("INVALID_ARGUMENT", loaded_config.detail, EXIT_INVALID_ARGUMENT)
+        config = loaded_config
     configured_turns: object = config.get("max_turns")
     if isinstance(configured_turns, int):
         max_turns = configured_turns

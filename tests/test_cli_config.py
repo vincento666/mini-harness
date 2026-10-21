@@ -96,3 +96,177 @@ def test_the_workspace_root_config_file_is_picked_up(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     assert _start_payload(tmp_path)["max_turns"] == 3
+
+
+def test_a_missing_explicit_config_file_is_an_argument_error(tmp_path: Path) -> None:
+    missing = tmp_path / "absent.toml"
+
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--config",
+        str(missing),
+        "--yes",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert str(missing) in result.stderr
+    assert list((tmp_path / "sessions").glob("*.jsonl")) == []
+
+
+def test_a_malformed_config_file_is_an_argument_error(tmp_path: Path) -> None:
+    config = tmp_path / "mini.config.toml"
+    config.write_text("max_turns = = 3\n", encoding="utf-8")
+
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--yes",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert "line 1" in result.stderr
+    assert list((tmp_path / "sessions").glob("*.jsonl")) == []
+
+
+def test_an_unknown_key_is_an_argument_error(tmp_path: Path) -> None:
+    config = tmp_path / "mini.config.toml"
+    config.write_text('mode = "yolo"\n', encoding="utf-8")
+
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--yes",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert "mode" in result.stderr
+    assert list((tmp_path / "sessions").glob("*.jsonl")) == []
+
+
+def test_a_wrong_typed_value_is_an_argument_error(tmp_path: Path) -> None:
+    config = tmp_path / "mini.config.toml"
+    config.write_text('max_turns = "three"\n', encoding="utf-8")
+
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--yes",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert "max_turns" in result.stderr
+    assert list((tmp_path / "sessions").glob("*.jsonl")) == []
+
+
+def test_prompt_in_the_config_file_is_an_argument_error(tmp_path: Path) -> None:
+    config = tmp_path / "mini.config.toml"
+    config.write_text('prompt = "任务"\n', encoding="utf-8")
+
+    result = _cli(
+        "run",
+        "-p",
+        "另一个任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--yes",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert "prompt" in result.stderr
+    assert list((tmp_path / "sessions").glob("*.jsonl")) == []
+
+
+def test_a_literal_api_key_in_the_config_file_is_an_argument_error(tmp_path: Path) -> None:
+    config = tmp_path / "mini.config.toml"
+    config.write_text('api_key = "sk-secret"\n', encoding="utf-8")
+
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--yes",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert "api_key" in result.stderr
+    assert list((tmp_path / "sessions").glob("*.jsonl")) == []
+
+
+def test_an_empty_config_file_equals_no_config_file(tmp_path: Path) -> None:
+    (tmp_path / "mini.config.toml").write_text("", encoding="utf-8")
+
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--yes",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert _start_payload(tmp_path)["max_turns"] == 8
+
+
+def test_a_boolean_where_a_number_is_expected_is_an_argument_error(tmp_path: Path) -> None:
+    config = tmp_path / "mini.config.toml"
+    config.write_text("max_turns = true\n", encoding="utf-8")
+
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--yes",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert "max_turns" in result.stderr
+    assert list((tmp_path / "sessions").glob("*.jsonl")) == []
