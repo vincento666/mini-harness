@@ -144,19 +144,28 @@ def test_openai_with_a_fixture_is_an_argument_error(tmp_path: Path) -> None:
     assert list(tmp_path.glob("*.jsonl")) == []
 
 
-def test_an_unset_key_env_still_sends_the_request(tmp_path: Path) -> None:
+def test_an_unset_key_env_is_an_argument_error(tmp_path: Path) -> None:
+    """密钥是装配的必需项：变量未设就在 session 开始之前当场失败，一个请求都不发。"""
     with _FakeEndpoint(status=401, body={"error": "unauthorized"}) as endpoint:
         result = _run_openai(tmp_path, endpoint.base_url, key_env_value=None)
 
-    assert result.returncode == 1
-    assert "PROVIDER_HTTP_STATUS" in result.stderr
-    assert len(endpoint.requests) == 1
-    assert endpoint.requests[0]["authorization"] is None
-    records = _session_records(tmp_path)
-    types = [record["type"] for record in records]
-    assert "model/retry" not in types
-    error = next(record for record in records if record["type"] == "error/model")
-    assert error["payload"]["code"] == "PROVIDER_HTTP_STATUS"
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert _KEY_ENV in result.stderr
+    assert list(tmp_path.glob("*.jsonl")) == []
+    assert len(endpoint.requests) == 0
+
+
+def test_an_empty_key_env_is_an_argument_error(tmp_path: Path) -> None:
+    """「未设」与「设为空串」是同一条判据：空串不是密钥。"""
+    with _FakeEndpoint(status=401, body={"error": "unauthorized"}) as endpoint:
+        result = _run_openai(tmp_path, endpoint.base_url, key_env_value="")
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert _KEY_ENV in result.stderr
+    assert list(tmp_path.glob("*.jsonl")) == []
+    assert len(endpoint.requests) == 0
 
 
 def test_the_key_reaches_the_request_header_and_nowhere_else(tmp_path: Path) -> None:
@@ -257,9 +266,63 @@ def test_a_config_file_can_supply_the_endpoint(tmp_path: Path) -> None:
     assert _KEY_VALUE not in json.dumps(start["payload"])
 
 
+def test_a_config_supplied_provider_is_checked_the_same_way(tmp_path: Path) -> None:
+    """必需项在层叠之后判：provider 取自配置文件时，密钥缺失同样是退出码 2、无日志、无请求。"""
+    (tmp_path / "mini.config.toml").write_text(
+        f'provider = "openai"\napi_key_env = "{_KEY_ENV}"\n',
+        encoding="utf-8",
+    )
+    env = dict(os.environ)
+    env.pop(_KEY_ENV, None)
+
+    with _FakeEndpoint(status=401, body={"error": "unauthorized"}) as endpoint:
+        result = _cli(
+            "run",
+            "-p",
+            "任务",
+            "--base-url",
+            endpoint.base_url,
+            "--session-dir",
+            str(tmp_path),
+            "--yes",
+            cwd=tmp_path,
+            env=env,
+        )
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert _KEY_ENV in result.stderr
+    assert list(tmp_path.glob("*.jsonl")) == []
+    assert len(endpoint.requests) == 0
+
+
+def test_a_mock_run_needs_no_key(tmp_path: Path) -> None:
+    """必需项只跟着走的那条路径：mock 这一支不碰密钥，变量未设照样跑完。"""
+    env = dict(os.environ)
+    env.pop(_KEY_ENV, None)
+
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--session-dir",
+        str(tmp_path),
+        "--yes",
+        cwd=tmp_path,
+        env=env,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert _KEY_ENV not in result.stderr
+
+
 def test_a_dead_endpoint_collapses_into_a_transport_result(tmp_path: Path) -> None:
     """端点没在监听：退出码 1、`error/model` 是 `PROVIDER_TRANSPORT`、没有重试、没有 traceback。"""
-    result = _run_openai(tmp_path, "http://127.0.0.1:9/v1", key_env_value=None)
+    result = _run_openai(tmp_path, "http://127.0.0.1:9/v1", key_env_value=_KEY_VALUE)
 
     assert result.returncode == 1
     assert "PROVIDER_TRANSPORT" in result.stderr
@@ -288,7 +351,7 @@ def test_a_hostile_no_proxy_does_not_stop_the_request(tmp_path: Path) -> None:
         result = _run_openai(
             tmp_path,
             endpoint.base_url,
-            key_env_value=None,
+            key_env_value=_KEY_VALUE,
             extra_env={
                 "NO_PROXY": "localhost,127.0.0.1,::1,[::1]",
                 "HTTP_PROXY": "http://127.0.0.1:7897",
@@ -303,7 +366,7 @@ def test_a_hostile_no_proxy_does_not_stop_the_request(tmp_path: Path) -> None:
 def test_a_200_without_choices_is_a_schema_error_at_the_cli(tmp_path: Path) -> None:
     """规格 scenario「200 的响应体不是合法 chat completion」：日志与退出码那一层也要有判据。"""
     with _FakeEndpoint(status=200, body={"id": "chatcmpl-4"}) as endpoint:
-        result = _run_openai(tmp_path, endpoint.base_url, key_env_value=None)
+        result = _run_openai(tmp_path, endpoint.base_url, key_env_value=_KEY_VALUE)
 
     assert result.returncode == 1
     assert "PROVIDER_SCHEMA_INVALID" in result.stderr

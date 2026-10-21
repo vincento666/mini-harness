@@ -38,10 +38,10 @@
 
 ## 5. 密钥是装配的必需项（seam ⑥）
 
-- [ ] 5.1 seam ⑥：把 `tests/test_cli_provider.py::test_an_unset_key_env_still_sends_the_request` 改写成 `test_an_unset_key_env_is_an_argument_error`——退出码 2、stderr 含 `INVALID_ARGUMENT` 与变量名、无日志、`len(endpoint.requests) == 0`；先跑红，再实现装配阶段的密钥判据（design D6）
-- [ ] 5.2 seam ⑥：红判据 `test_an_empty_key_env_is_an_argument_error`——变量设为空串时同样退出码 2 且无日志无请求；实现「未设或为空」的同一判据
-- [ ] 5.3 seam ⑥：红判据 `test_a_config_supplied_provider_is_checked_the_same_way`——配置写 `provider = "openai"`、命令行未给 `--provider`、密钥变量未设时同样 2 且无日志；确认密钥判据在层叠之后判
-- [ ] 5.4 seam ⑥：绿到即钉的守卫判据 `test_a_mock_run_never_requires_a_key`——mock 路径不受密钥判据影响（既有 mock 判据全绿）；只加判据
+- [x] 5.1 seam ⑥：把 `tests/test_cli_provider.py::test_an_unset_key_env_still_sends_the_request` 改写成 `test_an_unset_key_env_is_an_argument_error`——退出码 2、stderr 含 `INVALID_ARGUMENT` 与变量名、无日志、`len(endpoint.requests) == 0`；先跑红，再实现装配阶段的密钥判据（design D6）
+- [x] 5.2 seam ⑥：红判据 `test_an_empty_key_env_is_an_argument_error`——变量设为空串时同样退出码 2 且无日志无请求；实现「未设或为空」的同一判据
+- [x] 5.3 seam ⑥：判据 `test_a_config_supplied_provider_is_checked_the_same_way`——配置写 `provider = "openai"`、命令行未给 `--provider`、密钥变量未设时同样 2 且无日志；确认密钥判据在层叠之后判
+- [x] 5.4 seam ⑥：绿到即钉的守卫判据 `test_a_mock_run_needs_no_key`（计划里的名字是 `test_a_mock_run_never_requires_a_key`，实现时改成前者）——mock 路径不受密钥判据影响（既有 mock 判据全绿）；只加判据
 
 ## 6. 完成判据与文档
 

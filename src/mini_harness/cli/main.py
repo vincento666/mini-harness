@@ -217,10 +217,18 @@ def _run(args: argparse.Namespace) -> int:
             model=layered.model,
             api_key_env=layered.api_key_env,
         )
+        # 密钥是装配的必需项：未设或空串都在 session 开始之前当场失败，一个请求都不发。
+        api_key = os.environ.get(endpoint.api_key_env)
+        if not api_key:
+            return _report_failure(
+                "INVALID_ARGUMENT",
+                f"环境变量 {endpoint.api_key_env} 未设置或为空：--provider openai 需要密钥",
+                EXIT_INVALID_ARGUMENT,
+            )
         provider = OpenAICompatProvider(
             base_url=endpoint.base_url,
             model=endpoint.model,
-            api_key=os.environ.get(endpoint.api_key_env),
+            api_key=api_key,
         )
     else:
         if fixture is None:
