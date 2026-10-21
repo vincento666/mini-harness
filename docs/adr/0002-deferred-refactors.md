@@ -116,6 +116,7 @@ payload 是 `turn_id` / `tool_call_id` / `code` / `detail`。规格要求「被�
 - M3 / M5 的处理：出现第二个真实 provider，或 REPL 需要显示端点时，立一个端点类型并让 payload 由它派生。
 - **未处理，推到 M5（2026-10-19 核实）**：M3 没有引入第二个真实 provider，也没有动 `session/start.payload` 的字段表（本轮动的 payload 是 `error/fence`，见第 11 条）。
 - **改判到 M9（2026-10-20，ADR-0010 之后）**：不再推 M5——M5 是窗口预算与压缩，跟端点类型无关，再推一次就是第五次「未处理推到 M5」。M9 `m9-assembly-and-config-layering` 才是「provider 与端点由装配决定」那一处：配置文件层叠落地时立 `ProviderEndpoint`，payload 由它派生。
+- **已处理（M9，2026-10-21）**：`loop/settings.py::ProviderEndpoint` 立起来（三条 `str`：`base_url` / `model` / `api_key_env`），`SessionSettings` 上那三条 `str | None` 换成 `endpoint: ProviderEndpoint | None`。payload 没有多一层嵌套——那三个字段仍平铺在 `session/start.payload` 上，只是改由 `if settings.endpoint is not None:` 派生，规格事实未变。取舍见 ADR-0018。
 
 ## 15. 「这是 openai 路径」这个判断在四处重复
 
@@ -125,6 +126,7 @@ payload 是 `turn_id` / `tool_call_id` / `code` / `detail`。规格要求「被�
 - M3 / M5 的处理：与第 14 条同源——`SessionSettings` 带一个可选端点对象之后，「是不是 openai」变成「端点在不在」，四处塌成一处。
 - **未处理，推到 M5（2026-10-19 核实）**：四处判断仍在四处，M3 一条没动；与第 14 条同源，等端点类型出现一起收。
 - **改判到 M9（2026-10-20，ADR-0010 之后）**：与第 14 条一起收在 M9——端点类型由装配引入之后，「是不是 openai」变成「端点在不在」，四处塌成一处。
+- **已处理（M9，2026-10-21）**：`turn_loop` 那一处变成「端点在不在」（`if settings.endpoint is not None:`），`cli/main.py` 里「payload 那三条填不填」那一处随端点对象消失——端点在 openai 那一支里构造一次、传给设置一次。命令行剩的那一处 `if provider_name == "openai":` 判的是「选哪个 provider」与「`--fixture` 互斥」，与「payload 填不填」不是同一件事，留着。
 
 ## 16. seam ① 的测试里 provider 桩与 run helper 各两份
 

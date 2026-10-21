@@ -49,8 +49,8 @@
 - [x] 6.2 seam ⑥：完成判据第二条——判据 `test_a_missing_required_item_leaves_no_log_file`：缺必需项（密钥与非法配置各一次）时退出码 2、stderr 含 `INVALID_ARGUMENT`、session 目录里没有任何新文件（用目录快照前后对比断言）
 - [x] 6.3 seam ②（不是 ⑥）：判据 `test_every_config_failure_code_is_reachable`——`ConfigFailure` 的每个 `code`（`CONFIG_NOT_FOUND` / `CONFIG_INVALID_TOML` / `CONFIG_UNKNOWN_KEY` / `CONFIG_INVALID_VALUE` / `CONFIG_FORBIDDEN_KEY` / `UNKNOWN_TOOL_NAME`）各有一条构造路径；计划里的第七个码 `MISSING_API_KEY` 不存在——规格定的是 stderr 含 `INVALID_ARGUMENT`，密钥判据是 CLI 层的参数错误，不是 `ConfigFailure`
 - [x] 6.4 门禁：跑四道（`ruff format --diff` / `ruff check` / `mypy --strict` / coverage 四步）确认全绿且 `TOTAL` ≥ 95%；`openspec validate --all --strict` 全绿
-- [ ] 6.5 人手验收：拿它办一件真事——在一个真工作区里放一份 `mini.config.toml`（改 `tools` 与 `max_turns`）、再用 `--config` 指向另一份、再来一次缺密钥的 run，把观察（含「别扭在哪」）记进 `docs/verification/m9-assembly-and-config-layering-manual.md`；不进 CI
-- [ ] 6.6 文档：用 `domain-modeling` 技能写一份新 ADR（配置层叠三层、工具白名单、密钥缺失当场失败这三处的取舍与代价，含「DSH 是 patch 层叠 + 环境变量覆盖，mini 版故意简化成 TOML 三层」）；并在 `docs/adr/0002-deferred-refactors.md` 第 14、15 条各加一条「已处理（M9）」的改判行
+- [x] 6.5 人手验收：拿它办一件真事——在一个真工作区里放一份 `mini.config.toml`（改 `tools` 与 `max_turns`）、再用 `--config` 指向另一份、再来一次缺密钥的 run，把观察（含「别扭在哪」）记进 `docs/verification/m9-assembly-and-config-layering-manual.md`；不进 CI。**真模型那一半待人跑**（命令在文档末尾），agent 这一半跑了五次 run
+- [x] 6.6 文档：用 `domain-modeling` 技能写一份新 ADR（`0018-config-is-three-layer-override`：配置层叠三层、工具白名单、密钥缺失当场失败这三处的取舍与代价，含「DSH 是 patch 层叠 + 环境变量覆盖，mini 版故意简化成 TOML 三层」）；并在 `docs/adr/0002-deferred-refactors.md` 第 14、15 条各加一条「已处理（M9，2026-10-21）」的改判行；顺带把 M9 的五个词（装配 / 层叠 / 工具白名单 / 端点 / 必需项）写进 `GLOSSARY.md`
 
 ## 7. 收尾门禁
 
