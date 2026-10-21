@@ -45,6 +45,14 @@
 - **sync 与归档（提交 `98f43a5`）**：六份 delta 先 sync 进主规格（`context-budget` 新建，其余五份按 MODIFIED / ADDED / REMOVED 逐条落），核对「每条 Requirement 与每个 scenario 都在主规格里、被 REMOVED 的那条已不在」，再移 `changeRoot` 进 `openspec/changes/archive/2026-10-21-m5-context-budget-compaction/`。sync 期间撞到 `cli` 那条 run 参数 Requirement 正文 535 字符、超 500 上限被 `--strict` 判失败，按校验器的建议压缩到 494 字符（事实一条没减，delta 与主规格同步改）。归档时 tasks 还剩 8.1 未勾，这条警告已接受。CI：`baac329` 与 `98f43a5` 两次推 change 分支都是 `completed / success`。
 - **合并与 tag（人批准之后执行）**：`main` 上 `git merge --no-ff` 那 19 个提交 → merge commit **`2a77cfd`**（48 文件 / +2931 / −96）；合并后在 `main` 上重跑四道门禁与 `openspec validate --all --strict` 全绿；推 `main`、打 annotated tag **`m5`**（解引用到 `2a77cfd`）并推 tag；`change/m5-context-budget-compaction` 本地与远端都删。`main` 的 CI run [`39541084257`](https://github.com/vincento666/mini-harness/actions/runs/39541084257) 两个 job 都是 `completed / success`。
 
+## M9 的规划（已提出，等人审阅）
+
+- change `m9-assembly-and-config-layering` 的四件套已写在分支 `change/m9-assembly-and-config-layering`（提交 `22e8480`）：proposal、四份 delta（新能力 `config-layering` 6 条 Requirement / 19 个 Scenario；`cli` MODIFIED 2 + REMOVED 1 + ADDED 2；`file-tools` 与 `turn-loop` 各 MODIFIED 1）、design（D1–D8）、tasks 36 项。`openspec validate m9-assembly-and-config-layering --strict` 通过。**只有规划工件，实现等 `/openspec-apply-change`。**
+- 四个分叉由人裁决（都取推荐）：配置文件发现 `--config` 显式 > 工作区根 `mini.config.toml` > 内置默认；可配字段是设置类全表而 `prompt` / `fixture` 不可配；工具表是「六个内置定义 + 配置白名单筛选」（未知名是参数错误、空列表合法）；必需项是 API key 缺失与配置文件非法两类。
+- 顺手抓到一处**主规格与实况不符**：`file-tools` 的 scenario「注册表非空」写 payload 的 `tools`「恰含上述五个名字」，而 M3 之后 `bash` 也在同一份工具表里（六个）。M9 的 MODIFIED 更正它。scenario 名保留是 delta 的硬要求——校验器拒绝 MODIFIED 丢掉主规格里已有的 scenario 名。
+- **一条既有判据要翻**：`tests/test_cli_provider.py::test_an_unset_key_env_still_sends_the_request` 钉的是「密钥变量未设 → 请求照发 → 401 → `PROVIDER_HTTP_STATUS` → 退出码 1」，改成退出码 2、无日志、无请求。cli 那条 Requirement 因此走 REMOVED + ADDED 而不是 MODIFIED：它的 scenario 名「密钥变量未设不提前失败」说的是反过来的事实。
+- design D7 裁掉一个循环：配置文件的位置取决于 workspace，而 `workspace` 本身可配——发现阶段只用「`--workspace` 或内置默认」，配置里的 `workspace` 不反过来影响配置文件发现。
+
 ## 门禁实测（Windows 本机）
 
 | 门禁 | 实测 |
