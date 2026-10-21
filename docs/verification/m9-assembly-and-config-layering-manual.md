@@ -51,26 +51,52 @@
 
 `tools = ["read", "web_search"]`。退出码 2、stderr `INVALID_ARGUMENT: 工具白名单里有未注册的名字：web_search`、目录文件数 7 → 7 ✓。
 
-## 别扭在哪（四条）
+## 别扭在哪（五条）
 
 1. **带 BOM 的配置文件被判成非法 TOML，报错不提 BOM。** 第一次用 PowerShell 5.1 的 `Set-Content -Encoding UTF8` 写 `mini.config.toml`，run 当场失败：`INVALID_ARGUMENT: …mini.config.toml: Invalid statement (at line 1, column 1)`。原因在文件头三个字节 `EF BB BF`：`tomllib` 不吃 BOM。Windows 上记事本与 PowerShell 5.1 的默认 UTF-8 都带 BOM，所以「在 Windows 上手写一份配置」这条路第一次是断的，而报错把人指向「语法」而不是「编码」。绕法：`[System.IO.File]::WriteAllText($path, $text, (New-Object System.Text.UTF8Encoding $false))`。要不要在读配置这一层剥掉 BOM，是待人裁决的一条（记进 ADR-0018 的代价，未动实现）。
 2. **不给 `--workspace` 时工作区就是进程 cwd，出事之前看不出来。** 第一次 run 忘了切 cwd（在仓库根跑），配置文件在仓库根找不到（这是对的），但工具照跑，并在**仓库根**建出 `notes/plan.md` 与 `sessions/`。`session/start.payload.workspace` 记的是 resolve 之后的 cwd，人要到事后看目录才发现边界在哪儿。已删掉那两个目录（`git status` 干净）。
 3. **配置能把档位设成 `read-only`，命令行没有「撤销配置」的开关。** 场景 C 里真 write 被围栏拦下、退出码 3——这是不变量 E 在真 run 里的样子，不是 bug；但第一次遇到时的观感是「工具不让我写」，要回头看 payload 才知道是配置里那行 `sandbox` 干的。命令行优先只意味着「你能用 `--sandbox` 覆盖它」，不意味着「有一条不读配置的跑法」。
 4. **六条配置失败码在黑盒里共用 `INVALID_ARGUMENT` 这一个词。** 场景 B 的 BOM、场景 D 的密钥、场景 E 的白名单名，stderr 前缀一模一样，只有后面的文本不同。这也是 6.3 那条判据落在 seam ② 而不是 ⑥ 的原因：`code` 这个事实只在模块层可见。
+5. **配置文件跨 run 生效，而它不提示「这份工作区根上有一份你上一场写下的配置」。** 模型层的第一次尝试撞上的就是这条：场景 E 为了判「白名单里的未知名」写进工作区根的 `tools = ["read", "web_search"]` 一直留在那儿，于是下一场 run 在发出任何请求之前就以退出码 2 失败。这不是 harness 的错——规格要的就是配置跨 run 生效、失败在 session 开始之前、不建日志；别扭在 stderr 只说「白名单里有未注册的名字：web_search」，不说这份配置是谁在什么时候写下的。多场手动验收因此要在每场之间把配置文件挪走或改写，而这条纪律原先没写在 runbook 里（已补）。
 
 ## 待人跑的那一半（真模型）
 
-需要人在真终端跑，agent 的子进程里没有密钥。命令（端点与密钥沿用 M5 记下的那套）：
+需要人在真终端跑，agent 的子进程里没有密钥。端点与密钥沿用 M5 记下的那套。
+
+**第一次尝试的实际结果（2026-10-21 17:20，人跑）**：命令照下面的 runbook 跑，退出码 2、stderr `INVALID_ARGUMENT: 工具白名单里有未注册的名字：web_search`。原因是场景 E 留下的那份配置文件还在工作区根（`tools = ["read", "web_search"]`）——这一节原先只写了「工作区根一份配置」，没写它该装什么，也没写跑下一场前要把它换掉。这一条本身正是规格的样子：配置文件跨 run 生效、失败发生在 session 开始之前、目录里没有新日志。已把 `.tmp/m9-manual/workspace/mini.config.toml` 换成第 1 场要的那份。
 
 ```powershell
 cd S:\Develop\mini-harness\.tmp\m9-manual\workspace
 $env:MINIHNS_STRATA_KEY = "<密钥>"
-# 1) 工作区根一份配置：tools 白名单只留 read / write，max_turns = 3
+
+# 1) 工作区根一份配置：白名单只留 read / write，max_turns = 3
+#    这一份已写好在 .tmp\m9-manual\workspace\mini.config.toml：
+#      max_turns = 3
+#      tools = ["read", "write"]
 uv run minihns run -p "把 notes/plan.md 重写一遍" --provider openai `
   --base-url http://127.0.0.1:8300/v1 --model qwen3.8-flash-next-iq3_xxs `
   --api-key-env MINIHNS_STRATA_KEY --yes
-# 2) 同一份工作区、删掉配置文件，看 payload 回到六工具
-# 3) --config 指向另一份、把 sandbox 设成 read-only，看真模型被围栏拦下之后怎么办
+
+# 2) 同一份工作区、把配置文件挪走，看 payload 回到六个工具与 max_turns 8
+Move-Item mini.config.toml ..\parked.toml
+uv run minihns run -p "把 notes/plan.md 重写一遍" --provider openai `
+  --base-url http://127.0.0.1:8300/v1 --model qwen3.8-flash-next-iq3_xxs `
+  --api-key-env MINIHNS_STRATA_KEY --yes
+Move-Item ..\parked.toml mini.config.toml
+
+# 3) --config 指向工作区外那一份（已写好：sandbox = "read-only"、tools = ["read","write","edit"]、max_turns = 5）
+uv run minihns run -p "把 notes/plan.md 重写一遍" --provider openai `
+  --base-url http://127.0.0.1:8300/v1 --model qwen3.8-flash-next-iq3_xxs `
+  --api-key-env MINIHNS_STRATA_KEY --config ..\other.toml --yes
 ```
 
-想看的形状：白名单只剩两条时，真模型会不会改用被筛掉的工具名（那会落成 `UNKNOWN_TOOL`），以及配置设的档位在真模型手里会不会被绕。
+想看的形状：白名单只剩两条时，真模型会不会改用被筛掉的工具名（那会落成 `UNKNOWN_TOOL`），以及配置设的档位在真模型手里会不会被绕。跑完把三条 session id 或日志文件名给我，我按这张表读：
+
+| 观察点 | 期望 | 实际 |
+| --- | --- | --- |
+| 第 1 场 payload 的 `tools` | 恰含 `read` 与 `write` | 待填 |
+| 第 1 场 payload 的 `max_turns` | 3 | 待填 |
+| 第 1 场真模型是否调用被筛掉的名字 | 若调用：`tool/result` 的 `outcome: UNKNOWN_TOOL`、回合正常写 `turn/end` | 待填 |
+| 第 2 场 payload 的 `tools` 与 `max_turns` | 六个内置名字 / 8 | 待填 |
+| 第 3 场 payload 的 `sandbox` | `read-only`（取自 `--config` 那一份） | 待填 |
+| 第 3 场真模型撞围栏之后 | `error/fence` + 退出码 3，或它自己改用只读工具办完（退出码 0） | 待填 |

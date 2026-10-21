@@ -488,6 +488,15 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Promotion candidate: 与 L-004 家族（先确认它真的会坏 / 真的能造）同族
 - Status: inbox
 
+### L-046
+- Date: 2026-10-21
+- Context: M9 的 6.5 模型层那一半，人跑的第一场
+- Observation: runbook 只写「工作区根一份配置」，没写这份配置该装什么、也没写跑下一场之前要把它换掉。于是场景 E 留下的 `tools = ["read", "web_search"]` 还在工作区根，模型层的第一场 run 在发出任何请求之前就以退出码 2 失败。跨 run 生效的工件（配置文件、fixture、工作区目录）在 runbook 里要逐场写明内容与场间重置方式，否则下一场撞的是上一场的失败
+- Evidence: `docs/verification/m9-assembly-and-config-layering-manual.md`「第一次尝试的实际结果」与「别扭在哪」第 5 条
+- Next use: 写多场手动验收的 runbook 时，每场给出工件内容与场间重置命令
+- Promotion candidate: 与 L-045 同族（前置条件先核实）
+- Status: inbox
+
 ### M9 收尾轮的消化记录（2026-10-21，tasks 7.2）
 
 **关闭零条**：本轮没有自证的旧条目——L-036 / L-037 / L-038 是 M5 新收的，M9 没跑到它们的路径上；L-025（两栏记录）仍等人类跑完模型层那一半。
@@ -499,6 +508,8 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 **AGENTS.md 本轮不晋升（NO-PROMOTION）**：本轮最值钱的三条（L-041 存在性 vs 值、L-042 定向轮覆盖面、L-045 前置条件先核实）都是四规 #4 与变异段现有句子的收紧，不是新规则；L-043 与 L-044 分别是产品事实与工具用法，去处是 ADR 与本文件。
 
 收件箱：13 条（L-005 / L-019 / L-025 / L-036 / L-037 / L-038 / L-039 / L-040 / L-041 / L-042 / L-043 / L-044 / L-045），额度空闲 2 条。
+
+**归档后补记（2026-10-21，M9 的 6.5 模型层第一次尝试）**：新收一条 L-046（runbook 没写明跨 run 生效的工件与场间重置），收件箱 **14 条**、空闲 1 条；AGENTS.md 不晋升——这条的去处是 `docs/verification/` 的 runbook 写法，不是全局规则。
 
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 - 每个里程碑收尾扫一次，**允许输出 `NO-PROMOTION`**（没有可复用信号就不写条目）。
