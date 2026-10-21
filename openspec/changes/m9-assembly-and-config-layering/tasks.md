@@ -13,11 +13,11 @@
 
 ## 2. 层叠优先级（seam ⑥）
 
-- [ ] 2.1 seam ⑥：红判据 `test_the_config_file_overrides_builtin_defaults`——配置写 `max_turns = 3`、命令行未给 `--max-turns` 时 payload 里 `max_turns` 为 3；实现 `config/layering.py::layer_settings` 的第一层
-- [ ] 2.2 seam ⑥：红判据 `test_the_cli_flag_overrides_the_config_file`——配置写 3、命令行给 `--max-turns 5` 时 payload 里为 5；实现 CLI 层覆盖
-- [ ] 2.3 seam ⑥：红判据 `test_a_flag_equal_to_the_builtin_default_is_still_explicit`——配置写 `max_turns = 8`、命令行给 `--max-turns 8`（内置默认也是 8）时取命令行这一层；实现 argparse 的 `default=None` 哨兵（design D2），既有 `--window` / `--reserve` 下界判据仍绿
-- [ ] 2.4 seam ⑥：红判据 `test_a_config_value_below_a_bound_is_an_argument_error`——配置写 `window = 0` 时退出码 2、stderr 含 `INVALID_ARGUMENT` 与 `window`、无日志；实现下界判断移到层叠之后统一判（design 的 Risks 第二条）
-- [ ] 2.5 seam ⑥：红判据 `test_a_config_file_setting_a_provider_selects_that_provider`——配置写 `provider = "mock"` 且命令行未给 `--provider` 时走 mock 路径（仍需 `--fixture`）；实现 provider 选择的层叠
+- [x] 2.1 seam ⑥：判据 `test_the_config_file_overrides_builtin_defaults`——配置写 `max_turns = 3`、命令行未给 `--max-turns` 时 payload 里 `max_turns` 为 3；实现 `config/layering.py::layer_settings` 的第一层
+- [x] 2.2 seam ⑥：红判据 `test_the_cli_flag_overrides_the_config_file`——配置写 3、命令行给 `--max-turns 5` 时 payload 里为 5；实现 CLI 层覆盖
+- [x] 2.3 seam ⑥：判据 `test_a_flag_equal_to_the_builtin_default_is_still_explicit`——配置写 `max_turns = 3`、命令行显式给 `--max-turns 8`（内置默认也是 8）时取命令行这一层；实现 argparse 的 `default=None` 哨兵（design D2），既有 `--window` / `--reserve` 下界判据仍绿。原写法「配置也写 8」在两种实现下都绿、判不出 D2，已改成「配置 3 + 显式 8」
+- [x] 2.4 seam ⑥：判据 `test_a_config_value_below_a_bound_is_an_argument_error`——配置写 `window = 0` 时退出码 2、stderr 含 `INVALID_ARGUMENT` 与 `window`、无日志；实现下界判断移到层叠之后统一判（design 的 Risks 第二条）
+- [x] 2.5 seam ⑥：判据 `test_a_config_file_setting_a_provider_selects_that_provider`——配置写 `provider = "openai"` 且命令行未给 `--provider` 时走 openai 那一支（用「openai 与 `--fixture` 互斥」这条错误观察走了哪一支，不真发请求）；实现 provider 选择的层叠。原写法「配置写 mock」判不出层叠——mock 也是内置默认
 
 ## 3. 工具表从装配来（seam ② 与 ⑥）
 

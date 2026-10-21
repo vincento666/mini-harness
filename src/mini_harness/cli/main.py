@@ -14,12 +14,10 @@ from pathlib import Path
 from types import FrameType
 from typing import Any, NoReturn
 
-from mini_harness.config import ConfigFailure, discover_config, load_config
+from mini_harness.config import ConfigFailure, discover_config, layer_settings, load_config
 from mini_harness.events import EventLog, LogReadFailure, LogWriteFailure, read_events
 from mini_harness.events.fold import assembled_payload, fold
 from mini_harness.loop import (
-    DEFAULT_RESERVE,
-    DEFAULT_WINDOW,
     STOP_ABORTED,
     STOP_CONTEXT_WINDOW_EXCEEDED,
     STOP_FENCE_DENIED,
@@ -79,24 +77,25 @@ def build_parser() -> argparse.ArgumentParser:
     subcommands = parser.add_subparsers(dest="command", required=True)
 
     run = subcommands.add_parser("run", help="跑完一个 session")
+    # 可配字段的 flag 默认值一律是 `None` 哨兵：内置默认只住在 `loop/settings.py`（design D2）。
     run.add_argument("-p", "--prompt", default=None)
     run.add_argument("--config", default=None)
     run.add_argument("--workspace", default=None)
     run.add_argument("--session-dir", default=None)
-    run.add_argument("--provider", default="mock")
+    run.add_argument("--provider", default=None)
     run.add_argument("--fixture", default=None)
-    run.add_argument("--base-url", default="https://api.deepseek.com")
-    run.add_argument("--model", default="deepseek-chat")
-    run.add_argument("--api-key-env", default="DEEPSEEK_API_KEY")
-    run.add_argument("--max-turns", type=int, default=8)
-    run.add_argument("--window", type=int, default=DEFAULT_WINDOW)
-    run.add_argument("--reserve", type=int, default=DEFAULT_RESERVE)
-    run.add_argument("--append-system-prompt", default="")
+    run.add_argument("--base-url", default=None)
+    run.add_argument("--model", default=None)
+    run.add_argument("--api-key-env", default=None)
+    run.add_argument("--max-turns", type=int, default=None)
+    run.add_argument("--window", type=int, default=None)
+    run.add_argument("--reserve", type=int, default=None)
+    run.add_argument("--append-system-prompt", default=None)
     run.add_argument("--events", choices=("jsonl",), default=None)
     run.add_argument(
         "--sandbox",
         choices=("read-only", "workspace-write", "danger-full-access"),
-        default="workspace-write",
+        default=None,
     )
     run.add_argument("--yes", action="store_true")
 
@@ -153,25 +152,24 @@ async def _await_session(
 
 def _run(args: argparse.Namespace) -> int:
     prompt: str | None = args.prompt
-    max_turns: int = args.max_turns
-    provider_name: str = args.provider
     fixture: str | None = args.fixture
 
     if prompt is None or prompt == "":
         return _report_failure("INVALID_ARGUMENT", "-p/--prompt 必填且非空", EXIT_INVALID_ARGUMENT)
-    # 配置文件里的设置先落到本地变量上，之后的校验判的是层叠之后的有效值。
-    workspace = Path(args.workspace) if args.workspace is not None else Path.cwd()
+    # 配置文件发现用的工作区是「`--workspace` 或当前目录」这一层，不来自配置文件（design D7）。
+    discovery_workspace = Path(args.workspace) if args.workspace is not None else Path.cwd()
     config: dict[str, Any] = {}
-    config_path = discover_config(workspace, args.config)
+    config_path = discover_config(discovery_workspace, args.config)
     if config_path is not None:
         loaded_config = load_config(config_path)
         if isinstance(loaded_config, ConfigFailure):
             # 配置层失败与参数错误同形：退出码 2，且在日志创建之前。
             return _report_failure("INVALID_ARGUMENT", loaded_config.detail, EXIT_INVALID_ARGUMENT)
         config = loaded_config
-    configured_turns: object = config.get("max_turns")
-    if isinstance(configured_turns, int):
-        max_turns = configured_turns
+    # 三层塌成一份有效设置：之后的校验与装配只认这一份。
+    layered = layer_settings(args, config)
+    max_turns = layered.max_turns
+    provider_name = layered.provider
     if max_turns < 1:
         return _report_failure(
             "INVALID_ARGUMENT", f"--max-turns 至少为 1，收到 {max_turns}", EXIT_INVALID_ARGUMENT
@@ -183,7 +181,7 @@ def _run(args: argparse.Namespace) -> int:
             EXIT_INVALID_ARGUMENT,
         )
     # 窗口预算的两个参数在 session 开始之前判掉：非法取值不产生日志（context-budget 规格）。
-    for flag, value in (("--window", args.window), ("--reserve", args.reserve)):
+    for flag, value in (("--window", layered.window), ("--reserve", layered.reserve)):
         if value < 1:
             return _report_failure(
                 "INVALID_ARGUMENT", f"{flag} 至少为 1，收到 {value}", EXIT_INVALID_ARGUMENT
@@ -198,13 +196,13 @@ def _run(args: argparse.Namespace) -> int:
                 EXIT_INVALID_ARGUMENT,
             )
         # 密钥只从 --api-key-env 指定的环境变量读：它不进 argv、不进日志、不进 payload。
-        invalid = validate_base_url(args.base_url)
+        invalid = validate_base_url(layered.base_url)
         if invalid is not None:
             return _report_failure("INVALID_ARGUMENT", invalid, EXIT_INVALID_ARGUMENT)
         provider = OpenAICompatProvider(
-            base_url=args.base_url,
-            model=args.model,
-            api_key=os.environ.get(args.api_key_env),
+            base_url=layered.base_url,
+            model=layered.model,
+            api_key=os.environ.get(layered.api_key_env),
         )
     else:
         if fixture is None:
@@ -218,23 +216,23 @@ def _run(args: argparse.Namespace) -> int:
             return _report_failure(loaded.code, loaded.detail, EXIT_INVALID_ARGUMENT)
         provider = loaded
 
-    log = EventLog.start(_session_dir(args.session_dir))
+    log = EventLog.start(_session_dir(layered.session_dir))
     if isinstance(log, LogWriteFailure):
         return _report_failure(log.code, log.detail, EXIT_INTERNAL_ERROR)
 
     openai = provider_name == "openai"
     settings = SessionSettings(
-        workspace=workspace,
+        workspace=Path(layered.workspace) if layered.workspace is not None else Path.cwd(),
         provider_name=provider_name,
         max_turns=max_turns,
-        sandbox=args.sandbox,
-        approval="auto" if args.yes else "ask",
-        append_system_prompt=args.append_system_prompt,
-        window=args.window,
-        reserve=args.reserve,
-        base_url=args.base_url if openai else None,
-        model=args.model if openai else None,
-        api_key_env=args.api_key_env if openai else None,
+        sandbox=layered.sandbox,
+        approval="auto" if args.yes else layered.approval,
+        append_system_prompt=layered.append_system_prompt,
+        window=layered.window,
+        reserve=layered.reserve,
+        base_url=layered.base_url if openai else None,
+        model=layered.model if openai else None,
+        api_key_env=layered.api_key_env if openai else None,
     )
     outcome = asyncio.run(
         _await_session(prompt=prompt, provider=provider, settings=settings, log=log)

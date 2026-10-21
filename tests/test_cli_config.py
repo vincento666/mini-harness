@@ -250,6 +250,112 @@ def test_an_empty_config_file_equals_no_config_file(tmp_path: Path) -> None:
     assert _start_payload(tmp_path)["max_turns"] == 8
 
 
+def test_the_config_file_overrides_builtin_defaults(tmp_path: Path) -> None:
+    (tmp_path / "mini.config.toml").write_text("max_turns = 3\n", encoding="utf-8")
+
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--yes",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert _start_payload(tmp_path)["max_turns"] == 3
+
+
+def test_the_cli_flag_overrides_the_config_file(tmp_path: Path) -> None:
+    (tmp_path / "mini.config.toml").write_text("max_turns = 3\n", encoding="utf-8")
+
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--max-turns",
+        "5",
+        "--yes",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert _start_payload(tmp_path)["max_turns"] == 5
+
+
+def test_a_flag_equal_to_the_builtin_default_is_still_explicit(tmp_path: Path) -> None:
+    """`--max-turns 8` 与「没给 flag 而内置默认也是 8」是两层不同的事实：显式给的那层赢。"""
+    (tmp_path / "mini.config.toml").write_text("max_turns = 3\n", encoding="utf-8")
+
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--max-turns",
+        "8",
+        "--yes",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert _start_payload(tmp_path)["max_turns"] == 8
+
+
+def test_a_config_value_below_a_bound_is_an_argument_error(tmp_path: Path) -> None:
+    (tmp_path / "mini.config.toml").write_text("window = 0\n", encoding="utf-8")
+
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--yes",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert "window" in result.stderr
+    assert list((tmp_path / "sessions").glob("*.jsonl")) == []
+
+
+def test_a_config_file_setting_a_provider_selects_that_provider(tmp_path: Path) -> None:
+    """配置写 `provider = "openai"` 且命令行没给 `--provider`：走的是 openai 那一支。
+
+    判据用「openai 与 `--fixture` 互斥」这条错误来观察走了哪一支——它不需要真发请求。
+    """
+    (tmp_path / "mini.config.toml").write_text('provider = "openai"\n', encoding="utf-8")
+
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--yes",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert "fixture" in result.stderr
+    assert list((tmp_path / "sessions").glob("*.jsonl")) == []
+
+
 def test_a_boolean_where_a_number_is_expected_is_an_argument_error(tmp_path: Path) -> None:
     config = tmp_path / "mini.config.toml"
     config.write_text("max_turns = true\n", encoding="utf-8")

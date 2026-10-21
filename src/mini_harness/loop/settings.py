@@ -14,6 +14,16 @@ ApprovalMode = Literal["ask", "auto"]
 DEFAULT_WINDOW = 128000
 DEFAULT_RESERVE = 8192
 
+# 内置默认只住在这一处：CLI 的 flag 默认是 `None` 哨兵，配置文件也没写时才落到这一份。
+DEFAULT_PROVIDER = "mock"
+DEFAULT_BASE_URL = "https://api.deepseek.com"
+DEFAULT_MODEL = "deepseek-chat"
+DEFAULT_API_KEY_ENV = "DEEPSEEK_API_KEY"
+DEFAULT_MAX_TURNS = 8
+DEFAULT_SANDBOX: SandboxLevel = "workspace-write"
+DEFAULT_APPROVAL: ApprovalMode = "ask"
+DEFAULT_APPEND_SYSTEM_PROMPT = ""
+
 
 @dataclass(frozen=True)
 class SessionSettings:
