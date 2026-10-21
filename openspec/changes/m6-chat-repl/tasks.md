@@ -32,8 +32,8 @@
 
 ## 5. replay 的扫描逻辑下沉（ADR-0002 第 3 条）
 
-- [ ] 5.1 事件层给出读方 API（装配点序列、按装配点切前缀），CLI 的 `_replay` 改用它、不再自己扫 `records` 与按下标切前缀。seam ④⑥（`tests/test_cli_replay.py`）
-- [ ] 5.2 「replay 不用装配点之后的事件」那条守卫在新形状下仍然绿（不退化）。seam ⑥（`tests/test_cli_replay.py`）
+- [x] 5.1 事件层给出读方 API（装配点序列、按装配点切前缀），CLI 的 `_replay` 改用它、不再自己扫 `records` 与按下标切前缀。seam ④⑥（seam ④ 的判据在 `tests/test_context_fold.py`，seam ⑥ 的重放判据在 `tests/test_cli_replay.py`）
+- [x] 5.2 「replay 不用装配点之后的事件」那条守卫在新形状下仍然绿（不退化）。seam ⑥（`tests/test_cli_replay.py`）
 
 ## 6. `minihns chat`
 

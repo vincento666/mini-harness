@@ -12,6 +12,7 @@ from mini_harness.events.fold import (
     SYSTEM_PROMPT,
     TOOL_OUTCOME_UNKNOWN,
     AssembledContext,
+    assembly_points,
     fold,
 )
 from mini_harness.events.reader import read_events
@@ -685,3 +686,41 @@ def test_the_fold_at_each_point_sees_only_its_prefix() -> None:
     assert "第一段" in _contents(before_compaction)
     assert "结果一" in _contents(before_compaction)
     assert "第一段" not in _contents(after_compaction)
+
+
+def test_assembly_points_carry_their_own_prefix_and_turn_id() -> None:
+    """读方 API：装配点序列由事件层给出，每个点带着它自己的前缀与所属回合。
+
+    重放方要的是「这条 `context/assembled` 之前发生过什么」，不是整份日志加下标——
+    自己扫 `records`、按下标切前缀是摸事件层的内部形状（ADR-0002 第 3 条）。
+    """
+    records = [
+        _rec(0, "session/start", {"prompt": "任务", "tools": []}),
+        _rec(1, "segment/start", {"segment_id": "s1"}),
+        _rec(2, "turn/start", {"turn_id": "t1"}),
+        _rec(3, "context/assembled", {"turn_id": "t1", "messages": []}),
+        _rec(4, "model/request", {"turn_id": "t1", "tools": []}),
+        _rec(5, "model/response", {"turn_id": "t1", "content": "hi", "tool_calls": []}),
+        _rec(6, "turn/end", {"turn_id": "t1", "stop_reason": "TOOL_CALLS"}),
+        _rec(7, "turn/start", {"turn_id": "t2"}),
+        _rec(8, "context/assembled", {"turn_id": "t2", "messages": []}),
+        _rec(9, "turn/end", {"turn_id": "t2", "stop_reason": "MODEL_COMPLETED"}),
+    ]
+
+    points = assembly_points(records)
+
+    assert [point.record.seq for point in points] == [3, 8]
+    assert [point.turn_id for point in points] == ["t1", "t2"]
+    # 前缀止于该点之前：该点自己与它之后的事件都不算进来。
+    assert [record.seq for record in points[0].prefix] == [0, 1, 2]
+    assert [record.seq for record in points[1].prefix] == [0, 1, 2, 3, 4, 5, 6, 7]
+
+
+def test_an_assembly_point_without_a_turn_start_carries_an_empty_turn_id() -> None:
+    """手写日志里装配点之前没有 `turn/start`：回合 id 是空串，不猜、不报错。"""
+    records = [
+        _rec(0, "session/start", {"prompt": "任务", "tools": []}),
+        _rec(1, "context/assembled", {"turn_id": "", "messages": []}),
+    ]
+
+    assert [point.turn_id for point in assembly_points(records)] == [""]

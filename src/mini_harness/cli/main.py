@@ -23,7 +23,7 @@ from mini_harness.config import (
 )
 from mini_harness.context.budget import CONTEXT_HEADROOM_TOKENS
 from mini_harness.events import EventLog, LogReadFailure, LogWriteFailure, read_events
-from mini_harness.events.fold import assembled_payload, fold
+from mini_harness.events.fold import assembled_payload, assembly_points, fold
 from mini_harness.loop import (
     APPROVAL_MODES,
     SANDBOX_LEVELS,
@@ -318,38 +318,29 @@ def _replay(args: argparse.Namespace) -> int:
     if isinstance(records, LogReadFailure):
         return _report_failure(records.code, records.detail, EXIT_INTERNAL_ERROR)
 
-    assembled = [
-        (index, record)
-        for index, record in enumerate(records)
-        if record.type == "context/assembled"
-    ]
-    if not assembled:
+    points = assembly_points(records)
+    if not points:
         # 溢出与取消都能在第一次装配之前就把回合收掉，那份日志是合法的：
         # 没有可重算的点不等于重算不一致，但要说明它，不能冒充「一条都验过」。
         print("no_context_assembled: 这份日志没有装配点")
 
-    for index, record in assembled:
-        preceding_turn = next(
-            (item for item in reversed(records[:index]) if item.type == "turn/start"),
-            None,
-        )
-        turn_id = "" if preceding_turn is None else str(preceding_turn.payload.get("turn_id", ""))
+    for point in points:
         # 折叠入参只从该点之前的事实派生：工具块与追加段都在 `session/start` 里，
         # 回放侧不存在「进程内注册表」这个第二真源。
-        recomputed = fold(records[:index])
-        if assembled_payload(turn_id, recomputed) != record.payload:
+        recomputed = fold(point.prefix)
+        if assembled_payload(point.turn_id, recomputed) != point.record.payload:
             return _report_failure(
                 "REPLAY_MISMATCH",
-                f"error/replay seq={record.seq} 的 context/assembled 与其前缀的重算不一致",
+                f"error/replay seq={point.record.seq} 的 context/assembled 与其前缀的重算不一致",
                 EXIT_INTERNAL_ERROR,
             )
-        print(f"verified seq={record.seq}: OK")
+        print(f"verified seq={point.record.seq}: OK")
 
     for record in records:
         if record.type == "turn/end":
             print(f"turn {record.payload['turn_id']}: {record.payload['stop_reason']}")
-    if assembled:
-        print("final_context: " + json.dumps(assembled[-1][1].payload, ensure_ascii=False))
+    if points:
+        print("final_context: " + json.dumps(points[-1].record.payload, ensure_ascii=False))
     return EXIT_OK
 
 

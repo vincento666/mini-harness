@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -189,3 +190,30 @@ def fold(events: Sequence[EventRecord]) -> AssembledContext:
 def assembled_payload(turn_id: str, context: AssembledContext) -> dict[str, Any]:
     """`context/assembled` 的 payload：所属回合的 `turn_id` 加折叠结果。"""
     return {"turn_id": turn_id, **context.model_dump(mode="json")}
+
+
+@dataclass(frozen=True)
+class AssemblyPoint:
+    """一个装配点：那条 `context/assembled`、它之前的记录前缀、它所属的回合。"""
+
+    record: EventRecord
+    prefix: tuple[EventRecord, ...]
+    turn_id: str
+
+
+def assembly_points(events: Sequence[EventRecord]) -> list[AssemblyPoint]:
+    """按写入顺序给出日志里的每个装配点。
+
+    前缀止于该点之前——该点自己与它之后的事件都不算进来；`turn_id` 取自它之前最近的
+    `turn/start`，没有就是空串。重放方据此重算，不必自己扫记录、按下标切前缀。
+    """
+    points: list[AssemblyPoint] = []
+    turn_id = ""
+    for index, event in enumerate(events):
+        if event.type == "turn/start":
+            turn_id = str(event.payload.get("turn_id", ""))
+        elif event.type == "context/assembled":
+            points.append(
+                AssemblyPoint(record=event, prefix=tuple(events[:index]), turn_id=turn_id)
+            )
+    return points
