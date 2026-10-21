@@ -65,7 +65,7 @@
 - **THEN** `minihns replay` 以退出码 1 结束，stderr 含 `LOG_UNREADABLE`，且进程没有未捕获异常
 
 ### Requirement: 事件类型只取自当前事件词表
-系统 SHALL 只发出当前词表中的事件类型：`session/start`、`session/end`、`turn/start`、`turn/end`、`context/assembled`、`model/request`、`model/retry`、`model/response`、`tool/call`、`tool/result`、`tool/cancelled`、`approval/request`、`approval/response`、`error/*`。`error/*` 用到的具体类型是 `error/model`、`error/internal`、`error/abort`、`error/fence`。词表外的事实 MUST NOT 通过临时新造类型表达。`model/retry` 自 M4 起可达；`tool/cancelled` 自 M3 起可达。
+系统 SHALL 只发出当前词表中的事件类型：`session/start`、`session/end`、`turn/start`、`turn/end`、`context/assembled`、`model/request`、`model/retry`、`model/response`、`tool/call`、`tool/result`、`tool/cancelled`、`approval/request`、`approval/response`、`compaction/summary`、`error/*`。`error/*` 用到的具体类型是 `error/model`、`error/internal`、`error/abort`、`error/fence`、`error/context`。词表外的事实 MUST NOT 通过临时新造类型表达。`model/retry` 自 M4 起可达；`tool/cancelled` 自 M3 起可达；`compaction/summary` 与 `error/context` 自 M5 起可达。
 
 #### Scenario: 一次带审批的写的事件序列
 - **WHEN** 一次 run 的某回合派发一次获批的 `edit`
@@ -90,6 +90,10 @@
 #### Scenario: tool/cancelled 自 M3 起在词表内
 - **WHEN** 一次 `bash` 超时
 - **THEN** 日志里有一条 `tool/cancelled` 记录，它不被记为 `unrecognized_type`
+
+#### Scenario: 一次压缩一条 compaction/summary
+- **WHEN** 一次装配越线并完成压缩
+- **THEN** 日志里恰有一条 `compaction/summary`，它不被记为 `unrecognized_type`
 
 ### Requirement: approval 事件记录问与答
 系统 SHALL 在**向人提问之前**写一条 `approval/request`（含 `turn_id`、`tool_call_id`、工具名、关键参数），并在得到结论时立刻写一条 `approval/response`（含同样的 `turn_id` 与 `tool_call_id`，`decision` 取 `APPROVED`、`DENIED`、`UNAVAILABLE`）。在非 `ABORTED` 收尾的 session 里，每条 `approval/request` MUST 有且只有一条配对的 `approval/response`。以 `error/abort` 收尾的 session 里允许一条没有配对的 `approval/request`，它读成「未回答」。
@@ -139,3 +143,25 @@
 #### Scenario: 未派发的调用没有 tool/cancelled
 - **WHEN** 一次取消让同一批里声明的调用有未被派发的那些
 - **THEN** 这些 `tool_call_id` 各有一条 `tool/call` 与一条 `outcome: ABORTED_BEFORE_DISPATCH` 的 `tool/result`，且没有 `tool/cancelled`
+
+### Requirement: compaction/summary 记录一次遮蔽式压缩
+系统 SHALL 为每一次压缩写恰好一条 `compaction/summary`，payload 含 `turn_id`、`shadowed_range`（对象，字段 `start` 与 `end` 是同一 session 内的 `seq`，含两端）、`summary`（摘要文本）、`tokens_before` 与 `tokens_after`（压缩前后该次装配的预算读数）。该记录 MUST NOT 携带被遮蔽记录的原文副本，也 MUST NOT 改写或删除被遮蔽的记录。
+
+#### Scenario: 字段齐全且原文还在盘上
+- **WHEN** 一次压缩落进日志
+- **THEN** 那条 `compaction/summary` 的五个 payload 字段都在，且被 `shadowed_range` 覆盖的那些记录仍逐条存在于日志里、内容不变
+
+#### Scenario: 一次装配最多一条
+- **WHEN** 一次 run 里发生了两次压缩（分属两个回合）
+- **THEN** 日志里恰有两条 `compaction/summary`，各自 `turn_id` 不同
+
+### Requirement: error/context 记录预算溢出
+系统 SHALL 在预算溢出终止 run 时写一条 `error/context`，payload 含 `turn_id`、`code`（取值 `CONTEXT_WINDOW_EXCEEDED`）、`detail`。该记录 MUST 在该回合的 `turn/end` 之前、该回合的 `context/assembled` 之后写入（若该点有装配记录）。
+
+#### Scenario: error/context 的位置可断言
+- **WHEN** 一次 run 以预算溢出结束
+- **THEN** 日志里 `error/context` 出现在该回合的 `turn/end` 之前，且 `session/end` 的 `stop_reason` 是 `CONTEXT_WINDOW_EXCEEDED`
+
+#### Scenario: 词表每个新值可达
+- **WHEN** 跑完 M5 的 seam ① 与 seam ⑥ 判据
+- **THEN** `compaction/summary`、`error/context` 与 `StopReason` 里的 `CONTEXT_WINDOW_EXCEEDED` 各至少被一条测试断言到

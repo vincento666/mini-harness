@@ -7,7 +7,7 @@
 ## Requirements
 
 ### Requirement: minihns run 一次性完成一个 session
-系统 SHALL 提供 `minihns run -p "任务"`：一次调用跑完一个 session 并返回退出码；参数为 `-p/--prompt`（必填、非空）、`--workspace`（默认当前目录）、`--session-dir`、`--provider`（默认 `mock`）、`--fixture`、`--base-url`（默认 `https://api.deepseek.com`）、`--model`（默认 `deepseek-chat`）、`--api-key-env`（默认 `DEEPSEEK_API_KEY`）、`--max-turns`、`--append-system-prompt`、`--events jsonl`、`--sandbox`（默认 `workspace-write`）、`--yes`（开关）。`--provider mock` 时 `--fixture` MUST 同时给出；`--provider openai` 时 `--fixture` MUST NOT 被使用。成功时 stdout SHALL 打印 session id。
+系统 SHALL 提供 `minihns run -p "任务"`：一次调用跑完一个 session；参数：`-p/--prompt`（必填、非空）、`--workspace`（默认当前目录）、`--session-dir`、`--provider`（默认 `mock`）、`--fixture`、`--base-url`（默认 `https://api.deepseek.com`）、`--model`（默认 `deepseek-chat`）、`--api-key-env`（默认 `DEEPSEEK_API_KEY`）、`--max-turns`、`--window`（默认 128000）、`--reserve`（默认 8192）、`--append-system-prompt`、`--events jsonl`、`--sandbox`（默认 `workspace-write`）、`--yes`。`--provider mock` 时 `--fixture` MUST 同时给出，`openai` 时 MUST NOT 被使用。成功时 stdout 打印 session id。
 
 #### Scenario: 缺少 prompt
 - **WHEN** 执行 `minihns run` 且不带 `-p`
@@ -45,7 +45,7 @@
 - **THEN** 请求带上了该密钥，而 stdout、stderr 与该 session 的日志里都不含它
 
 ### Requirement: run 参数记录进 session/start
-系统 SHALL 在 `session/start` 的 payload 里记录本次运行的有效参数：`workspace`（绝对路径）、`provider`、`max_turns`、`append_system_prompt`、`sandbox`、`approval`（`ask` 或 `auto`）、`tools`（本次注册并送给模型的工具名列表），以及用户 prompt 原文；`provider` 为 `openai` 时还 SHALL 记录 `base_url`、`model` 与 `api_key_env`（**环境变量的名字**，不是它的值）。payload MUST NOT 记录密钥的值或任何 Authorization 内容。payload MUST NOT 重复携带 `schema_version`——版本事实只存在于每条记录的信封字段。
+系统 SHALL 在 `session/start` 的 payload 里记录本次运行的有效参数：`workspace`（绝对路径）、`provider`、`max_turns`、`window`、`reserve`、`append_system_prompt`、`sandbox`、`approval`（`ask` 或 `auto`）、`tools`（本次注册并送给模型的工具名列表），以及用户 prompt 原文；`provider` 为 `openai` 时还 SHALL 记录 `base_url`、`model` 与 `api_key_env`（**环境变量的名字**，不是它的值）。payload MUST NOT 记录密钥的值或任何 Authorization 内容。payload MUST NOT 重复携带 `schema_version`——版本事实只存在于每条记录的信封字段。
 
 #### Scenario: payload 与命令行一致
 - **WHEN** 执行 `minihns run -p "x" --max-turns 3 --workspace <dir> --sandbox read-only`
@@ -63,6 +63,10 @@
 - **WHEN** 执行 `minihns run -p "x" --provider openai --base-url http://127.0.0.1:8300/v1 --model qwen3.8-flash-next-iq3_xxs --api-key-env MINIHNS_KEY`，且 `MINIHNS_KEY` 已设
 - **THEN** `session/start` 的 payload 里 `provider` 为 `openai`、`base_url` 为所给地址、`model` 为 `qwen3.8-flash-next-iq3_xxs`、`api_key_env` 为 `MINIHNS_KEY`，且整份日志里找不到 `MINIHNS_KEY` 的值
 
+#### Scenario: 窗口与预留进 payload
+- **WHEN** 执行 `minihns run -p "x" --window 4000 --reserve 500`
+- **THEN** `session/start` 的 payload 里 `window` 为 4000、`reserve` 为 500
+
 ### Requirement: --events jsonl 输出与日志逐行相同的事件流
 系统 SHALL 在 `--events jsonl` 时把与日志文件内容逐行相同的事件 JSON 写到 stdout，使 CLI 输出本身可被重放；此时 stdout MUST NOT 额外打印 session id 行或其它非事件行（session id 由每条事件记录的 `session_id` 携带）。
 
@@ -71,7 +75,7 @@
 - **THEN** stdout 的行数与日志行数相同，且逐行解析后的对象相等
 
 ### Requirement: minihns replay 逐点重算折叠并断言相等
-系统 SHALL 提供 `minihns replay <session-id>`：定位该 session 的日志，对日志里每一条 `context/assembled` 用它之前的日志前缀重算折叠结果，并与该记录的 payload 逐字段比对；重算的入参 MUST NOT 取自该点之后的事件，且 MUST 全部可从该前缀派生（含该装配点当时的工具名列表）。replay SHALL 打印逐回合序列与最后一次装配的上下文。replay MUST NOT 调用 Provider，MUST NOT 修改被重放的日志，也 MUST NOT 执行任何工具。重放不一致时系统 MUST NOT 往被重放的日志追加任何事件（含 `error/*`）：它只往 stderr 写一行 `REPLAY_MISMATCH: <detail>` 并以退出码 1 结束。`error/replay` **不是事件词表里的类型**、从不进任何日志；这条是「每个非零退出都有 `error/*` 事件」的例外之一（理由见 `docs/adr/0001-m1-simplifications.md`）。
+系统 SHALL 提供 `minihns replay <session-id>`：定位该 session 的日志，对日志里每一条 `context/assembled` 用它之前的日志前缀重算折叠结果，并与该记录的 payload 逐字段比对；重算的入参 MUST NOT 取自该点之后的事件，且 MUST 全部可从该前缀派生（含当时的工具名列表）。replay SHALL 打印逐回合序列与最后一次装配的上下文；没有任何装配点时 SHALL 打印一行说明并以退出码 0 结束。replay MUST NOT 调用 Provider，MUST NOT 修改被重放的日志，也 MUST NOT 执行任何工具。重放不一致时 MUST NOT 往被重放的日志追加任何事件（含 `error/*`）：只往 stderr 写一行 `REPLAY_MISMATCH: <detail>` 并以退出码 1 结束。`error/replay` 不在事件词表里、从不进日志，是「每个非零退出都有 `error/*`」的例外之一（见 ADR-0001）。
 
 #### Scenario: 每个装配点都重算相等
 - **WHEN** 先跑一次带工具调用与审批记录的 run，再对同一 session id 执行 replay
@@ -85,6 +89,10 @@
 - **WHEN** 对一个用 mock fixture 跑出的 session 执行 replay
 - **THEN** 过程中没有任何 Provider 调用发生，且工作区里没有任何文件被创建或修改（replay 也不执行工具）
 
+#### Scenario: 没有装配点的日志不是重放不一致
+- **WHEN** 被重放的日志里没有任何 `context/assembled`（第一次装配之前就溢出或取消收尾）
+- **THEN** replay 打印逐回合序列与一行「没有装配点」的说明、不打印最后一次装配的上下文，并以退出码 0 结束
+
 ### Requirement: 未知 session id 是参数错误
 当 `minihns replay` 的 session id 在 session 目录里没有对应日志文件时，系统 SHALL 以退出码 2 结束并在 stderr 输出 `SESSION_NOT_FOUND` 与所查找的路径。
 
@@ -93,7 +101,7 @@
 - **THEN** 退出码为 2，stderr 含 `SESSION_NOT_FOUND`
 
 ### Requirement: 退出码只取自固定表
-系统 SHALL 只用固定退出码：0 成功、1 模型或内部错误、2 参数错误、3 围栏拒绝或审批被拒、4 上下文预算溢出、5 用户取消。除参数错误（发生在 session 开始之前）、日志不可写、以及 replay 不一致这三种情况外，每个非零退出 SHALL 有对应的 `error/*` 事件。M2 中 3 是可达码（`stop_reason: FENCE_DENIED` 映射到 3）；4 仍是保留码，MUST NOT 被产生。
+系统 SHALL 只用固定退出码：0 成功、1 模型或内部错误、2 参数错误、3 围栏拒绝或审批被拒、4 上下文预算溢出、5 用户取消。除参数错误（发生在 session 开始之前）、日志不可写、以及 replay 不一致这三种情况外，每个非零退出 SHALL 有对应的 `error/*` 事件。3 与 4 都是可达码：`stop_reason: FENCE_DENIED` 映射到 3，`stop_reason: CONTEXT_WINDOW_EXCEEDED` 映射到 4。
 
 #### Scenario: 每个失败都落在表内
 - **WHEN** M2 的任一失败场景发生
@@ -118,3 +126,7 @@
 #### Scenario: M2 不产生保留码 4
 - **WHEN** 跑完 M2 新增的全部成功与失败场景
 - **THEN** 只有围栏或审批被拒的场景以 3 退出，没有任何 run 以 4 退出
+
+#### Scenario: 预算溢出映射到退出码 4
+- **WHEN** 一次 run 以 `stop_reason: CONTEXT_WINDOW_EXCEEDED` 结束
+- **THEN** 退出码为 4，且日志里有 `error/context` 记录

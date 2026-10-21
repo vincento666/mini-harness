@@ -3,7 +3,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: minihns run 一次性完成一个 session
-系统 SHALL 提供 `minihns run -p "任务"`：一次调用跑完一个 session 并返回退出码；参数为 `-p/--prompt`（必填、非空）、`--workspace`（默认当前目录）、`--session-dir`、`--provider`（默认 `mock`）、`--fixture`、`--base-url`（默认 `https://api.deepseek.com`）、`--model`（默认 `deepseek-chat`）、`--api-key-env`（默认 `DEEPSEEK_API_KEY`）、`--max-turns`、`--window`（默认 128000）、`--reserve`（默认 8192）、`--append-system-prompt`、`--events jsonl`、`--sandbox`（默认 `workspace-write`）、`--yes`（开关）。`--provider mock` 时 `--fixture` MUST 同时给出；`--provider openai` 时 `--fixture` MUST NOT 被使用。成功时 stdout SHALL 打印 session id。
+系统 SHALL 提供 `minihns run -p "任务"`：一次调用跑完一个 session；参数：`-p/--prompt`（必填、非空）、`--workspace`（默认当前目录）、`--session-dir`、`--provider`（默认 `mock`）、`--fixture`、`--base-url`（默认 `https://api.deepseek.com`）、`--model`（默认 `deepseek-chat`）、`--api-key-env`（默认 `DEEPSEEK_API_KEY`）、`--max-turns`、`--window`（默认 128000）、`--reserve`（默认 8192）、`--append-system-prompt`、`--events jsonl`、`--sandbox`（默认 `workspace-write`）、`--yes`。`--provider mock` 时 `--fixture` MUST 同时给出，`openai` 时 MUST NOT 被使用。成功时 stdout 打印 session id。
 
 #### Scenario: 缺少 prompt
 - **WHEN** 执行 `minihns run` 且不带 `-p`
