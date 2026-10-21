@@ -25,9 +25,9 @@
 - [x] 3.2 seam ②：判据 `test_a_whitelist_keeps_only_the_listed_tools`——`build_registry(["read", "grep"])` 只留两个且顺序按内置顺序；实现白名单筛选
 - [x] 3.3 seam ②：判据 `test_an_empty_whitelist_is_legal`——`build_registry([])` 是空注册表、`specs()` 为空列表；实现「空列表合法」
 - [x] 3.4 seam ②：判据 `test_an_unknown_tool_name_in_the_whitelist_is_a_config_failure`——`build_registry(["read", "web_search"])` 返回 `ConfigFailure` 且 detail 含 `web_search`；实现未知名判据
-- [ ] 3.5 seam ⑥：红判据 `test_the_configured_tool_whitelist_reaches_payload_and_model_request`——配置写 `tools = ["read", "grep"]` 时 `session/start` 的 `tools` 恰含这两个、`model/request` 的工具面也只有这两个；实现 CLI 装配处换掉硬编码那行（`cli/main.py:144`）
-- [ ] 3.6 seam ①：红判据 `test_a_tool_call_is_unknown_when_the_whitelist_is_empty`——`tools = []` 时 Provider 的工具调用产出 `outcome: UNKNOWN_TOOL` 且该回合正常 `turn/end`；确认回合循环与派发段无需改动，判据转绿
-- [ ] 3.7 seam ④：红判据 `test_a_fold_with_no_tools_still_matches_replay`——空 `tools` 的一次 run 逐点重放仍相等、头部没有工具块也不炸；实现或确认 `events/fold.py` 的头部派生已能处理空列表
+- [x] 3.5 seam ⑥：红判据 `test_the_configured_tool_whitelist_reaches_payload_and_model_request`——配置写 `tools = ["read", "grep"]` 时 `session/start` 的 `tools` 恰含这两个、`model/request` 的工具面也只有这两个；实现 CLI 装配处换掉硬编码那行（`cli/main.py:144`）。另加 `test_an_unknown_tool_name_in_the_config_is_an_argument_error`：config-layering 规格「白名单里的未知名是参数错误」要求退出码 2 与不建日志，这是它的 seam ⑥ 那一半
+- [x] 3.6 seam ①：判据 `test_a_tool_call_is_unknown_when_the_whitelist_is_empty`——`tools = []` 时 Provider 的工具调用产出 `outcome: UNKNOWN_TOOL` 且该回合正常 `turn/end`；确认回合循环与派发段无需改动，判据转绿
+- [x] 3.7 seam ④：判据 `test_a_fold_with_no_tools_still_matches_replay`——空 `tools` 的一次 run 逐点重放仍相等、头部没有工具块也不炸；确认 `events/fold.py` 的头部派生已能处理空列表
 
 ## 4. `ProviderEndpoint` 与「是不是 openai」塌成一处（seam ① 与 ⑥）
 

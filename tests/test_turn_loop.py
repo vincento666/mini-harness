@@ -9,6 +9,7 @@ from pathlib import Path
 
 import httpx
 
+from mini_harness.config import build_registry
 from mini_harness.events import EventLog, EventRecord, read_events
 from mini_harness.events.fold import fold
 from mini_harness.loop import RunOutcome, SessionSettings, run_session
@@ -783,3 +784,30 @@ async def test_a_fixture_cannot_invent_a_model_retry(tmp_path: Path) -> None:
 
     types = [record.type for record in read_events(log.path)]
     assert "model/retry" not in types
+
+
+async def test_a_tool_call_is_unknown_when_the_whitelist_is_empty(tmp_path: Path) -> None:
+    """工具表为空时模型照样被调用：调用落到派发段的 `UNKNOWN_TOOL`，回合照常闭合。"""
+    log, outcome = await run_session_fixture(
+        tmp_path,
+        "s-notools",
+        FixtureProvider(
+            entries=[
+                {
+                    "content": "调一个不在表里的工具",
+                    "finish_reason": "tool_calls",
+                    "tool_calls": [
+                        {"id": "c1", "name": "read", "arguments": {"file_path": "a.md"}},
+                    ],
+                },
+                {"content": "算了", "finish_reason": "stop"},
+            ]
+        ),
+        registry=build_registry([]),
+        max_turns=8,
+    )
+
+    records = read_events(log.path)
+    assert result_outcomes(records) == [("c1", "UNKNOWN_TOOL")]
+    assert [record.type for record in records].count("turn/end") == 2
+    assert outcome.stop_reason == "MODEL_COMPLETED"

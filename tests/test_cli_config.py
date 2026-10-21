@@ -356,6 +356,50 @@ def test_a_config_file_setting_a_provider_selects_that_provider(tmp_path: Path) 
     assert list((tmp_path / "sessions").glob("*.jsonl")) == []
 
 
+def test_the_configured_tool_whitelist_reaches_payload_and_model_request(tmp_path: Path) -> None:
+    (tmp_path / "mini.config.toml").write_text('tools = ["read", "grep"]\n', encoding="utf-8")
+
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--yes",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    records = _session_records(tmp_path)
+    start = next(record for record in records if record["type"] == "session/start")
+    request = next(record for record in records if record["type"] == "model/request")
+    assert start["payload"]["tools"] == ["read", "grep"]
+    assert request["payload"]["tools"] == ["read", "grep"]
+
+
+def test_an_unknown_tool_name_in_the_config_is_an_argument_error(tmp_path: Path) -> None:
+    (tmp_path / "mini.config.toml").write_text('tools = ["read", "web_search"]\n', encoding="utf-8")
+
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--yes",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert "web_search" in result.stderr
+    assert list((tmp_path / "sessions").glob("*.jsonl")) == []
+
+
 def test_a_boolean_where_a_number_is_expected_is_an_argument_error(tmp_path: Path) -> None:
     config = tmp_path / "mini.config.toml"
     config.write_text("max_turns = true\n", encoding="utf-8")

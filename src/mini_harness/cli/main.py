@@ -14,7 +14,13 @@ from pathlib import Path
 from types import FrameType
 from typing import Any, NoReturn
 
-from mini_harness.config import ConfigFailure, discover_config, layer_settings, load_config
+from mini_harness.config import (
+    ConfigFailure,
+    build_registry,
+    discover_config,
+    layer_settings,
+    load_config,
+)
 from mini_harness.events import EventLog, LogReadFailure, LogWriteFailure, read_events
 from mini_harness.events.fold import assembled_payload, fold
 from mini_harness.loop import (
@@ -34,8 +40,6 @@ from mini_harness.provider import FixtureLoadFailure, load_fixture_provider
 from mini_harness.provider.contract import Provider
 from mini_harness.provider.openai_compat import OpenAICompatProvider, validate_base_url
 from mini_harness.tools import ToolRegistry
-from mini_harness.tools.bash_tools import bash_tool_definitions
-from mini_harness.tools.file_tools import file_tool_definitions
 
 EXIT_OK = 0
 EXIT_INTERNAL_ERROR = 1
@@ -132,6 +136,7 @@ async def _await_session(
     provider: Provider,
     settings: SessionSettings,
     log: EventLog,
+    registry: ToolRegistry,
 ) -> RunOutcome:
     """装好 Ctrl-C 处理器再跑内核：Ctrl-C 是取消，不是崩溃。"""
     cancel = asyncio.Event()
@@ -142,7 +147,7 @@ async def _await_session(
             prompt=prompt,
             provider=provider,
             log=log,
-            registry=ToolRegistry([*file_tool_definitions(), *bash_tool_definitions()]),
+            registry=registry,
             settings=settings,
             cancel=cancel,
         )
@@ -186,6 +191,11 @@ def _run(args: argparse.Namespace) -> int:
             return _report_failure(
                 "INVALID_ARGUMENT", f"{flag} 至少为 1，收到 {value}", EXIT_INVALID_ARGUMENT
             )
+
+    # 工具表从装配来：内置六定义按配置的白名单筛，未知名与别的配置失败同形。
+    registry = build_registry(layered.tools)
+    if isinstance(registry, ConfigFailure):
+        return _report_failure("INVALID_ARGUMENT", registry.detail, EXIT_INVALID_ARGUMENT)
 
     provider: Provider
     if provider_name == "openai":
@@ -235,7 +245,9 @@ def _run(args: argparse.Namespace) -> int:
         api_key_env=layered.api_key_env if openai else None,
     )
     outcome = asyncio.run(
-        _await_session(prompt=prompt, provider=provider, settings=settings, log=log)
+        _await_session(
+            prompt=prompt, provider=provider, settings=settings, log=log, registry=registry
+        )
     )
 
     exit_code = exit_code_for(outcome)
