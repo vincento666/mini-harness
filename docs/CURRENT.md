@@ -2,7 +2,7 @@
 
 每里程碑收尾更新一次。接手时以 `git status --short` 与 `git log --oneline -3` 为准，本文件只是快照。
 
-更新：2026-10-21（**M9 已归档，等合并批准**：change `m9-assembly-and-config-layering` 的四份 delta 已 sync 进主规格、`changeRoot` 已移入 `openspec/changes/archive/2026-10-21-m9-assembly-and-config-layering/`，归档提交 **`07831f5`** 在分支 `change/m9-assembly-and-config-layering` 上（该分支共 15 个提交，最后一个已推）。tasks **40/40 全勾**——**6.5 的模型层那一半等人跑**，命令在 `docs/verification/m9-assembly-and-config-layering-manual.md` 末尾。分支上最后跑的门禁：326 passed / 2 skipped、TOTAL **1512 语句 / 69 未覆盖 / 95%**、mypy **28 个源文件**、ruff **66 文件**、`openspec validate --all --strict` **10 份主规格 0 失败**（活动 change 0 份）。merge 进 `main`、tag **`m9`**、删分支都在人批准之后才执行。**M9 之后是 M6** REPL 与 M7 SSE）
+更新：2026-10-21（**M9 已关闭**：change `m9-assembly-and-config-layering` 的四份 delta 已 sync 进主规格、`changeRoot` 已移入 `openspec/changes/archive/2026-10-21-m9-assembly-and-config-layering/`、`--no-ff` 合入 `main`（merge commit **`5fb7675`**，16 个提交、37 文件 / +2118 / −97）、tag **`m9`**、change 分支本地与远端已删。tasks **40/40 全勾**——**6.5 的模型层那一半等人跑**，命令在 `docs/verification/m9-assembly-and-config-layering-manual.md` 末尾。合并后在 `main` 上重跑的门禁：326 passed / 2 skipped、TOTAL **1512 语句 / 69 未覆盖 / 95%**、mypy **28 个源文件**、ruff **66 文件**、`openspec validate --all --strict` **10 份主规格 0 失败**（活动 change 0 份）。M8 与 M5 的归档与 merge 信息见下「M8 的收尾」与「M5 的收尾」；**M9 之后是 M6** REPL 与 M7 SSE）
 
 ## 进度
 
@@ -60,6 +60,7 @@
 - **Learning Gate 7.2**：新收 L-041 至 L-045，关闭零条，**AGENTS.md 本轮不晋升**，收件箱 13 条（空闲 2）。
 - **`code-review` 两轴与修复轮（组 8，提交 `ba57b29` 与 `e28b52a`）**：Standards 轴四条硬违规里能当场修的只有 ADR-0018 正文超句数（已压成两句），其余三条记进 ADR-0002 的提交纪律欠账；八条基线判断项记成第 38 至 45 条。Spec 轴三条当场按 red→green 修掉：`--config` 指向目录（`except OSError` → `CONFIG_NOT_FOUND`）、配置写错档位（词表判据）、file-tools 那条 scenario 缺判据（补 seam ① 一条，写出来就是绿的）。另补 design.md 的 D1「实现时的改判」：`layer_settings` 返回 `EffectiveSettings` 而非 `SessionSettings`，下界与词表判断留在 CLI。
 - **sync 与归档（提交 `07831f5`）**：四份 delta 先 sync 进主规格（`config-layering` 新建，其余三份按 MODIFIED / ADDED / REMOVED 逐条落），核对「10 份主规格 0 失败、主规格里没有 delta 式标题残留、被 MODIFIED 的每条既有 scenario 名都在」，再移 `changeRoot` 进 `openspec/changes/archive/2026-10-21-m9-assembly-and-config-layering/`。sync 之前 `--strict` 是 11 项（10 份主规格 + change），归档之后 10 项。
+- **合并（人批准后执行）**：`--no-ff` 合入 `main` 是 merge commit **`5fb7675`**，tag **`m9`**，change 分支 `change/m9-assembly-and-config-layering` 本地与远端都已删。合并后在 `main` 上重跑的四道门禁与 `openspec validate --all --strict` 数字见上「门禁实测」。
 
 ## 门禁实测（Windows 本机）
 
