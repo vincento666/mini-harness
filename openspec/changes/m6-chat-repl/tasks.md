@@ -50,13 +50,13 @@
 
 ## 7. 文档与决策
 
-- [ ] 7.1 ADR-0019：溢出的入口边界（内核只写回合级收尾）+ 请求级压缩与一次重试 + 窗口预算不成立是启动期配置错误；写清「DSH 这么做」与「mini 版故意简化」的分界。
-- [ ] 7.2 ADR-0020：REPL 的会话边界、词表三个新值、`entry` 字段、会话收尾复用 `MODEL_COMPLETED`、run 的 prompt 仍住在 `session/start` 这处不对称。
-- [ ] 7.3 `GLOSSARY.md`：新增词条「回合段（segment）」，改掉「本项目没有 DSH 的 turn / step 双层」那句（本项目的一个回合 = DSH 的 step，一个段 = DSH 的 turn）。
-- [ ] 7.4 ADR-0002 新记三条：DSH 的「压缩失败 warn 并继续回合」推到 M10 / M11；工具事件的终端投影归 M7 之后的事件流消费者；DSH 的 `next-step` 输入排队不做。并更正第 3、21 条为「M6 已处理」。
-- [ ] 7.5 `docs/verification/m6-chat-repl-manual.md`：人手验收（真工作区、真模型跑一次 chat，至少两条输入、一次取消、一次段用完上限）。
-- [ ] 7.6 更正 `docs/verification/m5-context-budget-compaction-manual.md`：「窗口 32768 → 退出码 4」被启动期校验取代，标注而不删。
-- [ ] 7.7 `docs/CURRENT.md` 与 `docs/roadmap.md` 的状态行更新（M6 之后是 M7）。
+- [x] 7.1 ADR-0019：溢出的入口边界（内核只写回合级收尾）+ 请求级压缩与一次重试 + 窗口预算不成立是启动期配置错误；写清「DSH 这么做」与「mini 版故意简化」的分界。
+- [x] 7.2 ADR-0020：REPL 的会话边界、词表三个新值、`entry` 字段、会话收尾复用 `MODEL_COMPLETED`、run 的 prompt 仍住在 `session/start` 这处不对称。
+- [x] 7.3 `GLOSSARY.md`：新增词条「回合段（segment）」，改掉「本项目没有 DSH 的 turn / step 双层」那句（本项目的一个回合 = DSH 的 step，一个段 = DSH 的 turn）。
+- [x] 7.4 ADR-0002 新记三条：DSH 的「压缩失败 warn 并继续回合」推到 M10 / M11；工具事件的终端投影归 M7 之后的事件流消费者；DSH 的 `next-step` 输入排队不做。并更正第 3、21 条为「M6 已处理」。
+- [x] 7.5 `docs/verification/m6-chat-repl-manual.md`：人手验收（真工作区、真模型跑一次 chat，至少两条输入、一次取消、一次段用完上限）。
+- [x] 7.6 更正 `docs/verification/m5-context-budget-compaction-manual.md`：「窗口 32768 → 退出码 4」被启动期校验取代，标注而不删。
+- [x] 7.7 `docs/CURRENT.md` 与 `docs/roadmap.md` 的状态行更新（M6 之后是 M7）。
 
 ## 8. 收尾
 

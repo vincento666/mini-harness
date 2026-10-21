@@ -2,7 +2,9 @@
 
 每里程碑收尾更新一次。接手时以 `git status --short` 与 `git log --oneline -3` 为准，本文件只是快照。
 
-更新：2026-10-21（**M9 已关闭**：change `m9-assembly-and-config-layering` 的四份 delta 已 sync 进主规格、`changeRoot` 已移入 `openspec/changes/archive/2026-10-21-m9-assembly-and-config-layering/`、`--no-ff` 合入 `main`（merge commit **`5fb7675`**，16 个提交、37 文件 / +2118 / −97）、tag **`m9`**、change 分支本地与远端已删。tasks **40/40 全勾**——**6.5 的模型层那一半等人跑**，命令在 `docs/verification/m9-assembly-and-config-layering-manual.md` 末尾。合并后在 `main` 上重跑的门禁：326 passed / 2 skipped、TOTAL **1512 语句 / 69 未覆盖 / 95%**、mypy **28 个源文件**、ruff **66 文件**、`openspec validate --all --strict` **10 份主规格 0 失败**（活动 change 0 份）。M8 与 M5 的归档与 merge 信息见下「M8 的收尾」与「M5 的收尾」；**M9 之后是 M6** REPL 与 M7 SSE）
+更新：2026-10-21（**M6 实现与文档已完、收尾组 8 待跑**：change `m6-chat-repl` 在分支 `change/m6-chat-repl` 上，tasks **35/40**——组 1 至 7 全勾，剩组 8 的收尾五项（`code-review` 两轴、变异轮、Learning Gate、分支上 sync + 归档、**先征求人批准**再合并与 tag `m6`）。落地的东西：`minihns chat` REPL（与 `run` 共用参数表与层叠、stdout 只打模型回复正文）、词表三个新值（`user/message`、`segment/start`、`segment/end`）、`session/start.payload.entry`（`run` / `chat`）、`max_turns` 改成段内上限且会话级没有上限、两级取消（段在跑 → 取消该段、会话继续；提示符上 → 正常收尾退出码 0）、窗口预算不成立改成启动期 `INVALID_ARGUMENT`。**M6 之后是 M7** `m7-serve-http-sse`。门禁实测见下「门禁实测」的 M6 行；新开 **ADR-0019**（溢出只到回合级、入口决定会话）与 **ADR-0020**（REPL 的会话边界与 `entry`），ADR-0016 加指针，`GLOSSARY.md` 补四词条。）
+
+M9 快照（2026-10-21）：change `m9-assembly-and-config-layering` 的四份 delta 已 sync 进主规格、`changeRoot` 已移入 `openspec/changes/archive/2026-10-21-m9-assembly-and-config-layering/`、`--no-ff` 合入 `main`（merge commit **`5fb7675`**，16 个提交、37 文件 / +2118 / −97）、tag **`m9`**、change 分支本地与远端已删。tasks **40/40 全勾**——**6.5 的模型层那一半等人跑**，命令在 `docs/verification/m9-assembly-and-config-layering-manual.md` 末尾。合并后在 `main` 上重跑的门禁：326 passed / 2 skipped、TOTAL **1512 语句 / 69 未覆盖 / 95%**、mypy **28 个源文件**、ruff **66 文件**、`openspec validate --all --strict` **10 份主规格 0 失败**（活动 change 0 份）。M8 与 M5 的归档与 merge 信息见下「M8 的收尾」与「M5 的收尾」；**M9 之后是 M6** REPL 与 M7 SSE）
 
 ## 进度
 
@@ -67,8 +69,8 @@
 
 | 门禁 | 实测 |
 |---|---|
-| 测试 | **326 passed / 2 skipped**（M9 之后）。skip 的两条：符号链接判据（本机不允许创建符号链接）、`test_sigint_in_a_real_subprocess_exits_with_five`（`skipif win32`，Linux 侧跑）。全量带覆盖率记账约 102 秒 |
-| 覆盖率 | `coverage erase` → `coverage run -m pytest` → `coverage combine` → `coverage report --fail-under=95`：TOTAL **95%**（**1512 语句 / 69 未覆盖**，M9 之后）；地板 `fail_under = 95`。**坑（2026-10-20 实测）**：combine 之后单独再跑一次 `coverage report` 读到的是没有子进程 partial 的那一份，同一轮里它报 `1167 / 69 / 94%` 并退出码 1——数字要在那三步连着跑完时读 |
+| 测试 | **351 passed / 4 skipped**（M6 实现之后）。skip 的四条：符号链接判据（本机不允许创建符号链接）、`test_sigint_in_a_real_subprocess_exits_with_five`（`skipif win32`，Linux 侧跑）、`test_sigint_mid_segment_cancels_the_segment_not_the_session` 与 `test_sigint_at_the_prompt_ends_the_session_cleanly`（同一条 M3 边界，Linux 侧跑）。全量带覆盖率记账约 136 秒 |
+| 覆盖率 | `coverage erase` → `coverage run -m pytest` → `coverage combine` → `coverage report --fail-under=95`：TOTAL **95%**（**1704 语句 / 85 未覆盖**，M6 实现之后；M9 之后是 1512 / 69）；地板 `fail_under = 95`。**坑（2026-10-20 实测）**：combine 之后单独再跑一次 `coverage report` 读到的是没有子进程 partial 的那一份，同一轮里它报 `1167 / 69 / 94%` 并退出码 1——数字要在那三步连着跑完时读 |
 | 覆盖率分布 | **M5 之后读的，M9 未重读**：`events/reader.py` 88% · `provider/openai_compat.py` 89% · `loop/turn_loop.py` 90%（275 语句 / 28 未覆盖） · `context/budget.py` 92%（117 语句 / 9 未覆盖） · `tools/bash_tools.py` 94% · `tools/file_tools.py` 96% · `tools/registry.py` 97% · `provider/mock.py` 98% · `tools/dispatch.py` 98% · `events/fold.py` 98% · `cli/main.py` 99% · 其余 100%。M9 新增的四个 `config/` 模块与 `loop/settings.py` 都是 100% |
 | 覆盖率（CI 两端，run #3 `81e268f`） | `coverage TOTAL (ubuntu-latest)` = **1136 语句 / 50 未覆盖 / 96%**；`coverage TOTAL (windows-latest)` = **1136 / 50 / 96%**。两端数字一模一样：D9 预期的「平台分支在两端各拉低一半」没有把总数拉开。本机那 50 行是哪 50 行已知（下一段）；Linux 端那 50 行的身份没读到——annotation 只带 `TOTAL` 行，要 `--show-missing` 才有清单。**这一行是 M3 时期的实测，M5 之后 CI 两端的数字要等下一次推 `main` 才更新** |
 | 类型 | `mypy --strict` 干净，**28 个源文件**（M9 新增 `config/load.py`、`config/layering.py`、`config/assembly.py`、`config/__init__.py` 之后） |
