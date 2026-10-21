@@ -21,10 +21,10 @@
 
 ## 3. 工具表从装配来（seam ② 与 ⑥）
 
-- [ ] 3.1 seam ②：红判据 `test_the_builtin_registry_has_six_definitions_in_order`——`build_registry(None)` 产出 `read, write, edit, glob, grep, bash` 六个且顺序固定；实现 `config/assembly.py::build_registry`
-- [ ] 3.2 seam ②：红判据 `test_a_whitelist_keeps_only_the_listed_tools`——`build_registry(["read", "grep"])` 只留两个且顺序按内置顺序；实现白名单筛选
-- [ ] 3.3 seam ②：红判据 `test_an_empty_whitelist_is_legal`——`build_registry([])` 是空注册表、`specs()` 为空列表；实现「空列表合法」
-- [ ] 3.4 seam ②：红判据 `test_an_unknown_tool_name_in_the_whitelist_is_a_config_failure`——`build_registry(["read", "web_search"])` 返回 `ConfigFailure` 且 detail 含 `web_search`；实现未知名判据
+- [x] 3.1 seam ②：判据 `test_the_builtin_registry_has_six_definitions_in_order`——`build_registry(None)` 产出 `read, write, edit, glob, grep, bash` 六个且顺序固定；实现 `config/assembly.py::build_registry`
+- [x] 3.2 seam ②：判据 `test_a_whitelist_keeps_only_the_listed_tools`——`build_registry(["read", "grep"])` 只留两个且顺序按内置顺序；实现白名单筛选
+- [x] 3.3 seam ②：判据 `test_an_empty_whitelist_is_legal`——`build_registry([])` 是空注册表、`specs()` 为空列表；实现「空列表合法」
+- [x] 3.4 seam ②：判据 `test_an_unknown_tool_name_in_the_whitelist_is_a_config_failure`——`build_registry(["read", "web_search"])` 返回 `ConfigFailure` 且 detail 含 `web_search`；实现未知名判据
 - [ ] 3.5 seam ⑥：红判据 `test_the_configured_tool_whitelist_reaches_payload_and_model_request`——配置写 `tools = ["read", "grep"]` 时 `session/start` 的 `tools` 恰含这两个、`model/request` 的工具面也只有这两个；实现 CLI 装配处换掉硬编码那行（`cli/main.py:144`）
 - [ ] 3.6 seam ①：红判据 `test_a_tool_call_is_unknown_when_the_whitelist_is_empty`——`tools = []` 时 Provider 的工具调用产出 `outcome: UNKNOWN_TOOL` 且该回合正常 `turn/end`；确认回合循环与派发段无需改动，判据转绿
 - [ ] 3.7 seam ④：红判据 `test_a_fold_with_no_tools_still_matches_replay`——空 `tools` 的一次 run 逐点重放仍相等、头部没有工具块也不炸；实现或确认 `events/fold.py` 的头部派生已能处理空列表

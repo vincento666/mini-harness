@@ -6,6 +6,7 @@ import asyncio
 from pathlib import Path
 from typing import Any, get_args
 
+from mini_harness.config import ConfigFailure, build_registry
 from mini_harness.tools.fences import ApprovalDecision, DispatchContext, path_key
 from mini_harness.tools.file_tools import file_tool_definitions
 from mini_harness.tools.registry import (
@@ -211,3 +212,36 @@ async def test_invalid_arguments_are_caught_before_the_fence_is_consulted(tmp_pa
 
     assert outcome.result.outcome == "TOOL_ARGS_INVALID"
     assert outcome.fence_code is None
+
+
+_SIX_TOOLS = ["read", "write", "edit", "glob", "grep", "bash"]
+
+
+def test_the_builtin_registry_has_six_definitions_in_order() -> None:
+    registry = build_registry(None)
+
+    assert isinstance(registry, ToolRegistry)
+    assert [spec.name for spec in registry.specs()] == _SIX_TOOLS
+
+
+def test_a_whitelist_keeps_only_the_listed_tools() -> None:
+    """白名单筛出的是内置顺序，不是名单里写的顺序。"""
+    registry = build_registry(["grep", "read"])
+
+    assert isinstance(registry, ToolRegistry)
+    assert [spec.name for spec in registry.specs()] == ["read", "grep"]
+
+
+def test_an_empty_whitelist_is_legal() -> None:
+    registry = build_registry([])
+
+    assert isinstance(registry, ToolRegistry)
+    assert registry.specs() == []
+
+
+def test_an_unknown_tool_name_in_the_whitelist_is_a_config_failure() -> None:
+    failure = build_registry(["read", "web_search"])
+
+    assert isinstance(failure, ConfigFailure)
+    assert failure.code == "UNKNOWN_TOOL_NAME"
+    assert "web_search" in failure.detail
