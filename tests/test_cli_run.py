@@ -16,6 +16,7 @@ import pytest
 from cli_blackbox import _cli, _cli_process
 from mini_harness.cli import main as cli_main
 from mini_harness.cli.main import STOP_REASONS_TO_EXIT_CODES, exit_code_for, sigint_handler
+from mini_harness.config import build_registry
 from mini_harness.events import EventLog
 from mini_harness.loop import STOP_REASONS, RunOutcome, SessionSettings
 from mini_harness.provider import AssistantTurn
@@ -290,6 +291,7 @@ async def test_the_cli_installs_and_restores_the_sigint_handler(tmp_path: Path) 
         provider=spy,
         settings=SessionSettings(workspace=tmp_path, provider_name="mock", max_turns=8),
         log=log,
+        registry=build_registry(None),
     )
 
     assert len(spy.seen_handlers) == 1
@@ -311,6 +313,7 @@ _RUN_SWITCHES = {
     "--help",
     "-p",
     "--prompt",
+    "--config",
     "--workspace",
     "--session-dir",
     "--provider",
@@ -336,6 +339,7 @@ def test_the_run_argument_table_holds_no_switch_for_a_bounded_number(tmp_path: P
     `--max-turns` 的默认值也是 8，那是回合上限，与并发上限无关。
     `--window` / `--reserve` 在这一栏：它们是规格里的窗口预算参数，不是实现常量的开关
     （触发线公式里那个 65536 才是实现常量，没有开关）。
+    `--config` 是 M9 进表的：它是配置层的入口，规格里就有，不是给实现常量开的开关。
     """
     result = _cli("run", "--help", cwd=tmp_path)
 

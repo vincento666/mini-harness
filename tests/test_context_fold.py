@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from mini_harness.config import build_registry
 from mini_harness.events import EventLog, EventRecord
 from mini_harness.events.fold import (
     SYSTEM_PROMPT,
@@ -14,6 +15,7 @@ from mini_harness.events.fold import (
     fold,
 )
 from mini_harness.events.reader import read_events
+from tool_harness import DONE, run_fixture_session
 
 _SESSION_ID = "s-fold"
 
@@ -306,6 +308,25 @@ def test_cold_start_fold_matches_the_recorded_context_assembled(tmp_path: Path) 
         if json.loads(line)["type"] == "context/assembled"
     )
     assert replayed.model_dump(mode="json") == recorded
+
+
+async def test_a_fold_with_no_tools_still_matches_replay(tmp_path: Path) -> None:
+    """工具表为空的一次 run：头部没有工具块，逐点重放仍与当时记录的上下文逐字段相等。"""
+    log, _ = await run_fixture_session(
+        tmp_path, "s-fold-notools", [DONE], registry=build_registry([])
+    )
+    records = read_events(log.path)
+
+    assert next(r for r in records if r.type == "session/start").payload["tools"] == []
+    points = 0
+    for index, record in enumerate(records):
+        if record.type != "context/assembled":
+            continue
+        points += 1
+        # 记录里多带一个 `turn_id`：那是「哪一回合记录的」，不是上下文的一部分。
+        recorded = {key: value for key, value in record.payload.items() if key != "turn_id"}
+        assert fold(records[:index]).model_dump(mode="json") == recorded
+    assert points == 1
 
 
 def test_model_retry_is_a_fact_that_does_not_enter_the_context(tmp_path: Path) -> None:

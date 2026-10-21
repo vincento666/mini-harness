@@ -48,7 +48,7 @@
 - **THEN** 该回合写一条 `turn/end` 且 `stop_reason` 为 `CONTEXT_WINDOW_EXCEEDED`，`session/end` 的最终 `stop_reason` 也是它
 
 ### Requirement: 未注册工具是 UNKNOWN_TOOL 结果
-系统 SHALL 把模型请求的每个工具调用派发到工具注册表；注册表里内置五个文件工具，未注册的工具名 SHALL 产生一条 `tool/result` 且 `outcome` 为 `UNKNOWN_TOOL`，回合 MUST NOT 因此中断。
+系统 SHALL 把模型请求的每个工具调用派发到本次运行装配出的工具注册表；注册表的内容由装配决定（见 `config-layering`），未注册的工具名 SHALL 产生一条 `tool/result` 且 `outcome` 为 `UNKNOWN_TOOL`，回合 MUST NOT 因此中断。
 
 #### Scenario: UNKNOWN_TOOL 不打断回合
 - **WHEN** Provider 返回一个调用未注册工具名的回复
@@ -56,7 +56,11 @@
 
 #### Scenario: 工具结果喂回下一回合
 - **WHEN** 某回合产生了 `tool/result` 记录
-- **THEN** 下一回合的 `context/assembled` 里包含对应的工具结果消息
+- **THEN** 下一回合的装配里这些结果作为工具消息出现
+
+#### Scenario: 空白名单下任何工具调用都是 UNKNOWN_TOOL
+- **WHEN** 配置文件写 `tools = []`，Provider 仍返回一个工具调用
+- **THEN** 该调用产出 `outcome: UNKNOWN_TOOL` 的 `tool/result`，且回合正常写 `turn/end`
 
 ### Requirement: Provider 失败是回合终止结果
 当 Provider 无法产出合法回复时，系统 SHALL 写一条 `error/model` 记录（含 `code`）、写 `turn/end`（`stop_reason: PROVIDER_ERROR`）、写 `session/end`，并以退出码 1 结束；MUST NOT 抛出未捕获异常打断进程。`code` 取值：`PROVIDER_EXHAUSTED`、`PROVIDER_SCHEMA_INVALID`、`PROVIDER_HTTP_STATUS`、`PROVIDER_TIMEOUT`、`PROVIDER_TRANSPORT`、`PROVIDER_ABORTED`。前两个来自 mock 路径，后四个来自真实 provider 路径（HTTP 状态码不可接受且重试后仍失败 / 请求超时 / 连接层失败 / 取消信号已置位）。`PROVIDER_ABORTED` 与既有的取消路径不冲突：内核置位取消时走的仍是 `error/abort` 与退出码 5，这条只在 provider 侧兜住「信号已置位却仍被调用」。

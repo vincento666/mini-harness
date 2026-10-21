@@ -10,7 +10,7 @@ from typing import Any
 
 from mini_harness.events import EventLog, EventRecord, read_events
 from mini_harness.loop import RunOutcome, SessionSettings, run_session
-from mini_harness.loop.settings import ApprovalMode, SandboxLevel
+from mini_harness.loop.settings import ApprovalMode, ProviderEndpoint, SandboxLevel
 from mini_harness.provider import FixtureProvider, Provider
 from mini_harness.provider.contract import ToolCall
 from mini_harness.tools import ToolRegistry
@@ -199,6 +199,7 @@ async def run_session_fixture(
     provider_name: str = "mock",
     window: int = 128000,
     reserve: int = 8192,
+    endpoint: ProviderEndpoint | None = None,
     registry: ToolRegistry | None = None,
     approval_gate: ApprovalGate | None = None,
     cancel: asyncio.Event | None = None,
@@ -216,6 +217,7 @@ async def run_session_fixture(
         approval=approval,
         window=window,
         reserve=reserve,
+        endpoint=endpoint,
     )
     outcome = await run_session(
         prompt=prompt,

@@ -443,8 +443,64 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 
 收件箱：8 条（L-005 / L-019 / L-025 / L-036 / L-037 / L-038 / L-039 / L-040），额度空闲 7 条。
 
-## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
+### L-041
+- Date: 2026-10-21
+- Context: M9 变异轮，编号 5「payload 里的 `model` 取 provider 名」
+- Observation: 存在性断言与值断言是两种判据。`test_the_endpoint_fields_are_in_the_payload` 只断言三条字段在不在，「值取错了」这一类坏法它杀不掉（该变异下它存活）；同族里判值的两条把它补上了。只写前者等于把「取错值」这一整类坏法放行
+- Evidence: `docs/verification/m9-assembly-and-config-layering-mutation.md` 变异 5（三条红、4.2 存活）；`test_openai_run_records_base_url_model_and_the_key_variable_name` 判值
+- Next use: 写「字段在不在」的判据时同时问一句「值错了这条还红吗」；不红就补判值的断言，或确认同族已有判值的判据
+- Promotion candidate: 与 L-036（断言两侧不能同源）同族
+- Status: inbox
 
+### L-042
+- Date: 2026-10-21
+- Context: M9 变异轮，同一个变异（白名单被忽略）先跑定向、后跑全量
+- Observation: 定向轮杀七条、全量轮杀九条，多出来的两条在别的 seam（① 的「白名单空表时工具调用是 UNKNOWN_TOOL」、④ 的「无工具折叠与 replay 相符」）。跨 seam 的判据在定向轮里看不见——「收尾跑全量」的收益是可测量的，不是仪式
+- Evidence: 同上文档变异 3（定向）与变异 11（全量）
+- Next use: 中途的定向轮只用来确认「这条判据不是空的」，里程碑收尾必须全量重跑一遍并记下差多少条
+- Promotion candidate: AGENTS.md 变异段本来就写着「跑全量测试」，本轮不占额度
+- Status: inbox
+
+### L-043
+- Date: 2026-10-21
+- Context: M9 人手验收第一次写 `mini.config.toml`
+- Observation: PowerShell 5.1 的 `Set-Content -Encoding UTF8` 写出的 UTF-8 带 BOM，`tomllib` 不吃，报错是「Invalid statement (at line 1, column 1)」——把人指向语法而不是编码。Windows 上记事本与 PowerShell 5.1 的默认 UTF-8 都带 BOM，所以「手写一份配置」这条路第一次是断的
+- Evidence: `docs/verification/m9-assembly-and-config-layering-manual.md` 别扭第 1 条；`docs/adr/0018-config-is-three-layer-override.md` 的 Consequences
+- Next use: 读用户会手写的文本输入（配置、导入文件）时，先确认它实际会遇到的编码方言；报错文案要指认编码而不是只抄解析器的话
+- Promotion candidate: 与 L-011 家族（错误消息要指认原因）同族
+- Status: inbox
+
+### L-044
+- Date: 2026-10-21
+- Context: M9 组 5 与组 6 往测试文件尾部追加判据时
+- Observation: `edit` 的 `old_string` 以「下一条语句的开头那行」作结尾、`new_string` 里没把它补回，就把那条语句的正文粘到了上一条之后（语法错误或直接少一个 `def`）。M9 内踩到三次，两次要靠重读区间补回 `def` 行。追加式编辑的正确锚点是「上一条的结尾」，不是「下一条的开头」
+- Evidence: 本轮 `tests/test_cli_provider.py` 与 `tests/test_turn_loop.py` 的两次返工（`test_a_dead_endpoint_collapses_into_a_transport_result` 的正文一度孤儿化）
+- Next use: 用 `edit` 插入内容时，锚点选上一段的末行；若必须以下一段作锚，就把那一行原样写进 `new_string`
+- Promotion candidate: 工具用法，无需进 AGENTS.md
+- Status: inbox
+
+### L-045
+- Date: 2026-10-21
+- Context: M9 task 6.3 与 6.5 的前置条件
+- Observation: 两处计划里的事实与规格 / 环境不符：tasks.md 写了第七个失败码 `MISSING_API_KEY`，规格定的是 stderr 含 `INVALID_ARGUMENT`（密钥判据是 CLI 层参数错误，不是 `ConfigFailure` 的一员）；人手验收要造「密钥设为空串」，PowerShell 5.1 里 `$env:X = ""` 是**删除**变量，那个形状在 shell 里造不出来。判据的前置条件要在写判据之前核实，不是写完再发现
+- Evidence: `openspec/changes/m9-assembly-and-config-layering/tasks.md` 6.3 的改判行；manual 文档「设为空串那一半在 PowerShell 5.1 里造不出来」
+- Next use: 计划里的枚举值先对齐规格再写判据；人手验收造不出来的形状，写明由哪条门禁判据代劳
+- Promotion candidate: 与 L-004 家族（先确认它真的会坏 / 真的能造）同族
+- Status: inbox
+
+### M9 收尾轮的消化记录（2026-10-21，tasks 7.2）
+
+**关闭零条**：本轮没有自证的旧条目——L-036 / L-037 / L-038 是 M5 新收的，M9 没跑到它们的路径上；L-025（两栏记录）仍等人类跑完模型层那一半。
+
+**留存八条**：L-005（家族头）、L-019（本轮又踩「file changed since it was read」两次，规则仍在起作用）、L-025（等人类）、L-036 / L-037 / L-038 / L-039 / L-040（M9 的 6.1–6.3 与 6.5 都按它们行事：6.1 的断言两侧不同源、变异 12 的失败输出照 L-037 记、配置文件的单位与编码按 L-038 / L-043 处理）。
+
+**新收五条**：L-041 到 L-045。
+
+**AGENTS.md 本轮不晋升（NO-PROMOTION）**：本轮最值钱的三条（L-041 存在性 vs 值、L-042 定向轮覆盖面、L-045 前置条件先核实）都是四规 #4 与变异段现有句子的收紧，不是新规则；L-043 与 L-044 分别是产品事实与工具用法，去处是 ADR 与本文件。
+
+收件箱：13 条（L-005 / L-019 / L-025 / L-036 / L-037 / L-038 / L-039 / L-040 / L-041 / L-042 / L-043 / L-044 / L-045），额度空闲 2 条。
+
+## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 - 每个里程碑收尾扫一次，**允许输出 `NO-PROMOTION`**（没有可复用信号就不写条目）。
 - 收件箱条目超过 **15 条**必须先消化再收新的：合并同类、把已被代码或规格自证的条目删掉。
 - 晋升进 AGENTS.md 的唯一形态是**一句话规则**；细节留在本文件或 `docs/verification/`。

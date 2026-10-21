@@ -9,9 +9,10 @@ from pathlib import Path
 
 import httpx
 
+from mini_harness.config import build_registry
 from mini_harness.events import EventLog, EventRecord, read_events
 from mini_harness.events.fold import fold
-from mini_harness.loop import RunOutcome, SessionSettings, run_session
+from mini_harness.loop import ProviderEndpoint, RunOutcome, SessionSettings, run_session
 from mini_harness.provider import AssistantTurn, FixtureProvider, Provider
 from mini_harness.provider.openai_compat import OpenAICompatProvider
 from mini_harness.tools import ToolArgs, ToolDefinition, ToolRegistry, ToolResult
@@ -783,3 +784,88 @@ async def test_a_fixture_cannot_invent_a_model_retry(tmp_path: Path) -> None:
 
     types = [record.type for record in read_events(log.path)]
     assert "model/retry" not in types
+
+
+async def test_a_tool_call_is_unknown_when_the_whitelist_is_empty(tmp_path: Path) -> None:
+    """工具表为空时模型照样被调用：调用落到派发段的 `UNKNOWN_TOOL`，回合照常闭合。"""
+    log, outcome = await run_session_fixture(
+        tmp_path,
+        "s-notools",
+        FixtureProvider(
+            entries=[
+                {
+                    "content": "调一个不在表里的工具",
+                    "finish_reason": "tool_calls",
+                    "tool_calls": [
+                        {"id": "c1", "name": "read", "arguments": {"file_path": "a.md"}},
+                    ],
+                },
+                {"content": "算了", "finish_reason": "stop"},
+            ]
+        ),
+        registry=build_registry([]),
+        max_turns=8,
+    )
+
+    records = read_events(log.path)
+    assert result_outcomes(records) == [("c1", "UNKNOWN_TOOL")]
+    assert [record.type for record in records].count("turn/end") == 2
+    assert outcome.stop_reason == "MODEL_COMPLETED"
+
+
+async def test_the_endpoint_fields_come_from_one_endpoint_object(tmp_path: Path) -> None:
+    """端点三条是一个对象：有它就三条齐、没有就三条都不在，不靠「是不是 openai」各判一遍。"""
+    with_endpoint, _ = await run_session_fixture(
+        tmp_path,
+        "s-endpoint",
+        FixtureProvider(entries=[DONE]),
+        provider_name="openai",
+        endpoint=ProviderEndpoint(
+            base_url="https://example.test/v1",
+            model="test-model",
+            api_key_env="TEST_KEY",
+        ),
+    )
+    without, _ = await run_session_fixture(
+        tmp_path, "s-noendpoint", FixtureProvider(entries=[DONE])
+    )
+
+    start_with = next(
+        record.payload
+        for record in read_events(with_endpoint.path)
+        if record.type == "session/start"
+    )
+    start_without = next(
+        record.payload for record in read_events(without.path) if record.type == "session/start"
+    )
+    assert start_with["base_url"] == "https://example.test/v1"
+    assert start_with["model"] == "test-model"
+    assert start_with["api_key_env"] == "TEST_KEY"
+    assert "base_url" not in start_without
+    assert "model" not in start_without
+    assert "api_key_env" not in start_without
+
+
+async def test_a_builtin_tool_filtered_out_by_the_whitelist_is_unknown(tmp_path: Path) -> None:
+    """内置不等于在册：白名单只留 `read` 时，内置的 `grep` 照样是 `UNKNOWN_TOOL`，回合照常闭合。"""
+    log, outcome = await run_session_fixture(
+        tmp_path,
+        "s-grep-filtered",
+        FixtureProvider(
+            entries=[
+                {
+                    "content": "用 grep 找一下",
+                    "finish_reason": "tool_calls",
+                    "tool_calls": [{"id": "c1", "name": "grep", "arguments": {"pattern": "x"}}],
+                },
+                {"content": "算了", "finish_reason": "stop"},
+            ]
+        ),
+        registry=build_registry(["read"]),
+        max_turns=8,
+    )
+
+    records = read_events(log.path)
+    assert result_outcomes(records) == [("c1", "UNKNOWN_TOOL")]
+    assert [record.type for record in records].count("turn/end") == 2
+    assert outcome.stop_reason == "MODEL_COMPLETED"

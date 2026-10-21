@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
+import os
 from collections.abc import Callable
 from typing import Any
 
 import httpx
 
 from mini_harness.events.fold import Message
+from mini_harness.loop.settings import ProviderEndpoint
 from mini_harness.provider.contract import AssistantTurn, ProviderFailure, ToolSpec
 from mini_harness.provider.openai_compat import OpenAICompatProvider
 
@@ -366,3 +369,24 @@ async def test_a_400_with_an_unreadable_body_is_still_an_http_status_result() ->
 
     assert isinstance(outcome, ProviderFailure)
     assert outcome.code == "PROVIDER_HTTP_STATUS"
+
+
+async def test_the_provider_still_accepts_no_key_and_sends_no_header() -> None:
+    """端点对象进设置之后 provider 契约没动：没有密钥照样发请求，`generate` 签名不变。"""
+    endpoint = ProviderEndpoint(
+        base_url=_BASE_URL,
+        model="test-model",
+        api_key_env="MINIHNS_UNSET_TEST_KEY",
+    )
+    provider, seen = _provider(
+        handler=lambda request: httpx.Response(200, json=_OK_BODY),
+        api_key=os.environ.get(endpoint.api_key_env),
+    )
+
+    outcome = await _generate(provider)
+
+    assert os.environ.get(endpoint.api_key_env) is None
+    assert len(seen) == 1
+    assert seen[0].headers.get("authorization") is None
+    assert not isinstance(outcome, ProviderFailure)
+    assert list(inspect.signature(provider.generate).parameters) == ["messages", "tools", "signal"]
