@@ -8,7 +8,7 @@
 
 ## 先读这三样，再动手
 
-1. **`docs/handoff-2026-10-15.md`** —— 已锁定的**编号决策与运行时不变量**，这就是规格输入。**不要重新 grill**，除非实现过程中出现新的设计分叉。两份文档会分叉：决策 15 的取消语义已被 ADR-0011 取代（ADR-0007 已标 superseded），决策 33 的 `scripts/acceptance.py` 已被「每里程碑一条人手验收」替代——**以 ADR 与 `docs/roadmap.md` 为准**，handoff 冻结不编辑。
+1. **`docs/handoff-2026-10-15.md`** —— 已锁定的**编号决策与运行时不变量**，这就是规格输入。**不要重新 grill**，除非实现过程中出现新的设计分叉。它与后来的 ADR 会分叉：**以 ADR 与 `docs/roadmap.md` 为准**，handoff 冻结不编辑。
 2. **`docs/lessons.md`** —— 教训的收件箱与活跃区；Active Lessons 每次接手都读。
 3. **`docs/CURRENT.md`** —— 当前进度、门禁实测、已知缺口。
 
@@ -69,7 +69,7 @@ uv run coverage report --fail-under=95 --show-missing   # 这三步不可拆，�
 合并                            → 代码与规格一次合入 main
 ```
 
-分支纪律：每个 change 一个分支 `change/<id>`；**归档在分支上做**——sync 进主规格、移 `changeRoot`、`openspec validate --all --strict` 全绿，然后代码与规格一次合入 `main`。反过来（先合并再归档）会在主干上留下「代码已合、主规格还停在上一个里程碑」的窗口，M2 与 M4 就是这么留下的。**merge 与推 `main` 先征求人的批准、确认了才执行**；agent 可自行推 `change/<id>` 分支与归档提交。
+分支纪律：每个 change 一个分支 `change/<id>`；**归档在分支上做**——sync 进主规格、移 `changeRoot`、`openspec validate --all --strict` 全绿，然后代码与规格一次合入 `main`。反过来（先合并再归档）会在主干上留下「代码已合、主规格还停在上一个里程碑」的窗口。**merge 与推 `main` 先征求人的批准、确认了才执行**；agent 可自行推 `change/<id>` 分支与归档提交。
 
 **完成判据含一条人手验收**：拿它用真实工作区办一件真事（不是跑判据），观察记进 `docs/verification/<change-id>-manual.md`；不进 CI，也不替代门禁那四道。
 
@@ -92,7 +92,7 @@ Python **>= 3.12** · **uv** · `src/mini_harness/` 布局 · **mypy strict** ·
 
 ## MVP 分两阶段（ADR-0010）
 
-**第一阶段**（内核 / 工件 / 组合 / 能力 / 模型的基础，围栏有雏形）：已完 M1 M2 M4 M3 M8，接下来 **M5 → M9 → M6 → M7**。**第二阶段**（补全成**没有 web / Electron 外壳**的完整类 DSH 形态）：**M10 → M11 → M12 → M13 → M14 → M15**。**第三阶段**（加壳）等前两阶段做完再规划。每个里程碑做什么见 `docs/roadmap.md` 的表。**始终不做**：PTC 工具面塌缩、多模型路由与重试策略、独立工单与 triage 标签体系。
+**第一阶段**（内核 / 工件 / 组合 / 能力 / 模型的基础，围栏有雏形）：剩余 **M9 → M6 → M7**；进度看 `docs/CURRENT.md`。**第二阶段**（补全成**没有 web / Electron 外壳**的完整类 DSH 形态）：**M10 → M11 → M12 → M13 → M14 → M15**。**第三阶段**（加壳）等前两阶段做完再规划。每个里程碑做什么见 `docs/roadmap.md` 的表。**始终不做**：PTC 工具面塌缩、多模型路由与重试策略、独立工单与 triage 标签体系。
 
 ---
 
