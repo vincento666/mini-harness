@@ -406,6 +406,8 @@ async def _serve_session(*, args: argparse.Namespace, prompt: str) -> int:
         await server.close()
         return prepared
 
+    server.attach(prepared.log.path)
+
     try:
         outcome = await _await_session(
             prompt=prompt,
@@ -416,6 +418,8 @@ async def _serve_session(*, args: argparse.Namespace, prompt: str) -> int:
             registry=prepared.registry,
         )
     finally:
+        # 先让事件流跟到收尾，再结束监听：`cleanup()` 等在跑的处理器返回。
+        server.session_finished.set()
         await server.close()
 
     exit_code = exit_code_for(outcome)

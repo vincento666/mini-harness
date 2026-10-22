@@ -5,9 +5,14 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 from dataclasses import dataclass
+from pathlib import Path
 
 from aiohttp import web
+
+from mini_harness.events import EventRecord, LogReadFailure, LogTail
 
 # 默认监听地址。19387 是 DSH 的 desktop profile 在这台机器上的端口
 # （`dsh-desktop-host/lib/index.js:231-235`），mini 故意错开，免得两个 harness 抢同一个端口。
@@ -16,6 +21,11 @@ DEFAULT_PORT = 19400
 
 # host 的词表照 DSH 的 `dsh-host-webserver`：`host: union("127.0.0.1","0.0.0.0")`。
 SERVE_HOSTS: tuple[str, ...] = ("127.0.0.1", "0.0.0.0")
+
+# 事件流只有这一条路径；其它路径是 aiohttp 默认的 404。
+EVENTS_PATH = "/events"
+# 日志是追加写的文件，事件流跟它的方式是轮询偏移（design D6）。
+TAIL_POLL_SECONDS = 0.02
 
 
 @dataclass(frozen=True)
@@ -27,14 +37,31 @@ class BindFailure:
     detail: str
 
 
+def _sse_frame(record: EventRecord) -> bytes:
+    """一条记录一帧：`id` 是 `seq`、`event` 是事件类型、`data` 是那一行的 JSON。"""
+    return (
+        f"id: {record.seq}\n"
+        f"event: {record.type}\n"
+        f"data: {json.dumps(record.model_dump(mode='json'), ensure_ascii=False)}\n\n"
+    ).encode()
+
+
 class ServeServer:
     """一个进程一个会话：HTTP 层是那份日志的实时投影。"""
 
     def __init__(self, *, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT) -> None:
         self.host = host
         self.port = port
+        # 会话收尾时置位：事件流跟到这一位就结束，进程跟着结束。
+        self.session_finished = asyncio.Event()
         self._application = web.Application()
+        self._application.router.add_get(EVENTS_PATH, self._events)
         self._runner: web.AppRunner | None = None
+        self._log_path: Path | None = None
+
+    def attach(self, log_path: Path) -> None:
+        """把这份日志交给事件流。绑定在先、日志在后（design D3），所以这是分开的两步。"""
+        self._log_path = log_path
 
     async def bind(self) -> BindFailure | None:
         """绑定并接收连接。端口被占时 `TCPSite.start()` 里的 `create_server` 抛 `OSError`。
@@ -52,6 +79,24 @@ class ServeServer:
             return BindFailure(host=self.host, port=self.port, detail=str(error))
         self._runner = runner
         return None
+
+    async def _events(self, request: web.Request) -> web.StreamResponse:
+        """`GET /events`：从日志开头跟到会话收尾，一条记录一帧。"""
+        # 绑定与 `attach` 之间没有 await，请求处理器不可能在日志存在之前跑起来。
+        assert self._log_path is not None
+        response = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
+        await response.prepare(request)
+        tail = LogTail(self._log_path)
+        while True:
+            records = tail.read_new()
+            if isinstance(records, LogReadFailure):
+                # 日志读不动是会话自己的失败，不在事件流里编一帧出来。
+                return response
+            for record in records:
+                await response.write(_sse_frame(record))
+            if self.session_finished.is_set():
+                return response
+            await asyncio.sleep(TAIL_POLL_SECONDS)
 
     async def close(self) -> None:
         """结束监听。会话收尾就是进程退出，所以监听跟着一起结束。"""
