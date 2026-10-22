@@ -506,6 +506,72 @@ async def test_a_half_written_line_is_never_streamed(tmp_path: Path) -> None:
         assert json.loads(frame["data"]) == record
 
 
+async def test_a_client_that_disconnects_changes_nothing_about_the_session(
+    tmp_path: Path,
+) -> None:
+    """读到中途断开且不再重连：日志与一次不断开的同形会话相同，也没有因断开产生的记录。"""
+    (tmp_path / "slowly.py").write_text("import time\n\ntime.sleep(2)\n", encoding="utf-8")
+    fixture = _slow_fixture(tmp_path)
+
+    port = _free_port()
+    process = _serve_process(tmp_path, port, fixture)
+    try:
+        await _read_first_frames(port, 2)
+        exit_code = process.wait(timeout=60)
+        stderr = process.stderr.read() if process.stderr is not None else ""
+    finally:
+        if process.poll() is None:
+            process.terminate()
+
+    quiet_dir = tmp_path / "no_client"
+    quiet_dir.mkdir()
+    quiet = _cli(
+        "serve",
+        "--http",
+        "-p",
+        "任务",
+        "--port",
+        str(_free_port()),
+        "--provider",
+        "mock",
+        "--fixture",
+        str(fixture),
+        "--yes",
+        cwd=quiet_dir,
+    )
+
+    assert exit_code == 0
+    assert quiet.returncode == 0
+    assert "Traceback" not in stderr, "客户端断开不该留下未捕获异常"
+    disconnected = [record["type"] for record in _log_records(tmp_path)]
+    untouched = [record["type"] for record in _log_records(quiet_dir)]
+    assert disconnected == untouched
+    assert untouched[-1] == "session/end"
+    assert not [kind for kind in disconnected if kind.startswith("error/")]
+
+
+async def test_two_clients_read_the_same_stream_without_shadowing_each_other(
+    tmp_path: Path,
+) -> None:
+    """两个客户端同时读同一条流、其中一个先断开：另一个从自己的位置读到底。"""
+    (tmp_path / "slowly.py").write_text("import time\n\ntime.sleep(2)\n", encoding="utf-8")
+    port = _free_port()
+    process = _serve_process(tmp_path, port, _slow_fixture(tmp_path))
+    try:
+        early, whole = await asyncio.gather(_read_first_frames(port, 2), _read_stream(port))
+        exit_code = process.wait(timeout=60)
+    finally:
+        if process.poll() is None:
+            process.terminate()
+
+    records = _log_records(tmp_path)
+    status, frames = whole
+    assert exit_code == 0
+    assert len(early) == 2
+    assert status == 200
+    assert [int(frame["id"]) for frame in frames] == list(range(len(records)))
+
+
 def test_stdout_is_only_the_session_id_and_stderr_says_where_it_listens(tmp_path: Path) -> None:
     """收尾时 stdout 只有 session id 一行；监听地址打在 stderr。"""
     port = _free_port()

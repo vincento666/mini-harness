@@ -117,8 +117,12 @@ class ServeServer:
             if isinstance(records, LogReadFailure):
                 # 日志读不动是会话自己的失败，不在事件流里编一帧出来。
                 return response
-            for record in records:
-                await response.write(_sse_frame(record))
+            try:
+                for record in records:
+                    await response.write(_sse_frame(record))
+            except ConnectionResetError:
+                # 客户端挂断：这条连接到此结束，会话不受影响，也不产生任何事件。
+                return response
             if self.session_finished.is_set():
                 return response
             await asyncio.sleep(TAIL_POLL_SECONDS)
