@@ -515,6 +515,31 @@ def _print_segment_note(segment: SegmentOutcome) -> None:
     print(f"[段] {note}", file=sys.stderr)
 
 
+def _print_shadow_feedback(log: EventLog, through: int) -> tuple[int, LogReadFailure | None]:
+    """把新写出的 `compaction/summary` 说给人听（design D6）：走 stderr，不进 stdout、不写日志。
+
+    内容全部取自那条记录已有的四个键——不新增事件类型，也不改 payload。
+    `through` 是上次扫到的 `seq`：一个段只报它自己那一段里发生的压缩。
+    """
+    events = read_events(log.path)
+    if isinstance(events, LogReadFailure):
+        return through, events
+    latest = through
+    for event in events:
+        latest = max(latest, event.seq)
+        # 只报 `through` 之后新写出的那几条：整份日志每次都要读，不卡这条线就会重复报。
+        if event.seq <= through or event.type != "compaction/summary":
+            continue
+        shadowed = event.payload.get("shadowed_range") or {}
+        print(
+            f"[遮蔽] 折掉 seq {shadowed.get('start')} 至 {shadowed.get('end')}："
+            f"tokens {event.payload.get('tokens_before')} 降至 "
+            f"{event.payload.get('tokens_after')}",
+            file=sys.stderr,
+        )
+    return latest, None
+
+
 async def _chat_session(prepared: _Prepared) -> int:
     """读一行、开一个段、回到提示符；EOF 或提示符上的 Ctrl-C 收尾整个会话。"""
     env = SessionEnv(
@@ -535,6 +560,7 @@ async def _chat_session(prepared: _Prepared) -> int:
     segments = 0
     turn_index = 1
     printed = 0
+    scanned = 0
     try:
         while True:
             print(_CHAT_PROMPT)
@@ -566,6 +592,11 @@ async def _chat_session(prepared: _Prepared) -> int:
                 )
             turn_index += segment.turns
             _print_segment_note(segment)
+            scanned, shadow_failure = _print_shadow_feedback(prepared.log, scanned)
+            if shadow_failure is not None:
+                return _report_failure(
+                    shadow_failure.code, shadow_failure.detail, EXIT_INTERNAL_ERROR
+                )
             replies = _print_new_replies(prepared.log, printed)
             if isinstance(replies, LogReadFailure):
                 return _report_failure(replies.code, replies.detail, EXIT_INTERNAL_ERROR)

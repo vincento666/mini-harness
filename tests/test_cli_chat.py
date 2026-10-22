@@ -557,6 +557,67 @@ def test_a_segments_summary_never_appears_on_stdout(tmp_path: Path) -> None:
     assert result.stdout.splitlines() == ["> ", "先读一下", "这是回复", "> "]
 
 
+def test_a_compaction_shows_what_it_shadowed_on_stderr(tmp_path: Path) -> None:
+    """seam ⑥：压缩在屏幕上看得见——那一行说的是被折掉的那一段与前后的大小。
+
+    第二条输入是判据的一半：压缩只发生在第一段，那一行就只能出现一次。
+    """
+    (tmp_path / "a.md").write_text("x" * 100000, encoding="utf-8")
+    fixture = _fixture(
+        tmp_path,
+        "compact.json",
+        [
+            {
+                "content": "先读一下",
+                "finish_reason": "tool_calls",
+                "tool_calls": [{"id": "c1", "name": "read", "arguments": {"file_path": "a.md"}}],
+            },
+            {"content": "那是摘要不该出现", "finish_reason": "stop"},
+            {"content": "这是回复", "finish_reason": "stop"},
+            {"content": "第二条回复", "finish_reason": "stop"},
+        ],
+    )
+
+    result = _chat(
+        "--fixture",
+        fixture,
+        "--window",
+        "70000",
+        "--reserve",
+        "100",
+        cwd=tmp_path,
+        stdin_text="读一下 a.md\n再来一条\n",
+    )
+
+    assert result.returncode == 0
+    summaries = [
+        record["payload"] for record in _records(tmp_path) if record["type"] == "compaction/summary"
+    ]
+    assert len(summaries) == 1
+    shadowed = summaries[0]["shadowed_range"]
+    needle = (
+        str(shadowed["start"]),
+        str(shadowed["end"]),
+        str(summaries[0]["tokens_before"]),
+        str(summaries[0]["tokens_after"]),
+    )
+    lines = [line for line in result.stderr.splitlines() if all(part in line for part in needle)]
+    assert len(lines) == 1, "stderr 里该有一行说清折掉了哪一段、前后各多大"
+    assert lines[0] not in result.stdout
+    assert lines[0] not in _log_text(tmp_path)
+
+
+def test_a_chat_without_compaction_prints_no_shadow_note(tmp_path: Path) -> None:
+    """seam ⑥：没有压缩就没有遮蔽反馈——不打扰。"""
+    fixture = _fixture(tmp_path, "flat.json", [{"content": "完成", "finish_reason": "stop"}])
+
+    result = _chat("--fixture", fixture, cwd=tmp_path, stdin_text="第一条\n")
+
+    assert result.returncode == 0
+    assert "compaction/summary" not in _types(tmp_path)
+    assert "[遮蔽]" not in result.stderr
+
+
 def test_chats_flag_table_is_runs_flag_table_minus_two(tmp_path: Path) -> None:
     """seam ⑥：chat 的参数表就是 run 的那份减 `--prompt` 与 `--events`（task 6.1）。"""
     run_help = _cli("run", "--help", cwd=tmp_path)

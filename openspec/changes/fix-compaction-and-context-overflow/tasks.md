@@ -29,11 +29,11 @@
 
 ## 5. 遮蔽反馈看得见，与真实端点的两层判据（seam ⑥ 与 seam ⑤）
 
-- [ ] 5.1 红：真实子进程跑 `minihns chat`，让某段写出一条 `compaction/summary` → 断言 stderr 有一行含该记录的 `shadowed_range` 起点与终点、`tokens_before` 与 `tokens_after`；stdout 与日志里都没有这一行；没有压缩的段不打这一行。确认它红。
-- [ ] 5.2 绿：实现遮蔽反馈那一行（内容取自 `compaction/summary` 已有的四个键，不新增事件类型、不改 payload），5.1 变绿。
-- [ ] 5.3 绿：把真实端点实际回过的产物落成 fixture（`tests/fixtures/` 下：那句真实的 400 响应正文、一次真实 `compaction/summary` 的字段形状），文件里写明来源 session id；3.1 与 5.1 的判据读 fixture 而不是手编桩数据。跑 `uv run pytest -q` 确认读得到。
-- [ ] 5.4 **完成判据（不进 CI）**：真实端点跑一次 `minihns chat`（本机 Strata 端点，`--window` 调到真会压缩的量级），跑完把 session id、压缩发生在第几回合、屏幕上遮蔽反馈那一行的原文、以及是否还有无声死掉的段记进 `docs/verification/fix-compaction-and-context-overflow-manual.md`。**这一条不跑完，本 change 不算完成。**
-- [ ] 5.5 绿：同一份 manual 里记「别扭在哪」与真实 `input_tokens` 对估算的比值（沿用 M5 的口径：估算 / 校准 / provider 回报三个数）。
+- [x] 5.1 红：真实子进程跑 `minihns chat`，让某段写出一条 `compaction/summary` → 断言 stderr 有一行含该记录的 `shadowed_range` 起点与终点、`tokens_before` 与 `tokens_after`；stdout 与日志里都没有这一行；没有压缩的段不打这一行。确认它红（`assert 0 == 1`）。
+- [x] 5.2 绿：实现遮蔽反馈那一行（内容取自 `compaction/summary` 已有的四个键，不新增事件类型、不改 payload），5.1 变绿。**真端点那一跑（5.4）先跑出了这一版的缺陷**：同一条记录报两遍——每段都重读整份日志、没卡 `through` 这条线。mock 判据抓不到（那些判据每段只喂一条输入）。修法是只报 `through` 之后新写出的记录，判据里补的是第二条输入；这条判据在变异（去掉那条线）下确认变红。
+- [ ] 5.3 绿：真实产物落成 fixture——`tests/fixtures/real_endpoint/context_overflow_400.json`（3.1 读它）与 `compaction_summary.json`（真 session 里真写出的 `compaction/summary`，来源 session id 写在 fixture README）。**5.1 那条判据不直接读 fixture**：它断言的数字是子进程当场算出来、当场写进日志的，fixture 在那条判据里的作用只有「读哪四个键」。所以把读 fixture 的判据落在 seam ①（`test_the_compaction_record_has_the_keys_the_real_run_wrote`）：写出来的 payload 键集必须等于真那一份的键集。
+- [x] 5.4 **完成判据（不进 CI）**：跑完，记进 `docs/verification/fix-compaction-and-context-overflow-manual.md`。两次真 run：`--window 70000 --reserve 100`（session `608ef8e48b214e2892da23456da267dc`，压缩不可能发生、塌成溢出，屏幕上看得见）与 `--window 80000 --reserve 100`（session `d31a7790e92c49fcb47d9a5dc8b25636`，段 `s1` 的回合 `t2` 与 `t4` 各压缩一次，遮蔽反馈两行原文）。**还撞出一个无声死掉的段**：段 `s2` 以 `FENCE_DENIED` 收尾，屏幕上那一行没有——它不在打那一行的三种理由里。
+- [x] 5.5 绿：同一份 manual 里记了「别扭在哪」五条与每回合的估算 / provider 回报比值（1.29 至 1.40 倍，正文 195 字符那次是 21 倍——工具 schema 与模板那约 980 token 估算里根本没有）。
 
 ## 6. 账与文档
 
