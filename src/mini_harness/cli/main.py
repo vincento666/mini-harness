@@ -42,6 +42,7 @@ from mini_harness.loop import (
     STOP_TOOL_CALLS,
     ProviderEndpoint,
     RunOutcome,
+    SegmentOutcome,
     SessionEntry,
     SessionEnv,
     SessionSettings,
@@ -494,6 +495,26 @@ def _print_new_replies(log: EventLog, printed: int) -> int | LogReadFailure:
     return seen
 
 
+# 段不以正常回复收尾时要在屏幕上看得见的那三种收尾（design D5）。
+_SEGMENT_NOTE_REASONS = frozenset(
+    {STOP_PROVIDER_ERROR, STOP_CONTEXT_WINDOW_EXCEEDED, STOP_MAX_TURNS}
+)
+
+
+def _print_segment_note(segment: SegmentOutcome) -> None:
+    """段级收尾给人一行（design D5）：走 stderr，不是日志的投影，也不写进日志。
+
+    这一行不是新事实，是 `segment/end` 与 `error/model` 已有的事实说给人听——
+    此前 chat 里一段失败了屏幕上什么都不显示，只有日志能看出来。
+    """
+    if segment.stop_reason not in _SEGMENT_NOTE_REASONS:
+        return
+    note = segment.stop_reason
+    if segment.failure_code is not None:
+        note = f"{note}：{segment.failure_code}"
+    print(f"[段] {note}", file=sys.stderr)
+
+
 async def _chat_session(prepared: _Prepared) -> int:
     """读一行、开一个段、回到提示符；EOF 或提示符上的 Ctrl-C 收尾整个会话。"""
     env = SessionEnv(
@@ -544,6 +565,7 @@ async def _chat_session(prepared: _Prepared) -> int:
                     segment.failure_code or segment.stop_reason, segment.detail, EXIT_INTERNAL_ERROR
                 )
             turn_index += segment.turns
+            _print_segment_note(segment)
             replies = _print_new_replies(prepared.log, printed)
             if isinstance(replies, LogReadFailure):
                 return _report_failure(replies.code, replies.detail, EXIT_INTERNAL_ERROR)

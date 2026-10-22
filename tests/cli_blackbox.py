@@ -2,14 +2,67 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any
 
 from paths import PYPROJECT_TOML, REPO_ROOT
 
-__all__ = ["_cli", "_cli_process"]
+__all__ = ["_FakeEndpoint", "_cli", "_cli_process"]
+
+
+class _FakeEndpoint:
+    """一个只监听 127.0.0.1 的 chat completions 端点：记下收到的请求，回放固定响应。
+
+    seam ⑥ 要判「真实适配器撞上真实 HTTP 状态」时用它：子进程走真的 httpx，server 在
+    测试进程里监听 loopback 的一个随机端口——判据不依赖任何真端点、不需要密钥。
+    """
+
+    def __init__(self, *, status: int, body: dict[str, Any]) -> None:
+        self.requests: list[dict[str, Any]] = []
+        endpoint = self
+
+        class _Handler(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:
+                length = int(self.headers.get("content-length", "0"))
+                payload = json.loads(self.rfile.read(length).decode("utf-8"))
+                endpoint.requests.append(
+                    {
+                        "path": self.path,
+                        "authorization": self.headers.get("authorization"),
+                        "body": payload,
+                    }
+                )
+                encoded = json.dumps(body).encode("utf-8")
+                self.send_response(status)
+                self.send_header("content-type", "application/json")
+                self.send_header("content-length", str(len(encoded)))
+                self.end_headers()
+                self.wfile.write(encoded)
+
+            def log_message(self, *args: Any) -> None:
+                return
+
+        self._server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+
+    def __enter__(self) -> _FakeEndpoint:
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        self._server.shutdown()
+        self._server.server_close()
+
+    @property
+    def base_url(self) -> str:
+        host, port = self._server.server_address
+        return f"http://{host}:{port}/v1"
 
 
 def _command(*args: str) -> list[str]:

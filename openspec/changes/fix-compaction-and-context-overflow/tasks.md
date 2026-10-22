@@ -22,10 +22,10 @@
 
 ## 4. chat 里段级收尾看得见（seam ⑥）
 
-- [ ] 4.1 红：真实子进程跑 `minihns chat`，让一段以 `error/model`（`PROVIDER_HTTP_STATUS`）收尾 → 断言 stderr 有一行含 `PROVIDER_ERROR` 与 `PROVIDER_HTTP_STATUS`、stdout 不含该行、日志里也没有这一行。确认它红。
-- [ ] 4.2 绿：实现 stderr 那一行，4.1 变绿；`chat` 既有的 stdout 投影判据（工具结果不上 stdout、带 `purpose` 的摘要不上 stdout）全部仍绿。
-- [ ] 4.3 红：写其余形状的判据——`CONTEXT_WINDOW_EXCEEDED` 段与 `MAX_TURNS` 段各打一行且会话继续接受下一条输入；`MODEL_COMPLETED` 段与被取消的段不打。确认它们红。
-- [ ] 4.4 绿：补齐形状判定，4.3 变绿；`uv run pytest -q` 全绿。
+- [x] 4.1 红：真实子进程跑 `minihns chat`，让一段以 `error/model`（`PROVIDER_HTTP_STATUS`）收尾 → 断言 stderr 有一行含 `PROVIDER_ERROR` 与 `PROVIDER_HTTP_STATUS`、stdout 不含该行、日志里也没有这一行。确认它红。
+- [x] 4.2 绿：实现 stderr 那一行，4.1 变绿；`chat` 既有的 stdout 投影判据（工具结果不上 stdout、带 `purpose` 的摘要不上 stdout）全部仍绿。
+- [x] 4.3 红：写其余形状的判据——`CONTEXT_WINDOW_EXCEEDED` 段与 `MAX_TURNS` 段各打一行且会话继续接受下一条输入；`MODEL_COMPLETED` 段与被取消的段不打。**确认方式与计划不同，记在这里**：4.2 的实现一次覆盖了三种收尾，这两条写完直接就是绿的，无法「确认它们红」；改用变异确认它们咬得住——把 `_SEGMENT_NOTE_REASONS` 临时收窄成只剩 `PROVIDER_ERROR`，两条立刻变红，还原后回到绿。「被取消的段不打」那一半挂在 Windows 跳过的 SIGINT 黑盒上（既有边界），实现同样不打。
+- [x] 4.4 绿：补齐形状判定，4.3 变绿；`uv run pytest -q` 全绿。
 
 ## 5. 遮蔽反馈看得见，与真实端点的两层判据（seam ⑥ 与 seam ⑤）
 

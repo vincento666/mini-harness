@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 import signal
 import sys
@@ -13,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from cli_blackbox import _cli, _cli_process
+from cli_blackbox import _cli, _cli_process, _FakeEndpoint
 from mini_harness.cli.main import _chat_sigint_handler, _ChatSignals
 from paths import WRITE_OUTSIDE_SCENARIO
 
@@ -48,6 +49,37 @@ def _fixture(cwd: Path, name: str, entries: list[dict[str, Any]]) -> str:
 
 def _chat(*args: str, cwd: Path, stdin_text: str) -> Any:
     return _cli("chat", "--provider", "mock", *args, cwd=cwd, stdin_text=stdin_text)
+
+
+_KEY_ENV = "MINIHNS_TEST_KEY"
+_KEY_VALUE = "sk-test-0123456789abcdef"
+
+
+def _chat_openai(cwd: Path, base_url: str, *, stdin_text: str) -> Any:
+    """`chat` 走真实适配器的路：provider 是 openai，端点是测试进程里监听 loopback 的假 server。"""
+    env = dict(os.environ)
+    env[_KEY_ENV] = _KEY_VALUE
+    return _cli(
+        "chat",
+        "--provider",
+        "openai",
+        "--base-url",
+        base_url,
+        "--model",
+        "test-model",
+        "--api-key-env",
+        _KEY_ENV,
+        cwd=cwd,
+        env=env,
+        stdin_text=stdin_text,
+    )
+
+
+def _log_text(cwd: Path) -> str:
+    """整份日志的原文：判「某一行没有写进日志」时用这个，不看解析后的记录。"""
+    logs = _log_files(cwd)
+    assert len(logs) == 1, f"一次 chat 应当恰有一份 session 日志，实际 {len(logs)} 份"
+    return logs[0].read_text(encoding="utf-8")
 
 
 def _flags(help_text: str) -> set[str]:
@@ -136,6 +168,21 @@ def test_blank_input_writes_no_record_and_opens_no_segment(tmp_path: Path) -> No
     assert [message["content"] for message in messages] == ["第一条", "第二条"]
 
 
+def test_a_provider_failed_segment_says_so_on_stderr(tmp_path: Path) -> None:
+    """seam ⑥：段级收尾不是无声的——那一行在 stderr，不在 stdout，也不在日志里。"""
+    with _FakeEndpoint(
+        status=400, body={"error": {"type": "invalid_request_error", "message": "bad tools"}}
+    ) as endpoint:
+        result = _chat_openai(tmp_path, endpoint.base_url, stdin_text="第一条\n")
+
+    assert result.returncode == 0
+    notes = [line for line in result.stderr.splitlines() if "PROVIDER_HTTP_STATUS" in line]
+    assert len(notes) == 1, "段以 PROVIDER_ERROR 收尾时 stderr 该有一行"
+    assert "PROVIDER_ERROR" in notes[0]
+    assert notes[0] not in result.stdout
+    assert notes[0] not in _log_text(tmp_path)
+
+
 def test_a_segment_that_uses_up_max_turns_returns_to_the_prompt(tmp_path: Path) -> None:
     """seam ⑥：`max_turns` 是段内上限；用完回到提示符，下一条输入额度完整、编号不重置。"""
     entries = [
@@ -164,6 +211,30 @@ def test_a_segment_that_uses_up_max_turns_returns_to_the_prompt(tmp_path: Path) 
     ]
     assert turn_ids == ["t1", "t2", "t3", "t4"]
     assert records[-1]["type"] == "session/end"
+
+
+def test_a_max_turns_segment_says_so_on_stderr(tmp_path: Path) -> None:
+    """seam ⑥：用完回合数也是不以正常回复收尾——屏幕上有一行，会话继续。"""
+    entries = [
+        {
+            "content": f"第 {index} 次读",
+            "finish_reason": "tool_calls",
+            "tool_calls": [{"id": f"c{index}", "name": "read", "arguments": {"file_path": "a.md"}}],
+        }
+        for index in range(1, 5)
+    ]
+    fixture = _fixture(tmp_path, "exhaust.json", entries)
+
+    result = _chat(
+        "--fixture", fixture, "--max-turns", "2", cwd=tmp_path, stdin_text="第一条\n第二条\n"
+    )
+
+    assert result.returncode == 0
+    notes = [line for line in result.stderr.splitlines() if "MAX_TURNS" in line]
+    assert len(notes) == 2, "两个段各用完一次"
+    assert all("PROVIDER" not in line for line in notes), "没有失败结果时只有停止理由"
+    assert notes[0] not in result.stdout
+    assert notes[0] not in _log_text(tmp_path)
 
 
 def test_a_segment_failure_does_not_end_the_session(tmp_path: Path) -> None:
@@ -293,9 +364,11 @@ def test_sigint_mid_segment_cancels_the_segment_not_the_session(tmp_path: Path) 
 
     process.stdin.write("第二条\n")
     process.stdin.flush()
-    process.communicate(timeout=30)
+    _, chat_stderr = process.communicate(timeout=30)
 
     assert process.returncode == 0
+    # 被取消的段（`ABORTED`）与正常收尾的段都不打那一行。
+    assert "[段]" not in chat_stderr
     records = _records(tmp_path)
     types = [str(record["type"]) for record in records]
     assert "error/abort" in types
@@ -388,6 +461,66 @@ def test_an_overflowed_segment_returns_to_the_prompt(tmp_path: Path) -> None:
     ]
     assert types.count("session/end") == 1
     assert records[-1]["payload"]["stop_reason"] == "MODEL_COMPLETED"
+
+
+def test_an_overflowed_segment_says_so_on_stderr(tmp_path: Path) -> None:
+    """seam ⑥：溢出塌成回合级收尾，屏幕上看得见那一行，会话继续接受下一条输入。"""
+    fixture = _fixture(
+        tmp_path,
+        "two.json",
+        [
+            {"content": "摘要一", "finish_reason": "stop"},
+            {"content": "摘要二", "finish_reason": "stop"},
+        ],
+    )
+
+    result = _chat(
+        "--fixture",
+        fixture,
+        "--window",
+        "66000",
+        "--reserve",
+        "100",
+        "--append-system-prompt",
+        "说明" * 1000,
+        cwd=tmp_path,
+        stdin_text="第一条\n第二条\n",
+    )
+
+    assert result.returncode == 0
+    notes = [line for line in result.stderr.splitlines() if "CONTEXT_WINDOW_EXCEEDED" in line]
+    assert len(notes) == 2
+    assert notes[0] not in result.stdout
+    assert notes[0] not in _log_text(tmp_path)
+    segments = [
+        record["payload"] for record in _records(tmp_path) if record["type"] == "segment/end"
+    ]
+    assert [segment["stop_reason"] for segment in segments] == [
+        "CONTEXT_WINDOW_EXCEEDED",
+        "CONTEXT_WINDOW_EXCEEDED",
+    ]
+
+
+def test_a_chat_that_ends_cleanly_prints_no_segment_note(tmp_path: Path) -> None:
+    """seam ⑥：正常收尾不打扰——段以 `MODEL_COMPLETED` 结束时 stderr 里没有那一行。"""
+    fixture = _fixture(
+        tmp_path,
+        "clean.json",
+        [
+            {"content": "完成一", "finish_reason": "stop"},
+            {"content": "完成二", "finish_reason": "stop"},
+        ],
+    )
+
+    result = _chat("--fixture", fixture, cwd=tmp_path, stdin_text="第一条\n第二条\n")
+
+    assert result.returncode == 0
+    assert "[段]" not in result.stderr
+    assert [
+        record["payload"]["stop_reason"]
+        for record in _records(tmp_path)
+        if record["type"] == "segment/end"
+    ] == ["MODEL_COMPLETED", "MODEL_COMPLETED"]
 
 
 def test_a_segments_summary_never_appears_on_stdout(tmp_path: Path) -> None:
