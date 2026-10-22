@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
@@ -530,3 +531,30 @@ async def test_a_summary_request_that_cannot_be_made_to_fit_is_never_sent(tmp_pa
     ]
     assert outcome.stop_reason == "CONTEXT_WINDOW_EXCEEDED"
     assert outcome.failure_code == "CONTEXT_WINDOW_EXCEEDED"
+
+
+_FIXTURE_DIR = Path(__file__).parent / "fixtures" / "real_endpoint"
+
+
+async def test_the_compaction_record_has_the_keys_the_real_run_wrote(tmp_path: Path) -> None:
+    """seam ①：`compaction/summary` 的 payload 键与真端点那一次真写出来的那份一致。
+
+    fixture 来自真 session（来源见 `tests/fixtures/real_endpoint/README.md`）。遮蔽反馈那一行
+    （seam ⑥）只读这四个键——键名在这里钉住，实现与屏幕两边不必互相猜。
+    """
+    real = json.loads((_FIXTURE_DIR / "compaction_summary.json").read_text(encoding="utf-8"))
+    log, _ = await run_fixture_session(
+        tmp_path,
+        "s-record-shape",
+        [_big_turn(), _summary_entry(), DONE_ENTRY],
+        max_turns=3,
+        window=TIGHT_WINDOW,
+        reserve=TIGHT_RESERVE,
+    )
+
+    written = _records_of(log.path, "compaction/summary")[0]
+    assert set(written.payload) == set(real["payload"])
+    assert set(written.payload["shadowed_range"]) == set(real["payload"]["shadowed_range"])
+    assert isinstance(written.payload["tokens_before"], int)
+    assert isinstance(written.payload["tokens_after"], int)
+    assert isinstance(written.payload["summary"], str) and written.payload["summary"]
