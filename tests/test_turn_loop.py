@@ -737,6 +737,22 @@ async def test_two_500s_write_one_model_retry_then_error_model(tmp_path: Path) -
     assert outcome.failure_code == "PROVIDER_HTTP_STATUS"
 
 
+async def test_the_provider_sentence_reaches_the_error_model_detail(tmp_path: Path) -> None:
+    """seam ① 接 seam ⑤：失败结果里那句正文原样回到 `error/model` 的 `detail`。"""
+    provider = _scripted_provider(
+        [httpx.Response(502, text="<html><body>Bad Gateway</body></html>" * 30)]
+    )
+
+    records, outcome = await _run_with_provider(tmp_path, provider)
+    errors = [record for record in records if record.type == "error/model"]
+
+    assert len(errors) == 1
+    assert errors[0].payload["code"] == "PROVIDER_HTTP_STATUS"
+    assert errors[0].payload["detail"].startswith("HTTP 502：<html>")
+    assert len(errors[0].payload["detail"]) <= 200
+    assert outcome.failure_code == "PROVIDER_HTTP_STATUS"
+
+
 async def test_a_400_is_not_retried(tmp_path: Path) -> None:
     provider = _scripted_provider([httpx.Response(400, json={"error": "bad request"})])
 

@@ -36,7 +36,7 @@
 
 **D3 溢出识别放宽成「`error.code` 命中 或 `message` 命中固定短语表」。** 短语表是一个词表常量（四个短语，大小写不敏感，落在适配层）：`leaves no room to answer`（本机真端点的那句）、`maximum context length`、`context length exceeded`、`prompt is too long`。备选 A：照旧只认 `error.code`——本机真端点实测不命中（它给的是 `type: invalid_request_error` 加一句 `leaves no room to answer in the context`）。备选 B：解析消息里的 token 数与窗口比较——依赖措辞里的数字，更脆。DSH 的口径是「分类由适配器维护」「其他提供方侧上下文失败不参与分类」，mini 照这个口径，代价（猜文本）落 ADR-0022。
 
-**D4 `detail` 的形状是 `HTTP <状态码>：<有界摘要>`。** 单行、至多 200 字符、换行压成空格；优先取错误对象的 `message`，取不到取正文本身；正文空则只有状态码。备选：塞全正文——一次 502 的 HTML 能把日志撑爆，也违反「日志是给人读的事件流」。
+**D4 `detail` 的形状是 `HTTP <状态码>：<有界摘要>`。** 单行、换行压成空格、**整条 `detail` 至多 200 字符**（摘要裁到 `200 - len(前缀)`）；优先取错误对象的 `message`，取不到取正文本身；正文空则只有状态码。溢出那条也用同一个构造——它比原来那句固定的「上下文超出窗口」更有用，真端点那句话本来就在正文里。备选：塞全正文——一次 502 的 HTML 能把日志撑爆，也违反「日志是给人读的事件流」。
 
 **D5 chat 的可见性走 stderr，stdout 的投影规则不动。** 一行含段的停止理由与失败 `code`；`MODEL_COMPLETED` 与 `ABORTED` 不打。备选：往 stdout 打——stdout 是日志的投影，掺进非投影行会破坏「stdout 与日志不冲突」那条判据。`MAX_TURNS` 也打：那次人手验收里第一段用尽 8 个回合，屏幕上没有任何痕迹。
 

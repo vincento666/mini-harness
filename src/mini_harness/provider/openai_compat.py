@@ -43,6 +43,9 @@ ContextOverflowPhrase = Literal[
 
 CONTEXT_OVERFLOW_PHRASES: frozenset[str] = frozenset(get_args(ContextOverflowPhrase))
 
+# 失败结果里那句正文摘要的长度上限（design D4）：一次 502 的 HTML 不该把日志撑爆。
+_DETAIL_MAX_CHARS = 200
+
 
 def _wire_messages(messages: Sequence[Message]) -> list[dict[str, Any]]:
     """内核的消息形状 → chat completions 的消息形状（`arguments` 在协议里是 JSON 字符串）。"""
@@ -126,6 +129,31 @@ async def _post(
 
 def _schema_failure(detail: str, attempts: Sequence[ProviderAttempt]) -> ProviderFailure:
     return ProviderFailure(code="PROVIDER_SCHEMA_INVALID", detail=detail, attempts=attempts)
+
+
+def _error_sentence(payload: Any) -> str:
+    """响应 JSON 里错误对象的那句话：`error.message`，或 `error` 本身就是字符串。"""
+    if not isinstance(payload, dict):
+        return ""
+    error = payload.get("error")
+    if isinstance(error, dict):
+        message = error.get("message")
+        return message if isinstance(message, str) else ""
+    return error if isinstance(error, str) else ""
+
+
+def _failure_detail(response: httpx.Response) -> str:
+    """design D4：`HTTP <状态码>：<有界摘要>`。单行（换行压成空格）、整条至多 200 字符；
+    取不到错误对象那句话就取正文本身，正文为空时只有状态码。"""
+    try:
+        payload: Any = response.json()
+    except ValueError:
+        payload = None
+    prefix = f"HTTP {response.status_code}"
+    summary = " ".join((_error_sentence(payload) or response.text).split())
+    if not summary:
+        return prefix
+    return f"{prefix}：{summary[: _DETAIL_MAX_CHARS - len(prefix) - 1]}"
 
 
 def _reports_context_overflow(response: httpx.Response) -> bool:
@@ -281,7 +309,7 @@ class OpenAICompatProvider:
                 if _retryable(response.status_code):
                     return ProviderFailure(
                         code="PROVIDER_HTTP_STATUS",
-                        detail=f"HTTP {response.status_code}",
+                        detail=_failure_detail(response),
                         attempts=attempts,
                     )
 
@@ -289,12 +317,12 @@ class OpenAICompatProvider:
             if _reports_context_overflow(response):
                 return ProviderFailure(
                     code="PROVIDER_CONTEXT_OVERFLOW",
-                    detail=f"HTTP {response.status_code}：上下文超出窗口",
+                    detail=_failure_detail(response),
                     attempts=attempts,
                 )
             return ProviderFailure(
                 code="PROVIDER_HTTP_STATUS",
-                detail=f"HTTP {response.status_code}",
+                detail=_failure_detail(response),
                 attempts=attempts,
             )
         return _parse_response(response, attempts)

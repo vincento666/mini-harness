@@ -3,7 +3,7 @@
 ## ADDED Requirements
 
 ### Requirement: 失败结果带上提供方说的那句话
-当一次模型请求得到 4xx 或 5xx 的回复时，失败结果的 `detail` SHALL 同时含状态码与响应正文的有界摘要：单行、至多 200 字符、取自响应 JSON 里错误对象的 `message`（取不到时取正文本身），正文为空或读不出时只有状态码。该摘要 SHALL 写进 `error/model` 的 payload，也 SHALL NOT 改变失败结果的 `code`。
+当一次模型请求得到 4xx 或 5xx 的回复时，失败结果的 `detail` SHALL 同时含状态码与响应正文的有界摘要：单行（换行压成空格）、整条至多 200 字符、取自响应 JSON 里错误对象的 `message`（取不到时取正文本身），正文为空或读不出时只有状态码。该摘要 SHALL 写进 `error/model` 的 payload，也 SHALL NOT 改变失败结果的 `code`。
 
 #### Scenario: 正文里那句话进 detail
 - **WHEN** 假端点返回 400 且响应 JSON 是 `{"error": {"type": "invalid_request_error", "message": "prompt leaves no room to answer"}}`

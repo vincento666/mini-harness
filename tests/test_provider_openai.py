@@ -370,6 +370,50 @@ async def test_a_400_whose_message_says_it_leaves_no_room_is_a_context_overflow(
     assert outcome.attempts == []
 
 
+async def test_the_provider_sentence_goes_into_the_failure_detail() -> None:
+    """design D4：失败结果不只带状态码，还带提供方说的那句话。"""
+    provider, _ = _provider(
+        handler=lambda request: httpx.Response(
+            400,
+            json={
+                "error": {
+                    "type": "invalid_request_error",
+                    "message": "prompt leaves no room to answer",
+                }
+            },
+        )
+    )
+
+    outcome = await _generate(provider)
+
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.detail.startswith("HTTP 400：")
+    assert "prompt leaves no room to answer" in outcome.detail
+
+
+async def test_a_non_json_body_goes_into_the_detail_as_itself() -> None:
+    """正文不是 JSON 时取正文本身；整条 `detail` 不超过 200 字符。"""
+    html = "<html><body>Bad Gateway</body></html>" * 30
+    provider, _ = _provider(handler=lambda request: httpx.Response(502, text=html))
+
+    outcome = await _generate(provider)
+
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_HTTP_STATUS"
+    assert outcome.detail.startswith("HTTP 502：<html>")
+    assert len(outcome.detail) <= 200
+
+
+async def test_an_empty_body_does_not_make_an_empty_sentence() -> None:
+    """正文为空时只有状态码，不制造「HTTP 400：」这种空话。"""
+    provider, _ = _provider(handler=lambda request: httpx.Response(400, text=""))
+
+    outcome = await _generate(provider)
+
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.detail == "HTTP 400"
+
+
 async def test_a_400_with_any_other_error_code_is_still_an_http_status_result() -> None:
     """`error.code` 不是那个值、`message` 也不含短语表里的任何一条：沿用既有分类。"""
     provider, _ = _provider(
