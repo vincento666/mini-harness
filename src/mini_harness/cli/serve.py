@@ -65,7 +65,7 @@ def _cursor(request: web.Request) -> int:
         raw = request.headers.get(CURSOR_HEADER)
     if raw is None:
         return NO_CURSOR
-    if not _CURSOR_DIGITS.fullmatch(raw) or int(raw) < 0:
+    if not _CURSOR_DIGITS.fullmatch(raw):
         raise web.HTTPBadRequest(text=f"INVALID_ARGUMENT: 游标不是非负整数：{raw}")
     return int(raw)
 
