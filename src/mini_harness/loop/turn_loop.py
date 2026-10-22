@@ -624,12 +624,24 @@ async def _compact_if_over_line(
 ) -> ProviderFailure | LogWriteFailure | LogReadFailure | None:
     """越线时压缩一次：调模型生成摘要、写一条 `compaction/summary`（design D1 与 D2）。
 
-    没有可遮蔽的内容时什么都不写、返回 `None`：调用方重新读数，那条路通向溢出。
+    没有可遮蔽的内容、或那段裁到最小仍装不进窗口时什么都不写、返回 `None`：调用方重新读数，
+    那条路通向溢出。
     """
     rng = shadowed_range(events, settings.window)
     if rng is None:
         return None
     tokens_before = budget_reading(events, context.messages)
+
+    # 摘要请求自己也要装得进窗口：装不下就从该段头部逐条丢，一条都不剩时不发请求（ADR-0023）。
+    header = context.messages[:1]
+    instruction = Message(role="user", content=SUMMARY_INSTRUCTION)
+    summary_budget = settings.window - settings.reserve
+    body = fold_range(events, start=rng["start"], end=rng["end"])
+    while body and estimate_tokens([*header, *body, instruction]) > summary_budget:
+        body = body[1:]
+    if not body:
+        return None
+
     written = _append_all(
         log,
         [("model/request", {"turn_id": turn_id, "tools": [], "purpose": PURPOSE_COMPACTION})],
@@ -638,13 +650,9 @@ async def _compact_if_over_line(
         return written
 
     generated = await provider.generate(
-        [
-            # 摘要请求只装本次要遮蔽的那一段（ADR-0023）：受保护头部加区间折出的对话，
-            # 不是整份表层——整份表层正是它要缩小的那个东西。
-            *context.messages[:1],
-            *fold_range(events, start=rng["start"], end=rng["end"]),
-            Message(role="user", content=SUMMARY_INSTRUCTION),
-        ],
+        # 摘要请求只装本次要遮蔽的那一段（ADR-0023）：受保护头部加区间折出的对话，
+        # 不是整份表层——整份表层正是它要缩小的那个东西。
+        [*header, *body, instruction],
         [],
         cancel,
     )

@@ -9,8 +9,8 @@
 
 - [x] 2.1 红：假 provider 记下收到的消息，断言除系统消息与末条摘要指令外，每条都落在本次 `compaction/summary.payload.shadowed_range` 之内、保留尾部不在其中。跑测试确认它红（今天发的是整份表层）。
 - [x] 2.2 绿：`_compact_if_over_line` 改用 1.2 的入口构造摘要调用，2.1 变绿；既有压缩相关判据（`compaction/summary` 的四个键、一次装配最多一次）全部仍绿。
-- [ ] 2.3 红：写「区间裁到最小仍超过触发线」的判据——日志里没有带 `purpose: compaction` 的 `model/request`、没有 `error/model`，该回合有 `error/context`（`CONTEXT_WINDOW_EXCEEDED`）与 `turn/end`（同一停止理由）。确认它红。
-- [ ] 2.4 绿：实现「从区间头部逐条丢弃直到装得下、一条都装不下就不发请求」，2.3 变绿；`uv run pytest -q` 全绿。
+- [x] 2.3 红：写「区间裁到最小仍装不进窗口」的判据——日志里没有带 `purpose: compaction` 的 `model/request`、没有 `error/model`，该回合有 `error/context`（`CONTEXT_WINDOW_EXCEEDED`）与 `turn/end`（同一停止理由）。确认它红。
+- [x] 2.4 绿：实现「上限是窗口减保留额，从区间头部逐条丢弃直到装得下、一条都装不下就不发请求」，2.3 变绿；`uv run pytest -q` 全绿。
 
 ## 3. 适配层的溢出识别与失败正文（seam ⑤）
 

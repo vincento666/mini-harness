@@ -486,3 +486,47 @@ async def test_the_summary_request_carries_only_the_shadowed_range(tmp_path: Pat
     assert all(content in range_contents for content in body), (
         f"摘要请求里有区间外的消息：rng={rng}"
     )
+
+
+# 一条 300000 字符的回复（75000 个估算 token）与一份 2000 行、每行 150 字符的文件：
+# 两条都超过「窗口减保留额」这条上限（70000 - 100 = 69900）。
+HUGE_TEXT = "x" * 300000
+HUGE_FILE_LINES = 2000
+HUGE_FILE_WIDTH = 150
+
+
+def _huge_turn() -> dict[str, object]:
+    return {
+        "content": HUGE_TEXT,
+        "finish_reason": "tool_calls",
+        "tool_calls": [{"id": "c1", "name": "read", "arguments": {"file_path": "a.md"}}],
+    }
+
+
+async def test_a_summary_request_that_cannot_be_made_to_fit_is_never_sent(tmp_path: Path) -> None:
+    """seam ①：遮蔽范围裁到只剩一条也超「窗口减保留额」时不发请求，直接塌成溢出。"""
+    (tmp_path / "a.md").write_text(
+        "\n".join(f"{n:04d}{'x' * (HUGE_FILE_WIDTH - 4)}" for n in range(HUGE_FILE_LINES)),
+        encoding="utf-8",
+    )
+    log, outcome = await run_fixture_session(
+        tmp_path,
+        "s-summary-too-big",
+        [_huge_turn(), _summary_entry(), DONE_ENTRY],
+        max_turns=3,
+        window=TIGHT_WINDOW,
+        reserve=TIGHT_RESERVE,
+    )
+    records = read_events(log.path)
+
+    assert _records_of(log.path, "compaction/summary") == []
+    assert [r for r in records if r.payload.get("purpose") == "compaction"] == []
+    assert _records_of(log.path, "error/model") == []
+    assert [record.type for record in records][-4:] == [
+        "error/context",
+        "turn/end",
+        "segment/end",
+        "session/end",
+    ]
+    assert outcome.stop_reason == "CONTEXT_WINDOW_EXCEEDED"
+    assert outcome.failure_code == "CONTEXT_WINDOW_EXCEEDED"

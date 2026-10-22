@@ -3,7 +3,7 @@
 ## ADDED Requirements
 
 ### Requirement: 摘要请求只装本次要遮蔽的那一段
-生成摘要的那次模型调用 SHALL 只携带三类消息：折叠派生的系统消息、本次遮蔽范围（`shadowed_range` 给出的 seq 闭区间）折出的消息、以及作为最后一条的摘要指令。该调用 MUST NOT 携带落在遮蔽范围之外的对话消息，也 MUST NOT 携带保留尾部。该调用携带的对话部分 SHALL 受触发线的预算约束：范围折出的消息加指令超过触发线时，系统 SHALL 从该范围的头部逐条丢弃直到装得下；一条都装不下时 SHALL NOT 发出该调用。
+生成摘要的那次模型调用 SHALL 只携带三类消息：折叠派生的系统消息、本次遮蔽范围（`shadowed_range` 给出的 seq 闭区间）折出的消息、以及作为最后一条的摘要指令。该调用 MUST NOT 携带落在遮蔽范围之外的对话消息，也 MUST NOT 携带保留尾部。该调用携带的全部消息按既有的估算 SHALL NOT 超过「窗口减保留额」这份预算：超过时系统 SHALL 从该范围的头部逐条丢弃直到装得下；一条都装不下时 SHALL NOT 发出该调用。
 
 #### Scenario: 保留尾部不进摘要请求
 - **WHEN** 一次装配越线并发出了摘要调用
@@ -11,10 +11,10 @@
 
 #### Scenario: 摘要请求本身不越线
 - **WHEN** 一次装配越线并发出了摘要调用
-- **THEN** 该调用携带的对话部分按既有的预算读数不超过触发线
+- **THEN** 该调用携带的全部消息按既有的估算不超过「窗口减保留额」
 
 #### Scenario: 一段都装不下时不发请求
-- **WHEN** 遮蔽范围折出的消息加摘要指令即使裁到只剩一条也超过触发线
+- **WHEN** 遮蔽范围折出的消息加摘要指令即使裁到只剩一条也超过「窗口减保留额」
 - **THEN** 日志里没有带 `purpose: compaction` 的 `model/request`，该回合以 `error/context`（`code: CONTEXT_WINDOW_EXCEEDED`）与 `turn/end`（`stop_reason: CONTEXT_WINDOW_EXCEEDED`）收尾
 
 ## MODIFIED Requirements
