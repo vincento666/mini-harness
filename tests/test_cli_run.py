@@ -234,6 +234,38 @@ def test_happy_path_prints_session_id_and_writes_the_log(tmp_path: Path) -> None
     assert (tmp_path / "sessions" / f"{session_id}.jsonl").is_file()
 
 
+def test_a_one_shot_run_writes_exactly_one_segment(tmp_path: Path) -> None:
+    """一次性 run 恰一个段：段的边界在盘上，其余逐行与 M5 之前相同。"""
+    result = _cli(
+        "run", "-p", "任务", "--provider", "mock", "--fixture", str(HELLO_SCENARIO), cwd=tmp_path
+    )
+
+    records = [
+        json.loads(line)
+        for line in _log_files(tmp_path)[0].read_text(encoding="utf-8").splitlines()
+    ]
+    segments = [record for record in records if record["type"].startswith("segment/")]
+
+    assert result.returncode == 0
+    assert [record["type"] for record in records] == [
+        "session/start",
+        "segment/start",
+        "turn/start",
+        "context/assembled",
+        "model/request",
+        "model/response",
+        "turn/end",
+        "segment/end",
+        "session/end",
+    ]
+    assert segments[0]["payload"] == {"segment_id": "s1"}
+    assert segments[1]["payload"] == {
+        "segment_id": "s1",
+        "stop_reason": "MODEL_COMPLETED",
+        "turns": 1,
+    }
+
+
 def test_events_jsonl_stdout_matches_the_log_line_by_line(tmp_path: Path) -> None:
     result = _cli(
         "run",
@@ -515,7 +547,7 @@ def test_sigint_in_a_real_subprocess_exits_with_five(tmp_path: Path) -> None:
     assert types.count("tool/cancelled") == 1
     outcomes = [r["payload"]["outcome"] for r in records if r["type"] == "tool/result"]
     assert outcomes == ["TOOL_CANCELLED"]
-    assert types[-3:] == ["error/abort", "turn/end", "session/end"]
+    assert types[-4:] == ["error/abort", "turn/end", "segment/end", "session/end"]
     assert records[-1]["payload"]["stop_reason"] == "ABORTED"
 
 
@@ -741,9 +773,25 @@ def test_the_default_window_and_reserve_land_in_the_session_start_payload(tmp_pa
     assert payload["reserve"] == 8192
 
 
+def test_a_run_records_which_entry_opened_the_session(tmp_path: Path) -> None:
+    """seam ⑥：`entry` 的两个值各有判据——`run` 这一半在这儿，`chat` 那一半在 `test_cli_chat.py`。"""
+    _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        cwd=tmp_path,
+    )
+
+    assert _session_start(_log_files(tmp_path)[0])["entry"] == "run"
+
+
 def test_window_and_reserve_flags_land_in_the_session_start_payload(tmp_path: Path) -> None:
-    """规格 scenario「窗口与预留进 payload」。这条只看 payload：窗口小到每次装配都越线，
-    那次 run 怎么收尾由下面那条判据管。"""
+    """规格 scenario「窗口与预留进 payload」。这条只看 payload：两个数都是合法取值，
+    会话正常收尾；窗口小到每次装配都越线的那条判据在下面。"""
     _cli(
         "run",
         "-p",
@@ -753,15 +801,15 @@ def test_window_and_reserve_flags_land_in_the_session_start_payload(tmp_path: Pa
         "--fixture",
         str(HELLO_SCENARIO),
         "--window",
-        "4000",
+        "131072",
         "--reserve",
-        "500",
+        "4096",
         cwd=tmp_path,
     )
 
     payload = _session_start(_log_files(tmp_path)[0])
-    assert payload["window"] == 4000
-    assert payload["reserve"] == 500
+    assert payload["window"] == 131072
+    assert payload["reserve"] == 4096
 
 
 @pytest.mark.parametrize("flag", ["--window", "--reserve"])
@@ -787,8 +835,8 @@ def test_a_budget_argument_below_one_is_a_parameter_error_with_no_log(
     assert _log_files(tmp_path) == []
 
 
-def test_a_run_that_cannot_fit_its_window_exits_four_with_an_error_context(tmp_path: Path) -> None:
-    """窗口小到无可遮蔽：溢出收尾是结果，退出码 4，日志里有 `error/context`。"""
+def test_a_window_that_leaves_no_pressure_budget_is_a_parameter_error(tmp_path: Path) -> None:
+    """窗口减去预留与 headroom 没有剩余：配置期就失败，连日志都不建（ADR-0019）。"""
     result = _cli(
         "run",
         "-p",
@@ -798,9 +846,88 @@ def test_a_run_that_cannot_fit_its_window_exits_four_with_an_error_context(tmp_p
         "--fixture",
         str(HELLO_SCENARIO),
         "--window",
-        "4000",
+        "32768",
         "--reserve",
-        "500",
+        "4096",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    # stderr 要点出那三个数：窗口、预留、headroom 余量。
+    assert all(number in result.stderr for number in ("32768", "4096", "65536"))
+    assert _log_files(tmp_path) == []
+
+
+def test_a_window_that_leaves_exactly_zero_pressure_budget_is_a_parameter_error(
+    tmp_path: Path,
+) -> None:
+    """`W - O - 65536` 恰为 0 也是「没有剩余压力预算」：触发线 0，任何非空上下文都越线。"""
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--window",
+        "70000",
+        "--reserve",
+        "4464",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert all(number in result.stderr for number in ("70000", "4464", "65536"))
+    assert _log_files(tmp_path) == []
+
+
+def test_the_smallest_window_with_a_positive_trigger_line_runs(tmp_path: Path) -> None:
+    """触发线为正的最小窗口照跑：`session/start` 里 `window` 与 `reserve` 是传进去的那两个数。"""
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--window",
+        "70000",
+        "--reserve",
+        "4096",
+        cwd=tmp_path,
+    )
+
+    payload = _session_start(_log_files(tmp_path)[0])
+    assert result.returncode == 0
+    assert payload["window"] == 70000
+    assert payload["reserve"] == 4096
+
+
+# 触发线 364：`66000 - 100 - 65536` 比 `66000 * 4 // 5` 小，所以它是触发线。
+# 2000 个字符约 500 个估算 token，比触发线大；对话体里又无可遮蔽的内容。
+_TIGHT_WINDOW = "66000"
+_TIGHT_RESERVE = "100"
+_OVERFLOW_PROMPT = "任务" * 1000
+
+
+def test_a_run_that_cannot_fit_its_window_exits_four_with_an_error_context(tmp_path: Path) -> None:
+    """窗口小到无可遮蔽：溢出收尾是结果，退出码 4，日志里有 `error/context`。"""
+    result = _cli(
+        "run",
+        "-p",
+        _OVERFLOW_PROMPT,
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--window",
+        _TIGHT_WINDOW,
+        "--reserve",
+        _TIGHT_RESERVE,
         cwd=tmp_path,
     )
 
@@ -810,9 +937,9 @@ def test_a_run_that_cannot_fit_its_window_exits_four_with_an_error_context(tmp_p
 
     assert result.returncode == 4
     assert "CONTEXT_WINDOW_EXCEEDED" in result.stderr
-    assert types[-3:] == ["error/context", "turn/end", "session/end"]
+    assert types[-4:] == ["error/context", "turn/end", "segment/end", "session/end"]
     assert "model/request" not in types
-    assert records[-3]["payload"]["code"] == "CONTEXT_WINDOW_EXCEEDED"
+    assert records[-4]["payload"]["code"] == "CONTEXT_WINDOW_EXCEEDED"
 
 
 def test_a_log_that_overflowed_before_any_assembly_still_replays(tmp_path: Path) -> None:
@@ -820,15 +947,15 @@ def test_a_log_that_overflowed_before_any_assembly_still_replays(tmp_path: Path)
     run = _cli(
         "run",
         "-p",
-        "任务",
+        _OVERFLOW_PROMPT,
         "--provider",
         "mock",
         "--fixture",
         str(HELLO_SCENARIO),
         "--window",
-        "4000",
+        _TIGHT_WINDOW,
         "--reserve",
-        "500",
+        _TIGHT_RESERVE,
         cwd=tmp_path,
     )
     assert run.returncode == 4

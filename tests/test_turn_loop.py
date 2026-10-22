@@ -12,12 +12,29 @@ import httpx
 from mini_harness.config import build_registry
 from mini_harness.events import EventLog, EventRecord, read_events
 from mini_harness.events.fold import fold
-from mini_harness.loop import ProviderEndpoint, RunOutcome, SessionSettings, run_session
+from mini_harness.loop import (
+    ENTRY_RUN,
+    ProviderEndpoint,
+    RunOutcome,
+    SessionSettings,
+    end_session,
+    run_session,
+    run_turn_segment,
+    start_session,
+)
 from mini_harness.provider import AssistantTurn, FixtureProvider, Provider
 from mini_harness.provider.openai_compat import OpenAICompatProvider
 from mini_harness.tools import ToolArgs, ToolDefinition, ToolRegistry, ToolResult
 from mini_harness.tools.fences import DispatchContext, path_key
-from tool_harness import DONE, call_ids, result_outcomes, run_session_fixture, tool_call, turn_entry
+from tool_harness import (
+    DONE,
+    build_session_env,
+    call_ids,
+    result_outcomes,
+    run_session_fixture,
+    tool_call,
+    turn_entry,
+)
 
 
 async def test_single_turn_writes_the_expected_event_sequence(tmp_path: Path) -> None:
@@ -32,11 +49,13 @@ async def test_single_turn_writes_the_expected_event_sequence(tmp_path: Path) ->
     types = [record.type for record in read_events(log.path)]
     assert types == [
         "session/start",
+        "segment/start",
         "turn/start",
         "context/assembled",
         "model/request",
         "model/response",
         "turn/end",
+        "segment/end",
         "session/end",
     ]
     assert outcome.stop_reason == "MODEL_COMPLETED"
@@ -52,6 +71,53 @@ def _tool_call_entries(count: int) -> list[dict[str, object]]:
         }
         for index in range(1, count + 1)
     ]
+
+
+async def test_two_segments_number_segments_and_turns_continuously(tmp_path: Path) -> None:
+    """一条输入一个段：段用完上限会话照继续，编号在会话内连续（design D3）。"""
+    log, env = build_session_env(
+        tmp_path,
+        "s-segments",
+        FixtureProvider(
+            entries=[
+                *_tool_call_entries(4),
+                {"content": "done", "finish_reason": "stop"},
+            ],
+        ),
+        registry=ToolRegistry(),
+        max_turns=3,
+    )
+
+    assert start_session(prompt="第一条输入", entry=ENTRY_RUN, env=env) is None
+    first = await run_turn_segment(
+        env=env, segment_id="s1", first_turn_index=1, cancel=asyncio.Event()
+    )
+    second = await run_turn_segment(
+        env=env, segment_id="s2", first_turn_index=first.turns + 1, cancel=asyncio.Event()
+    )
+    assert end_session(env=env, stop_reason=second.stop_reason, turns=second.turns) is None
+
+    records = read_events(log.path)
+    assert first.stop_reason == "MAX_TURNS"
+    assert second.stop_reason == "MODEL_COMPLETED"
+    assert [record.type for record in records if record.type.startswith("segment/")] == [
+        "segment/start",
+        "segment/end",
+        "segment/start",
+        "segment/end",
+    ]
+    assert [r.payload for r in records if r.type == "segment/end"] == [
+        {"segment_id": "s1", "stop_reason": "MAX_TURNS", "turns": 3},
+        {"segment_id": "s2", "stop_reason": "MODEL_COMPLETED", "turns": 2},
+    ]
+    assert [r.payload["turn_id"] for r in records if r.type == "turn/start"] == [
+        "t1",
+        "t2",
+        "t3",
+        "t4",
+        "t5",
+    ]
+    assert [record.type for record in records][-1:] == ["session/end"]
 
 
 async def test_each_turn_is_closed_before_the_next_one_starts(tmp_path: Path) -> None:
@@ -283,7 +349,12 @@ async def test_a_cancelled_turn_writes_an_error_abort_event(tmp_path: Path) -> N
     assert len(aborts) == 1
     assert aborts[0].payload["turn_id"] == "t1"
     assert aborts[0].payload["code"] == "ABORTED"
-    assert [record.type for record in records][-3:] == ["error/abort", "turn/end", "session/end"]
+    assert [record.type for record in records][-4:] == [
+        "error/abort",
+        "turn/end",
+        "segment/end",
+        "session/end",
+    ]
     assert outcome.stop_reason == "ABORTED"
 
 
@@ -366,6 +437,7 @@ async def test_a_fence_denial_ends_the_run_without_dispatching_the_rest(
     records = read_events(log.path)
     assert [record.type for record in records] == [
         "session/start",
+        "segment/start",
         "turn/start",
         "context/assembled",
         "model/request",
@@ -374,10 +446,11 @@ async def test_a_fence_denial_ends_the_run_without_dispatching_the_rest(
         "tool/result",
         "error/fence",
         "turn/end",
+        "segment/end",
         "session/end",
     ]
     assert [r.payload["tool_call_id"] for r in records if r.type == "tool/call"] == ["c1"]
-    assert records[-2].payload["stop_reason"] == "FENCE_DENIED"
+    assert records[-3].payload["stop_reason"] == "FENCE_DENIED"
     assert records[-1].payload["stop_reason"] == "FENCE_DENIED"
     assert outcome.stop_reason == "FENCE_DENIED"
     assert not (tmp_path / "a.md").exists()
@@ -591,19 +664,21 @@ async def test_a_429_then_200_retries_once_and_writes_one_model_retry(tmp_path: 
 
     assert types == [
         "session/start",
+        "segment/start",
         "turn/start",
         "context/assembled",
         "model/request",
         "model/retry",
         "model/response",
         "turn/end",
+        "segment/end",
         "session/end",
     ]
     retries = [record.payload for record in records if record.type == "model/retry"]
     assert len(retries) == 1
     assert retries[0]["attempt"] == 1
     assert retries[0]["status"] == 429
-    assert retries[0]["turn_id"] == records[1].payload["turn_id"]
+    assert retries[0]["turn_id"] == records[2].payload["turn_id"]
     assert outcome.stop_reason == "MODEL_COMPLETED"
     assert outcome.failure_code is None
 
@@ -618,12 +693,14 @@ async def test_two_500s_write_one_model_retry_then_error_model(tmp_path: Path) -
 
     assert types == [
         "session/start",
+        "segment/start",
         "turn/start",
         "context/assembled",
         "model/request",
         "model/retry",
         "error/model",
         "turn/end",
+        "segment/end",
         "session/end",
     ]
     retries = [record.payload for record in records if record.type == "model/retry"]
@@ -641,11 +718,13 @@ async def test_a_400_is_not_retried(tmp_path: Path) -> None:
 
     assert types == [
         "session/start",
+        "segment/start",
         "turn/start",
         "context/assembled",
         "model/request",
         "error/model",
         "turn/end",
+        "segment/end",
         "session/end",
     ]
     assert outcome.failure_code == "PROVIDER_HTTP_STATUS"

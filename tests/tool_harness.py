@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from mini_harness.events import EventLog, EventRecord, read_events
-from mini_harness.loop import RunOutcome, SessionSettings, run_session
+from mini_harness.loop import RunOutcome, SessionEnv, SessionSettings, run_session
 from mini_harness.loop.settings import ApprovalMode, ProviderEndpoint, SandboxLevel
 from mini_harness.provider import FixtureProvider, Provider
 from mini_harness.provider.contract import ToolCall
@@ -185,6 +185,48 @@ def result_outcomes(records: Iterable[EventRecord]) -> list[tuple[str, str]]:
 DONE: dict[str, object] = {"content": "算了", "finish_reason": "stop"}
 
 
+def build_session_env(
+    tmp_path: Path,
+    session_id: str,
+    provider: Provider,
+    *,
+    workspace: Path | None = None,
+    session_dir: Path | None = None,
+    sandbox: SandboxLevel = "workspace-write",
+    approval: ApprovalMode = "auto",
+    max_turns: int = 8,
+    provider_name: str = "mock",
+    window: int = 128000,
+    reserve: int = 8192,
+    endpoint: ProviderEndpoint | None = None,
+    registry: ToolRegistry | None = None,
+    approval_gate: ApprovalGate | None = None,
+) -> tuple[EventLog, SessionEnv]:
+    """seam ① 的「一个会话的冻结环境」形状：建日志、建设置、冻成 `SessionEnv`。
+
+    一次性 run 用 `run_session_fixture`；REPL 要自己数段、自己起段，从这里拿环境。
+    """
+    log = EventLog.create(tmp_path if session_dir is None else session_dir, session_id=session_id)
+    settings = SessionSettings(
+        workspace=tmp_path if workspace is None else workspace,
+        provider_name=provider_name,
+        max_turns=max_turns,
+        sandbox=sandbox,
+        approval=approval,
+        window=window,
+        reserve=reserve,
+        endpoint=endpoint,
+    )
+    env = SessionEnv(
+        provider=provider,
+        log=log,
+        registry=file_registry() if registry is None else registry,
+        settings=settings,
+        approval_gate=STDIN_APPROVAL_GATE if approval_gate is None else approval_gate,
+    )
+    return log, env
+
+
 async def run_session_fixture(
     tmp_path: Path,
     session_id: str,
@@ -204,29 +246,34 @@ async def run_session_fixture(
     approval_gate: ApprovalGate | None = None,
     cancel: asyncio.Event | None = None,
 ) -> tuple[EventLog, RunOutcome]:
-    """seam ① 唯一的「跑完一整段 session」形状：建日志、建设置、调 `run_session`。
+    """seam ① 唯一的「跑完一整段 session」形状：建环境、调 `run_session`。
 
     注册表、档位、approval 门、取消信号、provider 与日志目录都从这里注入，测试文件里不再各自手搓。
     """
-    log = EventLog.create(tmp_path if session_dir is None else session_dir, session_id=session_id)
-    settings = SessionSettings(
-        workspace=tmp_path if workspace is None else workspace,
-        provider_name=provider_name,
-        max_turns=max_turns,
+    log, env = build_session_env(
+        tmp_path,
+        session_id,
+        provider,
+        workspace=workspace,
+        session_dir=session_dir,
         sandbox=sandbox,
         approval=approval,
+        max_turns=max_turns,
+        provider_name=provider_name,
         window=window,
         reserve=reserve,
         endpoint=endpoint,
+        registry=registry,
+        approval_gate=approval_gate,
     )
     outcome = await run_session(
         prompt=prompt,
-        provider=provider,
+        provider=env.provider,
         log=log,
-        registry=file_registry() if registry is None else registry,
-        settings=settings,
+        registry=env.registry,
+        settings=env.settings,
         cancel=asyncio.Event() if cancel is None else cancel,
-        approval_gate=STDIN_APPROVAL_GATE if approval_gate is None else approval_gate,
+        approval_gate=env.approval_gate,
     )
     return log, outcome
 

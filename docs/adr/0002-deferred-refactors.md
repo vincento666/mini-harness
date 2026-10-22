@@ -1,6 +1,6 @@
 # 记账：各里程碑留下的坏味道与设计缺口，到对应里程碑再动
 
-这一条不是待办清单的优先级排序，而是 code-review 修复轮（change `m1-event-log-and-turn-loop` 的 tasks 第 11 节）留下的**账**：审查里确认存在的重复与泄漏，M1 里改它们只会增加改动面、不会增加判据，因此只记账不动代码。任何一条到 M2 都可以按新证据改判——但改判要发生在 M2 的 change 里，不是顺手改。第 9 至 12 条来自 M2（change `m2-file-tools-and-fences`）的 `code-review` 两轴审查，第 13 至 17 条来自 M4（change `m4-real-provider`）的同一轮审查；处理方式同样是记账。M3（change `m3-bash-concurrency-timeout`）的收尾轮对第 1、8 至 17 条逐条改判，判词写在各条末尾：已处理 4 条（1、9、10、11），改判为长期形态 3 条（8、12、16），未处理推到 M5 2 条（14、15），未触发 1 条（17）。第 18 至 29 条来自 M3 的 `code-review` 两轴审查——Standards 轴确认存在但「改它不增加判据」的判断项，加两条规格 ↔ 实现的判断（第 28、29 条）——处理方式同样是记账：八条推到 M5，两条判为不动（25、27），两条按现状留着并写明何时才动（28、29）。第 30 条来自 M3 的人手验收（cmd.exe 的 GBK 输出碎成 U+FFFD），同样是记账。最后一节记提交纪律的三处措辞欠账：历史提交不改写，只把与 AGENTS.md 原文不符的地方更正在这里。它前面那节是 M8 审查轮（2026-10-20）的账：提交粒度三处超数没写打包理由、三个 docs 提交没有门禁行、派发段两条未定形状推到 M10，第 18 与 19 条改判。M5 收尾轮（2026-10-21）把写着「M5」的旧处理时点逐条核实改判：五条推到 M10（19、20、22、26、29，其中 29 的触发条件已成立）、四条推到 M6 / M7（21、24、28、30，其中 30 的条件已成立、解码选型要人裁决）、一条按「不动」结案（25）；另新记第 31 条（单条工具结果的剪枝 → M10）与第 32 条（每回合全量重读日志 → M11）。M9 审查轮（2026-10-21）先当场动三条规格 ↔ 实现的缺口（`--config` 指向目录、配置写错档位跳过工作区边界、file-tools 那条 scenario 缺判据），再新记第 38 至 45 条与提交纪律三处欠账。
+这一条不是待办清单的优先级排序，而是 code-review 修复轮（change `m1-event-log-and-turn-loop` 的 tasks 第 11 节）留下的**账**：审查里确认存在的重复与泄漏，M1 里改它们只会增加改动面、不会增加判据，因此只记账不动代码。任何一条到 M2 都可以按新证据改判——但改判要发生在 M2 的 change 里，不是顺手改。第 9 至 12 条来自 M2（change `m2-file-tools-and-fences`）的 `code-review` 两轴审查，第 13 至 17 条来自 M4（change `m4-real-provider`）的同一轮审查；处理方式同样是记账。M3（change `m3-bash-concurrency-timeout`）的收尾轮对第 1、8 至 17 条逐条改判，判词写在各条末尾：已处理 4 条（1、9、10、11），改判为长期形态 3 条（8、12、16），未处理推到 M5 2 条（14、15），未触发 1 条（17）。第 18 至 29 条来自 M3 的 `code-review` 两轴审查——Standards 轴确认存在但「改它不增加判据」的判断项，加两条规格 ↔ 实现的判断（第 28、29 条）——处理方式同样是记账：八条推到 M5，两条判为不动（25、27），两条按现状留着并写明何时才动（28、29）。第 30 条来自 M3 的人手验收（cmd.exe 的 GBK 输出碎成 U+FFFD），同样是记账。最后一节记提交纪律的三处措辞欠账：历史提交不改写，只把与 AGENTS.md 原文不符的地方更正在这里。它前面那节是 M8 审查轮（2026-10-20）的账：提交粒度三处超数没写打包理由、三个 docs 提交没有门禁行、派发段两条未定形状推到 M10，第 18 与 19 条改判。M5 收尾轮（2026-10-21）把写着「M5」的旧处理时点逐条核实改判：五条推到 M10（19、20、22、26、29，其中 29 的触发条件已成立）、四条推到 M6 / M7（21、24、28、30，其中 30 的条件已成立、解码选型要人裁决）、一条按「不动」结案（25）；另新记第 31 条（单条工具结果的剪枝 → M10）与第 32 条（每回合全量重读日志 → M11）。M9 审查轮（2026-10-21）先当场动三条规格 ↔ 实现的缺口（`--config` 指向目录、配置写错档位跳过工作区边界、file-tools 那条 scenario 缺判据），再新记第 38 至 45 条与提交纪律三处欠账。M6 收尾轮（2026-10-21）当场动三条（第 3 条的装配点下沉进事件层、第 42 条改名、第 45 条撤两个无人用的导出），把写着 M6 时点的旧账逐条核实：已处理 3 条（3、42、45），部分处理 1 条（41），未触发改判 6 条（21、24、28、30、38、40），记实况 2 条（32 被 chat 加重、39 多出一份 `SessionEnv`）；再新记第 46 至 50 条与判据欠账两条。
 
 ## 1. `run_session` 的九个关键字参数就是 `session/start` 的 payload
 
@@ -26,6 +26,7 @@
 - 现在不动的理由：M1 只有 replay 一个消费者，且这段逻辑与它的判据（逐点相等）在同一个测试文件里最好读。
 - M2 的处理：下沉成 events 层的 `assembly_points(records)`（返回 `(前缀, turn_id, 记录)`），CLI 只负责打印与退出码。
 - **未处理（2026-10-18 的 M3 分流核实）**：上面那条「M2 的处理」没有执行——`cli/main.py::_replay` 仍自己扫 `records` 找 `turn/start`、按 `context/assembled` 的下标切前缀。这条账本记录与实况不符，已在此处更正而不是悄悄删掉。改判：第二个消费者是 M6 的 chat REPL 与 M7 的 serve SSE，**推到 M6**；M3 加 `bash` 不改 replay 的输入形状（工具名列表已在 `session/start.payload.tools`，`fold()` 从它派生），所以它不会变得更坏。
+- **已处理（2026-10-21，M6 任务 5.1 / 5.2）**：`events/fold.py::assembly_points(events)` 落地，返回 `AssemblyPoint(record, prefix, turn_id)`；`cli/main.py::_replay` 不再自己扫 `records` 找 `turn/start`、也不再按 `context/assembled` 的下标切前缀。判据落在 seam ④（`tests/test_context_fold.py`），seam ⑥ 的 replay 判据形状不变。chat 的「按段读回回复」读的是 `read_events` 加词表过滤，不是装配点——它要判的是「哪些 `model/response` 不带 `purpose`」，与装配点是两件事。
 
 ## 4. 三个测试文件各自有一份 `_cli` 黑盒 helper
 
@@ -143,6 +144,7 @@ payload 是 `turn_id` / `tool_call_id` / `code` / `detail`。规格要求「被�
 - 现在不动的理由：`model/retry` 的存在就是为了让这条可读；写两条 `model/request` 会让「一个回合一次请求」这条形状变模糊，而且要改 event-log 的 payload 字段表（扩词表级决定）。
 - M3 的处理：若流式或并发派发让「一个回合多次请求」成为真实形状，再决定 `model/request` 是否带 `attempt` 字段。
 - **未触发（2026-10-19 核实）**：M3 的并发派发让「一个回合多个工具调用」成为真实形状，没有让「一个回合多次请求」成为真实形状——provider 仍是一回合一次 `generate`，重试那条形状没变。`model/request` 不带 `attempt` 字段这条保留。
+- **条件成立（2026-10-21，M6 收尾轮）**：请求级压缩之后的那次重试让「一个回合多次请求」成为真实形状——一个回合可以有两条不带 `purpose` 的 `model/request`（`turn_loop.py:587`），还有一条带 `purpose: compaction` 的摘要调用。本轮按人的裁决处理了可读性那一半（ADR-0019：重试之前补一条 `context/assembled`，摘要调用不补、规格写明它的上下文是表层加一条固定指令），`model/request` 仍不带 `attempt`。要不要给 `attempt` 推到 **M10**，与第 51 条同一处收。
 
 ## 18. `_dispatch_batch` 一个函数里装着派发段的五件事
 
@@ -175,6 +177,8 @@ payload 是 `turn_id` / `tool_call_id` / `code` / `detail`。规格要求「被�
 - 现在不动的理由：它们就是 seam ② 的接口本身，判据注入的正是这四个的不同组合；收成一个 `DispatchEnvironment` 会让「这条判据注入了哪个门」多一层跳转。
 - 处理时点：M5 / M6（REPL 与 serve 各带一套门与上下文时）。
 - **改判到 M6 / M7（2026-10-21，M5 收尾核实）**：M5 没给 `dispatch_tool_call` 加入参，也没有第二个派发者。真正「各带一套门与上下文」的是 M6 的 chat REPL 与 M7 的 serve——照本条自己写的第二个读法走。
+- **未触发，改判到 M7（2026-10-21，M6 收尾核实）**：M6 的 chat REPL 没有成为第二个派发者，`dispatch_tool_call` 的四个入参一个没变——chat 复用同一个内核环境（`loop/turn_loop.py::SessionEnv` 收 provider / log / registry / settings / approval_gate，门与上下文仍由内核带）。仍等 M7 的 serve 带出第二套。
+- **同一结伴在别处又出现一遍（2026-10-21，M6 收尾轮 Standards 轴）**：`SessionEnv` 立起来之后，`_recover_overflowed_request`（`turn_loop.py:534`）仍把 `log` / `settings` / `provider` / `registry` / `cancel` 一个个传一遍，`run_session`（`:938`）的签名仍是六个入参、内部再拼成 `SessionEnv`，`tests/tool_harness.py:269` 又把 `env` 拆回六个入参喂它。本条的「已处理」只成立于 `dispatch_tool_call` 那一半。处理时点不变（**M7**），收的时候把这三处一起收。
 
 ## 22. 三个名字与实际含义有距离
 
@@ -199,6 +203,7 @@ payload 是 `turn_id` / `tool_call_id` / `code` / `detail`。规格要求「被�
 - 现在不动的理由：可选是为了 seam ②③ 的判据能单独跑 `dispatch_tool_call`（不建日志也能判围栏与门）。改成必填会让那批判据都要造一份日志。
 - 处理时点：M5。若「不传就少写一条记录」这个形状造成真 bug，再改成必填或换成显式的 NoOp。
 - **未触发，改判到 M6（2026-10-21，M5 收尾核实）**：M5 没动 `on_approval_request`，它也没造成 bug；回合循环仍是唯一调用方。第二个调用方是 M6 的 chat REPL，那时再判必填还是显式 NoOp。
+- **未触发，改判到 M7（2026-10-21，M6 收尾核实）**：M6 没有第二个调用方——chat 走的是同一个 `run_turn_segment`，`on_approval_request` 仍是内核传进来的那个。
 
 ## 25. `tests/tool_harness.py` 的 `workspace` / `session_dir` 两个旋钮
 
@@ -230,6 +235,7 @@ payload 是 `turn_id` / `tool_call_id` / `code` / `detail`。规格要求「被�
 - 判词：留着。它是 D12「`approval/request` 在提问之前落盘，写不进去就不问人」的另一半，`TOOL_IO_FAILED` 是既有词表里最贴近的取值，没有为它新造取值。规格侧的对应物是 event-log 那条「提问之前落盘」；「写不进去时得到哪个结果词」目前没有规格，也没有判据需要它。
 - 处理时点：M5 之后若这条变成要判的行为，再在 event-log 的 delta 里写明结果词。
 - **未触发，改判到 M6 之后（2026-10-21，M5 收尾核实）**：M5 没让这条变成要判的行为——压缩与 approval 落盘没有交集。M6 的 REPL 把 approval 变成对话里的一问一答，那时才可能判它。
+- **未触发，改判到 M7（2026-10-21，M6 收尾核实）**：M6 的 chat 没有把 approval 变成 stdout 上的一问一答。实况是 `tools/fences.py::StdinApprovalGate`：问题写 **stderr**、回答读 tty 上的 stdin，非 tty 直接 `UNAVAILABLE`。chat 的「stdout 只有模型回复正文与提示符」因此不受影响，这条仍未变成要判的行为。
 
 ## 29. `registry.py:21-24`：`ToolArgs.approval_detail()` 只有 `bash` 覆写
 
@@ -246,6 +252,7 @@ payload 是 `turn_id` / `tool_call_id` / `code` / `detail`。规格要求「被�
 - 判词：M3 不动。规格只保证「命令的输出是结果」，没有规定解码选型；`errors="replace"` 至少保证不抛异常。真正的修法要先决定拿什么当依据——Windows 侧的 OEM 代码页（`cp936`）、`locale.getpreferredencoding(False)`，还是先试 UTF-8 失败再回退——那是选型不是修补，选错会把一种乱码换成另一种。
 - 处理时点：M5 或 M6，等 `bash` 的输出成为模型的主要输入面。届时先补一条 seam ③ 判据：一条命令在 Windows 上产出非 UTF-8 字节，断言 `tool/result` 的 content 是可读的中文而不是替换字符。
 - **条件成立，改判到 M6（2026-10-21，M5 收尾核实）**：M5 之后工具输出确实是模型的主要输入面——人手验收里那条 55118 字符的 `tool/result` 正是被遮蔽的东西，窗口预算量主要就是量它。但解码选型（OEM 代码页 / `locale.getpreferredencoding(False)` / 先试 UTF-8 失败再回退）是选型不是修补，**要人裁决**；M6 让工具输出直接进对话，在那之前定下来。判据形状照原文那条写。
+- **未处理，改判到 M7（2026-10-21，M6 收尾核实）**：M6 让工具输出直接进对话（chat 的 stdout 不打印它，但它进上下文、进预算），条件更成立了，可解码选型仍**要人裁决**——三条读法各自的失败模式不同，agent 不许自己选。M7 的 serve 会把工具输出送到人的屏幕上，届时必须定。
 
 ## 提交纪律：本轮审查查出的三处措辞欠账（不改写历史，只记账）
 
@@ -285,6 +292,7 @@ M5 的压缩遮蔽的是**一段历史**。DSH 还做另一件事，mini 版没�
 
 - 记账不动的理由：没有判据需要它变，且当前量级（一个会话几十条记录）测不出差别；先做增量读会把 replay 依赖的「任何前缀可重算」这条形状改松。
 - 处理时点：**M11**（日志读取与投影层）。那时先看「增量读 + 已算过的遮蔽范围可复用」能不能立成一个读方接口，再决定全量重读是否只留作 replay 的实现。
+- **M6 让它更重（2026-10-21，M6 收尾核实）**：chat 每跑完一段就 `read_events(log.path)` 全量读一次再打印新回复（`cli/main.py::_print_new_replies`），一次会话的全量读次数从「回合数」变成「回合数 + 段数」。没加判据、也没改实现，只是记实况：M11 那条读方接口现在要多回答一个问题——「回复正文的投影能不能也从同一个读方拿」。
 
 ## M5 两轴审查轮：已动的与四条新账（2026-10-21）
 
@@ -301,10 +309,11 @@ GLOSSARY 立了「遮蔽范围」这个词，代码里它是 `dict[str, int]`（
 - 记账不动的理由：现在只有一个产出方和一个读方，改名与加类型要连 payload 形状、replay 的逐字段比对、以及 `test_context_budget.py` 的十几条断言一起动。
 - 处理时点：**M11**（投影层）。届时遮蔽范围是投影层的输入，类型自然要立。
 
-### 34. 「这条记录是不是摘要回复」在四处各判一遍
+### 34. 「这条记录是不是摘要回复」在五处各判一遍
 
 `purpose == PURPOSE_COMPACTION` 加上 `event.type` 的同一套判断出现在 `budget._record_chars`、`budget._produces_message`、`budget.budget_reading` 与 `fold._body_message`。基线里的 Repeated Switches 与 Duplicated Code。
 
+- **第五处（2026-10-21，M6 任务 6.9）**：`cli/main.py::_print_new_replies` 判的是「这条 `model/response` 是不是给人的回复」，谓词换成了 `"purpose" in event.payload`——不是等于 `PURPOSE_COMPACTION`。词表里 `purpose` 目前只有 `compaction` 一个值，两种写法现在等价；一旦有第二个用途（M7 之后可能的进度摘要），这五处里有一处的语义会和另外四处分开。
 - 记账不动的理由：四处都属于「读方怎么看待一条记录」，正确的收法是把这条谓词放到事件层（或投影层的一个读方接口），而 M5 只允许 fold 加读方规则、不允许动事件层的形状。
 - 处理时点：**M11**。与第 33 条同一处收。
 
@@ -350,6 +359,7 @@ GLOSSARY 立了「遮蔽范围」这个词，代码里它是 `dict[str, int]`（
 
 - 记账不动的理由：正确的收法是一份字段表当唯一来源、argparse 与 dataclass 都由它生成；那要把 CLI 的参数表从声明式改成生成式，M9 的判据面不因此多一条。
 - 处理时点：**M6**（REPL 要复用同一份设置面时最疼）。
+- **未处理，改判到 M7（2026-10-21，M6 收尾核实）**：M6 把「参数表」收成一份（`cli/main.py::_add_shared_flags`，`run` 与 `chat` 都 `parents=[shared]`），chat 一个新 flag 也没加；可那四处平行列出的字段名一处没少——加一个可配字段仍要改四处，mypy 仍不拦。M7 的 serve 复用同一份参数表时再收。
 
 ### 39. `EffectiveSettings` 与 `SessionSettings` 字段高度重叠
 
@@ -357,6 +367,10 @@ GLOSSARY 立了「遮蔽范围」这个词，代码里它是 `dict[str, int]`（
 
 - 记账不动的理由：让层叠直接产出 `SessionSettings` 会把「日志字段表」与「三层取值」绑死（design D1 的改判理由）；合并要连 `session/start.payload` 的字段表一起动。
 - 处理时点：**M6**，与第 38 条同一处收。
+- **未处理，改判到 M10（2026-10-21，M6 收尾核实）**：M6 没合并它们，反而新立第三份——`loop/turn_loop.py::SessionEnv`（provider / log / registry / settings / approval_gate，会话内冻结）。字段重叠从两份变三份，但三份各自回答不同的问题（三层取值 / 日志字段表 / 会话内不变的能力集）。M10 动派发段时与第 18、21、23 条一起看。
+- **第四份，且它 ≡ 第三份的前四个字段（2026-10-21，M6 收尾轮 Standards 轴）**：`cli/main.py::_Prepared`（provider / settings / log / registry）与 `SessionEnv` 只差 `approval_gate`；`_run` 与 `_chat_session` 拿到 `_Prepared` 之后立刻把它拆开、再拼成 `SessionEnv`。基线里的 Data Clumps 加 Middle Man。
+  - 记账不动的理由：`_Prepared` 是「装配成功」这个事实的名字，`_prepare_or_fail` 靠它把 12 处失败分支收在一处；把它直接换成 `SessionEnv` 要让 CLI 层知道 `approval_gate` 从哪来（现在是 `STDIN_APPROVAL_GATE` 那个模块常量）。
+  - 处理时点：**M10**，与本条上面那半一起收；M7 的 serve 会带来第五份候选（HTTP 请求带自己的门与上下文），那时再定收法。
 
 ### 40. `ConfigFailure.code` 是裸 `str`，没有 `Literal` 与词表常量
 
@@ -364,6 +378,7 @@ GLOSSARY 立了「遮蔽范围」这个词，代码里它是 `dict[str, int]`（
 
 - 记账不动的理由：加 `Literal` 要先决定「CLI 层的 `INVALID_ARGUMENT` / `UNKNOWN_PROVIDER` 与这六个是不是同一张词表」，而那张对外失败码表 M9 没有判它。
 - 处理时点：**M6 / M7**（失败码表要对外稳定、REPL 与 serve 要复用那张表时）。
+- **未处理（2026-10-21，M6 收尾核实）**：M6 让 chat 复用同一套失败码（`_prepare_or_fail` 与 `run` 走同一条 `_report_failure`），可那张表仍是散在 `cli/main.py` 里的字符串，`ConfigFailure.code` 仍是裸 `str`。M7 立 serve 时收。
 
 ### 41. 「装配」这个词在 GLOSSARY 里是五步，在代码里只有一步住在 `config/`
 
@@ -371,12 +386,14 @@ GLOSSARY 立了「遮蔽范围」这个词，代码里它是 `dict[str, int]`（
 
 - 记账不动的理由：M9 的判据全在 seam ② 与 ⑥，把 `_run` 的装配段抽出来不增加判据，只搬代码。
 - 处理时点：**M6**——REPL 进来时要么把 `_run` 的装配段抽进 `config/`，要么把 GLOSSARY 那个词收窄成「工具表与设置的产出」，二者取一。
+- **部分处理（2026-10-21，M6 任务 6.1）**：两个读法都没选，选的是第三个：装配段从 `_run` 抽成 `cli/main.py::_prepare_or_fail`，`run` 与 `chat` 共用它，`_run` 因此不再是「因四个原因被编辑」的那个函数。可装配仍住在 CLI 层，GLOSSARY 的「装配」仍是五步。剩下的那一半（抽进 `config/` 还是收窄词条）改判到 M7——serve 是第三个消费者，那时才有证据说它属于哪一层。
 
 ### 42. `build_registry(names)` 的 `names` 没说它是白名单
 
 基线里的 Mysterious Name，轻。
 
 - 处理时点：**M6** 顺手改名 `whitelist`。
+- **已处理（2026-10-21，M6 收尾）**：`config/assembly.py::build_registry(whitelist)`，docstring 同步。十个调用点全是位置参数，没有一处跟着改。
 
 ### 43. `_FakeEndpoint` 与 `ProviderEndpoint` 共用「端点」这个词
 
@@ -397,9 +414,72 @@ GLOSSARY 立了「遮蔽范围」这个词，代码里它是 `dict[str, int]`（
 
 - 记账不动的理由：测试硬写文件名是刻意的——它判的是「CLI 真去找这个名字」，从常量读就等于让判据跟着实现走。真正多余的是那两个包外无人用的导出。
 - 处理时点：**M6**（有人用就用，没人用就从 `__all__` 撤掉）。
+- **已处理（2026-10-21，M6 收尾）**：M6 没有成为使用者，两个包外无人用的导出（`CONFIG_FILE_NAME`、`EffectiveSettings`）从 `config/__init__.py` 的 import 与 `__all__` 撤掉；测试仍硬写文件名，判据仍跟着命令行走。
 
 ### M9 审查轮的提交纪律欠账（历史提交不改写，只记账）
 
 - `22e8480`、`ada6446` 两个提交的信息里没有门禁那一行——与上面「提交纪律」那节和 M8 那节同一条规矩（四道是「一次提交算完成」的定义，不分代码与文档），本轮是第三次。
 - `7b5e6c8` 的信息自述「门禁数字记在下一条提交里」——四道确实在那个提交之前跑过，但证据不对应该提交。
 - 变异编号 1–9 跑的是受影响的三到四个测试文件，不是全量。编号 10–13 跑全量，其中层叠顺序、白名单被忽略、密钥判据、端点派生四条等于把 1–9 里的对应变异在全量下重跑了一遍；编号 2（配置层整个删掉）、8（工作区根那份不认）、9（未知名不判）三条没有全量复跑。AGENTS.md 的原文是「收尾跑一轮变异测试……跑全量测试」：收尾那轮合规，中途那九条是额外动作，记在这里以免下一轮把「定向轮」当成合规做法。
+
+## M6 审查轮：已动的与七条新账（2026-10-21）
+
+来自 change `m6-chat-repl` 的实现期与收尾轮。已动的三条记在上面第 3、42、45 条的「已处理」行里，这里记账。
+
+### 46. chat 的 stdout 是「每段跑完读回日志再打印」的投影，不是流式
+
+模型回复要等整段跑完才出现；段进行中人只看到上一个提示符之后的空白。工具事件（`tool/call` / `tool/result`）在 chat 的 stdout 上没有任何投影。
+
+- 记账不动的理由：M6 的规格只判「stdout 上有什么」，不判「什么时候到」；做流式要先有进度投影的形状，那是 M7 的 serve SSE 顺带产出的东西。
+- 处理时点：**M7 之后**（proposal 的「明确不做」里写明工具事件的终端投影归 M7 之后）。
+
+### 47. 取消事件住在段，不在会话：design D2 与实现分叉
+
+D2 把 `cancel` 列在冻结的会话环境成员里，实现把它做成 `run_turn_segment` 的段级入参——一个会话一份 `asyncio.Event` 做不到「取消当前段、会话继续」：置起之后没有地方把它放回去。design.md 的 D2 已按实况更正。
+
+- 处理时点：**M10**（ADR-0011 / ADR-0013 的执行段给取消加派生信号时重新定它的归属）。
+
+### 48. 审批的 stdin 读取与 REPL 的 stdin 读取是同一条流
+
+`tools/fences.py::StdinApprovalGate._await_readline` 起一个 daemon 线程读 stdin；chat 的 REPL 在主线程阻塞 `sys.stdin.readline()`。平时不冲突——提问发生在段内，那时 REPL 不在读。可取消恰好落在「等人回答」那一刻时，`_race_with_cancel` 放弃那个 await，daemon 线程仍挂在 stdin 上：它和 REPL 之后谁先读到那一行，没有判据说它属于谁。
+
+- 记账不动的理由：M6 的取消判据不含「取消落在等人回答期间」，要判它要先有协作式取消的完整形状。
+- 处理时点：**M10**。
+
+### 49. DSH 做了、mini 版没做的两件事
+
+- **压缩失败继续这个 turn**：DSH 的 `agent/pre-step` 里压缩抛错只 `logger.warn(... continuing the turn)` 再 `next()`；mini 的压缩失败塌成溢出结果（ADR-0019）。处理时点：**M10 / M11**。
+- **输入排队**：DSH 的 Agent 有 `next-turn` / `next-step` 两个队列，跑着的时候来的输入不丢；mini 的 chat 在段跑着时读不到新输入（stdin 的读发生在段之后）。处理时点：**M7 之后**——serve 把「跑着的时候来一条输入」变成真实形状时再看。
+
+### 50. `_prepare_or_fail` 既打 stderr 又返回退出码，返回类型是 `_Prepared | int`
+
+装配函数报告失败并交出退出码，调用方要 `isinstance(prepared, int)` 才知道走不走得通。与第 40 条同族（失败码表散在 CLI 层）。
+
+- 记账不动的理由：抽它是为了让 `run` 与 `chat` 共用同一条装配路，12 处失败分支不写两遍；改成 `Prepared | Failure` 要先有那张对外失败码表。
+- 处理时点：**M7**，与第 40 条同一处收。
+
+### 51. `SegmentOutcome` 兼任会话级的失败结果
+
+`end_session` 返回 `SegmentOutcome | None`（`turn_loop.py:930`），`run_session` 的三条失败路都靠 `_run_outcome`（`:149`）把它转成 `RunOutcome`；「这一段是不是失败了」靠 `segment.stop_reason not in STOP_REASONS` 判（`:963`）。`SegmentOutcome` 与 `RunOutcome` 只差一个 `session_id`。基线里的 Mysterious Name，也与第 6 条「扩 `RunOutcome` 而不是新加并列结果类型」相冲。
+
+- 记账不动的理由：M6 需要「跑完一段」这个中间结果，那时会话还没结束、`RunOutcome` 还不成立；把两者收成一个带 `scope` 的结果类型要连着改 seam ① 与 seam ⑥ 的判据形状。
+- 处理时点：**M10**，与第 17 条的 `attempt` 那一半同一处收。
+
+### 52. `_compact_if_over_line` 的 `None` 有两种含义
+
+它返回 `None` 只说「没失败」——「没有可遮蔽的内容」也返回 `None`。于是两处调用方（`turn_loop.py:572` 与 `:804`）都要回读全量日志、扫「这一回合有没有一条 `compaction/summary`」才知道到底压没压。基线里的 Primitive Obsession 加 Duplicated Code，并加重第 32 条的全量重读。
+
+- 记账不动的理由：让它返回「压了 / 没压 / 失败」三态要新造一个结果类型；M6 里这两处判定各一行、判据都在（`test_overflow_when_nothing_can_be_shadowed` 与 `test_one_compaction_then_overflow_when_the_context_still_does_not_fit` 分别钉住两条措辞）。
+- 处理时点：**M11**，与第 32 条同一处收。
+
+### M6 的提交纪律欠账（不改写历史，只记账）
+
+- **两个规划提交没有门禁那一行**：`cf1543d`、`0f49b39` 的信息里只有 `openspec validate m6-chat-repl --strict` 通过。与「提交纪律」一节同一条规矩：四道门禁是「一次提交算完成」的定义，不分代码与文档。
+- **三个实现提交的门禁行记不全**：`62ccd00` 只记 ruff format / check / mypy（红绿循环里跑了测试，信息里没写测试数与覆盖率）；`0afa628` 只记覆盖率（72 → 77 未覆盖行）；`ce87b9a` 只记三次定点变异与「6 条判据全绿」。缺的是记录，不是没跑。历史提交不改写。
+- **一处成本自估偏低**：`0f49b39` 写「钉死事件序列的 6 处既有判据里 4 处要改」，实测见 ADR-0020 的更正行。
+
+### M6 的判据欠账（不改写历史，只记账）
+
+- 组 6 的六条判据（6.4–6.10）都是**绿着到的**：读行循环在 6.1–6.3 那一次就写完了。违「一条判据先红、再绿，一次一个切片」。当场用定点变异确认它们不空转（每次「改坏一处 → 哪条变红 → 还原」记在对应提交信息里），记在这里以免下一轮把「守卫」当成红绿对。
+- 6.7 与 6.8 到收尾都没跑过：`tasks.md` 写的是「Linux runner 上跑」，本机是 Windows，Ctrl-C 子进程黑盒沿用 M3 的边界。`ABORTED` 在 chat 路径上的可达性因此只有两条过程内守卫（handler 置事件 / handler 抛 `KeyboardInterrupt`），没有子进程判据。缺口记进 `docs/verification/m6-chat-repl-manual.md`。
+- **收尾轮补的三条**：`test_the_request_level_retry_records_the_context_it_actually_sent`（seam ①，真红过——先红在 `assert 1 == 2`，实现补上快照之后绿）；`test_chats_flag_table_is_runs_flag_table_minus_two` 与 `test_a_chat_that_cannot_start_leaves_no_log`（seam ⑥，**绿着到的守卫**：实现早在 6.1–6.3 与 `_prepare_or_fail` 里就写对了，Spec 轴查出的是「判据缺失」而不是「实现缺失」）。后两条在收尾变异轮里各配一条定点变异确认不空转。

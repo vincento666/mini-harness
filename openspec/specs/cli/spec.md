@@ -34,11 +34,11 @@
 - **THEN** 退出码为 0，且 `session/start` 的 payload 取自配置文件里的值而不是内置默认
 
 ### Requirement: run 参数记录进 session/start
-系统 SHALL 在 `session/start` 的 payload 里记录本次运行的**有效参数**（层叠之后的结果）：`workspace`（绝对路径）、`provider`、`max_turns`、`window`、`reserve`、`append_system_prompt`、`sandbox`、`approval`（`ask` 或 `auto`）、`tools`（装配筛出来并送给模型的工具名列表），以及用户 prompt 原文；`provider` 为 `openai` 时还 SHALL 记录 `base_url`、`model` 与 `api_key_env`（**环境变量的名字**，不是它的值）。payload MUST NOT 记录密钥的值或任何 Authorization 内容。payload MUST NOT 重复携带 `schema_version`。
+系统 SHALL 在 `session/start` 的 payload 里记录本次运行的**有效参数**（层叠之后的结果）：`entry`（`run` 或 `chat`，记录会话由哪个入口开始）、`workspace`（绝对路径）、`provider`、`max_turns`、`window`、`reserve`、`append_system_prompt`、`sandbox`、`approval`（`ask` 或 `auto`）、`tools`（装配筛出来并送给模型的工具名列表），以及用户 prompt 原文——`entry` 为 `chat` 时 prompt MUST 是空串，人话住在 `user/message` 里。`provider` 为 `openai` 时还 SHALL 记录 `base_url`、`model` 与 `api_key_env`（**环境变量的名字**，不是它的值）。payload MUST NOT 记录密钥的值或任何 Authorization 内容。payload MUST NOT 重复携带 `schema_version`。
 
 #### Scenario: payload 与命令行一致
 - **WHEN** 执行 `minihns run -p "x" --max-turns 3 --workspace <dir> --sandbox read-only`
-- **THEN** `session/start` 的 payload 里 `max_turns` 为 3、`workspace` 为 `<dir>` 的绝对路径、`sandbox` 为 `read-only`、`approval` 为 `ask`、`prompt` 为 `x`
+- **THEN** `session/start` 的 payload 里 `entry` 为 `run`、`max_turns` 为 3、`workspace` 为 `<dir>` 的绝对路径、`sandbox` 为 `read-only`、`approval` 为 `ask`、`prompt` 为 `x`
 
 #### Scenario: 工具名列表进 payload
 - **WHEN** 执行一次 run
@@ -94,7 +94,7 @@
 - **THEN** 退出码为 2，stderr 含 `SESSION_NOT_FOUND`
 
 ### Requirement: 退出码只取自固定表
-系统 SHALL 只用固定退出码：0 成功、1 模型或内部错误、2 参数错误、3 围栏拒绝或审批被拒、4 上下文预算溢出、5 用户取消。除参数错误（发生在 session 开始之前）、日志不可写、以及 replay 不一致这三种情况外，每个非零退出 SHALL 有对应的 `error/*` 事件。3 与 4 都是可达码：`stop_reason: FENCE_DENIED` 映射到 3，`stop_reason: CONTEXT_WINDOW_EXCEEDED` 映射到 4。
+系统 SHALL 只用固定退出码：0 成功、1 模型或内部错误、2 参数错误、3 围栏拒绝或审批被拒、4 上下文预算溢出、5 用户取消。除参数错误（发生在 session 开始之前）、日志不可写、以及 replay 不一致这三种情况外，每个非零退出 SHALL 有对应的 `error/*` 事件。3 与 4 都是可达码：`stop_reason: FENCE_DENIED` 映射到 3，`stop_reason: CONTEXT_WINDOW_EXCEEDED` 映射到 4。一次性 `minihns run` 里会话收尾就是这次进程的退出码；`minihns chat` 里段级收尾（`ABORTED`、`FENCE_DENIED`、`MAX_TURNS`、`CONTEXT_WINDOW_EXCEEDED`、`PROVIDER_ERROR`）MUST NOT 结束进程，会话收尾（EOF 或提示符上取消）的退出码 SHALL 是 0。
 
 #### Scenario: 每个失败都落在表内
 - **WHEN** M2 的任一失败场景发生
@@ -123,6 +123,10 @@
 #### Scenario: 预算溢出映射到退出码 4
 - **WHEN** 一次 run 以 `stop_reason: CONTEXT_WINDOW_EXCEEDED` 结束
 - **THEN** 退出码为 4，且日志里有 `error/context` 记录
+
+#### Scenario: chat 的正常收尾是 0
+- **WHEN** 一次 `minihns chat` 以 EOF 结束，且其中某个段以 `FENCE_DENIED` 收尾
+- **THEN** 进程退出码为 0，日志里 `error/fence` 在盘上而 `session/end` 的 `stop_reason` 是 `MODEL_COMPLETED`
 
 ### Requirement: provider 选择与密钥是装配的必需项
 系统 SHALL 只接受 `mock` 与 `openai` 两个 provider 取值，其它取值 SHALL 以退出码 2 结束、stderr 含 `UNKNOWN_PROVIDER`，且 MUST NOT 创建 session 日志。`provider` 为 `openai` 时密钥 SHALL 只从 `api_key_env` 指定的环境变量读取（默认 `DEEPSEEK_API_KEY`）；该变量未设或为空时系统 SHALL 以退出码 2 结束、stderr 含 `INVALID_ARGUMENT` 与该变量名，且 MUST NOT 创建 session 日志、MUST NOT 发出任何 HTTP 请求。密钥 MUST NOT 出现在命令行参数、stdout、stderr、session 日志或 `session/start` 的 payload 里。

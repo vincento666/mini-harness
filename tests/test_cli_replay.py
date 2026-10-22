@@ -355,3 +355,47 @@ async def test_a_log_that_went_through_compaction_replays_pointwise(tmp_path: Pa
     assert _verified_seqs(replay.stdout) == _recorded_seqs(log_path)
     assert "REPLAY_MISMATCH" not in replay.stderr
     assert "长" * 50000 not in replay.stdout
+
+
+async def test_a_log_that_ended_in_overflow_replays_pointwise(tmp_path: Path) -> None:
+    """溢出收尾的日志照样逐点重放、退出码 0：收尾是结果，不是把日志弄坏（不变量 A 与 F）。"""
+    session_dir = tmp_path / "sessions"
+
+    _, outcome = await run_session_fixture(
+        tmp_path,
+        "s-overflow-replay",
+        FixtureProvider(
+            entries=[
+                {
+                    "content": "x" * 100000,
+                    "finish_reason": "tool_calls",
+                    "tool_calls": [
+                        {"id": "c1", "name": "read", "arguments": {"file_path": "a.md"}},
+                    ],
+                },
+                {"content": "y" * 100000, "finish_reason": "stop"},
+            ],
+        ),
+        session_dir=session_dir,
+        registry=file_registry(),
+        max_turns=3,
+        window=70000,
+        reserve=100,
+    )
+    assert outcome.stop_reason == "CONTEXT_WINDOW_EXCEEDED"
+
+    log_path = session_dir / "s-overflow-replay.jsonl"
+    records = read_events(log_path)
+    assert isinstance(records, list)
+    assert [record.type for record in records][-4:] == [
+        "error/context",
+        "turn/end",
+        "segment/end",
+        "session/end",
+    ]
+
+    replay = _cli("replay", "s-overflow-replay", "--session-dir", str(session_dir), cwd=tmp_path)
+
+    assert replay.returncode == 0
+    assert _verified_seqs(replay.stdout) == _recorded_seqs(log_path)
+    assert "REPLAY_MISMATCH" not in replay.stderr

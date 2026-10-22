@@ -76,6 +76,26 @@ def test_compaction_summary_and_error_context_are_in_the_vocabulary(tmp_path: Pa
     assert "unrecognized_type" not in written["payload"]
 
 
+def test_segment_and_user_message_types_are_in_the_vocabulary(tmp_path: Path) -> None:
+    """M6 把回合段的边界与 REPL 的输入收进词表：一个段 = DSH 的 turn，一个回合 = DSH 的 step。"""
+    assert is_known_type("segment/start")
+    assert is_known_type("segment/end")
+    assert is_known_type("user/message")
+
+    log = EventLog.create(session_dir=tmp_path, session_id="sess-v5")
+    log.append("segment/start", {"segment_id": "s1"})
+    log.append("user/message", {"segment_id": "s1", "content": "第一条输入"})
+    log.append("segment/end", {"segment_id": "s1", "stop_reason": "MODEL_COMPLETED", "turns": 1})
+
+    written = [json.loads(line) for line in log.path.read_text(encoding="utf-8").splitlines()]
+    assert [record["type"] for record in written] == [
+        "segment/start",
+        "user/message",
+        "segment/end",
+    ]
+    assert all("unrecognized_type" not in record["payload"] for record in written)
+
+
 def test_context_window_exceeded_is_a_stop_reason() -> None:
     assert "CONTEXT_WINDOW_EXCEEDED" in STOP_REASONS
 

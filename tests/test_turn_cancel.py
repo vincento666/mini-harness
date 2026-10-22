@@ -7,11 +7,13 @@ from pathlib import Path
 
 from mini_harness.events import EventRecord, read_events
 from mini_harness.events.fold import fold
+from mini_harness.loop import ENTRY_RUN, end_session, run_turn_segment, start_session
 from mini_harness.provider import FixtureProvider
 from mini_harness.tools.fences import ApprovalDecision
 from tool_harness import (
     DONE,
     Intervals,
+    build_session_env,
     call_ids,
     cancel_after,
     full_registry,
@@ -410,6 +412,42 @@ async def test_a_cancel_arrives_while_the_human_is_being_asked(tmp_path: Path) -
     assert call_ids(records, "approval/response") == []
     assert result_outcomes(records) == [("c1", "TOOL_CANCELLED")]
     assert [record.payload["tool_call_id"] for record in _cancelled(records)] == ["c1"]
-    assert [record.type for record in records][-3:] == ["error/abort", "turn/end", "session/end"]
+    assert [record.type for record in records][-4:] == [
+        "error/abort",
+        "turn/end",
+        "segment/end",
+        "session/end",
+    ]
     assert outcome.stop_reason == "ABORTED"
     assert not (tmp_path / "a.md").exists()
+
+
+async def test_a_cancel_closes_the_segment_and_the_entry_closes_the_session(tmp_path: Path) -> None:
+    """取消终止当前段：段写 `segment/end(ABORTED)` 就停，会话怎么收尾归入口（ADR-0011）。
+
+    一次性 run 的入口补写 `session/end` 并映射退出码 5，那条判据在 `tests/test_cli_run.py`。
+    """
+    cancel = asyncio.Event()
+    log, env = build_session_env(
+        tmp_path,
+        "s-cancel-segment",
+        FixtureProvider(
+            entries=[turn_entry(tool_call("write", "c1", file_path="a.md", content="A\n")), DONE]
+        ),
+        registry=full_registry(),
+        approval="ask",
+        approval_gate=_CancelWhileAskingGate(cancel),
+        max_turns=4,
+    )
+
+    assert start_session(prompt="任务", entry=ENTRY_RUN, env=env) is None
+    segment = await run_turn_segment(env=env, segment_id="s1", first_turn_index=1, cancel=cancel)
+
+    records = read_events(log.path)
+    assert segment.stop_reason == "ABORTED"
+    assert [record.type for record in records][-3:] == ["error/abort", "turn/end", "segment/end"]
+    assert "session/end" not in [record.type for record in records]
+    assert records[-1].payload == {"segment_id": "s1", "stop_reason": "ABORTED", "turns": 1}
+
+    assert end_session(env=env, stop_reason=segment.stop_reason, turns=segment.turns) is None
+    assert [record.type for record in read_events(log.path)][-1:] == ["session/end"]

@@ -70,6 +70,8 @@ uv run minihns replay <session-id> --session-dir .tmp/m5-manual/sessions
 
 「窗口 32768 装不下任何东西」不是这一跑的失败，是公式的结果：headroom 65536 比窗口本身还大，触发线取 0，任何非空上下文都越线。
 
+> **M6 更正（2026-10-21，`m6-chat-repl` 任务 7.6）**：这一条观察照 M5 的实现成立，到 M6 不再成立。ADR-0019 把「`window − reserve − 65536 ≤ 0`」判成**启动期参数错误**（照 DSH：`pressureBudgetTokens <= 0` 在配置解析期抛 `TargetPressureConfigError`）。今天同一句命令的结果是退出码 **2**、stderr `INVALID_ARGUMENT: --window 32768 减去 --reserve 4096 与余量 65536 之后没有剩余压力预算`，**不建 session 日志**——也就没有上面那五条评价记录（`session/start` → `turn/start` → `error/context` → `turn/end` → `session/end`）。这一节保留不删：它是 M5 的实测记录，也是「触发线取 0 时任何非空上下文都越线」这条公式性质的出处。今天的等价跑法是把窗口抬到 `reserve + 65536` 之上，例如 `--window 73728 --reserve 4096`（触发线 4096）。
+
 ### 宽窗口那条：`f7fcaa2c4b764e13aa980227982f6d19`（39 条记录、五回合跑完）
 
 | 观察点 | 期望 | 实际 |

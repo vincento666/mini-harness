@@ -6,10 +6,11 @@ import asyncio
 from pathlib import Path
 
 from mini_harness.events import EventRecord, read_events
-from mini_harness.events.fold import TOOL_OUTCOME_UNKNOWN
+from mini_harness.events.fold import TOOL_OUTCOME_UNKNOWN, assembly_points, fold
+from mini_harness.loop import ENTRY_RUN, run_turn_segment, start_session
 from mini_harness.provider import FixtureProvider, ProviderFailure
 from mini_harness.tools import ToolRegistry
-from tool_harness import run_fixture_session, run_session_fixture
+from tool_harness import build_session_env, run_fixture_session, run_session_fixture
 
 # 触发线 4364（`W - O - 65536` 比 `W * 0.8` 小）、保留预算 11200。
 TIGHT_WINDOW = 70000
@@ -135,9 +136,10 @@ async def test_overflow_when_nothing_can_be_shadowed(tmp_path: Path) -> None:
     )
     records = read_events(log.path)
 
-    assert [record.type for record in records][-3:] == [
+    assert [record.type for record in records][-4:] == [
         "error/context",
         "turn/end",
+        "segment/end",
         "session/end",
     ]
     assert _records_of(log.path, "model/request") == []
@@ -151,11 +153,47 @@ async def test_overflow_when_nothing_can_be_shadowed(tmp_path: Path) -> None:
     closers = [
         record.payload["stop_reason"]
         for record in records
-        if record.type in {"turn/end", "session/end"}
+        if record.type in {"turn/end", "segment/end", "session/end"}
     ]
-    assert closers == ["CONTEXT_WINDOW_EXCEEDED", "CONTEXT_WINDOW_EXCEEDED"]
+    assert closers == ["CONTEXT_WINDOW_EXCEEDED"] * 3
     assert outcome.stop_reason == "CONTEXT_WINDOW_EXCEEDED"
     assert outcome.failure_code == "CONTEXT_WINDOW_EXCEEDED"
+
+
+async def test_an_overflow_closes_the_segment_not_the_session(tmp_path: Path) -> None:
+    """溢出是**回合**终止结果：段自己只写到 `segment/end`，会话是否结束归入口（ADR-0011）。
+
+    一次性 run 的入口接着写 `session/end` 并映射退出码 4，那条判据在 `tests/test_cli_run.py`。
+    """
+    log, env = build_session_env(
+        tmp_path,
+        "s-overflow-segment",
+        FixtureProvider(entries=[DONE_ENTRY]),
+        window=4000,
+        reserve=500,
+        max_turns=4,
+    )
+
+    assert start_session(prompt="任务", entry=ENTRY_RUN, env=env) is None
+    segment = await run_turn_segment(
+        env=env, segment_id="s1", first_turn_index=1, cancel=asyncio.Event()
+    )
+
+    records = read_events(log.path)
+    assert segment.stop_reason == "CONTEXT_WINDOW_EXCEEDED"
+    assert [record.type for record in records] == [
+        "session/start",
+        "segment/start",
+        "turn/start",
+        "error/context",
+        "turn/end",
+        "segment/end",
+    ]
+    assert records[-1].payload == {
+        "segment_id": "s1",
+        "stop_reason": "CONTEXT_WINDOW_EXCEEDED",
+        "turns": 1,
+    }
 
 
 async def test_one_compaction_then_overflow_when_the_context_still_does_not_fit(
@@ -181,9 +219,10 @@ async def test_one_compaction_then_overflow_when_the_context_still_does_not_fit(
         and record.payload.get("purpose") != "compaction"
     ]
     assert turn_two == []
-    assert [record.type for record in records][-3:] == [
+    assert [record.type for record in records][-4:] == [
         "error/context",
         "turn/end",
+        "segment/end",
         "session/end",
     ]
     # 这一条压缩真的发生过，措辞就该是「压缩之后」。
@@ -247,13 +286,128 @@ async def test_a_provider_reported_overflow_collapses_into_the_same_result(tmp_p
     )
     records = read_events(log.path)
 
-    assert [record.type for record in records][-3:] == [
+    assert [record.type for record in records][-4:] == [
         "error/context",
         "turn/end",
+        "segment/end",
         "session/end",
     ]
     assert _records_of(log.path, "error/model") == []
     assert _records_of(log.path, "compaction/summary") == []
     assert _records_of(log.path, "tool/call") == []
+    assert outcome.stop_reason == "CONTEXT_WINDOW_EXCEEDED"
+    assert outcome.failure_code == "CONTEXT_WINDOW_EXCEEDED"
+
+
+class _OverflowOnceProvider:
+    """模型层报出上下文超限：第 `fail_plain_calls` 次**带工具表**的回合调用报失败。
+
+    摘要那次调用不带工具表（design D2），所以它照常从 fixture 取条目。
+    """
+
+    def __init__(
+        self, entries: list[dict[str, object]], *, fail_plain_calls: tuple[int, ...]
+    ) -> None:
+        self._fixture = FixtureProvider(entries=entries)
+        self._fail_plain_calls = fail_plain_calls
+        self._plain_calls = 0
+
+    async def generate(self, messages: object, tools: object, signal: asyncio.Event) -> object:
+        if tools:
+            self._plain_calls += 1
+            if self._plain_calls in self._fail_plain_calls:
+                return ProviderFailure(
+                    code="PROVIDER_CONTEXT_OVERFLOW", detail="HTTP 400 上下文超限"
+                )
+        return await self._fixture.generate(messages, tools, signal)
+
+
+async def test_a_provider_reported_overflow_is_compacted_once_and_retried(
+    tmp_path: Path,
+) -> None:
+    """请求级压缩救回一次：压一次、重试一次，回合以正常的 `model/response` 继续（ADR-0019）。"""
+    log, outcome = await run_session_fixture(
+        tmp_path,
+        "s-request-compaction",
+        _OverflowOnceProvider([_big_turn(), _summary_entry(), DONE_ENTRY], fail_plain_calls=(2,)),
+        max_turns=3,
+    )
+    records = read_events(log.path)
+    turn_two = [record for record in records if record.payload.get("turn_id") == "t2"]
+
+    assert outcome.stop_reason == "MODEL_COMPLETED"
+    summaries = _records_of(log.path, "compaction/summary")
+    assert [record.payload["turn_id"] for record in summaries] == ["t2"]
+    # 压完之后重试那一次是又一次真实的调用：t2 有两条不带 purpose 的 `model/request`。
+    plain_requests = [
+        record
+        for record in turn_two
+        if record.type == "model/request" and "purpose" not in record.payload
+    ]
+    plain_responses = [
+        record
+        for record in turn_two
+        if record.type == "model/response" and "purpose" not in record.payload
+    ]
+    assert len(plain_requests) == 2
+    assert [record.payload["content"] for record in plain_responses] == ["收尾"]
+    assert _records_of(log.path, "error/context") == []
+    assert _records_of(log.path, "error/model") == []
+    assert [record.payload["stop_reason"] for record in records if record.type == "turn/end"] == [
+        "TOOL_CALLS",
+        "MODEL_COMPLETED",
+    ]
+
+
+async def test_the_request_level_retry_records_the_context_it_actually_sent(
+    tmp_path: Path,
+) -> None:
+    """请求级重试之前补一条 `context/assembled`：那条快照说的是重试实际发出去的那份表层。"""
+    log, _outcome = await run_session_fixture(
+        tmp_path,
+        "s-request-retry-snapshot",
+        _OverflowOnceProvider([_big_turn(), _summary_entry(), DONE_ENTRY], fail_plain_calls=(2,)),
+        max_turns=3,
+    )
+    records = read_events(log.path)
+    points = [point for point in assembly_points(records) if point.turn_id == "t2"]
+
+    assert len(points) == 2
+    for point in points:
+        following = records[len(point.prefix) + 1]
+        assert following.type == "model/request"
+        assert "purpose" not in following.payload
+    # 两条都按各自的前缀重算得出来：新形状没有给 replay 添新规则。
+    for point in points:
+        recomputed = fold(point.prefix).model_dump(mode="json")
+        payload = {key: value for key, value in point.record.payload.items() if key != "turn_id"}
+        assert recomputed == payload
+    # 第二条说的是遮蔽之后那份表层：摘要在里面，第一条里没有。
+    second = [str(message["content"]) for message in points[1].record.payload["messages"]]
+    first = [str(message["content"]) for message in points[0].record.payload["messages"]]
+    assert SUMMARY_TEXT in second
+    assert SUMMARY_TEXT not in first
+
+
+async def test_a_provider_reported_overflow_that_survives_the_retry_collapses(
+    tmp_path: Path,
+) -> None:
+    """重试仍报同一失败：上限 1 次用完，塌成同一个溢出结果，没有 `error/model`。"""
+    log, outcome = await run_session_fixture(
+        tmp_path,
+        "s-request-compaction-fails",
+        _OverflowOnceProvider([_big_turn(), _summary_entry()], fail_plain_calls=(2, 3)),
+        max_turns=3,
+    )
+    records = read_events(log.path)
+
+    assert len(_records_of(log.path, "compaction/summary")) == 1
+    assert [record.type for record in records][-4:] == [
+        "error/context",
+        "turn/end",
+        "segment/end",
+        "session/end",
+    ]
+    assert _records_of(log.path, "error/model") == []
     assert outcome.stop_reason == "CONTEXT_WINDOW_EXCEEDED"
     assert outcome.failure_code == "CONTEXT_WINDOW_EXCEEDED"

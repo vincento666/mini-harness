@@ -62,8 +62,12 @@ def _cli(
     )
 
 
-def _cli_process(*args: str, cwd: Path) -> subprocess.Popen[str]:
-    """同一条命令，但以 `Popen` 起：用来在 session 进行中给它发信号。"""
+def _cli_process(*args: str, cwd: Path, keep_stdin_open: bool = False) -> subprocess.Popen[str]:
+    """同一条命令，但以 `Popen` 起：用来在 session 进行中给它发信号。
+
+    `keep_stdin_open` 给 `chat` 用：REPL 的 stdin 是一根一直开着的管道，测试往里写行、写完再关。
+    默认那条路径仍是「非 tty 且立刻 EOF」。
+    """
     return subprocess.Popen(
         _command(*args),
         cwd=str(cwd),
@@ -72,5 +76,5 @@ def _cli_process(*args: str, cwd: Path) -> subprocess.Popen[str]:
         text=True,
         encoding="utf-8",
         env=_child_env(None),
-        stdin=subprocess.DEVNULL,
+        stdin=subprocess.PIPE if keep_stdin_open else subprocess.DEVNULL,
     )
