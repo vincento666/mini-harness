@@ -8,7 +8,7 @@
 - 装配路已收成一条：`cli/main.py::_prepare_or_fail` 返回 `_Prepared | int`，`run` 与 `chat` 共用（第 50 条）。serve 是第三个消费者。
 - 内核不知道入口存在：`chat` 靠 `start_session(entry=ENTRY_CHAT)` + `run_turn_segment` + `end_session` 拼出连续会话，`run` 走 `run_session`。
 - 记录信封是 `schema_version` / `type` / `session_id` / `seq` / `ts` / `payload`（`events/record.py:14-22`）。
-- DSH 的对照：交付形态是 HTTP + WebSocket（`/api/remote.mux` @ `127.0.0.1:19387`），`dsh-host-webserver` 把 host 与 port 做成配置。
+- DSH 的对照：`19387` 是 desktop profile 启动时传的 `--port`（`dsh-desktop-host/lib/index.js:231-235`）；`/api/remote.mux` 的定义是「承载**所有** Typert Remote 流的 WebSocket 路由」（`dsh-api-gateway/lib/types/stream-protocol.js:4`），unary RPC 走 HTTP、stream 方法必须走这条 WebSocket（`dsh-api-gateway/lib/index.js:730`、`:756`）。会话的流式输出是 `session/follow`：请求带「调用方已持有的 last committed seq」，返回 opening snapshot（带 `hasMore` / `maxMessages` 分页）+ gap-free 的 durable 事件帧 + 可选 cursorless 的 assistant-stream 帧（`dsh-api-session-controller/lib/typert.host.js:1554-1557`、`:2141`；客户端断言相邻帧 `right === left + 1`，`lib/types/client/transport.js:63`）。事件回显是另一条逻辑流 `$events`：27 条 allowlist（25 `emit` + 2 `waterfall`），**没有游标、不补历史**（`dsh-api-remotes/lib/types/remote-events.js:12-40`、`dsh-api-gateway/lib/index.js:810`、`:823`）。`dsh-host-webserver` 把 host 与 port 做成配置。
 
 ## Goals / Non-Goals
 
@@ -28,7 +28,7 @@
 
 **D1 服务端用 aiohttp（人裁决）。** 备选是标准库 `asyncio.start_server` 手写最小 HTTP/1.1（零新依赖，代价是自己写请求行解析与分帧）与 starlette + uvicorn（两个依赖）。选 aiohttp 的理由：它是 asyncio 原生、与「单事件循环」的既有选型一致；`web.StreamResponse` 正是 SSE 需要的分块写；`AppRunner` + `TCPSite` 让「绑定失败当场退出」可控（`setup()` 在端口被占时抛 `OSError`）。代价：新增运行时依赖（连带 `aiosignal` / `frozenlist` / `multidict` 进 `uv.lock`），AGENTS.md 的技术选型行要加一项。
 
-**D2 SSE 而不是 DSH 的 HTTP + WebSocket mux。** mini 版故意简化：M7 没有任何要写进会话的输入，客户端只需要读。代价要新开 **ADR-0021** 写明——没有双向通道意味着审批的 HTTP 化、输入排队、多会话都要另起协议；SSE 的重连语义靠 `id`，与 DSH 的 27 条转发事件不同形。
+**D2 SSE 而不是 DSH 的 WebSocket mux；只照 `session/follow` 的 durable 那一半。** mini 版故意简化：M7 没有任何要写进会话的输入，客户端只需要读。三层的对应写死在这里：`session/follow` 的 seq 游标与 gap-free durable 事件**照它**（游标就是 `seq`、从 `cursor + 1` 起、连续性由「帧数等于日志行数」兜住）；`$events` 的 27 条 allowlist 与两条 waterfall **不做**；assistant-stream 的 cursorless 逐字帧**不做**（前置是 provider 流式，ADR-0006 第 1 条）。代价新开 **ADR-0021** 写明，并且要写明**将来加什么、不用换什么**：第三阶段要补的是 snapshot 帧（加分页，游标语义不动）与一条回程 POST 端点——DSH 的回程 `$events/result` 本来就是 **unary HTTP RPC**（`stream-protocol.js:7-8`、`dsh-api-gateway/lib/index.js:624`、`:772`）而不是 WebSocket 帧，所以「单向流 + HTTP 回程」与 DSH 同形，**SSE 与 `seq` 游标都不是将来要换掉的东西**。真正贵的两处不在事件流这一层：waterfall 要的是可插拔 approval gate 与客户端身份（ADR-0002 第 28 条，归 M10），逐字流要的是 provider 流式与「什么不落日志」的边界（归 M11）。
 
 **D3 一个进程一个会话，绑定发生在开日志之前。** 顺序：参数校验（含 host/port 词表）→ `TCPSite.setup()` 绑定 → `_prepare_or_fail`（里面才 `EventLog.start`）→ 跑会话 → `end_session` → 退出码。绑定失败因此天然满足「不建日志」。备选「先装配再绑定」会在端口被占时留下一份空日志，与 event-stream 规格相冲。
 

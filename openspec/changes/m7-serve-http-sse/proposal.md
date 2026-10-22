@@ -31,7 +31,7 @@
 - 不做工具事件（`tool/call` / `tool/result`）在 chat 的 stdout 上的投影，也不做 chat 的流式输出（ADR-0002 第 46 条，归 M7 之后）。
 - 不做输入排队：段跑着的时候来的输入仍读不到（第 49 条，归 M7 之后）。
 - 不做多会话并发、不做 POST 起会话、不做任何 web / Electron 外壳（第三阶段）。
-- 不做 WebSocket 与 `remote.mux`：DSH 的交付形态是 HTTP + WebSocket，mini 版**故意**用 SSE（单向、无握手、续读靠 `seq`），代价写进要新开的 ADR-0021。
+- 不做 WebSocket 与 `remote.mux`：DSH 的会话流式是 `session/follow`（seq 游标 + snapshot + gap-free durable 帧），事件回显是另一条 `$events`（27 条 allowlist、两条 waterfall）；mini 版**故意**只照前者的 durable 那一半，用 SSE（单向、无握手、续读靠 `seq`）。将来要补的是 snapshot 帧与一条回程 POST 端点——DSH 的回程 `$events/result` 本来就是 unary HTTP RPC，所以 SSE 与 `seq` 游标都不是要换掉的东西。代价写进要新开的 ADR-0021。
 - 不做输出 spill 文件与 `lossy` 标记：DSH 溢出时把完整字节流写进文件并留 `[output truncated; full output: <path>]`（`dsh-bash-local/lib/index.js:108-154`、`dsh-tool-bash/lib/index.js:137`），mini 的 16384 字节截断没有这一层——新开一条账，归 M10 的 `finalizeContent` 段。
 - 不做审批的 HTTP 化：serve 里审批仍走 `StdinApprovalGate`（问题写 stderr）。
 - 不做 OS 级围栏、不做 MCP、不做 resume 与折叠缓存（M11）。
