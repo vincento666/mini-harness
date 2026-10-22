@@ -542,6 +542,20 @@ D2 把 `cancel` 列在冻结的会话环境成员里，实现把它做成 `run_t
 - 记账不动的理由：前两条的失败模式是环境性的——本机有 Windows 保留端口段（1048–1623、50000–50059）与未测过的防火墙行为，本机实测过才写判据；第三条要在会话进行中把日志变得读不动，seam ④ 判 `LogTail` 自己返回失败已经绿，serve 侧那一半要等回程端点才有自然的判法。人裁决（M7 收尾轮）：记账。
 - 处理时点：**M10**，或 Linux runner 上跑那四条 skip 的 SIGINT 判据时顺手补前两条。
 
+### 62. 正文为空的 `model/response` 在 chat 的 stdout 上打出一个空行
+
+`cli/main.py::_print_new_replies` 对每一次不带 `purpose` 的 `model/response` 都 `print(content)`；真模型下「只调工具、没有正文」的那次回复正文是空串，于是屏幕上多出一个空行。M6 模型层场 1 里四次 `model/response` 打出两个空行。
+
+- 记账不动的理由：规格说「chat 的 stdout 只打印模型回复正文」，空正文也是正文，这不是违规，是没人决定过它该不该打。改法有两种（空正文不打 / 打一行占位），选哪种是产品判断。
+- 处理时点：**M10**（serve 的流与 chat 的 stdout 一起看屏幕形状时定）。
+
+### 63. 溢出在 REPL 屏幕上不可见，而且一次溢出之后每一段都溢出
+
+M6 模型层场 2：`--window 66000 --reserve 100` 下第一条输入约 5000 字，两段都在装配期溢出。日志层完全正确（`error/context` + `turn/end` + `segment/end` 都是 `CONTEXT_WINDOW_EXCEEDED`、没有 `error/model`、会话继续），但 stdout 只有四个 `> `、stderr 是空的、退出码 0。超长的那条 `user/message` 住在保留尾部（10560 > 5000）无可遮蔽，于是这个会话里之后每一段都溢出，而「一次模型请求都没成功过」这件事在屏幕上和退出码上都不留痕迹。
+
+- 记账不动的理由：溢出只到回合级、入口决定会话是 ADR-0019 定过的；「要不要在屏幕上说一句话」与「退出码要不要反映整段会话」是两条新的产品判断，本机有真 runbook 证据（`ff7d94d71c2846d598e11eae873b2484`）才记。
+- 处理时点：**M10**（与第 55 条「溢出在事件流上的形状」一起判）。
+
 ### M6 的提交纪律欠账（不改写历史，只记账）
 
 - **两个规划提交没有门禁那一行**：`cf1543d`、`0f49b39` 的信息里只有 `openspec validate m6-chat-repl --strict` 通过。与「提交纪律」一节同一条规矩：四道门禁是「一次提交算完成」的定义，不分代码与文档。
@@ -565,4 +579,4 @@ D2 把 `cancel` 列在冻结的会话环境成员里，实现把它做成 `run_t
 
 - 组 4 与组 5 的六条判据（4.2 / 4.3 / 4.4 / 4.5 / 5.2）与组 6 的三条（6.1 / 6.2 / 6.3）都是**绿着到的守卫**：帧、游标与断开处理在各自组的第一次红绿里就写完了。当场用定点变异确认它们不空转（4.5 那条还查出一个只在 seam ⑥ 存活的变异，人裁决定位到 seam ④ 补判据）。
 - **收尾轮补的四条**（Spec 轴查出的是判据缺失）：`test_non_utf8_output_collapses_into_replacement_characters`（seam ②③，bash delta 那条 Scenario 从 propose 起就没有判据）；`test_the_start_record_names_the_serve_entry_and_the_prompt_verbatim`（seam ⑥，`entry` 此前只有 seam ① 的进程内判据，把 CLI 的 `entry=ENTRY_SERVE` 改成 `ENTRY_RUN` 全仓不红——L-048 那条教训在 M7 复发）；`test_a_cursor_ahead_of_what_is_written_is_not_an_error` 加强成同时判「不报错」与「开始送帧」；`test_serve_without_the_http_flag_is_the_same_session`（seam ⑥，真红过——先红在 `assert 2 == 0`，`--http` 改成可选之后绿；人裁决定的是「保留 `--http` 但可选」，规格 flag 表与 delta 的 Scenario 同步补上）。
-- **9.1 的 Ctrl-C 那一半与 9.2 的模型层那一半等人跑**；四条 SIGINT 子进程判据（run 一条、chat 两条、serve 一条）本机 skip，沿用 M3 的边界。
+- **9.1 的 Ctrl-C 那一半等人跑**（Linux runner）；四条 SIGINT 子进程判据（run 一条、chat 两条、serve 一条）本机 skip，沿用 M3 的边界。9.2 的模型层那一半 2026-10-22 晚跑完（用户作用域的密钥显式注入后），观察在 `docs/verification/m7-serve-http-sse-manual.md` 最后一节；同一轮把 M6 的模型层非 tty 那一半一并跑完，查出的两条新形状记进上面的第 62 与 63 条。

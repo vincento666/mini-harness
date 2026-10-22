@@ -1,10 +1,10 @@
 # M7 人手验收（`m7-serve-http-sse`）
 
-**状态：agent 这一半跑完（2026-10-22 16:06–16:07，真 PowerShell 终端、真 `minihns serve` 子进程、真 HTTP 客户端，三场）；Ctrl-C 那一半与真模型那一半待人跑（见最后一节）。**
+**状态：agent 这一半跑完（2026-10-22 16:06–16:07，真 PowerShell 终端、真 `minihns serve` 子进程、真 HTTP 客户端，三场 mock）；真模型那一半（task 9.2）由 agent 于 2026-10-22 晚跑完（DeepSeek 官方端点，一场，见最后一节）；只剩 Ctrl-C 那一半待人跑（Linux runner）。**
 
 task 9.1 列的三件事里，「一次真事（带工具调用的会话，客户端读到底 + 中途断开再带游标重连续读）」与「一次溢出（小窗口）」跑到了；「一次取消（Ctrl-C）」在 Windows 上判不了——沿用 M3 立下的边界，seam ⑥ 那条 `test_sigint_in_a_serve_subprocess_exits_with_five` 在本机是 skip 状态，Linux runner 上才会跑。这一半补的是判据没覆盖的那一面：真客户端在真会话中途连上时到底看到什么、挂断与重连在流上留下什么痕迹、溢出那一场进程侧的收尾长什么样。
 
-跑法：工作区是 `.tmp/m7-manual/workspace/s1` / `s2` / `s3`（gitignored），日志落在各自的 `sessions/`。provider 是 mock——agent 的子进程里没有密钥，真模型那一半待人跑（最后一节）。客户端是 `httpx.AsyncClient(trust_env=False)`：本机环境里有 `HTTP_PROXY` 与带 `[::1]` 的 `NO_PROXY`，httpx 解析后者会当场抛 `InvalidURL: Invalid port: ':1]'`，与判据里同一处坑。脚本是 `.tmp/m7_serve_demo.py` 与 `.tmp/m7_probe3.py`（gitignored，不进判据）。端口是现场绑 0 拿的（10922 / 10926 / 10932）。三场都是 `--provider mock --yes`，`--yes` 是因为子进程的 stdin 不是 tty。
+跑法：工作区是 `.tmp/m7-manual/workspace/s1` / `s2` / `s3`（gitignored），日志落在各自的 `sessions/`。provider 是 mock——那三场跑在密钥注入之前，真模型那一半（task 9.2）在最后一节。客户端是 `httpx.AsyncClient(trust_env=False)`：本机环境里有 `HTTP_PROXY` 与带 `[::1]` 的 `NO_PROXY`，httpx 解析后者会当场抛 `InvalidURL: Invalid port: ':1]'`，与判据里同一处坑。脚本是 `.tmp/m7_serve_demo.py` 与 `.tmp/m7_probe3.py`（gitignored，不进判据）。端口是现场绑 0 拿的（10922 / 10926 / 10932）。三场都是 `--provider mock --yes`，`--yes` 是因为子进程的 stdin 不是 tty。
 
 ## 场景 A：一次真事，客户端从会话中途连上、读到底（session `89a14aaeeff549bf9da7330fbee9c0e8`）
 
@@ -73,18 +73,21 @@ uv run minihns serve --http -p "跑一条会睡三十秒的命令" --port 19400 
 # session/end 的 stop_reason 是 ABORTED；事件流跟着会话一起关。
 ```
 
-**模型层（task 9.2）**：真 provider 真模型下的事件流。本机可用的端点是 Strata（`S:\Develop\AIGC\Strata\Strata`，`--port 8300`）：
+**模型层（task 9.2）：2026-10-22 晚由 agent 跑完（session `6f9b3f9417b445bfa85f25ccc2ebe11a`）**
 
-```bash
-# 终端 1
-uv run minihns serve --http -p "读一下 docs/CURRENT.md，告诉我门禁四道是什么" \
-  --port 19400 --provider openai --base-url http://127.0.0.1:8300/v1 \
-  --model qwen3.8-flash-next-iq3_xxs --api-key-env MINIHNS_STRATA_KEY
-# 终端 2
-curl -N http://127.0.0.1:19400/events
-# 期望：流上的帧与 sessions/<session id>.jsonl 逐行一致；`read` 真的读了仓库里的文件；
-# 会话收尾即进程退出、stdout 只打 session id 一行。
-# 中途 Ctrl-C 一次，看流是否跟着会话一起关、退出码是不是 5。
-```
+原来这一半写的是「等人跑」，因为 agent 的子进程里没有密钥。人把密钥放进**用户作用域**的 `DEEPSEEK_API_KEY` 之后跑通了：用户作用域的环境变量不会自动进到 agent 的子进程（子进程继承的是 harness 进程的环境块），每次调用前显式取一次 `$env:DEEPSEEK_API_KEY = [Environment]::GetEnvironmentVariable("DEEPSEEK_API_KEY", "User")` 才进得去。端点也换了：本机 Strata（`127.0.0.1:8300`）要的是它自己的 `MINIHNS_STRATA_KEY`，手上没有，于是用官方 OpenAI 兼容端点 `https://api.deepseek.com/v1`、模型 `deepseek-flash`。
 
-密钥只在环境变量里（`MINIHNS_STRATA_KEY`），agent 的子进程里没有它，所以这一半只能人跑。跑完把观察补在本节下面。
+跑法：驱动脚本 `.tmp/m7_model_serve.py`（gitignored，不进判据）起 `minihns serve --http` 子进程（stdout / stderr 落文件、不接管道，避开 L-049 那条「孙进程继承管道句柄」的坑），等 stderr 出现「serve 监听」再连一个 `httpx.AsyncClient(trust_env=False)` 读 `/events` 到底，然后把帧与 `sessions/<id>.jsonl` 逐行比对。端口 19412，工作区是仓库根，`--yes`。
+
+| 观察点 | 期望 | 实际 |
+|---|---|---|
+| 流上的帧与日志逐行一致 | 一帧一条记录、`id` = `seq`、`event` = 类型、`data` = 整行 JSON | ✓ 16 条记录 / 16 帧，逐行一致（`id`、`event`、`data` 三项都比过） |
+| `read` 真的读了仓库里的文件 | 真工作区真文件 | ✓ seq 6 `tool/call name=read`、seq 7 `tool/result outcome=OK`，正文是 `# 当前状态` 那份 `docs/CURRENT.md` 的行号窗口 |
+| 会话收尾即进程退出、流跟着关 | 客户端读到流自己结束，不需要超时 | ✓ `async for` 自然结束、没有 ReadTimeout；退出码 0 |
+| stdout 只打 session id 一行 | 一行 | ✓ stdout 是 `'6f9b3f9417b445bfa85f25ccc2ebe11a\n'`，stderr 只有 `'serve 监听 http://127.0.0.1:19412\n'` |
+| 真模型下的事件序列 | 与 mock 下同一种形状 | ✓ `session/start entry=serve prompt=读一下 docs/CURRENT.md…` → `segment/start` → 两个回合（t1 调 `read`、t2 给正文）→ `segment/end(MODEL_COMPLETED, turns=2)` → `session/end(MODEL_COMPLETED, turns=2)` |
+| 中途 Ctrl-C，流跟着会话一起关、退出码 5 | — | **没跑**：Windows 上给真实子进程送 Ctrl-C 这条路从 M3 起就没通过，与 9.1 的 Ctrl-C 同一半（上面那段 Linux 跑法） |
+
+一处顺手记下的事实：`--workspace` 指错时（指到 `S:\Develop`）真模型照样跑得完，`read` 拿到的是 `PATH_NOT_FOUND`、正文「路径不存在：S:\Develop\docs\CURRENT.md」，回合照样 `turn/end(TOOL_CALLS)`、会话照样 `MODEL_COMPLETED` 收尾——不变量 B 在真模型与真 HTTP 客户端同时在场时成立。
+
+密钥只在环境变量里，脚本与日志都不含它。
