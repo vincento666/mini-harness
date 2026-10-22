@@ -37,9 +37,9 @@
 
 ## 6. 账与文档
 
-- [ ] 6.1 立 `docs/adr/0022-*.md`（照 `domain-modeling` 的 ADR-FORMAT，正文 1–3 句）：模型相关功能的完成判据含一次真实端点实测，CI 的 mock 判据不算验收；确认编号连续、与 handoff 决策 6 的关系写明。
-- [ ] 6.2 立 `docs/adr/0023-*.md`：「DSH 只回放被遮蔽区域、mini 之前发整份表层」的更正，与「猜正文短语」的代价；确认 `docs/adr/` 无 0022 / 0023 重复。
-- [ ] 6.3 在 `docs/adr/0002-deferred-refactors.md` 追加第 64 条（估算与真端点差约 4 倍，实测数字与探针结论）与第 65 条（从区间头部丢弃等于最旧内容不进摘要），并更新 `docs/CURRENT.md` 的已知缺口清单；确认第 62、63 条与本 change 的对应关系写明。
+- [x] 6.1 立 `docs/adr/0022-model-features-need-a-real-endpoint-gate.md`（照 `domain-modeling` 的 ADR-FORMAT）：模型相关功能的完成判据含一次真实端点实测，CI 的 mock 判据不算验收；编号连续（现有最大号 0021），与 handoff 决策 6 的关系写明（「隔离的是 CI，不是验收」）。
+- [x] 6.2 立 `docs/adr/0023-summary-replays-only-the-shadowed-range-and-overflow-needs-a-phrase-table.md`：更正「摘要请求送整份表层」——那是 M5 人批准的偏离（M5 tasks 9.3「改措辞，保留实现」），DSH 的形状有出处（`re/verified/dsh/node_modules/@deepseek-ai/dsh-compaction-basic/README.md` 第 119 与 187 行）；另记「猜正文短语」的代价。`docs/adr/` 里 0022 / 0023 各一份、无重复。
+- [x] 6.3 `docs/adr/0002-deferred-refactors.md` 追加第 64 条（估算与真端点差多少取决于内容、固定开销不在估算里：2.24 倍 / 约 4 倍 / 1.29 至 1.40 倍 / 195 字符那次 21 倍）与第 65 条（摘要请求装不下时从区间头部丢弃，等于最旧的内容不进摘要；实测第二次压缩只省 14%）；`docs/CURRENT.md` 的已知缺口清单更新：本 change 的进度一行、这一跑新撞出的两件没修的事（`FENCE_DENIED` 段无声、小窗口里触发线在保留线之下）、估算那条补上新的三个数、ADR 清单从二十一份改成二十三份并写明第 62 至 65 条与本 change 的对应关系（第 63 条修掉屏幕上那一半、「每一段都溢出」那一半仍在）。
 - [ ] 6.4 Learning Gate 的晋升那一半：把「模型相关功能要有真实端点判据」晋升进 `AGENTS.md`（一进一出，同时删或压缩一条旧内容），并消化 `docs/lessons.md` 收件箱（已在 15 条上限）后再收新条目。
 
 ## 7. 集成检查与收尾
