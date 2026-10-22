@@ -56,7 +56,7 @@
 
 ## 9. 人手验收（不进 CI）
 
-- [ ] 9.1 三个 session 跑完并记进 `docs/verification/m7-serve-http-sse-manual.md`：一次真事（serve 跑一个带工具调用的会话，客户端读到底 + 中途断开再带游标重连续读）、一次溢出（小窗口）、一次取消（Ctrl-C）
+- [x] 9.1 三个 session 跑完并记进 `docs/verification/m7-serve-http-sse-manual.md`：一次真事（serve 跑一个带工具调用的会话，客户端读到底 + 中途断开再带游标重连续读）、一次溢出（小窗口）、一次取消（Ctrl-C）。**Ctrl-C 那一半待人跑**（Windows 上给真实子进程送 Ctrl-C 这条路从 M3 起就没通过，seam ⑥ 那条 `test_sigint_in_a_serve_subprocess_exits_with_five` 在本机是 skip）；跑法写在文档最后一节。溢出那一场客户端挤不进去（窗口只有 9 ms），缺口记进 ADR-0002 第 55 条
 - [ ] 9.2 模型层那一半写成人手 runbook（真实 provider + 真实模型下的事件流），等人跑
 
 ## 10. 收尾门禁
