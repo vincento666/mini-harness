@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -26,6 +27,12 @@ SERVE_HOSTS: tuple[str, ...] = ("127.0.0.1", "0.0.0.0")
 EVENTS_PATH = "/events"
 # 日志是追加写的文件，事件流跟它的方式是轮询偏移（design D6）。
 TAIL_POLL_SECONDS = 0.02
+# 续读游标的两个来源与优先级：查询参数覆盖 `Last-Event-ID` header（event-stream 规格）。
+CURSOR_QUERY = "from"
+CURSOR_HEADER = "Last-Event-ID"
+# 没有游标时从第一条记录之前开始：日志的第一条 `seq` 是 0。
+NO_CURSOR = -1
+_CURSOR_DIGITS = re.compile(r"[0-9]+")
 
 
 @dataclass(frozen=True)
@@ -44,6 +51,23 @@ def _sse_frame(record: EventRecord) -> bytes:
         f"event: {record.type}\n"
         f"data: {json.dumps(record.model_dump(mode='json'), ensure_ascii=False)}\n\n"
     ).encode()
+
+
+def _cursor(request: web.Request) -> int:
+    """读出续读游标：`?from=<seq>` 覆盖 `Last-Event-ID`，两者都没有时从第一条记录开始。
+
+    游标是「读到过的那条记录的 `seq`」，所以第一帧是它之后的一条；日志的第一条 `seq` 是 0，
+    所以 `0` 是合法游标。负数或非整数是这条请求的参数错误，与会话无关：aiohttp 把
+    `HTTPBadRequest` 变成 400 响应。
+    """
+    raw = request.query.get(CURSOR_QUERY)
+    if raw is None:
+        raw = request.headers.get(CURSOR_HEADER)
+    if raw is None:
+        return NO_CURSOR
+    if not _CURSOR_DIGITS.fullmatch(raw) or int(raw) < 0:
+        raise web.HTTPBadRequest(text=f"INVALID_ARGUMENT: 游标不是非负整数：{raw}")
+    return int(raw)
 
 
 class ServeServer:
@@ -84,9 +108,10 @@ class ServeServer:
         """`GET /events`：从日志开头跟到会话收尾，一条记录一帧。"""
         # 绑定与 `attach` 之间没有 await，请求处理器不可能在日志存在之前跑起来。
         assert self._log_path is not None
+        # 游标在 prepare 之前判：坏游标是 400 响应，不是一个开了一半的事件流。
+        tail = LogTail(self._log_path, after=_cursor(request))
         response = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
         await response.prepare(request)
-        tail = LogTail(self._log_path)
         while True:
             records = tail.read_new()
             if isinstance(records, LogReadFailure):

@@ -38,7 +38,9 @@
 
 **D5 帧的形状：`data` 是整行记录的 JSON。** `id` 与 `event` 是同一份 `seq` 与类型的 SSE 路由字段。这样「事件流与 JSONL 内容一致」可逐字段判；只送 payload 会丢掉 `ts` 与 `schema_version`，完成判据就判不动。
 
-**D6 追读用增量 tail，不放大第 32 条。** `events/reader.py` 加一个 tail 入口：记住字节偏移，只解析新追加的完整行，未完成的残行留在缓冲（追加写与读并发时读半行是真实风险）。游标 → 帧的映射：客户端给 `n`，服务端从第一条 `seq > n` 开始送；冷启动那一次扫描是续读连接的代价，不是每帧的代价。
+**D6 追读用增量 tail，不放大第 32 条。** `events/reader.py` 加一个 tail 入口：记住字节偏移，只解析新追加的完整行，未完成的残行留在缓冲（追加写与读并发时读半行是真实风险）。游标 → 帧的映射：客户端给 `n`，服务端从第一条 `seq > n` 开始送；冷启动那一次扫描是续读连接的代价，不是每帧的代价。实测事实：真实子进程里撞不上正在写的一半行——把「只消费到最后一个换行符」改坏的变异在 seam ⑥ 存活（20000 汉字的超大记录跑三次加全量都绿），这条判据落在 seam ④ 才杀得死。
+
+**D6b 游标允许 0（人裁决）。** 日志的第一条 `seq` 是 0，「收到第一条之后断开」是常见情形：`Last-Event-ID: 0` 必须合法，否则客户端只能不带游标重连、重复收一帧。负数与非整数是 400。DSH 的对应形状是 `SessionLogOffset(cursor + 1)` 与 `follows: (l, r) => r === l + 1`（`dsh-api-session-controller/lib/typert.host.js:1530`、`dsh-api-session-controller/lib/types/client/transport.js:63`）。
 
 **D7 代码落点：`cli/serve.py` 新增，`cli/main.py` 加 `serve` 子命令。** HTTP 路由、SSE 分帧、游标解析、断开处理都住在入口层；内核只多一个 `ENTRY_SERVE` 常量与 `SessionEntry` Literal 的一个值。理由与 chat 的 D11 同一条：stdout / 事件流是日志的投影，内核不需要知道有人在看着。
 

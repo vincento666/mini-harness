@@ -49,8 +49,10 @@ class LogTail:
     追加者正在写的那一行可能只落了一半：残行留在偏移之后，下一次读再看，事件流不会送出半条记录。
     """
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, after: int = -1) -> None:
+        """`after` 是续读游标：`seq` 不大于它的记录不再送出。默认 -1 是从第一条记录开始。"""
         self._path = path
+        self._after = after
         self._offset = 0
 
     def read_new(self) -> list[EventRecord] | LogReadFailure:
@@ -69,8 +71,8 @@ class LogTail:
             # 连一个换行符都没有：一个字节都不消费。
             return []
         self._offset += end + 1
-        try:
-            lines = chunk[: end + 1].decode("utf-8").splitlines()
-        except UnicodeDecodeError as exc:
-            return LogReadFailure(path=self._path, detail=f"{self._path}: {exc}")
-        return _records_from_lines(self._path, lines)
+        # 消费的一定是整行：残行没有换行符，不会被送进解析，所以这里不需要防拆开的多字节字符。
+        records = _records_from_lines(self._path, chunk[: end + 1].decode("utf-8").splitlines())
+        if isinstance(records, LogReadFailure):
+            return records
+        return [record for record in records if record.seq > self._after]

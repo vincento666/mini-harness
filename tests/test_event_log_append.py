@@ -7,7 +7,7 @@ import os
 import stat
 from pathlib import Path
 
-from mini_harness.events import EventLog, LogReadFailure, LogWriteFailure, read_events
+from mini_harness.events import EventLog, LogReadFailure, LogTail, LogWriteFailure, read_events
 
 
 def test_appended_record_carries_the_six_envelope_fields(tmp_path: Path) -> None:
@@ -112,3 +112,54 @@ def test_unwritable_session_dir_is_a_log_write_failure(tmp_path: Path) -> None:
     assert isinstance(outcome, LogWriteFailure)
     assert outcome.code == "LOG_WRITE_FAILED"
     assert str(blocker / "sessions") in outcome.detail
+
+
+def test_the_tail_consumes_nothing_of_a_half_written_line(tmp_path: Path) -> None:
+    """追加者写到一半时 tail 一个字节都不消费那一行；补完之后读得到。
+
+    判据写在 ④ 而不是 ⑥：真实子进程里撞不上正在写的一半行（把「只消费到最后一个换行符」改坏的
+    变异在 ⑥ 存活），这一行的形状在 ④ 才判得动。
+    """
+    log = EventLog.create(session_dir=tmp_path, session_id="sess-tail")
+    log.append("session/start", {})
+    torn = json.dumps(
+        {
+            "schema_version": 1,
+            "type": "turn/start",
+            "session_id": "sess-tail",
+            "seq": 1,
+            "ts": "2026-10-22T00:00:00+00:00",
+            "payload": {"turn_id": "t1"},
+        },
+        ensure_ascii=False,
+    )
+    half = len(torn) // 2
+    with log.path.open("a", encoding="utf-8") as handle:
+        handle.write(torn[:half])
+
+    tail = LogTail(log.path)
+    first = tail.read_new()
+    assert isinstance(first, list)
+    assert [record.seq for record in first] == [0], "残行不该被消费"
+
+    with log.path.open("a", encoding="utf-8") as handle:
+        handle.write(torn[half:] + "\n")
+
+    rest = tail.read_new()
+    assert isinstance(rest, list)
+    assert [record.seq for record in rest] == [1]
+    assert rest[0].payload == {"turn_id": "t1"}
+
+
+def test_a_corrupt_line_is_a_log_read_failure_for_the_tail_too(tmp_path: Path) -> None:
+    """tail 入口的坏行与全量入口同形：是结果，不是异常。"""
+    log = EventLog.create(session_dir=tmp_path, session_id="sess-8")
+    log.append("session/start", {})
+    with log.path.open("a", encoding="utf-8") as handle:
+        handle.write("{not json}\n")
+
+    outcome = LogTail(log.path).read_new()
+
+    assert isinstance(outcome, LogReadFailure)
+    assert outcome.code == "LOG_UNREADABLE"
+    assert str(log.path) in outcome.detail

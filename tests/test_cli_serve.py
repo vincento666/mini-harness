@@ -143,6 +143,28 @@ async def _get(port: int, path: str) -> httpx.Response:
     raise AssertionError(f"{port} 上没有开始监听的 serve 进程")
 
 
+async def _read_first_frames(port: int, count: int) -> list[dict[str, str]]:
+    """连上事件流、读满 `count` 帧就断开：离开 `async with` 就是客户端挂断。"""
+    async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}", trust_env=False) as client:
+        for _ in range(200):
+            try:
+                async with client.stream("GET", "/events", timeout=30) as response:
+                    frames: list[dict[str, str]] = []
+                    pending: list[str] = []
+                    async for line in response.aiter_lines():
+                        pending.append(line)
+                        if line:
+                            continue
+                        frames.extend(_parse_sse(pending))
+                        pending = []
+                        if len(frames) >= count:
+                            return frames[:count]
+                    return frames
+            except httpx.ConnectError:
+                await asyncio.sleep(0.02)
+    raise AssertionError(f"{port} 上没有开始监听的 serve 进程")
+
+
 def test_serve_requires_a_non_empty_prompt(tmp_path: Path) -> None:
     """prompt 是 serve 的必填项：缺它的失败发生在会话开始之前。"""
     result = _cli(
@@ -353,6 +375,135 @@ async def test_a_path_that_is_not_the_event_stream_is_404_and_the_session_finish
     assert exit_code == 0
     assert records[-1]["type"] == "session/end"
     assert records[-1]["payload"]["stop_reason"] == "MODEL_COMPLETED"
+
+
+async def test_reconnecting_with_last_event_id_continues_after_that_record(
+    tmp_path: Path,
+) -> None:
+    """带 `Last-Event-ID: n` 重连：第一帧是 n+1，两次连接合计恰好把会话记录覆盖一次。"""
+    port = _free_port()
+    process = _serve_process(tmp_path, port, _slow_fixture(tmp_path))
+    try:
+        first = await _read_first_frames(port, 2)
+        cursor = int(first[-1]["id"])
+        _, second = await _read_stream(port, last_event_id=str(cursor))
+        exit_code = process.wait(timeout=60)
+    finally:
+        if process.poll() is None:
+            process.terminate()
+
+    records = _log_records(tmp_path)
+    assert exit_code == 0
+    assert int(second[0]["id"]) == cursor + 1
+    assert [int(frame["id"]) for frame in first + second] == list(range(len(records)))
+
+
+async def test_the_from_query_overrides_the_last_event_id_header(tmp_path: Path) -> None:
+    """`?from=2` 与 `Last-Event-ID: 5` 同时在场时以 `from` 为准：第一帧的 `id` 是 3。"""
+    port = _free_port()
+    process = _serve_process(tmp_path, port, _slow_fixture(tmp_path))
+    try:
+        status, frames = await _read_stream(port, last_event_id="5", query={"from": "2"})
+        exit_code = process.wait(timeout=60)
+    finally:
+        if process.poll() is None:
+            process.terminate()
+
+    assert status == 200
+    assert exit_code == 0
+    assert int(frames[0]["id"]) == 3
+
+
+async def test_a_cursor_ahead_of_what_is_written_is_not_an_error(tmp_path: Path) -> None:
+    """游标指向还没写出的 `seq`：不报错、不 400，会话照常跑到收尾。
+
+    「后续记录写出时开始送帧」那一半由 `test_reconnecting_with_last_event_id_...` 判：它在中途
+    断开后重连，拿到的正是断开之后才写出的记录。
+    """
+    port = _free_port()
+    process = _serve_process(tmp_path, port, _slow_fixture(tmp_path))
+    try:
+        status, frames = await _read_stream(port, query={"from": "10000"})
+        exit_code = process.wait(timeout=60)
+    finally:
+        if process.poll() is None:
+            process.terminate()
+
+    records = _log_records(tmp_path)
+    assert status == 200
+    assert frames == []
+    assert exit_code == 0
+    assert records[-1]["type"] == "session/end"
+
+
+async def test_a_cursor_that_is_negative_or_not_an_integer_is_400(tmp_path: Path) -> None:
+    """游标是负数或非整数：这条请求 400，会话不受影响、日志完整。`0` 是合法游标。"""
+    port = _free_port()
+    process = _serve_process(tmp_path, port, _slow_fixture(tmp_path))
+    try:
+        statuses = [
+            (await _read_stream(port, query={"from": cursor}))[0] for cursor in ("abc", "-1", "1x")
+        ]
+        _, zeroed = await _read_stream(port, last_event_id="0")
+        exit_code = process.wait(timeout=60)
+    finally:
+        if process.poll() is None:
+            process.terminate()
+
+    records = _log_records(tmp_path)
+    assert statuses == [400, 400, 400]
+    assert int(zeroed[0]["id"]) == 1
+    assert exit_code == 0
+    assert records[-1]["type"] == "session/end"
+
+
+def _big_fixture(cwd: Path) -> Path:
+    """几条很大的记录：一行超过写缓冲（8192 字节）时才会被拆成多次底层写。
+
+    慢的那一条照 `_slow_fixture`：客户端要在会话进行中连上，才可能撞上正在写的一行。
+    """
+    fixture = cwd / "big.json"
+    fixture.write_text(
+        json.dumps(
+            [
+                {
+                    "content": "长" * 20000,
+                    "finish_reason": "tool_calls",
+                    "tool_calls": [
+                        {"id": "c1", "name": "bash", "arguments": {"command": "python slowly.py"}}
+                    ],
+                },
+                {"content": "长" * 20000, "finish_reason": "stop"},
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    return fixture
+
+
+async def test_a_half_written_line_is_never_streamed(tmp_path: Path) -> None:
+    """追加写与读并发时帧数仍等于日志行数：记录很大时残行真的可能出现。
+
+    tail 若消费了半行，那一行解析失败、事件流提前结束，帧数就少于行数、`data` 也解析不动。
+    """
+    (tmp_path / "slowly.py").write_text("import time\n\ntime.sleep(2)\n", encoding="utf-8")
+    port = _free_port()
+    process = _serve_process(tmp_path, port, _big_fixture(tmp_path))
+    try:
+        status, frames = await _read_stream(port)
+        exit_code = process.wait(timeout=60)
+    finally:
+        if process.poll() is None:
+            process.terminate()
+
+    records = _log_records(tmp_path)
+    assert status == 200
+    assert exit_code == 0
+    assert len(frames) == len(records)
+    assert [int(frame["id"]) for frame in frames] == list(range(len(records)))
+    for frame, record in zip(frames, records, strict=True):
+        assert json.loads(frame["data"]) == record
 
 
 def test_stdout_is_only_the_session_id_and_stderr_says_where_it_listens(tmp_path: Path) -> None:

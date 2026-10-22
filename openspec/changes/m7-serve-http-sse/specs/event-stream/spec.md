@@ -16,7 +16,7 @@
 - **THEN** 响应状态码为 404 且不是事件流，会话照常跑到自己的收尾
 
 ### Requirement: 续读游标是日志的 seq
-系统 SHALL 支持从给定 `seq` 之后续读：请求带 SSE 标准的 `Last-Event-ID` 时 SHALL 从该 `seq` 之后开始；带查询参数 `from=<seq>` 时 SHALL 以它为准，且它 MUST 覆盖 `Last-Event-ID`；两者都没有时 SHALL 从第一条记录开始。游标指向尚未写出的 `seq` 时 MUST NOT 报错，SHALL 在后续记录写出时开始送帧。游标不是正整数时该请求 SHALL 是 400，会话不受影响。
+系统 SHALL 支持从给定 `seq` 之后续读：请求带 SSE 标准的 `Last-Event-ID` 时 SHALL 从该 `seq` 之后开始；带查询参数 `from=<seq>` 时 SHALL 以它为准，且它 MUST 覆盖 `Last-Event-ID`；两者都没有时 SHALL 从第一条记录开始。游标指向尚未写出的 `seq` 时 MUST NOT 报错，SHALL 在后续记录写出时开始送帧。游标是负数或非整数时该请求 SHALL 是 400，会话不受影响；`0` 是合法游标（日志的第一条 `seq` 是 0）。
 
 #### Scenario: 断开之后续读不重复不丢
 - **WHEN** 客户端读到 `seq` 为 n 的帧后断开，再带 `Last-Event-ID: n` 重连并读到底
@@ -29,6 +29,14 @@
 #### Scenario: 游标指向还没写出的位置
 - **WHEN** 会话还在跑，客户端带 `?from=<比已写出的条数大的 seq>` 连接
 - **THEN** 请求不报错、不返回 400，客户端在后续记录写出时开始收到帧
+
+#### Scenario: 游标是负数或非整数
+- **WHEN** 客户端带 `?from=abc` 或 `?from=-1` 连接
+- **THEN** 该请求的状态码是 400，会话不受影响、日志完整
+
+#### Scenario: 游标 0 是从第一条记录之后续读
+- **WHEN** 客户端带 `Last-Event-ID: 0` 连接
+- **THEN** 第一帧的 `id` 是 1
 
 ### Requirement: 客户端断开不改变会话
 系统 MUST NOT 因客户端断开、慢读或从未连接而改变会话：会话 SHALL 继续跑到它自己的收尾，日志 SHALL 完整。断开 MUST NOT 产生任何事件，也 MUST NOT 成为取消信号。多个客户端 SHALL 各按自己的游标读同一条流，互不遮蔽。
