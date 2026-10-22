@@ -14,6 +14,7 @@ from mini_harness.events.fold import (
     AssembledContext,
     assembly_points,
     fold,
+    fold_range,
 )
 from mini_harness.events.reader import read_events
 from tool_harness import DONE, run_fixture_session
@@ -724,3 +725,74 @@ def test_an_assembly_point_without_a_turn_start_carries_an_empty_turn_id() -> No
     ]
 
     assert [point.turn_id for point in assembly_points(records)] == [""]
+
+
+def _range_events() -> list[EventRecord]:
+    """一段够长的对话：seq 3 与 4 是本次要遮蔽的那一段，seq 6 是保留尾部。"""
+    return [
+        _rec(0, "session/start", {"prompt": "最早的那条人话", "tools": ["read"]}),
+        _rec(1, "turn/start", {"turn_id": "t1"}),
+        _rec(
+            2,
+            "model/response",
+            {"turn_id": "t1", "content": "遮蔽区之前的回复", "tool_calls": []},
+        ),
+        _rec(3, "user/message", {"content": "要进摘要的那条输入"}),
+        _rec(
+            4,
+            "model/response",
+            {"turn_id": "t2", "content": "要进摘要的那段回复", "tool_calls": []},
+        ),
+        _rec(
+            5,
+            "tool/result",
+            {
+                "turn_id": "t2",
+                "tool_call_id": "c1",
+                "outcome": "OK",
+                "content": "要进摘要的工具结果",
+            },
+        ),
+        _rec(6, "user/message", {"content": "保留尾部的那条输入"}),
+    ]
+
+
+def test_folding_a_seq_range_yields_only_that_ranges_conversation() -> None:
+    """seam ④：按 seq 闭区间折出对话——区间外的记录一条都不进来。"""
+    messages = fold_range(_range_events(), start=3, end=5)
+
+    assert [(message.role, message.content) for message in messages] == [
+        ("user", "要进摘要的那条输入"),
+        ("assistant", "要进摘要的那段回复"),
+        ("tool", "要进摘要的工具结果"),
+    ]
+
+
+def test_a_seq_range_excludes_the_protected_events_it_covers() -> None:
+    """区间把 `session/start` 与既有 `compaction/summary` 盖住时，它们不折成消息。"""
+    records = [
+        _rec(0, "session/start", {"prompt": "最早的那条人话", "tools": []}),
+        _rec(1, "model/response", {"turn_id": "t1", "content": "第一段回复", "tool_calls": []}),
+        _rec(
+            2,
+            "compaction/summary",
+            {
+                "turn_id": "t1",
+                "shadowed_range": {"start": 1, "end": 1},
+                "summary": "上一轮的摘要",
+                "tokens_before": 40,
+                "tokens_after": 10,
+            },
+        ),
+        _rec(3, "model/response", {"turn_id": "t2", "content": "第二段回复", "tool_calls": []}),
+    ]
+
+    messages = fold_range(records, start=0, end=3)
+
+    assert [message.content for message in messages] == ["第一段回复", "第二段回复"]
+    assert [message.role for message in messages] == ["assistant", "assistant"]
+
+
+def test_an_empty_seq_range_folds_to_no_messages() -> None:
+    """起点大于终点的区间折出空对话，不报错也不猜。"""
+    assert fold_range(_range_events(), start=5, end=4) == []

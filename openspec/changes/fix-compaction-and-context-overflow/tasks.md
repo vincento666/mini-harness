@@ -2,8 +2,8 @@
 
 ## 1. 折叠层：按 seq 区间折出对话（seam ④）
 
-- [ ] 1.1 红：写判据——给定一份日志与一个 seq 闭区间，折出的消息只含该区间内的对话记录；`session/start` 与既有 `compaction/summary` 不参与区间；区间外（含保留尾部）的记录一条都不出现。跑 `uv run pytest -q` 确认它红。
-- [ ] 1.2 绿：在 `context/` 提供该入口（复用既有折叠与投影语义，不新增第二套折叠），1.1 变绿且 `uv run mypy --strict src` 无新错。
+- [x] 1.1 红：写判据——给定一份日志与一个 seq 闭区间，折出的消息只含该区间内的对话记录；`session/start` 与既有 `compaction/summary` 不参与区间；区间外（含保留尾部）的记录一条都不出现。跑 `uv run pytest -q` 确认它红。
+- [x] 1.2 绿：在 `events/fold.py` 提供该入口（复用既有 `fold` 与投影语义，不新增第二套折叠），1.1 变绿且 `uv run mypy --strict src` 无新错。
 
 ## 2. 摘要请求只装被遮蔽那一段（seam ①）
 
