@@ -429,7 +429,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Evidence: 本轮搭 `.tmp/m5-manual/ws` 时的第一次尝试
 - Next use: 命令行上不写非 ASCII 路径；要读非 ASCII 文件名就走内置工具或 ASCII 通配符
 - Promotion candidate: 工具用法，无需进 AGENTS.md
-- Status: inbox
+- Status: merged into L-049（2026-10-22 M7 收尾消化：同一族——命令行与环境层的工具坑。M7 在同一族里又踩三处，合成一条 L-049；「命令行上不写非 ASCII 路径」这一格由 L-049 的 Next use 承载）
 
 ### M5 收尾轮的消化记录（2026-10-21，tasks 8.3）
 
@@ -544,6 +544,40 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 **提交纪律的欠账记进 ADR-0002，不在这里立规则**：`cf1543d` / `0f49b39` 没有门禁行，`62ccd00` / `0afa628` / `ce87b9a` 只记了四道里的一到两道。AGENTS.md「一次提交算完成 = 四道全绿」本来就写着，本轮是没照自己写的做，属执行纪律不是新规则。
 
 收件箱：14 条（L-005 / L-019 / L-025 / L-036 / L-037 / L-039 / L-040 / L-041 / L-042 / L-043 / L-045 / L-046 / L-047 / L-048），空闲 1 条。
+
+### L-049
+- Date: 2026-10-22
+- Context: M7 组 9 人手验收的脚手架（`.tmp/m7_serve_demo.py` 驱动三个 `minihns serve` 子进程）与 seam ⑥ 那 23 条 httpx 判据
+- Observation: 三处都不是代码缺陷，是本机环境，且每一处都先伪装成缺陷。① 驱动脚本起的孙进程继承 pwsh 的管道句柄时，外层 `… | Out-String` 永远等不到 EOF，第一次跑法在 240 s 超时里卡死；把孙进程的 stdout / stderr 重定向到文件、只把驱动自己的输出送进管道，才通。② 本机有 `HTTP_PROXY=http://127.0.0.1:7897` 与 `NO_PROXY=localhost,127.0.0.1,::1,[::1]`（大小写各一份，重复键连 `Get-ChildItem env:` 都报「已添加了具有相同键的项」），httpx 默认 `trust_env=True`，把 `[::1]` 当 host:port 解析，当场 `InvalidURL: Invalid port: ':1]'`——一整轮判据红在与 serve 无关的地方。③ 对一个还没开始监听的 loopback 端口发起 TCP connect，本机不是立刻被拒而是黑洞到超时：把 fixture 从 16 KB 放宽到 40 MB（会话日志全程 9 ms）都没救回「溢出那一场连上客户端」
+- Evidence: `.tmp/m7-manual/report.txt` 第 3 场记为「无客户端」；`docs/verification/m7-serve-http-sse-manual.md` 别扭第 1 与第 3 条；`tests/test_cli_serve.py` 的 `_read_stream` 与 `_get` 里的 `trust_env=False`；缺口记进 `docs/adr/0002-deferred-refactors.md` 第 55 条
+- Next use: seam ⑥ 的 HTTP 客户端一律 `trust_env=False`；人手验收的驱动脚本把子进程输出重定向到文件、不接管道；写「会话进行中能连上」这类判据之前先在本机测一次 connect 行为，测出来是黑洞就不要写这条判据，改记缺口
+- Promotion candidate: 工具与环境事实，去处是 runbook 写法与 ADR，不是全局规则
+- Status: inbox（收 L-040 进来：同一族，M7 又踩三处）
+
+### L-050
+- Date: 2026-10-22
+- Context: M7 组 2 实现 `ServeServer.bind()`，task 2.5「端口被占」那条判据
+- Observation: aiohttp 3.14 要求 `runner.setup()` 先于构造 `TCPSite`，顺序写错第一次跑就 `RuntimeError: Call runner.setup() before making a site`（`BaseSite.__init__` 在 `runner.server is None` 时抛）。2.5 的红不是断言不符而是 exit 1。这类错误在正常路径上看不见：绑定成功、会话跑完、事件流正常，只有失败路径才经过 `runner.cleanup()` 那一段。2.1 到 2.4 的实现照正常路径写完，一路绿到 2.5 才暴露
+- Evidence: 提交 `b862ed2` 的提交信息（「2.5 的红不是断言不符而是 exit 1」）；`src/mini_harness/cli/serve.py` 的 `bind()` 把 `runner.setup()` 与 `site.start()` 一起包进 `try / except OSError`；判据 `test_an_occupied_port_fails_before_the_session_starts`
+- Next use: 引入新库或新外部依赖时先写「它失败时怎样」的判据（端口被占、连接被拒、文件读不动），再写正常路径；失败路径没有判据，构造顺序与清理顺序的错误就一路绿到线上
+- Promotion candidate: 与四规 #4「修 bug 先写能复现它的测试」同族，本轮不占 AGENTS.md 额度
+- Status: inbox
+
+### M7 收尾轮的消化记录（2026-10-22，tasks 10.3）
+
+**合并一条**：L-040 并入 L-049（同一件事——命令行与环境层的工具坑；M7 在同一族里踩到三处，比 M5 那一处更值钱）。
+
+**留存十三条**：L-005（家族头；M7 的 `--port` 上界与 `--host` 词表判据挂在它下面，变异 7 与 11 正是「改这个数就红」）、L-019（变异轮全程用 `edit` 还原、每次先 read 再 edit，没再踩也没省）、L-025（M7 的 manual 照它分 harness 层与「待人跑的那一半」，模型层仍等人类跑完 9.2）、L-036（10.1 加强的那条「游标超前」判据两侧不同源：一侧是 SSE 帧的 `id`，一侧是 `read_events` 读出的日志 `seq`）、L-037（M7 没有「修完不引起红」的事件；`9c226ee` 删的是不可达分支，全绿是应有结果）、L-039（M7 有八条绿着到的守卫，全部在提交信息里如实标注，变异 5 / 6 / 15 兑现了其中三条的价值）、L-041（M7 的 `entry` 与 `prompt` 判据是判值的断言，不是判存在的）、L-042（本轮 15 个变异里 14 个跑全量、1 个定点，定点那条在 mutation 文档里写明只跑 `tests/test_cli_serve.py` 与其代价）、L-043（配置文件的 BOM 仍未裁决，与 ADR-0018 的 Consequences 一起待办）、L-045（M7 的 4.4 与 10.1 两处「规格 ↔ 实现分叉」都是先对齐规格再改判据：游标允许 0、`--http` 保留但可选）、L-046（M7 第 2 场第一次跑红在 `log_records()` 断言「只有一份日志」——上一场的 stale log 没清；runbook 从此写明场间 `Remove-Item -Recurse -Force` 那一行）、L-047（M7 的 `tasks.md` 写「sync 六份 delta 主规格」，这个 change 实际只有四份 delta：`cli` / `turn-loop` / `bash-tool` / `event-stream`——全称量词与计数都要按工件清单核对）、L-048（**第二次复发**：`entry` 在 M7 只有 seam ① 的判据，变异 8 把 `ENTRY_SERVE` 换成 `ENTRY_RUN` 时 21 条 serve 判据一条都不红，10.1 才补上 seam ⑥ 那两条）。
+
+**Active Lesson 1 补一条证据**（不占收件箱额度）：`SessionEntry` 加了第三个值 `serve`，seam ① 的「每个值可达」判据当场就写（1.2），但「这个值在 CLI 黑盒里长什么样」到 10.1 才补上——词表加一个值，seam ① 与 seam ⑥ 各欠一条判据，不是只欠一条。
+
+**新收两条**：L-049、L-050。
+
+**AGENTS.md 本轮不晋升（NO-PROMOTION）**：本轮三条候选都不是独立的新规则——L-050 是四规 #4 在「新外部依赖」上的收紧，L-049 是工具与环境事实（去处是 runbook 与 ADR-0002 第 55 条），L-048 是 Active Lesson 1 与 L-005 家族的收紧。**但 L-048 已复发两次**（M6 变异 10、M7 变异 8），若 M10 的委派入口再复发一次，它就是这个额度该给的那一条：规则草案「新入口的判据必须落在新入口自己的 seam 上，进程内直调不算」。
+
+**提交纪律的欠账记进 ADR-0002，不在这里立规则**：规划提交 `8a5cb14` / `414ccf4` 没有门禁行；`fd1986a` 声明 6.1–6.3 却带着 6.4 的判据，紧随的 `3d85b11` 自述「与上一个提交同一份工作树」——一个红绿循环拆成两个提交、门禁只跑一次；`d5231b8` 跨 seam ② 与 ⑥ 加文档打包且没写理由。都在 `docs/adr/0002-deferred-refactors.md` 的「M7 的提交纪律欠账」一节。
+
+收件箱：15 条（L-005 / L-019 / L-025 / L-036 / L-037 / L-039 / L-041 / L-042 / L-043 / L-045 / L-046 / L-047 / L-048 / L-049 / L-050），**到 15 条上限**：M10 收尾先消化再收新条目。
 
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 - 每个里程碑收尾扫一次，**允许输出 `NO-PROMOTION`**（没有可复用信号就不写条目）。
