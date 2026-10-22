@@ -401,6 +401,9 @@ async def _serve_session(*, args: argparse.Namespace, prompt: str) -> int:
             EXIT_INVALID_ARGUMENT,
         )
 
+    # 监听地址打在 stderr：stdout 归 session id（event-stream 规格）。
+    sys.stderr.write(f"serve 监听 http://{server.host}:{server.port}\n")
+
     prepared = _prepare_or_fail(args)
     if isinstance(prepared, int):
         await server.close()
