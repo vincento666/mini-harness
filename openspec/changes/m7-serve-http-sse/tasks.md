@@ -36,9 +36,9 @@
 
 ## 6. serve 的会话收尾就是进程退出（seam ① 与 ⑥）
 
-- [ ] 6.1 seam ⑥：预算溢出在 serve 里就是进程退出——`error/context`、`turn/end`、`segment/end`、`session/end` 都在盘上，退出码 4
-- [ ] 6.2 seam ⑥：provider 失败在 serve 里就是进程退出——`error/model` 与 `session/end` 在盘上，退出码 1
-- [ ] 6.3 seam ⑥：围栏拒绝在 serve 里就是进程退出——`error/fence` 与 `session/end` 在盘上，退出码 3
+- [x] 6.1 seam ⑥：预算溢出在 serve 里就是进程退出——`error/context`、`turn/end`、`segment/end`、`session/end` 都在盘上，退出码 4
+- [x] 6.2 seam ⑥：provider 失败在 serve 里就是进程退出——`error/model` 与 `session/end` 在盘上，退出码 1
+- [x] 6.3 seam ⑥：围栏拒绝在 serve 里就是进程退出——`error/fence` 与 `session/end` 在盘上，退出码 3
 - [ ] 6.4 seam ① + ⑥：取消在 serve 里就是进程退出——seam ① 用进程内 cancel 判 `session/end` 的 `ABORTED`；seam ⑥ 的 SIGINT 子进程判据在 Windows 上 skip、Linux runner 上跑
 
 ## 7. 收账：装配路与失败码表（第 40 与 50 条）

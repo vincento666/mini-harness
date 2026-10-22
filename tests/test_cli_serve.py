@@ -4,12 +4,17 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import signal
 import socket
+import sys
+import time
 from collections.abc import Iterable
 from pathlib import Path
 from subprocess import Popen
 
 import httpx
+import pytest
 
 from cli_blackbox import _cli, _cli_process
 from mini_harness.events.vocabulary import is_known_type
@@ -570,6 +575,189 @@ async def test_two_clients_read_the_same_stream_without_shadowing_each_other(
     assert len(early) == 2
     assert status == 200
     assert [int(frame["id"]) for frame in frames] == list(range(len(records)))
+
+
+def _write_fixture(cwd: Path) -> Path:
+    """一条要写文件的会话：围栏在 `read-only` 下会当场拒绝。"""
+    fixture = cwd / "write.json"
+    fixture.write_text(
+        json.dumps(
+            [
+                {
+                    "content": "写一个文件",
+                    "finish_reason": "tool_calls",
+                    "tool_calls": [
+                        {
+                            "id": "c1",
+                            "name": "write",
+                            "arguments": {"file_path": "a.md", "content": "x\n"},
+                        }
+                    ],
+                },
+                {"content": "算了", "finish_reason": "stop"},
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    return fixture
+
+
+def test_budget_overflow_in_serve_is_a_process_exit(tmp_path: Path) -> None:
+    """溢出在 serve 里就是进程退出：收尾四件都在盘上，退出码 4，stdout 仍只有 session id。"""
+    result = _cli(
+        "serve",
+        "--http",
+        "-p",
+        "任务" * 1000,
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--window",
+        "66000",
+        "--reserve",
+        "100",
+        "--port",
+        str(_free_port()),
+        cwd=tmp_path,
+    )
+
+    records = _log_records(tmp_path)
+    types = [record["type"] for record in records]
+    assert result.returncode == 4
+    assert "CONTEXT_WINDOW_EXCEEDED" in result.stderr
+    assert types[-4:] == ["error/context", "turn/end", "segment/end", "session/end"]
+    assert records[-4]["payload"]["code"] == "CONTEXT_WINDOW_EXCEEDED"
+    assert result.stdout.splitlines() == [_log_files(tmp_path)[0].stem]
+
+
+def test_provider_failure_in_serve_is_a_process_exit(tmp_path: Path) -> None:
+    """provider 失败在 serve 里就是进程退出：`error/model` 与 `session/end` 在盘上，退出码 1。"""
+    env = dict(os.environ)
+    env["MINIHNS_TEST_KEY"] = "sk-test-0123456789abcdef"
+    result = _cli(
+        "serve",
+        "--http",
+        "-p",
+        "任务",
+        "--provider",
+        "openai",
+        "--base-url",
+        "http://127.0.0.1:9/v1",
+        "--model",
+        "test-model",
+        "--api-key-env",
+        "MINIHNS_TEST_KEY",
+        "--port",
+        str(_free_port()),
+        "--yes",
+        cwd=tmp_path,
+        env=env,
+    )
+
+    records = _log_records(tmp_path)
+    types = [record["type"] for record in records]
+    assert result.returncode == 1
+    assert "PROVIDER_TRANSPORT" in result.stderr
+    assert "Traceback" not in result.stderr
+    error = next(record for record in records if record["type"] == "error/model")
+    assert error["payload"]["code"] == "PROVIDER_TRANSPORT"
+    # 一次性入口：provider 失败塌成会话收尾，不像 chat 那样段级收尾后回到提示符。
+    assert types.count("error/model") == 1
+    assert records[-1]["type"] == "session/end"
+
+
+def test_fence_denial_in_serve_is_a_process_exit(tmp_path: Path) -> None:
+    """围栏拒绝在 serve 里就是进程退出：`error/fence` 与 `session/end` 在盘上，退出码 3。"""
+    result = _cli(
+        "serve",
+        "--http",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(_write_fixture(tmp_path)),
+        "--sandbox",
+        "read-only",
+        "--port",
+        str(_free_port()),
+        cwd=tmp_path,
+    )
+
+    records = _log_records(tmp_path)
+    types = [record["type"] for record in records]
+    assert result.returncode == 3
+    assert "SANDBOX_DENIES_WRITE" in result.stderr
+    assert "error/fence" in types
+    assert records[-1]["type"] == "session/end"
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason=(
+        "Windows 的 Ctrl-C 黑盒不在 M3，也不在 M7："
+        "缺口记进 docs/verification/m7-serve-http-sse-manual.md，等 Linux runner"
+    ),
+)
+def test_sigint_in_a_serve_subprocess_exits_with_five(tmp_path: Path) -> None:
+    """seam ⑥：serve 进程里的 SIGINT → 退出码 5，日志以 `error/abort` 与 ABORTED 收尾。"""
+    fixture = tmp_path / "sleep.json"
+    fixture.write_text(
+        json.dumps(
+            [
+                {
+                    "content": "跑一条挂很久的命令",
+                    "finish_reason": "tool_calls",
+                    "tool_calls": [
+                        {
+                            "id": "c1",
+                            "name": "bash",
+                            "arguments": {"command": "sleep 30", "timeout_seconds": 30},
+                        }
+                    ],
+                },
+                {"content": "不该走到这里", "finish_reason": "stop"},
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    process = _cli_process(
+        "serve",
+        "--http",
+        "-p",
+        "任务",
+        "--port",
+        str(_free_port()),
+        "--provider",
+        "mock",
+        "--fixture",
+        str(fixture),
+        "--yes",
+        cwd=tmp_path,
+    )
+    for _ in range(200):
+        logs = _log_files(tmp_path)
+        if logs and '"tool/call"' in logs[0].read_text(encoding="utf-8"):
+            break
+        time.sleep(0.1)
+    else:
+        process.kill()
+        pytest.fail("serve 进程没有进入工具执行段")
+
+    process.send_signal(signal.SIGINT)
+    _, stderr = process.communicate(timeout=30)
+
+    records = _log_records(tmp_path)
+    types = [record["type"] for record in records]
+    assert process.returncode == 5
+    assert "ABORTED" in stderr
+    assert "Traceback" not in stderr
+    assert types[-4:] == ["error/abort", "turn/end", "segment/end", "session/end"]
+    assert records[-1]["payload"]["stop_reason"] == "ABORTED"
 
 
 def test_stdout_is_only_the_session_id_and_stderr_says_where_it_listens(tmp_path: Path) -> None:
