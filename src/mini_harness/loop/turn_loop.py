@@ -20,6 +20,7 @@ from mini_harness.events.fold import (
     Message,
     assembled_payload,
     fold,
+    fold_range,
 )
 from mini_harness.events.reader import LogReadFailure, read_events
 from mini_harness.events.record import EventRecord
@@ -637,7 +638,13 @@ async def _compact_if_over_line(
         return written
 
     generated = await provider.generate(
-        [*context.messages, Message(role="user", content=SUMMARY_INSTRUCTION)],
+        [
+            # 摘要请求只装本次要遮蔽的那一段（ADR-0023）：受保护头部加区间折出的对话，
+            # 不是整份表层——整份表层正是它要缩小的那个东西。
+            *context.messages[:1],
+            *fold_range(events, start=rng["start"], end=rng["end"]),
+            Message(role="user", content=SUMMARY_INSTRUCTION),
+        ],
         [],
         cancel,
     )

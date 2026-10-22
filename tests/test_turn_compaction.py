@@ -3,12 +3,21 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 
 from mini_harness.events import EventRecord, read_events
-from mini_harness.events.fold import TOOL_OUTCOME_UNKNOWN, assembly_points, fold
+from mini_harness.events.fold import (
+    SYSTEM_PROMPT,
+    TOOL_OUTCOME_UNKNOWN,
+    Message,
+    assembly_points,
+    fold,
+)
 from mini_harness.loop import ENTRY_RUN, run_turn_segment, start_session
+from mini_harness.loop.turn_loop import SUMMARY_INSTRUCTION
 from mini_harness.provider import FixtureProvider, ProviderFailure
+from mini_harness.provider.contract import AssistantTurn, ToolSpec
 from mini_harness.tools import ToolRegistry
 from tool_harness import build_session_env, run_fixture_session, run_session_fixture
 
@@ -411,3 +420,69 @@ async def test_a_provider_reported_overflow_that_survives_the_retry_collapses(
     assert _records_of(log.path, "error/model") == []
     assert outcome.stop_reason == "CONTEXT_WINDOW_EXCEEDED"
     assert outcome.failure_code == "CONTEXT_WINDOW_EXCEEDED"
+
+
+class _RecordingProvider:
+    """记下每次调用实际收到的消息与工具：判「摘要请求装了什么」只能从这里看。"""
+
+    def __init__(self, entries: list[dict[str, object]]) -> None:
+        self.calls: list[tuple[list[Message], list[ToolSpec]]] = []
+        self._inner = FixtureProvider(entries=entries)
+
+    async def generate(
+        self,
+        messages: Sequence[Message],
+        tools: Sequence[ToolSpec],
+        signal: asyncio.Event,
+    ) -> AssistantTurn | ProviderFailure:
+        self.calls.append((list(messages), list(tools)))
+        return await self._inner.generate(messages, tools, signal)
+
+
+# 折叠会产出消息的记录类型：判「请求里装的是哪些记录」按它们取内容。
+_CONTENT_TYPES = ("user/message", "model/response", "tool/result")
+
+
+def _contents_of(records: Iterable[EventRecord]) -> set[str]:
+    return {
+        str(record.payload.get("content", ""))
+        for record in records
+        if record.type in _CONTENT_TYPES
+    }
+
+
+async def test_the_summary_request_carries_only_the_shadowed_range(tmp_path: Path) -> None:
+    """seam ①：摘要请求只装本次要遮蔽的那一段——保留尾部与受保护头部不在其中。"""
+    provider = _RecordingProvider([_big_turn(), _summary_entry(), DONE_ENTRY])
+    log, _ = await run_session_fixture(
+        tmp_path,
+        "s-summary-shape",
+        provider,
+        max_turns=3,
+        window=TIGHT_WINDOW,
+        reserve=TIGHT_RESERVE,
+    )
+    records = read_events(log.path)
+    summary = _records_of(log.path, "compaction/summary")[0]
+    rng = summary.payload["shadowed_range"]
+    assert isinstance(rng, dict)
+
+    summary_call = next(messages for messages, tools in provider.calls if not tools)
+    contents = [message.content for message in summary_call]
+    body = contents[1:-1]
+
+    in_range = [record for record in records if rng["start"] <= record.seq <= rng["end"]]
+    tail = [record for record in records if record.seq > rng["end"]]
+    range_contents = _contents_of(in_range)
+    tail_contents = _contents_of(tail)
+
+    assert contents[0].startswith(SYSTEM_PROMPT)
+    assert contents[-1] == SUMMARY_INSTRUCTION
+    assert BIG_TEXT in contents, "要被摘要的那段回复不在摘要请求里"
+    assert tail_contents, f"保留尾部为空，这条判据没有意义：{rng}"
+    assert not [content for content in body if content in tail_contents], (
+        f"保留尾部进了摘要请求：rng={rng} 尾部 seq={[r.seq for r in tail]}"
+    )
+    assert all(content in range_contents for content in body), (
+        f"摘要请求里有区间外的消息：rng={rng}"
+    )
