@@ -72,11 +72,15 @@
 - **THEN** 退出码为 2、stderr 含 `INVALID_ARGUMENT`，且没有创建 session 日志
 
 ### Requirement: serve 复用一次性入口的装配与参数表
-系统 SHALL 让 `serve` 的 flag 表是一次性 `run` 的表减去 `--events`、加上 `--host` 与 `--port`；`serve` MUST NOT 接受 `--events`。serve 的会话 SHALL 走与 `run` 同一条装配路（配置层叠、工具白名单、provider 与密钥、窗口预算），配置失败与 `run` 同形。`session/start` 的 payload 里 `entry` SHALL 是 `serve`、`prompt` 是 `-p/--prompt` 的原文。
+系统 SHALL 让 `serve` 的 flag 表是一次性 `run` 的表减去 `--events`、加上 `--host` 与 `--port`；`serve` MUST NOT 接受 `--events`。`--http` 是装饰：M7 只有 HTTP 这一种传输，带不带它跑的是同一个会话。serve 的会话 SHALL 走与 `run` 同一条装配路（配置层叠、工具白名单、provider 与密钥、窗口预算），配置失败与 `run` 同形。`session/start` 的 payload 里 `entry` SHALL 是 `serve`、`prompt` 是 `-p/--prompt` 的原文。
 
 #### Scenario: serve 的 entry 是 serve
 - **WHEN** 执行 `minihns serve --http -p "x"` 带 mock provider 与 fixture
 - **THEN** `session/start` 的 payload 里 `entry` 为 `serve`、`prompt` 为 `x`
+
+#### Scenario: 不带 --http 也是同一个会话
+- **WHEN** 执行 `minihns serve -p "x"`（不带 `--http`）带 mock provider 与 fixture
+- **THEN** 退出码为 0、stdout 只有 session id 一行，`session/start` 的 payload 里 `entry` 为 `serve`
 
 #### Scenario: serve 不接受 --events
 - **WHEN** 执行 `minihns serve --http -p "x" --events jsonl`

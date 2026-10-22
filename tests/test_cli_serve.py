@@ -420,25 +420,27 @@ async def test_the_from_query_overrides_the_last_event_id_header(tmp_path: Path)
 
 
 async def test_a_cursor_ahead_of_what_is_written_is_not_an_error(tmp_path: Path) -> None:
-    """游标指向还没写出的 `seq`：不报错、不 400，会话照常跑到收尾。
+    """游标还没写出的那一半：不报错、不 400，后续记录写出时开始收到帧。
 
-    「后续记录写出时开始送帧」那一半由 `test_reconnecting_with_last_event_id_...` 判：它在中途
-    断开后重连，拿到的正是断开之后才写出的记录。
+    游标 6 落在会话中段（`bash` 正睡 2 秒，它后面还有记录）。连接落地时它多半还没写出来，
+    于是这一条同时判「不报错」与「开始送帧」：帧恰好是 `seq` 大于 6 的那一段后缀，不重不漏。
     """
     port = _free_port()
     process = _serve_process(tmp_path, port, _slow_fixture(tmp_path))
     try:
-        status, frames = await _read_stream(port, query={"from": "10000"})
+        status, frames = await _read_stream(port, query={"from": "6"})
         exit_code = process.wait(timeout=60)
     finally:
         if process.poll() is None:
             process.terminate()
 
     records = _log_records(tmp_path)
+    tail = [record for record in records if int(record["seq"]) > 6]
     assert status == 200
-    assert frames == []
     assert exit_code == 0
     assert records[-1]["type"] == "session/end"
+    assert len(tail) > 0
+    assert [frame["id"] for frame in frames] == [str(record["seq"]) for record in tail]
 
 
 async def test_a_cursor_that_is_negative_or_not_an_integer_is_400(tmp_path: Path) -> None:
@@ -782,3 +784,58 @@ def test_stdout_is_only_the_session_id_and_stderr_says_where_it_listens(tmp_path
     assert len(logs) == 1
     assert result.stdout.splitlines() == [logs[0].stem]
     assert f"http://127.0.0.1:{port}" in result.stderr
+
+
+def test_the_start_record_names_the_serve_entry_and_the_prompt_verbatim(tmp_path: Path) -> None:
+    """`session/start` 在 serve 入口上写的是 `serve` 与 `-p` 的原文。
+
+    那条 Scenario 的 WHEN 是「执行 `minihns serve --http -p ...`」：判据必须走 CLI。
+    seam ① 那两条进程内直调 `run_session(entry=ENTRY_SERVE)` 的判据抓不到 CLI 把 entry 传错。
+    """
+    port = _free_port()
+    result = _cli(
+        "serve",
+        "--http",
+        "-p",
+        "任务",
+        "--port",
+        str(port),
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 0
+    start = _log_records(tmp_path)[0]
+    assert start["type"] == "session/start"
+    assert start["payload"]["entry"] == "serve"
+    assert start["payload"]["prompt"] == "任务"
+
+
+def test_serve_without_the_http_flag_is_the_same_session(tmp_path: Path) -> None:
+    """`--http` 是装饰：带不带它跑的是同一个会话、同一条事件流入口。
+
+    规格的 flag 表是「run 的表减去 `--events`、加上 `--host` 与 `--port`」，`--http` 不在表里；
+    人裁决（M7 收尾轮）定成「保留但可选，两种写法都合法」，这条判的就是第二种写法。
+    """
+    port = _free_port()
+    result = _cli(
+        "serve",
+        "-p",
+        "任务",
+        "--port",
+        str(port),
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        cwd=tmp_path,
+    )
+
+    logs = _log_files(tmp_path)
+    assert result.returncode == 0
+    assert len(logs) == 1
+    assert result.stdout.splitlines() == [logs[0].stem]
+    assert _log_records(tmp_path)[0]["payload"]["entry"] == "serve"

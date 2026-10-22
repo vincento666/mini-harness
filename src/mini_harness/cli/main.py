@@ -123,11 +123,11 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--events", choices=("jsonl",), default=None)
 
     # `serve` 的 flag 表是 run 的表减去 `--events`、加上 `--host` 与 `--port`（event-stream 规格）；
-    # M7 只有 HTTP 这一种传输，`--http` 是它的选择器。
+    # M7 只有 HTTP 这一种传输，`--http` 是它的装饰：带不带它跑的是同一个会话（人裁决）。
     serve = subcommands.add_parser(
         "serve", help="跑一个会话并把日志作为事件流输出", parents=[shared]
     )
-    serve.add_argument("--http", action="store_true", required=True)
+    serve.add_argument("--http", action="store_true")
     serve.add_argument("-p", "--prompt", default=None)
     serve.add_argument("--port", type=int, default=DEFAULT_PORT)
     serve.add_argument("--host", default=DEFAULT_HOST)

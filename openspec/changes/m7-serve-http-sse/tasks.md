@@ -43,7 +43,7 @@
 
 ## 7. 收账：装配路与失败码表（第 40 与 50 条）
 
-- [x] 7.1 seam ⑥：`ConfigFailure.code` 收成 `Literal` 与词表常量——既有配置失败判据全绿、`mypy --strict` 通过，并补一条「每个失败码可达」的判据
+- [x] 7.1 seam ②：`ConfigFailure.code` 收成 `Literal` 与词表常量——既有配置失败判据全绿、`mypy --strict` 通过，并补一条「每个失败码可达」的判据（落点 `tests/test_config_layering.py`，不是 ⑥：这一条判的是配置层那个模块自己，本组标签是 ⑥  inherited）
 - [x] 7.2 seam ⑥：`_prepare_or_fail` 返回 `Prepared | Failure`——`run` / `chat` / `serve` 三处调用方不再 `isinstance(..., int)`；既有失败判据不变绿
 - [x] 7.3 docs：ADR-0002 第 21、38、39、41 条逐条改判（serve 复用同一个 `SessionEnv` 与同一份参数表，没有带出第二套门与上下文），写明新的触发条件
 
@@ -61,13 +61,13 @@
 
 ## 10. 收尾门禁
 
-- [ ] 10.1 `code-review` 两轴（Standards / Spec），裁决落地
+- [x] 10.1 `code-review` 两轴（Standards / Spec），裁决落地。Standards 轴：五条硬违规全在提交纪律与文档措辞（记进 ADR-0002 的 M7 两节欠账），代码未违 A–F、判据都在七个 seam 上、无凑数测试；六条判断项记进第 56 至 60 条。Spec 轴：形状核对通过（帧 / 游标 / 绑定先后 / 退出码 / 不写 HTTP 事实），查出四条判据缺口，当场补齐——bash 的 lossy UTF-8（seam ②③）、`entry` 与 `prompt` 在 seam ⑥、游标「开始送帧」那一半、`--http`（人裁决定「保留但可选」，delta 的 flag 表与 Scenario 同步补上）。另更正 7.1 的 seam 标注（⑥ → ②）与本文件末尾的「六份 delta」（实为四份）
 - [ ] 10.2 变异测试一轮，记进 `docs/verification/m7-serve-http-sse-mutation.md`；存活的算覆盖缺口并补判据
 - [ ] 10.3 Learning Gate：扫本轮证据写进 `docs/lessons.md` 收件箱（无可复用信号就写 NO-PROMOTION）
 - [ ] 10.4 归档之后跑 `agents-md-slim`
 
 ## Workflow follow-up
 
-- 在 change 分支上 sync 六份 delta 进主规格：新建 `openspec/specs/event-stream/spec.md`（含 Purpose），改 `cli` / `turn-loop` / `bash-tool` 三份主规格
+- 在 change 分支上 sync 四份 delta 进主规格：新建 `openspec/specs/event-stream/spec.md`（含 Purpose），改 `cli` / `turn-loop` / `bash-tool` 三份主规格
 - `openspec archive m7-serve-http-sse` 在分支上做，然后 `openspec validate --all --strict` 全绿（12 份主规格）
 - 先征求人的批准、确认了才 `git merge --no-ff` 进 `main`、推 `main`、打 tag `m7`、删 `change/m7-serve-http-sse`

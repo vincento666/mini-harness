@@ -276,6 +276,24 @@ async def test_the_output_limit_is_a_boundary_not_a_threshold(tmp_path: Path) ->
     assert TRUNCATION_MARK in one_over.result.content
 
 
+async def test_non_utf8_output_collapses_into_replacement_characters(tmp_path: Path) -> None:
+    """解码不猜平台编码，也不把解码失败变成失败结果词。
+
+    脚本写的是非法 UTF-8 字节（`\\xff\\xfe` 与一个孤立的 `\\xc3`）夹一段合法中文。照 DSH：
+    子进程输出是 lossy UTF-8，只有文件读取是严格的。判据只看后果——那些位置是替换字符、
+    `outcome` 仍是 `OK`（`tool/result` 记的就是这个 outcome，日志里因此没有解码失败的记录）。
+    """
+    body = (
+        "import sys\n\nsys.stdout.buffer.write(b'\\xff\\xfe' + '中文'.encode('utf-8') + b'\\xc3')\n"
+    )
+    command = _script(tmp_path, "mojibake.py", body)
+    outcome = await dispatch_call(tmp_path, "bash", {"command": command}, registry=_registry())
+
+    assert outcome.result.outcome == "OK"
+    assert "\ufffd\ufffd中文\ufffd" in outcome.result.content
+    assert TRUNCATION_MARK not in outcome.result.content
+
+
 async def test_a_timed_out_command_leaves_no_descendant_still_writing(tmp_path: Path) -> None:
     """判据只看后果：超时之后那个后代进程不再往工作区写。终止手段是实现细节。"""
     _script(tmp_path, "child.py", _TICKER)
