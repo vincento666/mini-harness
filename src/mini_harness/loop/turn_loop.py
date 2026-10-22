@@ -60,10 +60,11 @@ STOP_FENCE_DENIED = "FENCE_DENIED"
 STOP_CONTEXT_WINDOW_EXCEEDED = "CONTEXT_WINDOW_EXCEEDED"
 STOP_REASONS: frozenset[str] = frozenset(get_args(StopReason))
 
-# 哪个入口开的这个会话：`session/start.payload.entry` 只有这两个值（design D1）。
-SessionEntry = Literal["run", "chat"]
+# 哪个入口开的这个会话：`session/start.payload.entry` 只有这三个值（design D1，M7 加 `serve`）。
+SessionEntry = Literal["run", "chat", "serve"]
 ENTRY_RUN: SessionEntry = "run"
 ENTRY_CHAT: SessionEntry = "chat"
+ENTRY_SERVE: SessionEntry = "serve"
 
 # provider 失败码里只有这一种触发请求级压缩与一次重试（ADR-0019）。
 PROVIDER_CONTEXT_OVERFLOW = "PROVIDER_CONTEXT_OVERFLOW"
@@ -945,6 +946,7 @@ def end_session(*, env: SessionEnv, stop_reason: str, turns: int) -> SegmentOutc
 async def run_session(
     *,
     prompt: str,
+    entry: SessionEntry,
     provider: Provider,
     log: EventLog,
     registry: ToolRegistry,
@@ -952,7 +954,7 @@ async def run_session(
     cancel: asyncio.Event,
     approval_gate: ApprovalGate = STDIN_APPROVAL_GATE,
 ) -> RunOutcome:
-    """一次性 run：开始会话、恰一个段、结束会话。
+    """一次性入口（`run` / `serve`）：开始会话、恰一个段、结束会话。
 
     段编号与回合编号都从 1 起；REPL 自己数段、给下一个段起始编号（design D3）。
     """
@@ -963,7 +965,7 @@ async def run_session(
         settings=settings,
         approval_gate=approval_gate,
     )
-    started = start_session(prompt=prompt, entry=ENTRY_RUN, env=env)
+    started = start_session(prompt=prompt, entry=entry, env=env)
     if started is not None:
         return _run_outcome(log, started)
     segment = await run_turn_segment(env=env, segment_id="s1", first_turn_index=1, cancel=cancel)

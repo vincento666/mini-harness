@@ -8,7 +8,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from mini_harness.config import ConfigFailure, build_registry, load_config, validate_config
+from mini_harness.config import (
+    CONFIG_CODES,
+    ConfigFailure,
+    build_registry,
+    load_config,
+    validate_config,
+)
 
 
 def test_a_prompt_is_forbidden_not_merely_unknown() -> None:
@@ -37,7 +43,10 @@ def test_a_settings_shaped_config_validates() -> None:
 
 
 def test_every_config_failure_code_is_reachable(tmp_path: Path) -> None:
-    """失败码表不是装饰：六个码逐个构造一次，构造不出来的那个就是死码。"""
+    """失败码表不是装饰：词表里每个码逐个构造一次，构造不出来的那个就是死码。
+
+    判据比的是「跑出来的集合 == 词表」：往 `ConfigCode` 里加一个取值而没人能跑到它，这条就红。
+    """
 
     def code_of(result: object) -> str:
         assert isinstance(result, ConfigFailure)
@@ -54,11 +63,4 @@ def test_every_config_failure_code_is_reachable(tmp_path: Path) -> None:
         code_of(validate_config({"prompt": "任务"})),
         code_of(build_registry(["web_search"])),
     }
-    assert reached == {
-        "CONFIG_NOT_FOUND",
-        "CONFIG_INVALID_TOML",
-        "CONFIG_UNKNOWN_KEY",
-        "CONFIG_INVALID_VALUE",
-        "CONFIG_FORBIDDEN_KEY",
-        "UNKNOWN_TOOL_NAME",
-    }
+    assert reached == CONFIG_CODES

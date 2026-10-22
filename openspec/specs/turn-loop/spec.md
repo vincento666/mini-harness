@@ -25,7 +25,7 @@
 - **THEN** 日志里恰有 3 个不同的 `turn_id`，每个 `turn_id` 恰对应一条 `turn/start` 与一条 `turn/end`
 
 ### Requirement: 停止判定写在 turn/end
-系统 SHALL 在每条 `turn/end` 的 payload 里写 `stop_reason`，取值只允许 `MODEL_COMPLETED`、`TOOL_CALLS`、`MAX_TURNS`、`PROVIDER_ERROR`、`ABORTED`、`FENCE_DENIED`、`CONTEXT_WINDOW_EXCEEDED`。`TOOL_CALLS` 只用于「模型要求调工具、还要继续」的回合；`MODEL_COMPLETED` 只用于「模型不再要求继续」；`FENCE_DENIED` 只用于「本回合因围栏或审批拒绝而终止」；`CONTEXT_WINDOW_EXCEEDED` 只用于「本回合的上下文压缩之后仍然装不下」。`session/end` SHALL 记录整个 session 的最终 `stop_reason` 与回合总数；段级收尾不写 `session/end`，所以下面三条 scenario 里的 `session/end` 只成立于一次性 `minihns run`（接替见「预算溢出是回合终止结果，会话是否继续由入口决定」）。
+系统 SHALL 在每条 `turn/end` 的 payload 里写 `stop_reason`，取值只允许 `MODEL_COMPLETED`、`TOOL_CALLS`、`MAX_TURNS`、`PROVIDER_ERROR`、`ABORTED`、`FENCE_DENIED`、`CONTEXT_WINDOW_EXCEEDED`。`TOOL_CALLS` 只用于「模型要求调工具、还要继续」的回合；`MODEL_COMPLETED` 只用于「模型不再要求继续」；`FENCE_DENIED` 只用于「本回合因围栏或审批拒绝而终止」；`CONTEXT_WINDOW_EXCEEDED` 只用于「本回合的上下文压缩之后仍然装不下」。`session/end` SHALL 记录整个 session 的最终 `stop_reason` 与回合总数；段级收尾不写 `session/end`，所以下面三条 scenario 里的 `session/end` 只成立于一次性入口（`run` / `serve`；接替见「预算溢出是回合终止结果，会话是否继续由入口决定」）。
 
 #### Scenario: 模型不请求工具即停止
 - **WHEN** Provider 返回的 `tool_calls` 为空
@@ -63,7 +63,7 @@
 - **THEN** 该调用产出 `outcome: UNKNOWN_TOOL` 的 `tool/result`，且回合正常写 `turn/end`
 
 ### Requirement: Provider 失败是回合终止结果
-当 Provider 无法产出合法回复时，系统 SHALL 写一条 `error/model` 记录（含 `code`）与 `turn/end`（`stop_reason: PROVIDER_ERROR`）。`session/end` 与退出码由入口决定：一次性 `minihns run` 写 `session/end` 并以退出码 1 结束，`minihns chat` 里这是段级收尾、会话回到提示符（ADR-0011 与 ADR-0019）。MUST NOT 抛出未捕获异常打断进程。`code` 取值：`PROVIDER_EXHAUSTED`、`PROVIDER_SCHEMA_INVALID`、`PROVIDER_HTTP_STATUS`、`PROVIDER_TIMEOUT`、`PROVIDER_TRANSPORT`、`PROVIDER_ABORTED`；前两个来自 mock 路径，后四个来自真实 provider 路径。`PROVIDER_ABORTED` 只在 provider 侧兜住「取消信号已置位却仍被调用」；内核取消仍走 `error/abort` 与退出码 5。
+当 Provider 无法产出合法回复时，系统 SHALL 写一条 `error/model` 记录（含 `code`）与 `turn/end`（`stop_reason: PROVIDER_ERROR`）。`session/end` 与退出码由入口决定：一次性入口（`run` / `serve`）写 `session/end` 并以退出码 1 结束，`minihns chat` 里这是段级收尾、会话回到提示符（ADR-0011 与 ADR-0019）。MUST NOT 抛出未捕获异常打断进程。`code` 取值：`PROVIDER_EXHAUSTED`、`PROVIDER_SCHEMA_INVALID`、`PROVIDER_HTTP_STATUS`、`PROVIDER_TIMEOUT`、`PROVIDER_TRANSPORT`、`PROVIDER_ABORTED`；前两个来自 mock 路径，后四个来自真实 provider 路径。`PROVIDER_ABORTED` 只在 provider 侧兜住「取消信号已置位却仍被调用」；内核取消仍走 `error/abort` 与退出码 5。
 
 #### Scenario: fixture 条目耗尽
 - **WHEN** 一次性 run 里需要的回合数超过 fixture 里的回复条目数
@@ -86,7 +86,7 @@
 - **THEN** 该段有 `error/model`、`turn/end` 与 `segment/end`（`stop_reason: PROVIDER_ERROR`）、没有 `session/end`，下一条输入开启新的段，进程退出码为 0
 
 ### Requirement: 用户取消是 ABORTED 结果
-当运行期间收到取消信号时，系统 SHALL 终止**当前回合**而不是整批派发：已开始执行的调用被打断并塌成 `TOOL_CANCELLED`（配一条 `tool/cancelled`），尚未派发的每个声明调用 SHALL 落一对 `tool/call` 与 `tool/result(ABORTED_BEFORE_DISPATCH)`；随后写 `error/abort`（含 `turn_id` 与 `code: ABORTED`）与 `turn/end`（`stop_reason: ABORTED`）。内核 MUST NOT 把「会话是否结束」写进回合语义：一次性 `minihns run` 的入口据此写 `session/end` 并以退出码 5 结束；`minihns chat` 里段中取消只写 `segment/end`、会话回到提示符（ADR-0011，见 `chat-repl`）。取消与围栏拒绝同时在场时取消优先到底：收尾是 `ABORTED`，围栏拒绝的事实留在 `error/fence` 与 `RunOutcome.failure_code`。
+当运行期间收到取消信号时，系统 SHALL 终止**当前回合**而不是整批派发：已开始执行的调用被打断并塌成 `TOOL_CANCELLED`（配一条 `tool/cancelled`），尚未派发的每个声明调用 SHALL 落一对 `tool/call` 与 `tool/result(ABORTED_BEFORE_DISPATCH)`；随后写 `error/abort`（含 `turn_id` 与 `code: ABORTED`）与 `turn/end`（`stop_reason: ABORTED`）。内核 MUST NOT 把「会话是否结束」写进回合语义：一次性入口（`run` / `serve`）据此写 `session/end` 并以退出码 5 结束；`minihns chat` 里段中取消只写 `segment/end`、会话回到提示符（ADR-0011，见 `chat-repl`）。取消与围栏拒绝同时在场时取消优先到底：收尾是 `ABORTED`，围栏拒绝的事实留在 `error/fence` 与 `RunOutcome.failure_code`。
 
 #### Scenario: 回合进行中取消
 - **WHEN** 一次性 `minihns run` 的某回合尚未写 `turn/end` 时收到取消信号
@@ -217,7 +217,7 @@
 - **THEN** 这两条 `tool/result` 的 `outcome` 是 `ABORTED_BEFORE_DISPATCH`，且日志里没有为它们写任何 `tool/cancelled`
 
 ### Requirement: 一条输入开一个段，段的边界在日志里
-系统 SHALL 把一条输入（一次性 run 的 prompt、REPL 的一条输入）展开成一个**段**，并把段的边界 durable 写进日志：段开始时写 `segment/start`（payload 含 `segment_id`），段结束时写 `segment/end`（payload 含 `segment_id`、该段最后一个回合的 `stop_reason`、该段实际跑掉的回合数 `turns`）。`segment_id` 在会话内连续编号（`s1`、`s2`…）且 MUST NOT 重复。一次性 `minihns run` 恰有一个段。`segment/*` MUST NOT 产出上下文里的消息。照 DSH：段的边界对应 DSH 的 `turn` 边界（`turn = phase.turn + 1` 后 `session.append("turn/start", {turn})`，编号单调且落日志），本项目的「回合」仍是 DSH 的 `step`（GLOSSARY）。
+系统 SHALL 把一条输入（一次性 `run` 与 `serve` 的 prompt、REPL 的一条输入）展开成一个**段**，并把段的边界 durable 写进日志：段开始时写 `segment/start`（payload 含 `segment_id`），段结束时写 `segment/end`（payload 含 `segment_id`、该段最后一个回合的 `stop_reason`、该段实际跑掉的回合数 `turns`）。`segment_id` 在会话内连续编号（`s1`、`s2`…）且 MUST NOT 重复。一次性入口（`run` / `serve`）恰有一个段。`segment/*` MUST NOT 产出上下文里的消息。照 DSH：段的边界对应 DSH 的 `turn` 边界（`turn = phase.turn + 1` 后 `session.append("turn/start", {turn})`，编号单调且落日志），本项目的「回合」仍是 DSH 的 `step`（GLOSSARY）。
 
 #### Scenario: 一次 run 恰一个段
 - **WHEN** 一次 run 跑了一个回合就正常结束
@@ -232,7 +232,7 @@
 - **THEN** 日志里有 `error/abort`、`turn/end`（`stop_reason: ABORTED`）与 `segment/end`（`stop_reason: ABORTED`），没有 `session/end`
 
 ### Requirement: 预算溢出是回合终止结果，会话是否继续由入口决定
-当某回合的 `stop_reason` 是 `CONTEXT_WINDOW_EXCEEDED` 时，系统 SHALL 结束**该回合**：MUST NOT 开始下一回合，MUST NOT 为该回合调用模型或派发任何工具。内核 MUST NOT 把「会话是否结束」写进回合语义——`session/end` 与退出码由入口决定：一次性 `minihns run` 据此结束 session 并以退出码 4 收尾，`minihns chat` 里会话 SHALL 回到提示符等下一条输入（ADR-0019）。该结果与取消、围栏拒绝、provider 失败互不遮蔽：同时在场时按「取消优先到底、其余按发生的先后」判定，事实各自留在自己的 `error/*` 记录里。
+当某回合的 `stop_reason` 是 `CONTEXT_WINDOW_EXCEEDED` 时，系统 SHALL 结束**该回合**：MUST NOT 开始下一回合，MUST NOT 为该回合调用模型或派发任何工具。内核 MUST NOT 把「会话是否结束」写进回合语义——`session/end` 与退出码由入口决定：一次性入口（`run` / `serve`）据此结束 session 并以退出码 4 收尾，`minihns chat` 里会话 SHALL 回到提示符等下一条输入（ADR-0019）。该结果与取消、围栏拒绝、provider 失败互不遮蔽：同时在场时按「取消优先到底、其余按发生的先后」判定，事实各自留在自己的 `error/*` 记录里。
 
 #### Scenario: 溢出回合没有 model/request
 - **WHEN** 某回合因预算溢出收尾

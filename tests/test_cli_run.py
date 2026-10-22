@@ -18,7 +18,7 @@ from mini_harness.cli import main as cli_main
 from mini_harness.cli.main import STOP_REASONS_TO_EXIT_CODES, exit_code_for, sigint_handler
 from mini_harness.config import build_registry
 from mini_harness.events import EventLog
-from mini_harness.loop import STOP_REASONS, RunOutcome, SessionSettings
+from mini_harness.loop import ENTRY_RUN, STOP_REASONS, RunOutcome, SessionSettings
 from mini_harness.provider import AssistantTurn
 from paths import HELLO_SCENARIO
 
@@ -320,6 +320,7 @@ async def test_the_cli_installs_and_restores_the_sigint_handler(tmp_path: Path) 
 
     await cli_main._await_session(
         prompt="任务",
+        entry=ENTRY_RUN,
         provider=spy,
         settings=SessionSettings(workspace=tmp_path, provider_name="mock", max_turns=8),
         log=log,

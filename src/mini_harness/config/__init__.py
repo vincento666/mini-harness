@@ -3,6 +3,8 @@
 from mini_harness.config.assembly import build_registry
 from mini_harness.config.layering import layer_settings
 from mini_harness.config.load import (
+    CONFIG_CODES,
+    ConfigCode,
     ConfigFailure,
     discover_config,
     load_config,
@@ -10,6 +12,8 @@ from mini_harness.config.load import (
 )
 
 __all__ = [
+    "CONFIG_CODES",
+    "ConfigCode",
     "ConfigFailure",
     "build_registry",
     "discover_config",

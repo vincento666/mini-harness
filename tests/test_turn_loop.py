@@ -14,6 +14,7 @@ from mini_harness.events import EventLog, EventRecord, read_events
 from mini_harness.events.fold import fold
 from mini_harness.loop import (
     ENTRY_RUN,
+    ENTRY_SERVE,
     ProviderEndpoint,
     RunOutcome,
     SessionSettings,
@@ -120,6 +121,31 @@ async def test_two_segments_number_segments_and_turns_continuously(tmp_path: Pat
     assert [record.type for record in records][-1:] == ["session/end"]
 
 
+async def test_a_serve_entry_session_is_one_segment_closed_on_disk(tmp_path: Path) -> None:
+    """内核不知道入口存在：`entry: "serve"` 的会话与 run 同形——恰一个段、`session/end` 在盘上。"""
+    log, env = build_session_env(
+        tmp_path,
+        "s-serve-entry",
+        FixtureProvider(entries=[DONE]),
+        registry=ToolRegistry(),
+    )
+
+    assert start_session(prompt="第一条输入", entry=ENTRY_SERVE, env=env) is None
+    segment = await run_turn_segment(
+        env=env, segment_id="seg-1", first_turn_index=1, cancel=asyncio.Event()
+    )
+    assert end_session(env=env, stop_reason=segment.stop_reason, turns=segment.turns) is None
+
+    records = read_events(log.path)
+    assert records[0].type == "session/start"
+    assert records[0].payload["entry"] == "serve"
+    assert [record.type for record in records if record.type.startswith("segment/")] == [
+        "segment/start",
+        "segment/end",
+    ]
+    assert records[-1].type == "session/end"
+
+
 async def test_each_turn_is_closed_before_the_next_one_starts(tmp_path: Path) -> None:
     log, _ = await run_session_fixture(
         tmp_path,
@@ -147,6 +173,7 @@ async def test_a_log_that_becomes_unwritable_ends_the_run_as_a_failure_result(
     try:
         outcome = await run_session(
             prompt="任务",
+            entry=ENTRY_RUN,
             provider=FixtureProvider(entries=[{"content": "done", "finish_reason": "stop"}]),
             log=log,
             registry=ToolRegistry(),

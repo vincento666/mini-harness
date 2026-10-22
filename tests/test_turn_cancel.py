@@ -7,7 +7,7 @@ from pathlib import Path
 
 from mini_harness.events import EventRecord, read_events
 from mini_harness.events.fold import fold
-from mini_harness.loop import ENTRY_RUN, end_session, run_turn_segment, start_session
+from mini_harness.loop import ENTRY_RUN, ENTRY_SERVE, end_session, run_turn_segment, start_session
 from mini_harness.provider import FixtureProvider
 from mini_harness.tools.fences import ApprovalDecision
 from tool_harness import (
@@ -451,3 +451,44 @@ async def test_a_cancel_closes_the_segment_and_the_entry_closes_the_session(tmp_
 
     assert end_session(env=env, stop_reason=segment.stop_reason, turns=segment.turns) is None
     assert [record.type for record in read_events(log.path)][-1:] == ["session/end"]
+
+
+async def test_a_cancel_at_the_serve_entry_closes_the_session_the_same_way(
+    tmp_path: Path,
+) -> None:
+    """serve 入口的取消与 run 同形：`entry` 是 `serve`，收尾四件都在盘上。
+
+    进程内的取消（seam ①）。真实子进程里的 SIGINT 判据在 `tests/test_cli_serve.py`，Windows 上
+    skip——缺口照 M3 记进 `docs/verification/m7-serve-http-sse-manual.md`。
+    """
+    (tmp_path / "loop.py").write_text(_LEAK_SCRIPT, encoding="utf-8")
+    cancel = asyncio.Event()
+    watcher = asyncio.create_task(cancel_after(cancel, 0.5))
+
+    log, outcome = await run_session_fixture(
+        tmp_path,
+        "s-cancel-serve-entry",
+        FixtureProvider(
+            entries=[
+                turn_entry(tool_call("bash", "c1", command="python loop.py", timeout_seconds=30)),
+                DONE,
+            ]
+        ),
+        registry=full_registry(),
+        max_turns=4,
+        cancel=cancel,
+        entry=ENTRY_SERVE,
+    )
+    await watcher
+
+    records = read_events(log.path)
+    assert isinstance(records, list)
+    assert records[0].payload["entry"] == "serve"
+    assert [record.type for record in records][-4:] == [
+        "error/abort",
+        "turn/end",
+        "segment/end",
+        "session/end",
+    ]
+    assert records[-1].payload["stop_reason"] == "ABORTED"
+    assert outcome.stop_reason == "ABORTED"
