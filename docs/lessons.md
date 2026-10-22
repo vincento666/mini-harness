@@ -579,6 +579,36 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 
 收件箱：15 条（L-005 / L-019 / L-025 / L-036 / L-037 / L-039 / L-041 / L-042 / L-043 / L-045 / L-046 / L-047 / L-048 / L-049 / L-050），**到 15 条上限**：M10 收尾先消化再收新条目。
 
+### L-051
+- Date: 2026-10-22
+- Context: `fix-compaction-and-context-overflow` 的 propose 与 task 5.4（真端点跑 `minihns chat`）
+- Observation: 模型相关功能的失败形状只有真实端点会给，而 M5 之后每个里程碑的完成判据里都没有那一行。实测到的 400 是 `{"error": {"type": "invalid_request_error", "message": "prompt (222233 tokens) leaves no room to answer in the context (196608); requests are never truncated"}}`——**没有 `error.code`**，而 provider 主规格与那 400 条 mock 判据只认 `error.code == "context_length_exceeded"`。此前不是没跑过真实那一半：M5 量到估算偏小 2.24 倍、M6 场 2 两段都溢出、M7 的 C 场小窗口溢出客户端挤不进去——三条观察都记进了 `docs/verification/`，**没有一条回灌成判据**
+- Evidence: `tests/fixtures/real_endpoint/context_overflow_400.json`（来源 session `92c155ba16fb4a4aa7bcbf931d5ba098`）与 `compaction_summary.json`（session `d31a7790e92c49fcb47d9a5dc8b25636`）；`docs/adr/0022-model-features-need-a-real-endpoint-gate.md`；`docs/verification/fix-compaction-and-context-overflow-manual.md`
+- Next use: 依赖模型回复形状的里程碑，`tasks.md` 里要有一条「真实端点跑一次」的复选框（不进 CI，但不跑完这个 change 不算完成）；CI 层的判据读真实产物 fixture，不用手编桩数据猜形状
+- Promotion candidate: AGENTS.md 完成判据那句（本轮晋升）
+- Status: promoted
+
+### L-052
+- Date: 2026-10-22
+- Context: 同一 change 的 task 5.2 与 5.4
+- Observation: 「同一压缩记录在屏幕上报两遍」这个缺陷，400 条 mock 判据全绿抓不到，真端点那一跑第一次撞出来。形状差在**段数与每段的输入数**：那些 seam ⑥ 判据每段只喂一条输入、只有一段，而「每段重读整份日志、没卡游标」这种坏法只在「多段且某段有多条输入」时才显形
+- Evidence: 修前那条判据红在 `assert 0 == 1`；变异「去掉 `event.seq <= through` 这条线」下红在 `assert 2 == 1`（`docs/verification/fix-compaction-and-context-overflow-mutation.md` 第 6 行）；真 run 的 stderr 里那一行原文出现两遍，记在 manual
+- Next use: REPL 类入口（chat、M10 的委派）的 seam ⑥ 判据至少两条输入、跨两个段；任何「每段都重读全量状态」的实现，判据要能区分「重读」与「重报」
+- Promotion candidate: 与 L-048 同族（入口常见的形状 ≠ 入口里从没发生过的那件事），本轮不占额度
+- Status: inbox
+
+### `fix-compaction-and-context-overflow` 收尾轮的消化记录（2026-10-22，tasks 6.4 与 7.3）
+
+**关闭三条**：L-042 关闭为 `rejected`（与 L-027 同一理由——AGENTS.md 变异段本来就写着「跑全量测试」；本轮 6 个变异里 2 条跑全量、4 条定点，差多少条已在 mutation 文档写明）；L-046 关闭（「多场手动验收逐场写工件内容与场间重置」的形状已在 M6 / M7 与本轮的 manual 里成型，本轮照它写 `.tmp/realchat/` 那一份）；L-025 关闭（两栏记录——harness 层必须一致、模型层只观察——已在三份 manual 成型，AGENTS.md 完成判据那句承载；它「等人类跑完模型层那一半」的前提也变了：本轮真实端点那一半由 agent 跑完、并且从此是完成判据，不再是等人跑的那一半）。
+
+**留存十二条，各补一条本轮证据**：L-005（本轮两个写死的数值都有「改它就红」的判据：`summary_budget = window - reserve` 与 `_DETAIL_MAX_CHARS = 200`，变异 3 红在 `assert 1119 <= 200`）、L-019（又踩两次：一次 `old_string matched 4 times`——两条 chat 判据共用同一段 fixture 块；一次 `ruff format` 之后 edit 报 not found）、L-036（chat 遮蔽判据的 needle 四个数取自日志读出的那条记录，不是把常量抄进断言两侧）、L-037（「修完重复报两遍」之后全量全绿——正是它警告的那种缺口，补强判据后在变异下确认红）、L-039（4.2 的实现一次覆盖了三种收尾理由，4.3 的三条判据绿着到；tasks.md 与提交信息里如实写明红是怎么临时收窄 `_SEGMENT_NOTE_REASONS` 验出来的）、L-041（遮蔽判据判的是那四个值对不对，不是「stderr 里有没有一行」）、L-043（配置文件的 BOM 仍未裁决）、L-045（5.3 的字面措辞在实现里做不到——chat 判据读不到 fixture，改判成 seam ① 读 fixture，写明在 tasks.md 与提交信息里，没有含糊过去）、L-047（delta 写「三种收尾理由都看得见」，按实现里那个理由集合核对才发现真 run 撞出的第四种 `FENCE_DENIED` 不在其中）、L-048（本轮第一次让 chat 在 seam ⑥ 上真发生一次压缩，正是 M6 变异 10 那个缺口）、L-049（新实例：PowerShell 把子进程 stderr 包成 ErrorRecords、同一行显示两遍，第一次读真 run 时把它当成实现缺陷；干净流要 `cmd /c "… < in > out 2> err"`）、L-050（本轮没有新外部依赖，没有新证据）。
+
+**AGENTS.md 本轮晋升一条**：L-051 的「依赖模型回复形状的功能，完成判据里要有一次真实端点实测」进流程节的完成判据那句。一进一出换掉的是 ruff 例外那句里的括号（「本项目的 docstring / 注释 / 用户可见字符串一律用中文全角标点」——仓库实况已经在这么做，「例外只有两处」那条规则本身留着）。
+
+**本轮的提交纪律没有欠账**：七个提交每个都跑过门禁并记下数字；两处打包（5.1–5.2 与 5.3–5.5）按「同一 seam 相邻至多 3 个 task」拆开，5.3–5.5 那一提交跨 seam ① 与文档，理由写在提交信息里。
+
+收件箱：13 条（L-005 / L-019 / L-036 / L-037 / L-039 / L-041 / L-043 / L-045 / L-047 / L-048 / L-049 / L-050 / L-052），空闲 2 条；L-051 已晋升、不占额度。
+
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 - 每个里程碑收尾扫一次，**允许输出 `NO-PROMOTION`**（没有可复用信号就不写条目）。
 - 收件箱条目超过 **15 条**必须先消化再收新的：合并同类、把已被代码或规格自证的条目删掉。

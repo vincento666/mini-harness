@@ -46,7 +46,7 @@ uv run coverage report --fail-under=95 --show-missing   # 这三步不可拆，�
 
 **覆盖率纪律**：seam ⑥ 是真实子进程，每个子进程各写一份 partial，所以上面那三步不可拆。combine 只认内容不认新旧，旧 partial 混进这一轮是**看不见的**。要抬地板就补低覆盖处的判据，不要凑低价值测试。
 
-**ruff 的例外只有两处**：中文全角标点（本项目的 docstring / 注释 / 用户可见字符串一律用中文全角标点）与 `docs/tools/` 下的文档与图表构建脚本——门禁只跑 `src` 与 `tests`。
+**ruff 的例外只有两处**：中文全角标点与 `docs/tools/` 下的文档与图表构建脚本——门禁只跑 `src` 与 `tests`。
 
 ---
 
@@ -64,7 +64,7 @@ uv run coverage report --fail-under=95 --show-missing   # 这三步不可拆，�
 
 分支纪律：每个 change 一个分支 `change/<id>`；**归档在分支上做**——sync 进主规格、移 `changeRoot`、`openspec validate --all --strict` 全绿，然后代码与规格一次合入 `main`。反过来（先合并再归档）会在主干上留下「代码已合、主规格还停在上一个里程碑」的窗口。**merge 与推 `main` 先征求人的批准、确认了才执行**；agent 可自行推 `change/<id>` 分支与归档提交。
 
-**完成判据含一条人手验收**：拿它用真实工作区办一件真事（不是跑判据），观察记进 `docs/verification/<change-id>-manual.md`；不进 CI，也不替代门禁那四道。
+**完成判据含一条人手验收**：拿它用真实工作区办一件真事（不是跑判据），观察记进 `docs/verification/<change-id>-manual.md`；不进 CI，也不替代门禁那四道。**依赖模型回复形状的功能，完成判据里还要有一次真实端点实测**（ADR-0022）：那一跑不进 CI，但不跑完这个 change 不算完成。
 
 **提交粒度**：一个红绿循环一次提交，提交信息带 task 编号，让 `git log` 能对上 `tasks.md` 的复选框。**一个提交最多覆盖同一 seam 上相邻的 3 个 task**；超过就在提交信息里写明为什么打包（没有理由为了省时间打包）。
 
