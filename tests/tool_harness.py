@@ -9,7 +9,14 @@ from pathlib import Path
 from typing import Any
 
 from mini_harness.events import EventLog, EventRecord, read_events
-from mini_harness.loop import ENTRY_RUN, RunOutcome, SessionEnv, SessionSettings, run_session
+from mini_harness.loop import (
+    ENTRY_RUN,
+    RunOutcome,
+    SessionEntry,
+    SessionEnv,
+    SessionSettings,
+    run_session,
+)
 from mini_harness.loop.settings import ApprovalMode, ProviderEndpoint, SandboxLevel
 from mini_harness.provider import FixtureProvider, Provider
 from mini_harness.provider.contract import ToolCall
@@ -245,6 +252,7 @@ async def run_session_fixture(
     registry: ToolRegistry | None = None,
     approval_gate: ApprovalGate | None = None,
     cancel: asyncio.Event | None = None,
+    entry: SessionEntry = ENTRY_RUN,
 ) -> tuple[EventLog, RunOutcome]:
     """seam ① 唯一的「跑完一整段 session」形状：建环境、调 `run_session`。
 
@@ -268,7 +276,7 @@ async def run_session_fixture(
     )
     outcome = await run_session(
         prompt=prompt,
-        entry=ENTRY_RUN,
+        entry=entry,
         provider=env.provider,
         log=log,
         registry=env.registry,
