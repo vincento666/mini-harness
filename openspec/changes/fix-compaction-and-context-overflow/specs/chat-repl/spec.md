@@ -20,3 +20,18 @@
 #### Scenario: 正常收尾不打扰
 - **WHEN** 一次 chat 的段以 `MODEL_COMPLETED` 收尾、另一段被人取消
 - **THEN** stderr 里没有这一行
+
+### Requirement: 压缩与遮蔽在屏幕上看得见
+当一个段里写出了 `compaction/summary` 时，系统 SHALL 往 stderr 打印一行遮蔽反馈，含该条记录的 `shadowed_range`（起点与终点的 `seq`）、`tokens_before` 与 `tokens_after`。这一行 MUST NOT 出现在 stdout，也 MUST NOT 写进事件日志。段里没有压缩时 MUST NOT 打印这一行。
+
+#### Scenario: 压缩发生的那一段有一行遮蔽反馈
+- **WHEN** 一次 chat 的某段里写出了一条 `compaction/summary`
+- **THEN** stderr 里有一行含该条记录的 `shadowed_range` 起点与终点、`tokens_before` 与 `tokens_after`
+
+#### Scenario: 没有压缩就没有遮蔽反馈
+- **WHEN** 一次 chat 的段跑完且日志里没有 `compaction/summary`
+- **THEN** stderr 里没有遮蔽反馈那一行
+
+#### Scenario: 遮蔽反馈不是日志的投影
+- **WHEN** 一次 chat 的某段发生了压缩
+- **THEN** stdout 里没有那一行，事件日志里也没有；`minihns replay` 对同一份日志的输出不因这一行改变

@@ -40,7 +40,11 @@
 
 **D5 chat 的可见性走 stderr，stdout 的投影规则不动。** 一行含段的停止理由与失败 `code`；`MODEL_COMPLETED` 与 `ABORTED` 不打。备选：往 stdout 打——stdout 是日志的投影，掺进非投影行会破坏「stdout 与日志不冲突」那条判据。`MAX_TURNS` 也打：那次人手验收里第一段用尽 8 个回合，屏幕上没有任何痕迹。
 
-**测试策略（seam 边界）。** seam ①：假 provider 记下收到的消息，断言除系统消息与末条指令外全部落在 `shadowed_range` 内、保留尾部不在其中；再断言「区间裁到最小仍装不下」时没有 `model/request(purpose: compaction)` 而是 `error/context`。seam ④：按 seq 区间折出对话的入口（含保护事件不参与）。seam ⑤：假端点四种形状——`error.code` 命中 / 只有 `message` 命中 / 都不命中 / 正文非 JSON——各自的 `code` 与 `detail`。seam ⑥：真实子进程跑 `minihns chat`，断言 stderr 那一行、stdout 不含它、日志不含它。真端点那一半是人手验收，不进判据。
+**D6 遮蔽反馈同样走 stderr，内容取自 `compaction/summary` 已有的四个键。** 压缩发生时人要在屏幕上看到「哪一段被遮蔽、释放了多少」——数据本来就在日志里（`shadowed_range` / `tokens_before` / `tokens_after`），缺的只是把它说给人听。不新增事件类型、不改 `compaction/summary` 的 payload。备选：往 stdout 打——同 D5 的理由；备选：不打、让人自己去读日志——人手验收实测到「看不见」就是这次的起因。
+
+**D7 模型相关功能的判据分两层，真实端点那一层是完成判据。** 本 change 起效：① **CI 层**——seam ⑤ 与 ⑥ 的判据用**从真实端点会话里裁下来的记录**做 fixture（真实响应正文、真实 `compaction/summary` 的字段形状），不靠手写的桩数据编造形状；② **完成层**——一次真实端点的 `minihns chat` 实测（本机 Strata 端点），跑完并把 session id、压缩发生在第几回合、屏幕上那一行的原文记进 `docs/verification/`，**不跑完这个 change 不算完成**。CI 不持 API key 这条不变（handoff 决策 6 的原意是「真实调用不进 CI」，不是「真实调用不算验收」）；补的是「真实那一层跑不跑」以前没有任何判据守着这件事。备选：CI 里带 key 跑真实端点——被否，CI 不持密钥是既定选型；备选：照旧只把真实那一半写进 manual——被否，那正是这次漏洞的形状。ADR-0022 记这条。
+
+**测试策略（seam 边界）。** seam ①：假 provider 记下收到的消息，断言除系统消息与末条指令外全部落在 `shadowed_range` 内、保留尾部不在其中；再断言「区间裁到最小仍装不下」时没有 `model/request(purpose: compaction)` 而是 `error/context`。seam ④：按 seq 区间折出对话的入口（含保护事件不参与）。seam ⑤：假端点四种形状——`error.code` 命中 / 只有 `message` 命中 / 都不命中 / 正文非 JSON——各自的 `code` 与 `detail`；其中「只有 `message` 命中」那一条用真实端点实际回过的正文。seam ⑥：真实子进程跑 `minihns chat`，断言 stderr 那一行、stdout 不含它、日志不含它；再断言压缩那一段的遮蔽反馈一行。真端点那一半是完成判据（D7 的第二层），跑一次、记进 `docs/verification/`。
 
 ## Risks / Trade-offs
 
@@ -49,3 +53,4 @@
 - [从头部丢弃等于最旧的内容完全不进摘要] → 记进 ADR-0002 作为欠账；DSH 的 `dsh-compaction-tool-result-pruner`（先修剪超大工具输出、可能完全省去摘要）是另一条路，留给 M11 之后。
 - [stderr 那一行可能被当成日志的一部分] → 判据显式写「不在 stdout、不在日志」；`replay` 与 `serve` 的输出不受影响。
 - [摘要求不再发整份表层，摘要质量可能下降] → 摘要本来就是给模型看的内部件，且 `compaction/summary` 仍写着 `shadowed_range` 与 `tokens_before/after`，可核对；人手验收里观察并记录。
+- [从真实会话裁下来的 fixture 会过期、且带真实内容] → fixture 只留字段形状与必要的短句（真实的那句 400 正文、真实 `compaction/summary` 的四个键），不整段搬工具输出；每条 fixture 在文件里写明来源 session id，措辞变了就用新一次真实实测的产物替换。
