@@ -64,10 +64,10 @@
 - [x] 10.1 `code-review` 两轴（Standards / Spec），裁决落地。Standards 轴：五条硬违规全在提交纪律与文档措辞（记进 ADR-0002 的 M7 两节欠账），代码未违 A–F、判据都在七个 seam 上、无凑数测试；六条判断项记进第 56 至 60 条。Spec 轴：形状核对通过（帧 / 游标 / 绑定先后 / 退出码 / 不写 HTTP 事实），查出四条判据缺口，当场补齐——bash 的 lossy UTF-8（seam ②③）、`entry` 与 `prompt` 在 seam ⑥、游标「开始送帧」那一半、`--http`（人裁决定「保留但可选」，delta 的 flag 表与 Scenario 同步补上）。另更正 7.1 的 seam 标注（⑥ → ②）与本文件末尾的「六份 delta」（实为四份）
 - [x] 10.2 变异测试一轮，记进 `docs/verification/m7-serve-http-sse-mutation.md`；存活的算覆盖缺口并补判据。15 个变异全部被杀死、没有存活，因此没有新补判据；三处「没有可放的变异」（`serve.py:119` 的 `LogReadFailure` 出口、`0.0.0.0` 真绑定与 65535 上界、慢读者）已在 ADR-0002 第 61 与 54 条
 - [x] 10.3 Learning Gate：扫本轮证据写进 `docs/lessons.md` 收件箱（无可复用信号就写 NO-PROMOTION）。新收两条（L-049 本机三处环境事实：管道不 EOF / httpx `trust_env` / 未监听端口黑洞到超时；L-050 失败路径判据才暴露库的构造顺序），合并一条（L-040 → L-049），留存十三条并逐条补 M7 证据；AGENTS.md 不晋升（NO-PROMOTION），但 L-048 已复发两次，规则草案与「M10 再复发就给这个额度」记在消化记录里。收件箱 15 条到上限，M10 收尾先消化再收
-- [ ] 10.4 归档之后跑 `agents-md-slim`
+- [x] 10.4 归档之后跑 `agents-md-slim`。六处精简：「剩余 M7」那句过时（改成「第一阶段（M1 至 M9）已完成」）、流程那节的 8 行 ASCII 流水线块与紧随的「分支纪律」段重复（压成一行）、handoff 那条的三句压成两句、七个 seam 的 ⑦ 与「不新增缝」两行合一、六条不变量的全文指针去掉具体文件名、ADR-FORMAT 那条的四分句压成两句。**AGENTS.md 104 行 / 4892 字 → 95 行 / 4679 字**，规则一条没减，本轮同样没有晋升新规则
 
 ## Workflow follow-up
 
 - 在 change 分支上 sync 四份 delta 进主规格：新建 `openspec/specs/event-stream/spec.md`（含 Purpose），改 `cli` / `turn-loop` / `bash-tool` 三份主规格
-- `openspec archive m7-serve-http-sse` 在分支上做，然后 `openspec validate --all --strict` 全绿（12 份主规格）
-- 先征求人的批准、确认了才 `git merge --no-ff` 进 `main`、推 `main`、打 tag `m7`、删 `change/m7-serve-http-sse`
+- `openspec archive m7-serve-http-sse` 在分支上做，然后 `openspec validate --all --strict` 全绿（12 份主规格）。已执行：sync 与归档都在提交 `56ee1e7`，归档时 tasks 35/36（唯一未勾的是定义上在归档之后跑的 10.4），归档后 validate 12 份 0 失败
+- 先征求人的批准、确认了才 `git merge --no-ff` 进 `main`、推 `main`、打 tag `m7`、删 `change/m7-serve-http-sse`。已执行：批准于 2026-10-22 由人当场给出，merge commit **`34982d1`**（19 个提交、40 文件 / +2924 / −86）、tag `m7` 解引用到它、分支本地与远端都删；合并后在 `main` 上重跑四道门禁与 `openspec validate --all --strict` 全绿

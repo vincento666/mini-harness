@@ -8,7 +8,7 @@
 
 ## 先读这三样，再动手
 
-1. **`docs/handoff-2026-10-15.md`** —— 已锁定的**编号决策与运行时不变量**，这就是规格输入。**不要重新 grill**，除非实现过程中出现新的设计分叉。它与后来的 ADR 会分叉：**以 ADR 与 `docs/roadmap.md` 为准**，handoff 冻结不编辑。
+1. **`docs/handoff-2026-10-15.md`** —— 已锁定的**编号决策与运行时不变量**，这就是规格输入；**不要重新 grill**，除非出现新的设计分叉。它与后来的 ADR 分叉时**以 ADR 与 `docs/roadmap.md` 为准**，handoff 冻结不编辑。
 2. **`docs/lessons.md`** —— 教训的收件箱与活跃区；Active Lessons 每次接手都读。
 3. **`docs/CURRENT.md`** —— 当前进度、门禁实测、已知缺口。
 
@@ -54,20 +54,13 @@ uv run coverage report --fail-under=95 --show-missing   # 这三步不可拆，�
 
 **A** 日志唯一真源，只追加不改写 · **B** 工具是能力契约，失败也是结果 · **C** 回合主循环显式 · **D** 窗口预算与 `CONTEXT_WINDOW_EXCEEDED` · **E** 围栏两条独立轴 + 工作区边界 + 写前必读 CAS · **F** 全程可观测
 
-全文见 `openspec/config.yaml` 的 `context`（每个 OpenSpec 命令都会自动读到它）。**写任何代码前先读**；违反任何一条必须在 `docs/adr/` 留 ADR 并由人裁决，规格与测试不得自行放宽它们。
+六条的全文在 OpenSpec 的 config 里，每个 `openspec` 命令都会自动读到它。**写任何代码前先读**；违反任何一条必须在 `docs/adr/` 留 ADR 并由人裁决，规格与测试不得自行放宽它们。
 
 ---
 
 ## 流程：每个里程碑一个 OpenSpec change
 
-```
-/openspec-propose <change-id>   → 人工审阅 proposal / specs / design / tasks
-/openspec-apply-change          → 按 tdd 技能实现：red → green 单切片，一次一个
-/code-review                    → Standards 与 Spec 两轴
-收尾门禁                        → 变异测试一轮 + Learning Gate
-/openspec-archive-change        → 在 change 分支上 sync delta 进主规格 + 归档提交
-合并                            → 代码与规格一次合入 main
-```
+一个里程碑的顺序：**propose → 人审 proposal / specs / design / tasks → apply（按 tdd 技能，red → green 单切片，一次一个）→ `code-review` 两轴 → 变异测试一轮 + Learning Gate → 在 change 分支上 sync delta 进主规格 + 归档 → 代码与规格一次合入 main**。
 
 分支纪律：每个 change 一个分支 `change/<id>`；**归档在分支上做**——sync 进主规格、移 `changeRoot`、`openspec validate --all --strict` 全绿，然后代码与规格一次合入 `main`。反过来（先合并再归档）会在主干上留下「代码已合、主规格还停在上一个里程碑」的窗口。**merge 与推 `main` 先征求人的批准、确认了才执行**；agent 可自行推 `change/<id>` 分支与归档提交。
 
@@ -76,9 +69,7 @@ uv run coverage report --fail-under=95 --show-missing   # 这三步不可拆，�
 **提交粒度**：一个红绿循环一次提交，提交信息带 task 编号，让 `git log` 能对上 `tasks.md` 的复选框。**一个提交最多覆盖同一 seam 上相邻的 3 个 task**；超过就在提交信息里写明为什么打包（没有理由为了省时间打包）。
 
 **测试只写在下面七个 seam 上**（tdd 技能要求先约定再写，不许水平切片）：
-① 回合循环 ② 工具注册与管线 ③ 文件工具契约 ④ 日志追加与折叠 ⑤ Provider 接口 ⑥ CLI 黑盒（subprocess 跑真实命令） ⑦ 委派与目标（子会话日志与父日志的配对、目标轮次与 `blocked`）
-
-组合层与扩展层**不新增缝**：装配与配置在 ② 与 ⑥ 判，技能与外部触发在 ② 与 ⑥ 判。
+① 回合循环 ② 工具注册与管线 ③ 文件工具契约 ④ 日志追加与折叠 ⑤ Provider 接口 ⑥ CLI 黑盒（subprocess 跑真实命令） ⑦ 委派与目标（子日志与父日志的配对、目标轮次与 `blocked`）。组合层与扩展层**不新增缝**：装配、配置、技能与外部触发都在 ② 与 ⑥ 判。
 
 **每个里程碑收尾跑一轮变异测试并记录**：改坏一处实现 → 跑全量测试 → 把「变异 / 改法 / 哪些测试变红」记进 `docs/verification/<change-id>-mutation.md` → 还原并确认回到基线（**还原前先看 `git status`**，别把本轮未提交的改动一起回滚）。判据：每个变异都被至少一条测试杀死；存活的算覆盖缺口，补一条能杀死它的测试（先确认它在变异下红）。变异必须改变**可观察行为**，语义等价的改法是 dud mutant，不算。捕获一整个异常类族的代码，判据要用族里不显眼的那个成员。
 
@@ -92,7 +83,7 @@ Python **>= 3.12** · **uv** · `src/mini_harness/` 布局 · **mypy strict** ·
 
 ## MVP 分两阶段（ADR-0010）
 
-**第一阶段**（内核 / 工件 / 组合 / 能力 / 模型的基础，围栏有雏形）：剩余 **M7**；进度看 `docs/CURRENT.md`。**第二阶段**（补全成**没有 web / Electron 外壳**的完整类 DSH 形态）：**M10 → M11 → M12 → M13 → M14 → M15**。**第三阶段**（加壳）等前两阶段做完再规划。每个里程碑做什么见 `docs/roadmap.md` 的表。**始终不做**：PTC 工具面塌缩、多模型路由与重试策略、独立工单与 triage 标签体系。
+**第一阶段**（M1 至 M9：内核 / 工件 / 组合 / 能力 / 模型的基础，围栏有雏形）**已完成**；进度看 `docs/CURRENT.md`。**第二阶段**（补全成**没有 web / Electron 外壳**的完整类 DSH 形态）：**M10 → M11 → M12 → M13 → M14 → M15**。**第三阶段**（加壳）等前两阶段做完再规划。每个里程碑做什么见 `docs/roadmap.md` 的表。**始终不做**：PTC 工具面塌缩、多模型路由与重试策略、独立工单与 triage 标签体系。
 
 ---
 
@@ -101,4 +92,4 @@ Python **>= 3.12** · **uv** · `src/mini_harness/` 布局 · **mypy strict** ·
 - DSH 的参考文档在本仓库 `docs/dsh-reference/`。**不要无差别先读**：只在照某个机制实现时去查对应章节或图的锚点（图集锚点形如 `#fig-<图名>`）。这些图只做过静态结构校验，**没有视觉复核**。
 - 需要更细的出处时，只允许引 `S:\Develop\agent_harness\re\verified\dsh\` 与 `re\shell\`。**`re\full\` 是 8 字节偏移的损坏副本，永远不要引用**；不要 grep `rea/app-graph.json`（376 MB，分析时两次 OOM 被杀）。
 - 写规格时把「DSH 这么做」与「mini 版故意简化」分开写，简化处必须在 `docs/adr/` 里写明代价（用 `domain-modeling` 技能写 ADR）。
-- **ADR 的新增与读写一律照 `domain-modeling` 技能的 `ADR-FORMAT`**：`docs/adr/` 下顺序编号 `NNNN-slug.md`，编号扫现有最大号 +1；目录用到时才建；正文 1–3 句就够；三条判据（**难回退** / **无上下文会困惑** / **真实取舍**）同时成立才写；被重新审视的加 `Status` frontmatter，推翻就新开一份并在旧份标 `superseded by ADR-NNNN`。**本文件不写死 ADR 编号**——当前欠账在哪份里看 `docs/CURRENT.md`。
+- **ADR 的新增与读写一律照 `domain-modeling` 技能的 `ADR-FORMAT`**：`docs/adr/` 下顺序编号 `NNNN-slug.md`（编号扫现有最大号 +1，目录用到时才建），正文 1–3 句；三条判据（**难回退** / **无上下文会困惑** / **真实取舍**）同时成立才写；被重新审视的加 `Status` frontmatter，推翻就新开一份并在旧份标 `superseded`。**本文件不写死 ADR 编号**——欠账在哪份里看 `docs/CURRENT.md`。
