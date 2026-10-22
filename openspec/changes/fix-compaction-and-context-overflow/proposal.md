@@ -1,0 +1,33 @@
+# Proposal
+
+## Why
+
+人手验收里 `minihns chat` 在真端点上「对不了话」。会话 `92c155ba16fb4a4aa7bcbf931d5ba098`（`--base-url http://127.0.0.1:8300/v1`、`window 128000`、`max_turns 8`）的第一段用 8 个工具回合把上下文推过触发线，之后两条输入（`ihi`、`enen`）各只得到一个段级收尾：`model/request(purpose: compaction)` → `error/model(PROVIDER_HTTP_STATUS, HTTP 400)` → `turn/end(PROVIDER_ERROR)`，屏幕上只有提示符。根因是**摘要请求把要压缩的整份上下文原样发给模型**：那条用来救「越线」的请求本身比它要缩小的东西更大，端点直接拒——`prompt (222233 tokens) leaves no room to answer in the context (196608); requests are never truncated`。
+
+## What Changes
+
+- **摘要请求裁进窗口**：生成摘要的那次调用只装「本次要遮蔽的那一段」折出的消息（加系统消息与摘要指令），不再发整份表层；这一段本身就装不下时**不发**这个请求，直接走溢出结果。
+- **溢出识别放宽**：适配器把可识别的上下文超限 4xx 规范化为 `PROVIDER_CONTEXT_OVERFLOW`——除既有的 `error.code == context_length_exceeded`，也认 `error.type` 命中与正文里那族固定短语；命中后走既有的请求级压缩 + 重试一次（上限 1 次）。
+- **失败带上提供方那句话**：`ProviderFailure.detail` 与 `error/model.payload.detail` 里带上响应正文的有界摘要（单行、至多 200 字符），不再是光秃秃的 `HTTP 400`。
+- **失败在屏幕上可见**：`minihns chat` 里段以 `PROVIDER_ERROR` / `CONTEXT_WINDOW_EXCEEDED` / `MAX_TURNS` 收尾时，stderr 打一行说明；stdout 仍是日志的投影，规则不变。
+
+**本 change 明确不做**：不改 `字符 ÷ 4` 的预算估算（DSH 自己也把精确 token 化列为暂缓，见其 `dsh-compaction-basic` 开发备注）；不加工具输出修剪器（DSH 的 `dsh-compaction-tool-result-pruner`）；不给摘要请求加 `max_tokens`；不改 `max_turns` 默认值；不碰 `minihns serve` 的事件流；不解决 Windows 上被 skip 的四条 SIGINT 子进程判据；不动 `context-budget` 主规格里只写 `minihns run` 的那处不对称。
+
+## Capabilities
+
+### New Capabilities
+
+（无——三条都落在既有能力上）
+
+### Modified Capabilities
+
+- `context-budget`：「越线时压缩发生在装配之内」加摘要请求的形状与预算约束；「摘要调用失败沿用 provider 失败结果」补「请求没发出」那一支。
+- `provider`：「上下文超限的回复是溢出结果」放宽识别；新增「失败结果带上提供方说的那句话」。
+- `chat-repl`：新增「段以失败收尾时 stderr 看得见一行」。
+
+## Impact
+
+- 代码：`loop/turn_loop.py` 的压缩段（现 620–681 行，`[*context.messages, SUMMARY_INSTRUCTION]` 那一处）、`context/budget.py`（复用已算出的 `shadowed_range`）、`provider/openai_compat.py`（`_reports_context_overflow`、`ProviderFailure.detail`）、`cli/main.py::_chat_session`。
+- 判据：seam ①（回合循环里的压缩与溢出）、seam ⑤（Provider 接口的识别与 detail）、seam ⑥（CLI 黑盒的 stderr）。
+- 文档：立 **ADR-0022**（「DSH 只回放被遮蔽区域」与「mini 之前发整份表层」的更正 + 猜正文短语的代价）；`docs/adr/0002` 第 62、63 条与本条同源，新增第 64 条记估算与真端点差 4 倍这件事。
+- 依赖：无新增依赖。
