@@ -2,8 +2,8 @@
 
 ## 1. 依赖与内核的第三个入口
 
-- [ ] 1.1 前置（无新判据）：`uv add aiohttp` 与 `uv add --dev` 需要的部分；AGENTS.md 技术选型行加 aiohttp；门禁四道仍全绿
-- [ ] 1.2 seam ①：`SessionEntry` 加 `serve` 与 `ENTRY_SERVE` 常量——判据是「`entry: "serve"` 的会话跑完恰一个段、`session/end` 在盘上、`session/start.payload.entry` 是 `serve`」
+- [x] 1.1 前置（无新判据）：`uv add aiohttp` 与 `uv add --dev` 需要的部分；AGENTS.md 技术选型行加 aiohttp；门禁四道仍全绿
+- [x] 1.2 seam ①：`SessionEntry` 加 `serve` 与 `ENTRY_SERVE` 常量——判据是「`entry: "serve"` 的会话跑完恰一个段、`session/end` 在盘上、`session/start.payload.entry` 是 `serve`」
 
 ## 2. serve 的参数表与「失败在会话开始之前」（seam ⑥）
 
