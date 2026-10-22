@@ -49,10 +49,10 @@
 
 ## 8. ADR 与文档
 
-- [ ] 8.1 新开 ADR-0021：serve 用 aiohttp 与 SSE，只照 DSH 的 `session/follow` 里 durable 事件那一半（`$events` 的 waterfall 与 assistant-stream 逐字帧都不做）；写明「将来加 snapshot 帧与一条回程 POST 端点——DSH 的 `$events/result` 是 unary HTTP RPC，不换 SSE 也不改 `seq` 游标」，含「host / port 是 CLI-only flag」的窄化与代价
-- [ ] 8.2 ADR-0002 第 30 条按 DSH 结案（lossy UTF-8，证据 `dsh-subprocess-local/lib/output.js:193`、`:232` 对照 `dsh-fs-local/lib/index.js:333`）；新开第 53 条：溢出时没有 spill 文件与 `lossy` 标记（DSH 的 `dsh-bash-local/lib/index.js:108-154`、`dsh-tool-bash/lib/index.js:137`），处理时点 M10
-- [ ] 8.3 GLOSSARY 补「事件流」「帧」「游标」三个词，并写明「游标就是日志的 `seq`」
-- [ ] 8.4 docs/CURRENT.md 与 docs/roadmap.md 的 M7 行与门禁实测
+- [x] 8.1 新开 ADR-0021：serve 用 aiohttp 与 SSE，只照 DSH 的 `session/follow` 里 durable 事件那一半（`$events` 的 waterfall 与 assistant-stream 逐字帧都不做）；写明「将来加 snapshot 帧与一条回程 POST 端点——DSH 的 `$events/result` 是 unary HTTP RPC，不换 SSE 也不改 `seq` 游标」，含「host / port 是 CLI-only flag」的窄化与代价
+- [x] 8.2 ADR-0002 第 30 条按 DSH 结案（lossy UTF-8，证据 `dsh-subprocess-local/lib/output.js:193`、`:232` 对照 `dsh-fs-local/lib/index.js:333`）；新开第 53 条：溢出时没有 spill 文件与 `lossy` 标记（DSH 的 `dsh-bash-local/lib/index.js:108-154`、`dsh-tool-bash/lib/index.js:137`），处理时点 M10
+- [x] 8.3 GLOSSARY 补「事件流」「帧」「游标」三个词，并写明「游标就是日志的 `seq`」
+- [x] 8.4 docs/CURRENT.md 与 docs/roadmap.md 的 M7 行与门禁实测
 
 ## 9. 人手验收（不进 CI）
 
