@@ -7,6 +7,7 @@ import inspect
 import json
 import os
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -17,6 +18,9 @@ from mini_harness.provider.contract import AssistantTurn, ProviderFailure, ToolS
 from mini_harness.provider.openai_compat import OpenAICompatProvider
 
 _BASE_URL = "http://127.0.0.1:9/v1"
+
+# 真端点回来的东西：判据读 fixture，不读手编的桩数据（ADR-0022）。
+_FIXTURE_DIR = Path(__file__).parent / "fixtures" / "real_endpoint"
 
 _OK_BODY: dict[str, Any] = {
     "id": "chatcmpl-1",
@@ -312,7 +316,7 @@ async def test_the_model_request_carries_a_120_second_timeout() -> None:
 
 
 async def test_a_400_saying_context_length_exceeded_is_a_context_overflow() -> None:
-    """design D8：只认 `error.code == "context_length_exceeded"` 这一个值。
+    """design D8：`error.code == "context_length_exceeded"` 命中。
     400 不是重试的理由，所以这里一次请求、零次重试。"""
     provider, seen = _provider(
         handler=lambda request: httpx.Response(
@@ -347,8 +351,27 @@ async def test_a_413_saying_context_length_exceeded_collapses_to_the_same_overfl
     assert outcome.attempts == []
 
 
+async def test_a_400_whose_message_says_it_leaves_no_room_is_a_context_overflow() -> None:
+    """design D3：错误对象没有 `code`、只有 `message` 时也要认得出溢出。
+
+    正文取自真端点实际回过的那次（`tests/fixtures/real_endpoint/README.md` 写明来源 session）。
+    """
+    provider, seen = _provider(
+        handler=lambda request: httpx.Response(
+            400, text=(_FIXTURE_DIR / "context_overflow_400.json").read_text(encoding="utf-8")
+        )
+    )
+
+    outcome = await _generate(provider)
+
+    assert len(seen) == 1
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_CONTEXT_OVERFLOW"
+    assert outcome.attempts == []
+
+
 async def test_a_400_with_any_other_error_code_is_still_an_http_status_result() -> None:
-    """不猜 `message` 文本：`error.code` 不是那个值就沿用既有分类。"""
+    """`error.code` 不是那个值、`message` 也不含短语表里的任何一条：沿用既有分类。"""
     provider, _ = _provider(
         handler=lambda request: httpx.Response(
             400, json={"error": {"code": "invalid_request_error", "message": "bad tools"}}

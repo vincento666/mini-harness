@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Literal, get_args
 from urllib.parse import urlsplit
 
 import httpx
@@ -28,8 +28,20 @@ from mini_harness.provider.contract import (
 # 决策 15：模型请求的超时是实现常量 120 秒，`minihns run` 没有改变它的开关。
 _TIMEOUT_S = 120.0
 
-# 上下文超限在 OpenAI 兼容协议里的错误码；只有它塌成 `PROVIDER_CONTEXT_OVERFLOW`。
+# 上下文超限在 OpenAI 兼容协议里的错误码；它加下面那张短语表塌成 `PROVIDER_CONTEXT_OVERFLOW`。
 CONTEXT_OVERFLOW_ERROR_CODE = "context_length_exceeded"
+
+# 各家兼容端点报「提示词装不进上下文」的措辞不一样：本机真端点给的是 `type:
+# invalid_request_error` 加一句 `leaves no room to answer in the context`，没有 `error.code`
+# （ADR-0022）。短语表由适配层维护——照 DSH「分类由适配器维护」的口径，猜正文的代价记在那里。
+ContextOverflowPhrase = Literal[
+    "leaves no room to answer",
+    "maximum context length",
+    "context length exceeded",
+    "prompt is too long",
+]
+
+CONTEXT_OVERFLOW_PHRASES: frozenset[str] = frozenset(get_args(ContextOverflowPhrase))
 
 
 def _wire_messages(messages: Sequence[Message]) -> list[dict[str, Any]]:
@@ -117,10 +129,10 @@ def _schema_failure(detail: str, attempts: Sequence[ProviderAttempt]) -> Provide
 
 
 def _reports_context_overflow(response: httpx.Response) -> bool:
-    """design D8：只认 `error.code == "context_length_exceeded"` 这一个值。
+    """design D8 与 D3：错误对象的 `code` 命中，或 `message` 命中短语表里的某一条。
 
-    不猜 `message` 的文本、也不按状态码猜——各家兼容端点的措辞不一样，而 400 里绝大多数
-    不是超限。读不出 body 就当不是。
+    短语表大小写不敏感、整句里找子串；不解析消息里的 token 数、也不按状态码猜。
+    读不出 body、错误对象不是对象、`message` 不是字符串，都当不是。
     """
     try:
         payload = response.json()
@@ -129,7 +141,15 @@ def _reports_context_overflow(response: httpx.Response) -> bool:
     if not isinstance(payload, dict):
         return False
     error = payload.get("error")
-    return isinstance(error, dict) and error.get("code") == CONTEXT_OVERFLOW_ERROR_CODE
+    if not isinstance(error, dict):
+        return False
+    if error.get("code") == CONTEXT_OVERFLOW_ERROR_CODE:
+        return True
+    message = error.get("message")
+    if not isinstance(message, str):
+        return False
+    lowered = message.lower()
+    return any(phrase in lowered for phrase in CONTEXT_OVERFLOW_PHRASES)
 
 
 def _parse_response(

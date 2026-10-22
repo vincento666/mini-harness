@@ -14,9 +14,9 @@
 
 ## 3. 适配层的溢出识别与失败正文（seam ⑤）
 
-- [ ] 3.1 红：假端点返回 400、错误对象没有 `code`、`message` 是**真实端点实际回过的那句** `prompt (222233 tokens) leaves no room to answer in the context (196608); requests are never truncated`（取自 fixture，见 5.3）→ 断言 `code: PROVIDER_CONTEXT_OVERFLOW` 且没有 `model/retry`。确认它红。
-- [ ] 3.2 绿：加短语表词表（`Literal` + `frozenset`，四个短语、大小写不敏感）并放宽识别，3.1 变绿；既有「`error.code` 命中」「413」「其它 400 仍走既有路径」三条判据不变绿。
-- [ ] 3.3 绿：把短语表接进 `tests/test_vocabulary_reachability.py` 的「每个值可达」判据，跑该文件确认每个短语都有一条判据打到它。
+- [x] 3.1 红：假端点返回 400、错误对象没有 `code`、`message` 是**真实端点实际回过的那句** `prompt (222233 tokens) leaves no room to answer in the context (196608); requests are never truncated`（取自 fixture，见 5.3）→ 断言 `code: PROVIDER_CONTEXT_OVERFLOW` 且没有 `model/retry`。确认它红。
+- [x] 3.2 绿：加短语表词表（`Literal` + `frozenset`，四个短语、大小写不敏感）并放宽识别，3.1 变绿；既有「`error.code` 命中」「413」「其它 400 仍走既有路径」三条判据不变绿。
+- [x] 3.3 绿：把短语表接进 `tests/test_vocabulary_reachability.py` 的「每个值可达」判据，跑该文件确认每个短语都有一条判据打到它。
 - [ ] 3.4 红：写 `detail` 的三种形状判据——响应 JSON 有 `error.message`（detail 含状态码与那句话）、正文是 HTML（detail 含状态码与正文开头且 ≤200 字符）、正文为空（detail 就是 `HTTP 400`）。确认它们红。
 - [ ] 3.5 绿：实现 `detail` 构造（单行、换行压成空格、至多 200 字符），3.4 变绿；`error/model` 的 payload 里 `detail` 与失败结果一致，`code` 不因摘要改变。
 
