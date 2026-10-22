@@ -173,6 +173,7 @@ async def test_a_log_that_becomes_unwritable_ends_the_run_as_a_failure_result(
     try:
         outcome = await run_session(
             prompt="任务",
+            entry=ENTRY_RUN,
             provider=FixtureProvider(entries=[{"content": "done", "finish_reason": "stop"}]),
             log=log,
             registry=ToolRegistry(),

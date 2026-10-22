@@ -15,6 +15,7 @@ from pathlib import Path
 from types import FrameType
 from typing import Any, NoReturn
 
+from mini_harness.cli.serve import DEFAULT_HOST, DEFAULT_PORT, SERVE_HOSTS, BindFailure, ServeServer
 from mini_harness.config import (
     ConfigFailure,
     build_registry,
@@ -28,6 +29,8 @@ from mini_harness.events.fold import assembled_payload, assembly_points, fold
 from mini_harness.loop import (
     APPROVAL_MODES,
     ENTRY_CHAT,
+    ENTRY_RUN,
+    ENTRY_SERVE,
     SANDBOX_LEVELS,
     STOP_ABORTED,
     STOP_CONTEXT_WINDOW_EXCEEDED,
@@ -39,6 +42,7 @@ from mini_harness.loop import (
     STOP_TOOL_CALLS,
     ProviderEndpoint,
     RunOutcome,
+    SessionEntry,
     SessionEnv,
     SessionSettings,
     end_session,
@@ -118,6 +122,16 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("-p", "--prompt", default=None)
     run.add_argument("--events", choices=("jsonl",), default=None)
 
+    # `serve` 的 flag 表是 run 的表减去 `--events`、加上 `--host` 与 `--port`（event-stream 规格）；
+    # M7 只有 HTTP 这一种传输，`--http` 是它的选择器。
+    serve = subcommands.add_parser(
+        "serve", help="跑一个会话并把日志作为事件流输出", parents=[shared]
+    )
+    serve.add_argument("--http", action="store_true", required=True)
+    serve.add_argument("-p", "--prompt", default=None)
+    serve.add_argument("--port", type=int, default=DEFAULT_PORT)
+    serve.add_argument("--host", default=DEFAULT_HOST)
+
     # `chat` 没有 `-p/--prompt`，也没有 `--events`：一个会话的人话从 stdin 按行进来，
     # stdout 上只有模型回复正文与提示符（chat-repl 规格）。
     subcommands.add_parser("chat", help="跑一个连续会话的 REPL", parents=[shared])
@@ -152,6 +166,7 @@ def sigint_handler(cancel: asyncio.Event) -> Callable[[int, FrameType | None], N
 async def _await_session(
     *,
     prompt: str,
+    entry: SessionEntry,
     provider: Provider,
     settings: SessionSettings,
     log: EventLog,
@@ -164,6 +179,7 @@ async def _await_session(
     try:
         return await run_session(
             prompt=prompt,
+            entry=entry,
             provider=provider,
             log=log,
             registry=registry,
@@ -322,6 +338,7 @@ def _run(args: argparse.Namespace) -> int:
     outcome = asyncio.run(
         _await_session(
             prompt=prompt,
+            entry=ENTRY_RUN,
             provider=prepared.provider,
             settings=prepared.settings,
             log=prepared.log,
@@ -344,6 +361,72 @@ def _run(args: argparse.Namespace) -> int:
 
     if exit_code != EXIT_OK:
         # 非 0 退出必须在 stderr 说清楚：stdout 归会话 id 与日志逐行输出。
+        return _report_failure(
+            outcome.failure_code or outcome.stop_reason, outcome.detail, exit_code
+        )
+    return exit_code
+
+
+def _serve(args: argparse.Namespace) -> int:
+    """一次性 serve：绑定、装配、跑会话、收尾即退出。"""
+    prompt: str | None = args.prompt
+    if prompt is None or prompt == "":
+        return _report_failure("INVALID_ARGUMENT", "-p/--prompt 必填且非空", EXIT_INVALID_ARGUMENT)
+    # host 与 port 的词表只在 CLI 上（design D4）：越界是参数错误，不是「绑定时再说」。
+    port: int = args.port
+    if port < 1 or port > 65535:
+        return _report_failure(
+            "INVALID_ARGUMENT",
+            f"--port 只接受 1 至 65535 的整数，收到 {port}",
+            EXIT_INVALID_ARGUMENT,
+        )
+    host: str = args.host
+    if host not in SERVE_HOSTS:
+        return _report_failure(
+            "INVALID_ARGUMENT",
+            f"--host 只接受 {' / '.join(SERVE_HOSTS)}，收到 {host}",
+            EXIT_INVALID_ARGUMENT,
+        )
+    return asyncio.run(_serve_session(args=args, prompt=prompt))
+
+
+async def _serve_session(*, args: argparse.Namespace, prompt: str) -> int:
+    """绑定先于开日志（design D3）：绑定失败不留下 session 日志，也不发模型请求。"""
+    server = ServeServer(host=args.host, port=args.port)
+    failure = await server.bind()
+    if isinstance(failure, BindFailure):
+        return _report_failure(
+            "INVALID_ARGUMENT",
+            f"--host {failure.host} --port {failure.port} 绑定失败：{failure.detail}",
+            EXIT_INVALID_ARGUMENT,
+        )
+
+    prepared = _prepare_or_fail(args)
+    if isinstance(prepared, int):
+        await server.close()
+        return prepared
+
+    try:
+        outcome = await _await_session(
+            prompt=prompt,
+            entry=ENTRY_SERVE,
+            provider=prepared.provider,
+            settings=prepared.settings,
+            log=prepared.log,
+            registry=prepared.registry,
+        )
+    finally:
+        await server.close()
+
+    exit_code = exit_code_for(outcome)
+    if outcome.stop_reason not in STOP_REASONS:
+        return _report_failure(
+            outcome.failure_code or outcome.stop_reason, outcome.detail, exit_code
+        )
+
+    print(outcome.session_id)
+    if exit_code != EXIT_OK:
+        # 非 0 退出必须在 stderr 说清楚：stdout 归 session id。
         return _report_failure(
             outcome.failure_code or outcome.stop_reason, outcome.detail, exit_code
         )
@@ -520,6 +603,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "run":
         return _run(args)
+    if args.command == "serve":
+        return _serve(args)
     if args.command == "chat":
         return _chat(args)
     return _replay(args)

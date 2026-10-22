@@ -946,6 +946,7 @@ def end_session(*, env: SessionEnv, stop_reason: str, turns: int) -> SegmentOutc
 async def run_session(
     *,
     prompt: str,
+    entry: SessionEntry,
     provider: Provider,
     log: EventLog,
     registry: ToolRegistry,
@@ -953,7 +954,7 @@ async def run_session(
     cancel: asyncio.Event,
     approval_gate: ApprovalGate = STDIN_APPROVAL_GATE,
 ) -> RunOutcome:
-    """一次性 run：开始会话、恰一个段、结束会话。
+    """一次性入口（`run` / `serve`）：开始会话、恰一个段、结束会话。
 
     段编号与回合编号都从 1 起；REPL 自己数段、给下一个段起始编号（design D3）。
     """
@@ -964,7 +965,7 @@ async def run_session(
         settings=settings,
         approval_gate=approval_gate,
     )
-    started = start_session(prompt=prompt, entry=ENTRY_RUN, env=env)
+    started = start_session(prompt=prompt, entry=entry, env=env)
     if started is not None:
         return _run_outcome(log, started)
     segment = await run_turn_segment(env=env, segment_id="s1", first_turn_index=1, cancel=cancel)

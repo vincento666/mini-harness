@@ -7,12 +7,12 @@
 
 ## 2. serve 的参数表与「失败在会话开始之前」（seam ⑥）
 
-- [ ] 2.1 seam ⑥：`serve` 子命令存在且 `-p/--prompt` 必填非空——缺 prompt 是退出码 2、stderr 含 `INVALID_ARGUMENT`、没有新日志文件
-- [ ] 2.2 seam ⑥：`--port` 词表 1 至 65535——`--port 0` 与 `--port 65536` 各一条判据，都是 2 且没有日志
-- [ ] 2.3 seam ⑥：`--host` 只接受 `127.0.0.1` / `0.0.0.0`——其它取值是 2 且没有日志
-- [ ] 2.4 seam ⑥：`serve` 不接受 `--events`——给了就是 2 且没有日志
-- [ ] 2.5 seam ⑥：绑定先于开日志——端口被占时退出码 2、stderr 含 `INVALID_ARGUMENT` 与该端口、session 目录里没有新日志文件、没有发出任何模型请求
-- [ ] 2.6 seam ⑥：serve 的窗口预算失败与 run 同形——使触发线为 0 的 `--window` / `--reserve` 是 2 且没有日志
+- [x] 2.1 seam ⑥：`serve` 子命令存在且 `-p/--prompt` 必填非空——缺 prompt 是退出码 2、stderr 含 `INVALID_ARGUMENT`、没有新日志文件
+- [x] 2.2 seam ⑥：`--port` 词表 1 至 65535——`--port 0` 与 `--port 65536` 各一条判据，都是 2 且没有日志
+- [x] 2.3 seam ⑥：`--host` 只接受 `127.0.0.1` / `0.0.0.0`——其它取值是 2 且没有日志
+- [x] 2.4 seam ⑥：`serve` 不接受 `--events`——给了就是 2 且没有日志
+- [x] 2.5 seam ⑥：绑定先于开日志——端口被占时退出码 2、stderr 含 `INVALID_ARGUMENT` 与该端口、session 目录里没有新日志文件、没有发出任何模型请求
+- [x] 2.6 seam ⑥：serve 的窗口预算失败与 run 同形——使触发线为 0 的 `--window` / `--reserve` 是 2 且没有日志
 
 ## 3. 事件流的形状（seam ⑥）
 

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from mini_harness.events import EventLog, EventRecord, read_events
-from mini_harness.loop import RunOutcome, SessionEnv, SessionSettings, run_session
+from mini_harness.loop import ENTRY_RUN, RunOutcome, SessionEnv, SessionSettings, run_session
 from mini_harness.loop.settings import ApprovalMode, ProviderEndpoint, SandboxLevel
 from mini_harness.provider import FixtureProvider, Provider
 from mini_harness.provider.contract import ToolCall
@@ -268,6 +268,7 @@ async def run_session_fixture(
     )
     outcome = await run_session(
         prompt=prompt,
+        entry=ENTRY_RUN,
         provider=env.provider,
         log=log,
         registry=env.registry,

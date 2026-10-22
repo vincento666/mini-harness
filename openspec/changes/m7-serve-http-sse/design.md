@@ -26,11 +26,13 @@
 
 ## Decisions
 
-**D1 服务端用 aiohttp（人裁决）。** 备选是标准库 `asyncio.start_server` 手写最小 HTTP/1.1（零新依赖，代价是自己写请求行解析与分帧）与 starlette + uvicorn（两个依赖）。选 aiohttp 的理由：它是 asyncio 原生、与「单事件循环」的既有选型一致；`web.StreamResponse` 正是 SSE 需要的分块写；`AppRunner` + `TCPSite` 让「绑定失败当场退出」可控（`setup()` 在端口被占时抛 `OSError`）。代价：新增运行时依赖（连带 `aiosignal` / `frozenlist` / `multidict` 进 `uv.lock`），AGENTS.md 的技术选型行要加一项。
+**D1 服务端用 aiohttp（人裁决）。** 备选是标准库 `asyncio.start_server` 手写最小 HTTP/1.1（零新依赖，代价是自己写请求行解析与分帧）与 starlette + uvicorn（两个依赖）。选 aiohttp 的理由：它是 asyncio 原生、与「单事件循环」的既有选型一致；`web.StreamResponse` 正是 SSE 需要的分块写；`AppRunner` + `TCPSite` 让「绑定失败当场退出」可控。实现时踩到的顺序事实（aiohttp 3.14）：先
+`await runner.setup()` 再建站点（`BaseSite.__init__` 在 `runner.server is None` 时抛 `RuntimeError`，
+`web_runner.py:56-57`），真正的绑定在 `TCPSite.start()` 的 `loop.create_server` 里，端口被占时抛 `OSError`。代价：新增运行时依赖（连带 `aiosignal` / `frozenlist` / `multidict` 进 `uv.lock`），AGENTS.md 的技术选型行要加一项。
 
 **D2 SSE 而不是 DSH 的 WebSocket mux；只照 `session/follow` 的 durable 那一半。** mini 版故意简化：M7 没有任何要写进会话的输入，客户端只需要读。三层的对应写死在这里：`session/follow` 的 seq 游标与 gap-free durable 事件**照它**（游标就是 `seq`、从 `cursor + 1` 起、连续性由「帧数等于日志行数」兜住）；`$events` 的 27 条 allowlist 与两条 waterfall **不做**；assistant-stream 的 cursorless 逐字帧**不做**（前置是 provider 流式，ADR-0006 第 1 条）。代价新开 **ADR-0021** 写明，并且要写明**将来加什么、不用换什么**：第三阶段要补的是 snapshot 帧（加分页，游标语义不动）与一条回程 POST 端点——DSH 的回程 `$events/result` 本来就是 **unary HTTP RPC**（`stream-protocol.js:7-8`、`dsh-api-gateway/lib/index.js:624`、`:772`）而不是 WebSocket 帧，所以「单向流 + HTTP 回程」与 DSH 同形，**SSE 与 `seq` 游标都不是将来要换掉的东西**。真正贵的两处不在事件流这一层：waterfall 要的是可插拔 approval gate 与客户端身份（ADR-0002 第 28 条，归 M10），逐字流要的是 provider 流式与「什么不落日志」的边界（归 M11）。
 
-**D3 一个进程一个会话，绑定发生在开日志之前。** 顺序：参数校验（含 host/port 词表）→ `TCPSite.setup()` 绑定 → `_prepare_or_fail`（里面才 `EventLog.start`）→ 跑会话 → `end_session` → 退出码。绑定失败因此天然满足「不建日志」。备选「先装配再绑定」会在端口被占时留下一份空日志，与 event-stream 规格相冲。
+**D3 一个进程一个会话，绑定发生在开日志之前。** 顺序：参数校验（含 host/port 词表）→ `TCPSite.start()` 绑定 → `_prepare_or_fail`（里面才 `EventLog.start`）→ 跑会话 → `end_session` → 退出码。绑定失败因此天然满足「不建日志」。备选「先装配再绑定」会在端口被占时留下一份空日志，与 event-stream 规格相冲。
 
 **D4 `--host` / `--port` 是 CLI-only flag，不进配置层叠、不进 `session/start` 的 payload。** DSH 把它们做成配置（`dsh-host-webserver`），mini 故意窄：监听地址是入口的形状，不是会话设置——它不进 payload 词表（那条 Requirement 已 489 / 500 字符），也不影响折叠与预算。窄化的代价记进 ADR-0021：配置文件起不来 serve。连带后果：ADR-0002 第 38 条（可配字段名四处平行）**不被 serve 触发**，本里程碑只改判、不收。
 
