@@ -43,9 +43,9 @@
 
 ## 7. 收账：装配路与失败码表（第 40 与 50 条）
 
-- [ ] 7.1 seam ⑥：`ConfigFailure.code` 收成 `Literal` 与词表常量——既有配置失败判据全绿、`mypy --strict` 通过，并补一条「每个失败码可达」的判据
-- [ ] 7.2 seam ⑥：`_prepare_or_fail` 返回 `Prepared | Failure`——`run` / `chat` / `serve` 三处调用方不再 `isinstance(..., int)`；既有失败判据不变绿
-- [ ] 7.3 docs：ADR-0002 第 21、38、39、41 条逐条改判（serve 复用同一个 `SessionEnv` 与同一份参数表，没有带出第二套门与上下文），写明新的触发条件
+- [x] 7.1 seam ⑥：`ConfigFailure.code` 收成 `Literal` 与词表常量——既有配置失败判据全绿、`mypy --strict` 通过，并补一条「每个失败码可达」的判据
+- [x] 7.2 seam ⑥：`_prepare_or_fail` 返回 `Prepared | Failure`——`run` / `chat` / `serve` 三处调用方不再 `isinstance(..., int)`；既有失败判据不变绿
+- [x] 7.3 docs：ADR-0002 第 21、38、39、41 条逐条改判（serve 复用同一个 `SessionEnv` 与同一份参数表，没有带出第二套门与上下文），写明新的触发条件
 
 ## 8. ADR 与文档
 

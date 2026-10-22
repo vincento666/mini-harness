@@ -200,7 +200,20 @@ class _Prepared:
     registry: ToolRegistry
 
 
-def _prepare_or_fail(args: argparse.Namespace) -> _Prepared | int:
+@dataclass(frozen=True)
+class _Failure:
+    """装配路上的失败：码、面向人的 detail、退出码。
+
+    失败是结果不是异常（不变量 B）：`_prepare_or_fail` 自己不打 stderr，调用方拿到码再打，
+    三处入口都能说出「装配在哪一步失败」。
+    """
+
+    code: str
+    detail: str
+    exit_code: int
+
+
+def _prepare_or_fail(args: argparse.Namespace) -> _Prepared | _Failure:
     """参数校验 → 配置层叠 → 装配 → 开日志：`run` 与 `chat` 走同一条路。
 
     失败当场打成 stderr 并返回退出码；所有失败都在 session 日志创建之前（cli 规格）。
@@ -214,18 +227,18 @@ def _prepare_or_fail(args: argparse.Namespace) -> _Prepared | int:
         loaded_config = load_config(config_path)
         if isinstance(loaded_config, ConfigFailure):
             # 配置层失败与参数错误同形：退出码 2，且在日志创建之前。
-            return _report_failure("INVALID_ARGUMENT", loaded_config.detail, EXIT_INVALID_ARGUMENT)
+            return _Failure("INVALID_ARGUMENT", loaded_config.detail, EXIT_INVALID_ARGUMENT)
         config = loaded_config
     # 三层塌成一份有效设置：之后的校验与装配只认这一份。
     layered = layer_settings(args, config)
     max_turns = layered.max_turns
     provider_name = layered.provider
     if max_turns < 1:
-        return _report_failure(
+        return _Failure(
             "INVALID_ARGUMENT", f"--max-turns 至少为 1，收到 {max_turns}", EXIT_INVALID_ARGUMENT
         )
     if provider_name not in ("mock", "openai"):
-        return _report_failure(
+        return _Failure(
             "UNKNOWN_PROVIDER",
             f"--provider 只接受 mock 或 openai，收到 {provider_name}",
             EXIT_INVALID_ARGUMENT,
@@ -236,7 +249,7 @@ def _prepare_or_fail(args: argparse.Namespace) -> _Prepared | int:
         ("approval", layered.approval, APPROVAL_MODES),
     ):
         if level not in allowed:
-            return _report_failure(
+            return _Failure(
                 "INVALID_ARGUMENT",
                 f"{key} 只接受 {' / '.join(allowed)}，收到 {level}",
                 EXIT_INVALID_ARGUMENT,
@@ -244,13 +257,13 @@ def _prepare_or_fail(args: argparse.Namespace) -> _Prepared | int:
     # 窗口预算的两个参数在 session 开始之前判掉：非法取值不产生日志（context-budget 规格）。
     for flag, value in (("--window", layered.window), ("--reserve", layered.reserve)):
         if value < 1:
-            return _report_failure(
+            return _Failure(
                 "INVALID_ARGUMENT", f"{flag} 至少为 1，收到 {value}", EXIT_INVALID_ARGUMENT
             )
     # 窗口减去预留与 headroom 之后没有剩余压力预算时触发线是 0：任何非空上下文都越线、
     # 压缩救不动。照 DSH，这是配置解析期的错误，不是运行期才发现的溢出（ADR-0019）。
     if layered.window - layered.reserve - CONTEXT_HEADROOM_TOKENS <= 0:
-        return _report_failure(
+        return _Failure(
             "INVALID_ARGUMENT",
             (
                 f"--window {layered.window} 减去 --reserve {layered.reserve} 与余量 "
@@ -262,13 +275,13 @@ def _prepare_or_fail(args: argparse.Namespace) -> _Prepared | int:
     # 工具表从装配来：内置六定义按配置的白名单筛，未知名与别的配置失败同形。
     registry = build_registry(layered.tools)
     if isinstance(registry, ConfigFailure):
-        return _report_failure("INVALID_ARGUMENT", registry.detail, EXIT_INVALID_ARGUMENT)
+        return _Failure("INVALID_ARGUMENT", registry.detail, EXIT_INVALID_ARGUMENT)
 
     provider: Provider
     endpoint: ProviderEndpoint | None = None
     if provider_name == "openai":
         if fixture is not None:
-            return _report_failure(
+            return _Failure(
                 "INVALID_ARGUMENT",
                 "--provider openai 不使用 --fixture",
                 EXIT_INVALID_ARGUMENT,
@@ -276,7 +289,7 @@ def _prepare_or_fail(args: argparse.Namespace) -> _Prepared | int:
         # 密钥只从 --api-key-env 指定的环境变量读：它不进 argv、不进日志、不进 payload。
         invalid = validate_base_url(layered.base_url)
         if invalid is not None:
-            return _report_failure("INVALID_ARGUMENT", invalid, EXIT_INVALID_ARGUMENT)
+            return _Failure("INVALID_ARGUMENT", invalid, EXIT_INVALID_ARGUMENT)
         # 端点三条在这里塌成一个对象：payload 那三个字段由它派生，不再各判一遍。
         endpoint = ProviderEndpoint(
             base_url=layered.base_url,
@@ -286,7 +299,7 @@ def _prepare_or_fail(args: argparse.Namespace) -> _Prepared | int:
         # 密钥是装配的必需项：未设或空串都在 session 开始之前当场失败，一个请求都不发。
         api_key = os.environ.get(endpoint.api_key_env)
         if not api_key:
-            return _report_failure(
+            return _Failure(
                 "INVALID_ARGUMENT",
                 f"环境变量 {endpoint.api_key_env} 未设置或为空：--provider openai 需要密钥",
                 EXIT_INVALID_ARGUMENT,
@@ -298,19 +311,19 @@ def _prepare_or_fail(args: argparse.Namespace) -> _Prepared | int:
         )
     else:
         if fixture is None:
-            return _report_failure(
+            return _Failure(
                 "INVALID_ARGUMENT",
                 "--provider mock 需要 --fixture 指向 JSON 数组",
                 EXIT_INVALID_ARGUMENT,
             )
         loaded = load_fixture_provider(Path(fixture))
         if isinstance(loaded, FixtureLoadFailure):
-            return _report_failure(loaded.code, loaded.detail, EXIT_INVALID_ARGUMENT)
+            return _Failure(loaded.code, loaded.detail, EXIT_INVALID_ARGUMENT)
         provider = loaded
 
     log = EventLog.start(_session_dir(layered.session_dir))
     if isinstance(log, LogWriteFailure):
-        return _report_failure(log.code, log.detail, EXIT_INTERNAL_ERROR)
+        return _Failure(log.code, log.detail, EXIT_INTERNAL_ERROR)
 
     settings = SessionSettings(
         workspace=Path(layered.workspace) if layered.workspace is not None else Path.cwd(),
@@ -332,8 +345,8 @@ def _run(args: argparse.Namespace) -> int:
     if prompt is None or prompt == "":
         return _report_failure("INVALID_ARGUMENT", "-p/--prompt 必填且非空", EXIT_INVALID_ARGUMENT)
     prepared = _prepare_or_fail(args)
-    if isinstance(prepared, int):
-        return prepared
+    if isinstance(prepared, _Failure):
+        return _report_failure(prepared.code, prepared.detail, prepared.exit_code)
 
     outcome = asyncio.run(
         _await_session(
@@ -405,9 +418,9 @@ async def _serve_session(*, args: argparse.Namespace, prompt: str) -> int:
     sys.stderr.write(f"serve 监听 http://{server.host}:{server.port}\n")
 
     prepared = _prepare_or_fail(args)
-    if isinstance(prepared, int):
+    if isinstance(prepared, _Failure):
         await server.close()
-        return prepared
+        return _report_failure(prepared.code, prepared.detail, prepared.exit_code)
 
     server.attach(prepared.log.path)
 
@@ -552,8 +565,8 @@ async def _chat_session(prepared: _Prepared) -> int:
 def _chat(args: argparse.Namespace) -> int:
     """一个会话的 REPL：装配与 run 同一条路，之后只多「读行」这一件事。"""
     prepared = _prepare_or_fail(args)
-    if isinstance(prepared, int):
-        return prepared
+    if isinstance(prepared, _Failure):
+        return _report_failure(prepared.code, prepared.detail, prepared.exit_code)
     return asyncio.run(_chat_session(prepared))
 
 

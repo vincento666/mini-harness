@@ -5,7 +5,7 @@ from __future__ import annotations
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, get_args
 
 CONFIG_FILE_NAME = "mini.config.toml"
 
@@ -29,12 +29,23 @@ SETTINGS_FIELDS: dict[str, tuple[type[Any], ...]] = {
 # 一次运行的 prompt 与 fixture 只来自命令行；密钥只走环境变量的名字，值不进配置文件。
 FORBIDDEN_FIELDS: frozenset[str] = frozenset({"prompt", "fixture", "api_key"})
 
+# 配置层的失败码词表（ADR-0002 第 40 条在 M7 收）：词表外的码不得临时新造。
+ConfigCode = Literal[
+    "CONFIG_NOT_FOUND",
+    "CONFIG_INVALID_TOML",
+    "CONFIG_UNKNOWN_KEY",
+    "CONFIG_FORBIDDEN_KEY",
+    "CONFIG_INVALID_VALUE",
+    "UNKNOWN_TOOL_NAME",
+]
+CONFIG_CODES: frozenset[str] = frozenset(get_args(ConfigCode))
+
 
 @dataclass(frozen=True)
 class ConfigFailure:
     """配置层失败：`code` 是给判据用的事实，`detail` 面向人。"""
 
-    code: str
+    code: ConfigCode
     detail: str
 
 

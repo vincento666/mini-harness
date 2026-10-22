@@ -1,6 +1,6 @@
 # 记账：各里程碑留下的坏味道与设计缺口，到对应里程碑再动
 
-这一条不是待办清单的优先级排序，而是 code-review 修复轮（change `m1-event-log-and-turn-loop` 的 tasks 第 11 节）留下的**账**：审查里确认存在的重复与泄漏，M1 里改它们只会增加改动面、不会增加判据，因此只记账不动代码。任何一条到 M2 都可以按新证据改判——但改判要发生在 M2 的 change 里，不是顺手改。第 9 至 12 条来自 M2（change `m2-file-tools-and-fences`）的 `code-review` 两轴审查，第 13 至 17 条来自 M4（change `m4-real-provider`）的同一轮审查；处理方式同样是记账。M3（change `m3-bash-concurrency-timeout`）的收尾轮对第 1、8 至 17 条逐条改判，判词写在各条末尾：已处理 4 条（1、9、10、11），改判为长期形态 3 条（8、12、16），未处理推到 M5 2 条（14、15），未触发 1 条（17）。第 18 至 29 条来自 M3 的 `code-review` 两轴审查——Standards 轴确认存在但「改它不增加判据」的判断项，加两条规格 ↔ 实现的判断（第 28、29 条）——处理方式同样是记账：八条推到 M5，两条判为不动（25、27），两条按现状留着并写明何时才动（28、29）。第 30 条来自 M3 的人手验收（cmd.exe 的 GBK 输出碎成 U+FFFD），同样是记账。最后一节记提交纪律的三处措辞欠账：历史提交不改写，只把与 AGENTS.md 原文不符的地方更正在这里。它前面那节是 M8 审查轮（2026-10-20）的账：提交粒度三处超数没写打包理由、三个 docs 提交没有门禁行、派发段两条未定形状推到 M10，第 18 与 19 条改判。M5 收尾轮（2026-10-21）把写着「M5」的旧处理时点逐条核实改判：五条推到 M10（19、20、22、26、29，其中 29 的触发条件已成立）、四条推到 M6 / M7（21、24、28、30，其中 30 的条件已成立、解码选型要人裁决）、一条按「不动」结案（25）；另新记第 31 条（单条工具结果的剪枝 → M10）与第 32 条（每回合全量重读日志 → M11）。M9 审查轮（2026-10-21）先当场动三条规格 ↔ 实现的缺口（`--config` 指向目录、配置写错档位跳过工作区边界、file-tools 那条 scenario 缺判据），再新记第 38 至 45 条与提交纪律三处欠账。M6 收尾轮（2026-10-21）当场动三条（第 3 条的装配点下沉进事件层、第 42 条改名、第 45 条撤两个无人用的导出），把写着 M6 时点的旧账逐条核实：已处理 3 条（3、42、45），部分处理 1 条（41），未触发改判 6 条（21、24、28、30、38、40），记实况 2 条（32 被 chat 加重、39 多出一份 `SessionEnv`）；再新记第 46 至 50 条与判据欠账两条。
+这一条不是待办清单的优先级排序，而是 code-review 修复轮（change `m1-event-log-and-turn-loop` 的 tasks 第 11 节）留下的**账**：审查里确认存在的重复与泄漏，M1 里改它们只会增加改动面、不会增加判据，因此只记账不动代码。任何一条到 M2 都可以按新证据改判——但改判要发生在 M2 的 change 里，不是顺手改。第 9 至 12 条来自 M2（change `m2-file-tools-and-fences`）的 `code-review` 两轴审查，第 13 至 17 条来自 M4（change `m4-real-provider`）的同一轮审查；处理方式同样是记账。M3（change `m3-bash-concurrency-timeout`）的收尾轮对第 1、8 至 17 条逐条改判，判词写在各条末尾：已处理 4 条（1、9、10、11），改判为长期形态 3 条（8、12、16），未处理推到 M5 2 条（14、15），未触发 1 条（17）。第 18 至 29 条来自 M3 的 `code-review` 两轴审查——Standards 轴确认存在但「改它不增加判据」的判断项，加两条规格 ↔ 实现的判断（第 28、29 条）——处理方式同样是记账：八条推到 M5，两条判为不动（25、27），两条按现状留着并写明何时才动（28、29）。第 30 条来自 M3 的人手验收（cmd.exe 的 GBK 输出碎成 U+FFFD），同样是记账。最后一节记提交纪律的三处措辞欠账：历史提交不改写，只把与 AGENTS.md 原文不符的地方更正在这里。它前面那节是 M8 审查轮（2026-10-20）的账：提交粒度三处超数没写打包理由、三个 docs 提交没有门禁行、派发段两条未定形状推到 M10，第 18 与 19 条改判。M5 收尾轮（2026-10-21）把写着「M5」的旧处理时点逐条核实改判：五条推到 M10（19、20、22、26、29，其中 29 的触发条件已成立）、四条推到 M6 / M7（21、24、28、30，其中 30 的条件已成立、解码选型要人裁决）、一条按「不动」结案（25）；另新记第 31 条（单条工具结果的剪枝 → M10）与第 32 条（每回合全量重读日志 → M11）。M9 审查轮（2026-10-21）先当场动三条规格 ↔ 实现的缺口（`--config` 指向目录、配置写错档位跳过工作区边界、file-tools 那条 scenario 缺判据），再新记第 38 至 45 条与提交纪律三处欠账。M6 收尾轮（2026-10-21）当场动三条（第 3 条的装配点下沉进事件层、第 42 条改名、第 45 条撤两个无人用的导出），把写着 M6 时点的旧账逐条核实：已处理 3 条（3、42、45），部分处理 1 条（41），未触发改判 6 条（21、24、28、30、38、40），记实况 2 条（32 被 chat 加重、39 多出一份 `SessionEnv`）；再新记第 46 至 50 条与判据欠账两条。M7 收尾轮（2026-10-22）当场收三条：第 40 条（`ConfigFailure.code` 收成 `Literal` 与词表常量）、第 50 条（`_prepare_or_fail` 返回 `_Prepared | _Failure`）、第 41 条剩下的那一半（取「收窄词条」，装配住在 CLI 层）；把写着 M7 时点的旧账逐条核实：未触发改判 3 条（21、38、39），各自的新的触发条件写在条末。
 
 ## 1. `run_session` 的九个关键字参数就是 `session/start` 的 payload
 
@@ -179,6 +179,7 @@ payload 是 `turn_id` / `tool_call_id` / `code` / `detail`。规格要求「被�
 - **改判到 M6 / M7（2026-10-21，M5 收尾核实）**：M5 没给 `dispatch_tool_call` 加入参，也没有第二个派发者。真正「各带一套门与上下文」的是 M6 的 chat REPL 与 M7 的 serve——照本条自己写的第二个读法走。
 - **未触发，改判到 M7（2026-10-21，M6 收尾核实）**：M6 的 chat REPL 没有成为第二个派发者，`dispatch_tool_call` 的四个入参一个没变——chat 复用同一个内核环境（`loop/turn_loop.py::SessionEnv` 收 provider / log / registry / settings / approval_gate，门与上下文仍由内核带）。仍等 M7 的 serve 带出第二套。
 - **同一结伴在别处又出现一遍（2026-10-21，M6 收尾轮 Standards 轴）**：`SessionEnv` 立起来之后，`_recover_overflowed_request`（`turn_loop.py:534`）仍把 `log` / `settings` / `provider` / `registry` / `cancel` 一个个传一遍，`run_session`（`:938`）的签名仍是六个入参、内部再拼成 `SessionEnv`，`tests/tool_harness.py:269` 又把 `env` 拆回六个入参喂它。本条的「已处理」只成立于 `dispatch_tool_call` 那一半。处理时点不变（**M7**），收的时候把这三处一起收。
+- **未触发，改判到 M10（2026-10-22，M7 收尾核实）**：M7 的 serve 不是第二个派发者。它复用同一个内核环境——`run_session(..., entry=ENTRY_SERVE, ...)`，approval 门仍是 `STDIN_APPROVAL_GATE` 那个模块常量；`dispatch_tool_call` 的四个入参一个没变，`run_session` 仍是六个入参，`_recover_overflowed_request` 仍逐个传。serve 带出来的第二套是 **HTTP 侧**的（`cli/serve.py::ServeServer`：监听地址、日志路径、`session_finished` 信号），与派发侧的门与上下文不重叠。新的触发条件：M10 给派发段加东西（可插拔 approval 门、子会话各自的门）时收，收法仍是「三处一起收」。
 
 ## 22. 三个名字与实际含义有距离
 
@@ -360,6 +361,7 @@ GLOSSARY 立了「遮蔽范围」这个词，代码里它是 `dict[str, int]`（
 - 记账不动的理由：正确的收法是一份字段表当唯一来源、argparse 与 dataclass 都由它生成；那要把 CLI 的参数表从声明式改成生成式，M9 的判据面不因此多一条。
 - 处理时点：**M6**（REPL 要复用同一份设置面时最疼）。
 - **未处理，改判到 M7（2026-10-21，M6 收尾核实）**：M6 把「参数表」收成一份（`cli/main.py::_add_shared_flags`，`run` 与 `chat` 都 `parents=[shared]`），chat 一个新 flag 也没加；可那四处平行列出的字段名一处没少——加一个可配字段仍要改四处，mypy 仍不拦。M7 的 serve 复用同一份参数表时再收。
+- **未处理，改判到 M10（2026-10-22，M7 收尾核实）**：M7 的 serve 复用同一份参数表（`parents=[shared]`），新加的两个 flag `--host` / `--port` 是 CLI-only、不进配置文件（ADR-0021 D4），所以四处平行列出的字段名一处没多、也一处没少——加一个**可配**字段仍要改四处，mypy 仍不拦。新的触发条件：M10 往配置文件加新字段（可插拔 approval 门、spill 阈值）时收；收法不变——一份字段表当唯一来源，argparse 与 dataclass 都由它生成。
 
 ### 39. `EffectiveSettings` 与 `SessionSettings` 字段高度重叠
 
@@ -371,6 +373,7 @@ GLOSSARY 立了「遮蔽范围」这个词，代码里它是 `dict[str, int]`（
 - **第四份，且它 ≡ 第三份的前四个字段（2026-10-21，M6 收尾轮 Standards 轴）**：`cli/main.py::_Prepared`（provider / settings / log / registry）与 `SessionEnv` 只差 `approval_gate`；`_run` 与 `_chat_session` 拿到 `_Prepared` 之后立刻把它拆开、再拼成 `SessionEnv`。基线里的 Data Clumps 加 Middle Man。
   - 记账不动的理由：`_Prepared` 是「装配成功」这个事实的名字，`_prepare_or_fail` 靠它把 12 处失败分支收在一处；把它直接换成 `SessionEnv` 要让 CLI 层知道 `approval_gate` 从哪来（现在是 `STDIN_APPROVAL_GATE` 那个模块常量）。
   - 处理时点：**M10**，与本条上面那半一起收；M7 的 serve 会带来第五份候选（HTTP 请求带自己的门与上下文），那时再定收法。
+- **第五份候选没有出现，改判到 M10（2026-10-22，M7 收尾核实）**：本条预言的那一份没出现。serve 的会话材料仍是 `_Prepared`（provider / settings / log / registry），`cli/serve.py::ServeServer` 带的是 HTTP 侧的三样（host / port、日志路径、`session_finished` 信号），与那四份字段不重叠；`_Failure`（M7 任务 7.2）是失败结果，不是第五份设置面。四份各自回答的问题不变（三层取值 / 日志字段表 / 会话内不变的能力集 / 装配成功）。新的触发条件：M10 给每个会话各自的 approval 门或 spill 阈值时，第五份才会出现。
 
 ### 40. `ConfigFailure.code` 是裸 `str`，没有 `Literal` 与词表常量
 
@@ -379,6 +382,7 @@ GLOSSARY 立了「遮蔽范围」这个词，代码里它是 `dict[str, int]`（
 - 记账不动的理由：加 `Literal` 要先决定「CLI 层的 `INVALID_ARGUMENT` / `UNKNOWN_PROVIDER` 与这六个是不是同一张词表」，而那张对外失败码表 M9 没有判它。
 - 处理时点：**M6 / M7**（失败码表要对外稳定、REPL 与 serve 要复用那张表时）。
 - **未处理（2026-10-21，M6 收尾核实）**：M6 让 chat 复用同一套失败码（`_prepare_or_fail` 与 `run` 走同一条 `_report_failure`），可那张表仍是散在 `cli/main.py` 里的字符串，`ConfigFailure.code` 仍是裸 `str`。M7 立 serve 时收。
+- **已处理（2026-10-22，M7 任务 7.1）**：`config/load.py::ConfigCode = Literal[六个值]`、`CONFIG_CODES = frozenset(get_args(ConfigCode))`，`ConfigFailure.code` 是 `ConfigCode`；可达性判据从「硬编码六个」改成「跑出来的集合 == `CONFIG_CODES`」——往词表加一个取值而没人能跑到它，那条就红。本条当初那个前置问题按现状答：CLI 层的 `INVALID_ARGUMENT` / `UNKNOWN_PROVIDER` **没有**并进来，配置层那张表只管配置层。剩下的那一半（对外失败码表）仍是散在 `cli/main.py` 的字符串；新的触发条件：M10 要把失败码对外承诺（HTTP 侧回码、spill 阈值报错）时立那张表。
 
 ### 41. 「装配」这个词在 GLOSSARY 里是五步，在代码里只有一步住在 `config/`
 
@@ -387,6 +391,7 @@ GLOSSARY 立了「遮蔽范围」这个词，代码里它是 `dict[str, int]`（
 - 记账不动的理由：M9 的判据全在 seam ② 与 ⑥，把 `_run` 的装配段抽出来不增加判据，只搬代码。
 - 处理时点：**M6**——REPL 进来时要么把 `_run` 的装配段抽进 `config/`，要么把 GLOSSARY 那个词收窄成「工具表与设置的产出」，二者取一。
 - **部分处理（2026-10-21，M6 任务 6.1）**：两个读法都没选，选的是第三个：装配段从 `_run` 抽成 `cli/main.py::_prepare_or_fail`，`run` 与 `chat` 共用它，`_run` 因此不再是「因四个原因被编辑」的那个函数。可装配仍住在 CLI 层，GLOSSARY 的「装配」仍是五步。剩下的那一半（抽进 `config/` 还是收窄词条）改判到 M7——serve 是第三个消费者，那时才有证据说它属于哪一层。
+- **剩下的那一半在 M7 收，取「收窄词条」（2026-10-22，M7 任务 7.3）**：serve 是第三个消费者，证据够了。`_prepare_or_fail` 吃的是 `argparse.Namespace`，`config/layering.py::layer_settings` 直接读 CLI 参数与配置文件两份——把它抽进 `config/` 要让配置层认识 argparse，而配置层现在不认识。裁决：装配住在 CLI 层，`config/` 只装工具表与层叠；GLOSSARY 的「装配」补上这一句（五步不变，写明它住在哪、三个入口共用同一条）。Divergent Change 那一半已随 `_prepare_or_fail` 结案，Mysterious Name 随词条收窄结案。
 
 ### 42. `build_registry(names)` 的 `names` 没说它是白名单
 
@@ -457,6 +462,7 @@ D2 把 `cancel` 列在冻结的会话环境成员里，实现把它做成 `run_t
 
 - 记账不动的理由：抽它是为了让 `run` 与 `chat` 共用同一条装配路，12 处失败分支不写两遍；改成 `Prepared | Failure` 要先有那张对外失败码表。
 - 处理时点：**M7**，与第 40 条同一处收。
+- **已处理（2026-10-22，M7 任务 7.2）**：`_prepare_or_fail` 返回 `_Prepared | _Failure`，`_Failure` 带 `code` / `detail` / `exit_code`，函数自己不再打 stderr；`run` / `chat` / `serve` 三处 `isinstance(prepared, _Failure)` 之后各自 `_report_failure`。当初那句「要先有那张对外失败码表」按现状答：不需要——`_Failure` 装的是码本身，不要求码先收成词表（第 40 条只收了配置层那六个）。既有失败判据一条没改、不变绿（382 passed / 5 skipped，TOTAL 95%）。
 
 ### 51. `SegmentOutcome` 兼任会话级的失败结果
 
