@@ -34,7 +34,7 @@
 - **THEN** 退出码为 0，且 `session/start` 的 payload 取自配置文件里的值而不是内置默认
 
 ### Requirement: run 参数记录进 session/start
-系统 SHALL 在 `session/start` 的 payload 里记录本次运行的**有效参数**（层叠之后的结果）：`entry`（`run` 或 `chat`，记录会话由哪个入口开始）、`workspace`（绝对路径）、`provider`、`max_turns`、`window`、`reserve`、`append_system_prompt`、`sandbox`、`approval`（`ask` 或 `auto`）、`tools`（装配筛出来并送给模型的工具名列表），以及用户 prompt 原文——`entry` 为 `chat` 时 prompt MUST 是空串，人话住在 `user/message` 里。`provider` 为 `openai` 时还 SHALL 记录 `base_url`、`model` 与 `api_key_env`（**环境变量的名字**，不是它的值）。payload MUST NOT 记录密钥的值或任何 Authorization 内容。payload MUST NOT 重复携带 `schema_version`。
+系统 SHALL 在 `session/start` 的 payload 里记录本次运行的**有效参数**（层叠之后的结果）：`entry`（`run`、`chat` 或 `serve`，记录会话由哪个入口开始）、`workspace`（绝对路径）、`provider`、`max_turns`、`window`、`reserve`、`append_system_prompt`、`sandbox`、`approval`（`ask` 或 `auto`）、`tools`（装配筛出来并送给模型的工具名列表），以及用户 prompt 原文——`entry` 为 `chat` 时 prompt MUST 是空串，人话住在 `user/message` 里。`provider` 为 `openai` 时还 SHALL 记录 `base_url`、`model` 与 `api_key_env`（**环境变量的名字**，不是它的值）。payload MUST NOT 记录密钥的值或任何 Authorization 内容。payload MUST NOT 重复携带 `schema_version`。
 
 #### Scenario: payload 与命令行一致
 - **WHEN** 执行 `minihns run -p "x" --max-turns 3 --workspace <dir> --sandbox read-only`
@@ -94,7 +94,7 @@
 - **THEN** 退出码为 2，stderr 含 `SESSION_NOT_FOUND`
 
 ### Requirement: 退出码只取自固定表
-系统 SHALL 只用固定退出码：0 成功、1 模型或内部错误、2 参数错误、3 围栏拒绝或审批被拒、4 上下文预算溢出、5 用户取消。除参数错误（发生在 session 开始之前）、日志不可写、以及 replay 不一致这三种情况外，每个非零退出 SHALL 有对应的 `error/*` 事件。3 与 4 都是可达码：`stop_reason: FENCE_DENIED` 映射到 3，`stop_reason: CONTEXT_WINDOW_EXCEEDED` 映射到 4。一次性 `minihns run` 里会话收尾就是这次进程的退出码；`minihns chat` 里段级收尾（`ABORTED`、`FENCE_DENIED`、`MAX_TURNS`、`CONTEXT_WINDOW_EXCEEDED`、`PROVIDER_ERROR`）MUST NOT 结束进程，会话收尾（EOF 或提示符上取消）的退出码 SHALL 是 0。
+系统 SHALL 只用固定退出码：0 成功、1 模型或内部错误、2 参数错误、3 围栏拒绝或审批被拒、4 上下文预算溢出、5 用户取消。除参数错误（发生在 session 开始之前）、日志不可写、以及 replay 不一致这三种情况外，每个非零退出 SHALL 有对应的 `error/*` 事件。3 与 4 都是可达码：`stop_reason: FENCE_DENIED` 映射到 3，`stop_reason: CONTEXT_WINDOW_EXCEEDED` 映射到 4。一次性入口（`minihns run` 与 `minihns serve --http`）里会话收尾就是这次进程的退出码；`minihns chat` 里段级收尾（`ABORTED`、`FENCE_DENIED`、`MAX_TURNS`、`CONTEXT_WINDOW_EXCEEDED`、`PROVIDER_ERROR`）MUST NOT 结束进程，会话收尾（EOF 或提示符上取消）的退出码 SHALL 是 0。
 
 #### Scenario: 每个失败都落在表内
 - **WHEN** M2 的任一失败场景发生
