@@ -44,7 +44,7 @@
 
 ## 8. 变异测试一轮
 
-- [ ] 8.1 四条变异跑全量并记进 `docs/verification/add-key-driven-default-provider-mutation.md`：① 预设表里 `openai` 的 `api_key_env` 改回 `DEEPSEEK_API_KEY`；② 覆盖规则改成「预设总是覆盖」；③ 密钥在场规则改成「总是 mock」；④ 缺 model 的检查删掉。每条必须被至少一条测试杀死。
+- [x] 8.1 四条变异跑全量并记进 `docs/verification/add-key-driven-default-provider-mutation.md`：① 预设表里 `openai` 的 `api_key_env` 改回 `DEEPSEEK_API_KEY`；② 覆盖规则改成「预设总是覆盖」；③ 密钥在场规则改成「总是 mock」；④ 缺 model 的检查删掉。每条必须被至少一条测试杀死。**实测**：M1 6 红 / M2 **18 红** / M3 2 红 / M4 3 红，**没有存活的变异**；每次还原后 `git status --short -- <file>` 为空。两处记在文档里：M4 之下两条判据会真去连 `https://api.openai.com/v1`，全量跑从 3 分 15 秒涨到 4 分 02 秒；变异跑在两轴之前（连续第三轮同一笔欠账），且第一次跑只拿到计数、重跑一次才拿到判据名字。
 
 ## 9. Learning Gate
 
