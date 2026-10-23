@@ -597,6 +597,15 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Promotion candidate: 与 L-048 同族（入口常见的形状 ≠ 入口里从没发生过的那件事），本轮不占额度
 - Status: inbox
 
+### L-053
+- Date: 2026-10-23
+- Context: 同一 change 的 `code-review` Spec 轴与 task 8.4
+- Observation: chat-repl 的 delta 从 propose 起就写着「遮蔽反馈不是日志的投影」，可判据只断言「这一行不在 stdout、不在日志」。投影规则的另一半——**同一份日志的 `minihns replay` 输出不因它改变**——没有任何判据；实现那一半本来就是对的，缺口只在判据侧，所以四道门禁全绿也查不出来
+- Evidence: 补的判据 `test_a_chat_that_compacted_replays_the_same_log_unchanged`（seam ⑥：真跑一次 chat 让 `[遮蔽]` 出现在 stderr，再对同一份日志跑 `minihns replay`，判退出码 0、stdout 与 stderr 里没有那一行、没有 `REPLAY_MISMATCH`）；Spec 轴的报告写明那条场景没有判据
+- Next use: 写「某一行只出现在屏幕上」这类判据时，把「日志的重放方与折叠方看不见它」一起写成断言；投影规则的两半都要有判据
+- Promotion candidate: 与 L-041 同族（判据要判值对不对，不是判有没有一行），本轮不占额度
+- Status: inbox
+
 ### `fix-compaction-and-context-overflow` 收尾轮的消化记录（2026-10-22，tasks 6.4 与 7.3）
 
 **关闭三条**：L-042 关闭为 `rejected`（与 L-027 同一理由——AGENTS.md 变异段本来就写着「跑全量测试」；本轮 6 个变异里 2 条跑全量、4 条定点，差多少条已在 mutation 文档写明）；L-046 关闭（「多场手动验收逐场写工件内容与场间重置」的形状已在 M6 / M7 与本轮的 manual 里成型，本轮照它写 `.tmp/realchat/` 那一份）；L-025 关闭（两栏记录——harness 层必须一致、模型层只观察——已在三份 manual 成型，AGENTS.md 完成判据那句承载；它「等人类跑完模型层那一半」的前提也变了：本轮真实端点那一半由 agent 跑完、并且从此是完成判据，不再是等人跑的那一半）。
@@ -605,9 +614,23 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 
 **AGENTS.md 本轮晋升一条**：L-051 的「依赖模型回复形状的功能，完成判据里要有一次真实端点实测」进流程节的完成判据那句。一进一出换掉的是 ruff 例外那句里的括号（「本项目的 docstring / 注释 / 用户可见字符串一律用中文全角标点」——仓库实况已经在这么做，「例外只有两处」那条规则本身留着）。
 
-**本轮的提交纪律没有欠账**：七个提交每个都跑过门禁并记下数字；两处打包（5.1–5.2 与 5.3–5.5）按「同一 seam 相邻至多 3 个 task」拆开，5.3–5.5 那一提交跨 seam ① 与文档，理由写在提交信息里。
+**本轮的提交纪律有欠账**（这一句 2026-10-23 更正过，原来写的是「没有欠账」）：`14a7b48` 与 `1bc5e94` 两个规划提交只有 `openspec validate` 那一行；`34dd4e8` 与 `c7df1d1` 完全没有门禁行，后者是实现提交；`e5ad72f` 打包 7.1–7.2 与 6.4 + 7.3 跨三个 seam 且没写打包理由；变异轮（7.2）与 Learning Gate（7.3）跑在 `code-review` 两轴之前。逐条记在 `docs/adr/0002` 的「`fix-compaction-and-context-overflow` 的提交纪律与流程欠账」一节。红绿循环本身没有违例：两处打包（5.1–5.2 与 5.3–5.5）按「同一 seam 相邻至多 3 个 task」拆开，跨 seam 那一处的理由写在提交信息里。
 
 收件箱：13 条（L-005 / L-019 / L-036 / L-037 / L-039 / L-041 / L-043 / L-045 / L-047 / L-048 / L-049 / L-050 / L-052），空闲 2 条；L-051 已晋升、不占额度。
+
+### `fix-compaction-and-context-overflow` 两轴之后的消化记录（2026-10-23，tasks 8.1–8.9）
+
+**四条裁决都落成了判据**：8.1 的 `FENCE_DENIED` 段（seam ⑥，真红过——`assert len(notes) == 1` 实得 0 行）；8.2 的孤儿 `tool` 消息（seam ①，真红过——摘要请求里的角色序列是 `system / tool / assistant / tool / user`，那条 `tool` 没有请求它的 `assistant`）；8.3 的 500 与 429（seam ⑤，**绿着到的**：`openai_compat.py` 里重试耗尽那条早退本来就挡住了 5xx 与 429，`status >= 400` 那一处从来没有可达的 5xx——当场用一处变异确认它们不空转，两条都红在 `assert 'PROVIDER_CONTEXT_OVERFLOW' == 'PROVIDER_HTTP_STATUS'`）；8.4 的 chat 日志逐点重放（seam ⑥，补的是 propose 起就缺的那半条判据）。
+
+**第二轮变异（tasks 8.7）跑全量**：十条变异全部被杀死、无存活、无 dud，基线 **408 passed / 5 skipped**。两条新判据各自杀掉打它的那条变异（8 号「把 `FENCE_DENIED` 也压掉」只红在 `test_a_fence_denied_segment_says_so_on_stderr`；9 号「裁剪改回逐条丢」只红在 `test_the_summary_trim_drops_whole_round_trips`）。上一轮定点跑的六条这一轮全部改跑全量——代价就是违「两轴在变异之前」的那笔账。
+
+**新收一条**：L-053（屏幕上那一行的判据要连重放方一起判：「不在 stdout、不在日志」只判了投影规则的一半）。
+**补证据五条**：L-047（本轮人裁决定把 delta 那句改成**反面集合**——「不以 `MODEL_COMPLETED` / `ABORTED` 收尾就打」；正面清单每加一种收尾理由就漏一种，`FENCE_DENIED` 就是这么漏的）；L-039（8.3 那两条绿着到，靠变异确认不空转，与 M6 / M7 那两节「绿着到的守卫」同一形状）；L-037（两轴查出的判据缺口全部补在实现之后，必须在变异下重跑一遍才算数——这就是 tasks 8.7 存在的原因）；L-048（本轮第二次让 chat 在 seam ⑥ 上真发生压缩，并第一次把那份日志交给 `minihns replay` 判）；L-052（8.4 那条判据只喂一条输入：它判的是「重放看不见」，不是「跨段重报」，所以不违这条）。
+**更正一句**：上面那条「本轮的提交纪律没有欠账」写错了，五条欠账记进 `docs/adr/0002` 的本 change 两节；实质违例是变异轮与 Learning Gate 跑在两轴之前。
+
+**AGENTS.md 本轮不晋升**：L-053 与 L-041 同族（判据要判对不对，不是判有没有），L-047 的反面集合那条要等它在下个 change 里真的省下一次漏判才值得占额度。
+
+收件箱：14 条（L-005 / L-019 / L-036 / L-037 / L-039 / L-041 / L-043 / L-045 / L-047 / L-048 / L-049 / L-050 / L-052 / L-053），空闲 1 条。
 
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 - 每个里程碑收尾扫一次，**允许输出 `NO-PROMOTION`**（没有可复用信号就不写条目）。

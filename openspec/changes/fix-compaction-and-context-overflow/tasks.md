@@ -48,6 +48,18 @@
 - [x] 7.2 变异测试一轮并记进 `docs/verification/fix-compaction-and-context-overflow-mutation.md`：计划里的五处全部跑过，另加一处（遮蔽反馈不卡 `through` 这条线，apply 5.2 时真端点那一跑先撞出来的那个缺陷）——**六个变异全部被杀死，没有存活、没有 dud**；还原后 `git diff HEAD -- src tests` 是 0 行、基线复现同一组数字。
 - [x] 7.3 Learning Gate 的收件箱那一半：扫本轮证据写进 `docs/lessons.md`——新收 L-051（真实端点那一跑是判据不是补充，已晋升）与 L-052（mock 判据每段只喂一条输入，跨段的缺陷抓不到）；L-049 补一处新实例（PowerShell 把子进程 stderr 包成 ErrorRecords、同一行显示两遍，第一次读真 run 时把它当成实现缺陷）；L-047 / L-048 / L-037 / L-039 / L-045 各补一条本轮证据。不是 `NO-PROMOTION`。
 
+## 8. `code-review` 两轴之后的四条裁决与两条规格欠账（2026-10-23）
+
+- [x] 8.1 裁决一（反面集合）：屏幕上那一行改成「不以 `MODEL_COMPLETED` / `ABORTED` 收尾就打」。先写 seam ⑥ 判据 `test_a_fence_denied_segment_says_so_on_stderr`——红在 `assert len(notes) == 1` 实得 0，正是真端点那一跑撞到的「`FENCE_DENIED` 段无声」。实现把 `_SEGMENT_NOTE_REASONS` 白名单换成 `_SEGMENT_NOTE_SUPPRESSED = {STOP_MODEL_COMPLETED, STOP_ABORTED}`；delta 的需求正文改成反面集合并补「围栏拒绝收尾的段在屏幕上有一行」场景。
+- [x] 8.2 裁决二（按往返整对丢）：seam ① 判据 `test_the_summary_trim_drops_whole_round_trips` 先红——摘要请求里的角色序列是 `system / tool / assistant / tool / user`，那条 `tool` 没有请求它的 `assistant`。实现加 `_drop_leading_unit`：带调用的那条 assistant 与回答它的 tool 消息一起丢；delta 补「裁剪不拆散工具往返」场景。
+- [x] 8.3 裁决三（收紧溢出识别）：`openai_compat.py` 塌成溢出那一处加 `not _retryable(response.status_code)` 守卫——只有不可重试的 4xx 塌成溢出。seam ⑤ 补两条判据：500 与 429 的正文里恰好含短语表里的话仍走 `PROVIDER_HTTP_STATUS`。这两条在改前就是绿的（重试耗尽那条早退已经挡住了 5xx 与 429），所以先确认它们在变异下红：把塌成溢出的判断挪到那条早退之前，两条都红（`assert 'PROVIDER_CONTEXT_OVERFLOW' == 'PROVIDER_HTTP_STATUS'`），还原。delta 正文与两个场景同步。
+- [x] 8.4 规格轴欠账 (a)1：补 seam ⑥ 判据 `test_a_chat_that_compacted_replays_the_same_log_unchanged`——真跑一次 chat 让屏幕上出现 `[遮蔽]`，同一份日志的 `minihns replay` 退出码 0、stdout 与 stderr 里都没有那一行、没有 `REPLAY_MISMATCH`。delta 里「遮蔽反馈不是日志的投影」那条场景原本没有判据。
+- [x] 8.5 规格轴欠账 (a)2：`proposal.md` 的「What Changes」与「Capabilities」按实现实况改写——塌成溢出只发生在不可重试的 4xx 且不重试、那一行写反面集合、同一条压缩记录只报一次、真实产物 fixture 只喂 seam ① 与 ⑤ 的判据（seam ⑥ 跑 mock 与 loopback 假端点）。
+- [x] 8.6 规格轴欠账 (b)1：`event.seq <= through` 这条去重规则写进 delta——需求正文加一句「同一条 `compaction/summary` MUST NOT 被打印第二次」，并补「同一条压缩记录只报一次」场景。
+- [x] 8.7 裁决四（变异轮重跑）：六条变异全部跑全量测试，变异 4 拆成两处单点（4a 段注脚那一行、4b 遮蔽反馈那一行），另加三条打本轮新判据的变异（7 塌成溢出的位置、8 把 `FENCE_DENIED` 也压掉、9 裁剪改回逐条丢）。实测 2026-10-23 09:51 至 10:42：**十条全部跑全量、全部被杀死，无存活、无 dud**，基线 **408 passed / 5 skipped**；记进 `docs/verification/fix-compaction-and-context-overflow-mutation.md` 的「第二轮」。
+- [x] 8.8 Standards 轴记账：`docs/adr/0002` 加第 66 条（`PROTECTED_EVENT_TYPES` 在 `context/budget.py` 与 `events/fold.py` 各一份）与第 67 条（`_print_shadow_feedback` 每段整读一次日志，与第 16 条同一笔账），另加「本 change 的提交纪律与流程欠账」五条与「本 change 的判据欠账」三条；更正 `docs/lessons.md` 收尾消化记录里那句「本轮的提交纪律没有欠账」，并补 2026-10-23 的消化记录（新收 L-053、补证据五条、本轮不晋升）。
+- [x] 8.9 跑门禁四道、更新 `docs/CURRENT.md` 的门禁行与本轮四条裁决，提交并推 `change/fix-compaction-and-context-overflow`。
+
 ## Workflow follow-up
 
 - 跑 `code-review` 两轴（Standards / Spec）核对实现与四条 delta 一致。

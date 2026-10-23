@@ -612,6 +612,22 @@ async def _recover_overflowed_request(
     return _RetriedRequest(generated=generated, retry_events=attempts)
 
 
+def _drop_leading_unit(body: list[Message]) -> list[Message]:
+    """从头部丢一个完整单位：带调用的那条 assistant 与回答它的那些 tool 消息一起丢。
+
+    逐条丢会把一组工具往返拆散——留下的 tool 消息带着没人请求它的 `tool_call_id`（ADR-0023）。
+    """
+    first = body[0]
+    if not first.tool_calls:
+        return body[1:]
+    called = {call["id"] for call in first.tool_calls if isinstance(call.get("id"), str)}
+    rest = body[1:]
+    cut = 0
+    while cut < len(rest) and rest[cut].role == "tool" and rest[cut].tool_call_id in called:
+        cut += 1
+    return rest[cut:]
+
+
 async def _compact_if_over_line(
     *,
     log: EventLog,
@@ -632,13 +648,13 @@ async def _compact_if_over_line(
         return None
     tokens_before = budget_reading(events, context.messages)
 
-    # 摘要请求自己也要装得进窗口：装不下就从该段头部逐条丢，一条都不剩时不发请求（ADR-0023）。
+    # 摘要请求自己也要装得进窗口：装不下就从该段头部按往返整对丢，一条都不剩时不发请求（ADR-0023）。
     header = context.messages[:1]
     instruction = Message(role="user", content=SUMMARY_INSTRUCTION)
     summary_budget = settings.window - settings.reserve
     body = fold_range(events, start=rng["start"], end=rng["end"])
     while body and estimate_tokens([*header, *body, instruction]) > summary_budget:
-        body = body[1:]
+        body = _drop_leading_unit(body)
     if not body:
         return None
 

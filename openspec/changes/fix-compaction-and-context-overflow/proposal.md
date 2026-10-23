@@ -9,11 +9,11 @@
 ## What Changes
 
 - **摘要请求裁进窗口**：生成摘要的那次调用只装「本次要遮蔽的那一段」折出的消息（加系统消息与摘要指令），不再发整份表层；这一段本身就装不下时**不发**这个请求，直接走溢出结果。
-- **溢出识别放宽**：适配器把可识别的上下文超限 4xx 规范化为 `PROVIDER_CONTEXT_OVERFLOW`——除既有的 `error.code == context_length_exceeded`，也认 `error.type` 命中与正文里那族固定短语；命中后走既有的请求级压缩 + 重试一次（上限 1 次）。
+- **溢出识别放宽**：适配器把可识别的上下文超限回复规范化为 `PROVIDER_CONTEXT_OVERFLOW`——除既有的 `error.code == context_length_exceeded`，也认 `error.message` 命中固定短语表（大小写不敏感、整句里找子串；真端点那一次回的正文里只有 `error.type` 与 `message`，没有 `error.code`）。塌成溢出只发生在不可重试的 4xx：429 与 5xx 仍走 `PROVIDER_HTTP_STATUS`，塌成溢出的那条不重试。
 - **失败带上提供方那句话**：`ProviderFailure.detail` 与 `error/model.payload.detail` 里带上响应正文的有界摘要（单行、至多 200 字符），不再是光秃秃的 `HTTP 400`。
-- **失败在屏幕上可见**：`minihns chat` 里段以 `PROVIDER_ERROR` / `CONTEXT_WINDOW_EXCEEDED` / `MAX_TURNS` 收尾时，stderr 打一行说明；stdout 仍是日志的投影，规则不变。
-- **遮蔽层在屏幕上可见**：一个段里写出 `compaction/summary` 时，stderr 打一行遮蔽反馈（`shadowed_range` 两端、`tokens_before`、`tokens_after`）；不新增事件类型、不改 payload。
-- **判据补上真实端点那一层**：seam ⑤ 与 ⑥ 的判据改用**真实端点实际回过的产物**做 fixture；另加一条**完成判据**——一次真实端点的 `minihns chat` 实测（不进 CI，但不跑完这个 change 不算完成）。这是流程层面的更正：M4 之后每个里程碑的完成判据里都没有真实端点那一行，见 ADR-0022。
+- **失败在屏幕上可见**：`minihns chat` 里段**不以** `MODEL_COMPLETED` / `ABORTED` 收尾时（`PROVIDER_ERROR` / `CONTEXT_WINDOW_EXCEEDED` / `MAX_TURNS` / `FENCE_DENIED` 都在其中），stderr 打一行说明；stdout 仍是日志的投影，规则不变。
+- **遮蔽层在屏幕上可见**：一个段里写出 `compaction/summary` 时，stderr 打一行遮蔽反馈（`shadowed_range` 两端、`tokens_before`、`tokens_after`），同一条记录只报一次；不新增事件类型、不改 payload。
+- **判据补上真实端点那一层**：seam ⑤ 的识别判据直接读真端点实际回过的那条 400 正文，seam ① 的记录形状判据读真端点实际写出的那条 `compaction/summary`（两份 fixture 的来源见 `tests/fixtures/real_endpoint/README.md`）；seam ⑥ 的 chat 判据跑真实子进程、端点是 mock 或监听 loopback 的假 server，真实那一半由完成判据里那次真实实测承担。另加一条**完成判据**——一次真实端点的 `minihns chat` 实测（不进 CI，但不跑完这个 change 不算完成）。这是流程层面的更正：M4 之后每个里程碑的完成判据里都没有真实端点那一行，见 ADR-0022。
 
 **本 change 明确不做**：不改 `字符 ÷ 4` 的预算估算（DSH 自己也把精确 token 化列为暂缓，见其 `dsh-compaction-basic` 开发备注）；不加工具输出修剪器（DSH 的 `dsh-compaction-tool-result-pruner`）；不给摘要请求加 `max_tokens`；不改 `max_turns` 默认值；不碰 `minihns serve` 的事件流；不解决 Windows 上被 skip 的四条 SIGINT 子进程判据；不动 `context-budget` 主规格里只写 `minihns run` 的那处不对称。
 
@@ -27,7 +27,7 @@
 
 - `context-budget`：「越线时压缩发生在装配之内」加摘要请求的形状与预算约束；「摘要调用失败沿用 provider 失败结果」补「请求没发出」那一支。
 - `provider`：「上下文超限的回复是溢出结果」放宽识别；新增「失败结果带上提供方说的那句话」。
-- `chat-repl`：新增「段以失败收尾时 stderr 看得见一行」。
+- `chat-repl`：新增「段不以正常回复收尾时 stderr 看得见一行」与「压缩与遮蔽在屏幕上看得见」。
 
 ## Impact
 

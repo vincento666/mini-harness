@@ -314,7 +314,9 @@ class OpenAICompatProvider:
                     )
 
         if response.status_code >= 400:
-            if _reports_context_overflow(response):
+            # 塌成溢出只发生在不可重试的 4xx：429 与 5xx 说的是服务端那一刻接不住，
+            # 它们的正文里恰好出现短语表里的话时仍走 `PROVIDER_HTTP_STATUS`（ADR-0023）。
+            if not _retryable(response.status_code) and _reports_context_overflow(response):
                 return ProviderFailure(
                     code="PROVIDER_CONTEXT_OVERFLOW",
                     detail=_failure_detail(response),

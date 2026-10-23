@@ -495,10 +495,8 @@ def _print_new_replies(log: EventLog, printed: int) -> int | LogReadFailure:
     return seen
 
 
-# 段不以正常回复收尾时要在屏幕上看得见的那三种收尾（design D5）。
-_SEGMENT_NOTE_REASONS = frozenset(
-    {STOP_PROVIDER_ERROR, STOP_CONTEXT_WINDOW_EXCEEDED, STOP_MAX_TURNS}
-)
+# 只有这两种收尾不打那一行，其余收尾理由一律打（design D5；2026-10-23 人裁决：规格写反面集合）。
+_SEGMENT_NOTE_SUPPRESSED = frozenset({STOP_MODEL_COMPLETED, STOP_ABORTED})
 
 
 def _print_segment_note(segment: SegmentOutcome) -> None:
@@ -507,7 +505,7 @@ def _print_segment_note(segment: SegmentOutcome) -> None:
     这一行不是新事实，是 `segment/end` 与 `error/model` 已有的事实说给人听——
     此前 chat 里一段失败了屏幕上什么都不显示，只有日志能看出来。
     """
-    if segment.stop_reason not in _SEGMENT_NOTE_REASONS:
+    if segment.stop_reason in _SEGMENT_NOTE_SUPPRESSED:
         return
     note = segment.stop_reason
     if segment.failure_code is not None:

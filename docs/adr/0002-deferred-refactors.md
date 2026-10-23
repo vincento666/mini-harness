@@ -594,3 +594,31 @@ M6 模型层场 2：`--window 66000 --reserve 100` 下第一条输入约 5000 �
 - 组 4 与组 5 的六条判据（4.2 / 4.3 / 4.4 / 4.5 / 5.2）与组 6 的三条（6.1 / 6.2 / 6.3）都是**绿着到的守卫**：帧、游标与断开处理在各自组的第一次红绿里就写完了。当场用定点变异确认它们不空转（4.5 那条还查出一个只在 seam ⑥ 存活的变异，人裁决定位到 seam ④ 补判据）。
 - **收尾轮补的四条**（Spec 轴查出的是判据缺失）：`test_non_utf8_output_collapses_into_replacement_characters`（seam ②③，bash delta 那条 Scenario 从 propose 起就没有判据）；`test_the_start_record_names_the_serve_entry_and_the_prompt_verbatim`（seam ⑥，`entry` 此前只有 seam ① 的进程内判据，把 CLI 的 `entry=ENTRY_SERVE` 改成 `ENTRY_RUN` 全仓不红——L-048 那条教训在 M7 复发）；`test_a_cursor_ahead_of_what_is_written_is_not_an_error` 加强成同时判「不报错」与「开始送帧」；`test_serve_without_the_http_flag_is_the_same_session`（seam ⑥，真红过——先红在 `assert 2 == 0`，`--http` 改成可选之后绿；人裁决定的是「保留 `--http` 但可选」，规格 flag 表与 delta 的 Scenario 同步补上）。
 - **9.1 的 Ctrl-C 那一半等人跑**（Linux runner）；四条 SIGINT 子进程判据（run 一条、chat 两条、serve 一条）本机 skip，沿用 M3 的边界。9.2 的模型层那一半 2026-10-22 晚跑完（用户作用域的密钥显式注入后），观察在 `docs/verification/m7-serve-http-sse-manual.md` 最后一节；同一轮把 M6 的模型层非 tty 那一半一并跑完，查出的两条新形状记进上面的第 62 与 63 条。
+
+### 66. 「受保护的事件类型」有两份定义
+
+`context/budget.py` 与 `events/fold.py` 各有一份 `PROTECTED_EVENT_TYPES = frozenset({"session/start", "compaction/summary"})`。前者用它算「哪一段可以遮蔽」，后者用它决定「哪一些记录不产出消息」——两边必须同意同一份名单。改一处而另一处没跟上，遮蔽范围就会盖住一条折叠方认为受保护的记录，而这条不一致在日志里看不出来。
+
+- 记账不动的理由：两处不在同一个包，把它提到第三处等于给 `context` 加一条对 `events` 导出面的依赖；本轮两处都照同一份名单写、没有判据因此变红，也没有判据能抓到「只改了一份」。
+- 处理时点：**M10**（与第 16 条同一处 `context` ↔ `events` 边界一起判；真要动，先补一条「名单只有一份」的判据）。
+
+### 67. 遮蔽反馈每开一个段就整读一次日志
+
+`cli/main.py::_print_shadow_feedback` 每段开头 `read_events(log.path)` 读整份日志，只为找出 `through` 之后新写出的那几条 `compaction/summary`。第 16 条记的是「每回合全量重读日志」那笔账，这一处是它在 chat 入口上的新实例：段越多、日志越长，读的字节越多，而它要的只有那几条新记录。
+
+- 记账不动的理由：本轮的判据是「屏幕上那一行说得清折掉了哪一段、同一条只报一次」，不是读几遍；改法（段内自己记下写出的 `compaction/summary`，不回头读日志）要动 `_chat_session` 与段边界的交接，与第 16 条是同一笔账。
+- 处理时点：**M10**（与第 16 条一起判）。
+
+### `fix-compaction-and-context-overflow` 的提交纪律与流程欠账（不改写历史，只记账）
+
+- **两个规划提交只有 validate 那一行**：`14a7b48`（propose）与 `1bc5e94`（update change）。四道门禁是「一次提交算完成」的定义、不分代码与文档——与 M6 / M7 / M8 / M9 同一条欠账。
+- **两个提交完全没有门禁行**：`34dd4e8`（docs 记账）与 `c7df1d1`（tasks 6.1–6.3，**实现提交**）。后者跑了红绿循环、信息里没有门禁数字，缺的是记录不是没跑。
+- **一处打包跨四个 task、跨三个 seam、没写理由**：`e5ad72f` 打包 7.1–7.2 与 6.4 + 7.3（门禁在 seam ⑥①⑤、变异轮与 Learning Gate 都在 docs）。提交粒度那条只允许「同一 seam 上相邻 3 个 task」，超过要在信息里写打包理由，这条没有理由。
+- **变异轮与 Learning Gate 跑在 `code-review` 两轴之前**：AGENTS.md 定的顺序是 apply → 两轴 → 变异 + Learning Gate → 归档。本轮 7.2 与 7.3 在 2026-10-22 23:44–23:58 跑完，两轴 2026-10-23 才跑；两轴查出的四条裁决与两条规格欠账因此要再补一轮变异（tasks 8.7）。违这个顺序的代价就是这一轮重跑。
+- **一句写错的话**：`docs/lessons.md` 的收尾消化记录里「本轮的提交纪律没有欠账」。上面五条就是欠账，就地更正那句。
+
+### `fix-compaction-and-context-overflow` 的判据欠账（不改写历史，只记账）
+
+- **chat 日志的逐点重放从 propose 起就没有判据**：delta 的「遮蔽反馈不是日志的投影」那条场景只断言「这一行不在 stdout、不在日志」，没有断言「同一份日志的 `minihns replay` 输出不因它改变」。Spec 轴查出，2026-10-23 补在 seam ⑥（tasks 8.4）。
+- **500 与 429 那两条判据是绿着到的**：`openai_compat.py` 里重试耗尽那条早退已经挡住 5xx 与 429，`status >= 400` 那一处从来没有可达的 5xx。当场用一处变异（把塌成溢出的判断挪到那条早退之前）确认它们不空转，两条都红（`assert 'PROVIDER_CONTEXT_OVERFLOW' == 'PROVIDER_HTTP_STATUS'`）。
+- **小窗口死区到本轮结束仍没有判据、也没有规格**：`W - reserve - 65536 < W * 16 / 100` 时压缩不可能，真端点那一跑撞到的「预算读数 4393 已超过触发线 4364」就是它。记在第 65 条与 `docs/CURRENT.md`，等人裁决是新开一个 change 还是留在 M10。

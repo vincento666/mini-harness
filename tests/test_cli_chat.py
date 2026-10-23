@@ -237,6 +237,18 @@ def test_a_max_turns_segment_says_so_on_stderr(tmp_path: Path) -> None:
     assert notes[0] not in _log_text(tmp_path)
 
 
+def test_a_fence_denied_segment_says_so_on_stderr(tmp_path: Path) -> None:
+    """seam ⑥：围栏拒绝收尾的段也不能无声——真实端点那一跑撞到它什么都不打。"""
+    result = _chat("--fixture", str(WRITE_OUTSIDE_SCENARIO), cwd=tmp_path, stdin_text="越界写\n")
+
+    assert result.returncode == 0
+    notes = [line for line in result.stderr.splitlines() if "[段]" in line]
+    assert len(notes) == 1, "段以 FENCE_DENIED 收尾时 stderr 该有一行"
+    assert "FENCE_DENIED" in notes[0]
+    assert notes[0] not in result.stdout
+    assert notes[0] not in _log_text(tmp_path)
+
+
 def test_a_segment_failure_does_not_end_the_session(tmp_path: Path) -> None:
     """seam ⑥：围栏拒绝落在盘上，会话继续；EOF 收尾是退出码 0。"""
     result = _chat("--fixture", str(WRITE_OUTSIDE_SCENARIO), cwd=tmp_path, stdin_text="越界写\n")
@@ -616,6 +628,47 @@ def test_a_chat_without_compaction_prints_no_shadow_note(tmp_path: Path) -> None
     assert result.returncode == 0
     assert "compaction/summary" not in _types(tmp_path)
     assert "[遮蔽]" not in result.stderr
+
+
+def test_a_chat_that_compacted_replays_the_same_log_unchanged(tmp_path: Path) -> None:
+    """seam ⑥：遮蔽反馈不是日志的投影——同一份日志的 `replay` 里没有出现那一行。"""
+    (tmp_path / "a.md").write_text("x" * 100000, encoding="utf-8")
+    fixture = _fixture(
+        tmp_path,
+        "compact.json",
+        [
+            {
+                "content": "先读一下",
+                "finish_reason": "tool_calls",
+                "tool_calls": [{"id": "c1", "name": "read", "arguments": {"file_path": "a.md"}}],
+            },
+            {"content": "那是摘要不该出现", "finish_reason": "stop"},
+            {"content": "这是回复", "finish_reason": "stop"},
+        ],
+    )
+
+    result = _chat(
+        "--fixture",
+        fixture,
+        "--window",
+        "70000",
+        "--reserve",
+        "100",
+        cwd=tmp_path,
+        stdin_text="读一下 a.md\n",
+    )
+
+    assert result.returncode == 0
+    assert any("[遮蔽]" in line for line in result.stderr.splitlines()), "这一跑得先真发生压缩"
+
+    session_id = _log_files(tmp_path)[0].stem
+    replay = _cli("replay", session_id, cwd=tmp_path)
+
+    assert replay.returncode == 0
+    assert "[遮蔽]" not in replay.stdout
+    assert "[遮蔽]" not in replay.stderr
+    assert "REPLAY_MISMATCH" not in replay.stderr
+    assert "x" * 100000 not in replay.stdout
 
 
 def test_chats_flag_table_is_runs_flag_table_minus_two(tmp_path: Path) -> None:

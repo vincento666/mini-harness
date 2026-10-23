@@ -370,6 +370,38 @@ async def test_a_400_whose_message_says_it_leaves_no_room_is_a_context_overflow(
     assert outcome.attempts == []
 
 
+async def test_a_500_saying_context_length_exceeded_is_not_an_overflow() -> None:
+    """2026-10-23 人裁决：塌成溢出只发生在 4xx（429 除外）——5xx 说的是服务端那一刻接不住。"""
+    provider, seen = _provider(
+        handler=lambda request: httpx.Response(
+            500,
+            json={"error": {"type": "server_error", "message": "context length exceeded upstream"}},
+        )
+    )
+
+    outcome = await _generate(provider)
+
+    assert len(seen) == 2, "500 可重试一次"
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_HTTP_STATUS"
+
+
+async def test_a_429_saying_prompt_is_too_long_is_not_an_overflow() -> None:
+    """429 走既有的重试：它的正文里恰好出现短语表里的话也不塌成溢出。"""
+    provider, seen = _provider(
+        handler=lambda request: httpx.Response(
+            429,
+            json={"error": {"type": "rate_limit_error", "message": "prompt is too long right now"}},
+        )
+    )
+
+    outcome = await _generate(provider)
+
+    assert len(seen) == 2, "429 可重试一次"
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_HTTP_STATUS"
+
+
 async def test_the_provider_sentence_goes_into_the_failure_detail() -> None:
     """design D4：失败结果不只带状态码，还带提供方说的那句话。"""
     provider, _ = _provider(

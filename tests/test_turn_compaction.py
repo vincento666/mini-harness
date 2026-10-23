@@ -489,6 +489,52 @@ async def test_the_summary_request_carries_only_the_shadowed_range(tmp_path: Pat
     )
 
 
+# 一条 12000 字符的回复（3000 个估算 token）与一条 268000 字符的回复（67000 个）：
+# 两组工具往返都在本次遮蔽范围里，合起来超过「窗口减保留额」这条上限（70000 - 100 = 69900）。
+_ROUND_ONE_TEXT = "x" * 12000
+_ROUND_TWO_TEXT = "x" * 268000
+
+
+def _round_turn(call_id: str, text: str) -> dict[str, object]:
+    return {
+        "content": text,
+        "finish_reason": "tool_calls",
+        "tool_calls": [{"id": call_id, "name": "read", "arguments": {"file_path": "a.md"}}],
+    }
+
+
+async def test_the_summary_trim_drops_whole_round_trips(tmp_path: Path) -> None:
+    """seam ①：摘要请求装不下时按往返整对丢——留下的 tool 消息不能没有请求它的那条 assistant。"""
+    (tmp_path / "a.md").write_text("x" * 400, encoding="utf-8")
+    provider = _RecordingProvider(
+        [
+            _round_turn("c1", _ROUND_ONE_TEXT),
+            _round_turn("c2", _ROUND_TWO_TEXT),
+            _summary_entry(),
+            DONE_ENTRY,
+        ]
+    )
+    await run_session_fixture(
+        tmp_path,
+        "s-trim-in-pairs",
+        provider,
+        max_turns=4,
+        window=TIGHT_WINDOW,
+        reserve=TIGHT_RESERVE,
+    )
+
+    summary_call = next(messages for messages, tools in provider.calls if not tools)
+    requested: set[str] = set()
+    for message in summary_call:
+        for call in message.tool_calls:
+            requested.add(str(call["id"]))
+        if message.role == "tool":
+            assert message.tool_call_id in requested, (
+                f"裁剪把一组工具往返拆开了：{[message.role for message in summary_call]}"
+            )
+    assert len(summary_call) > 2, "裁到只剩头部与指令等于这次压缩什么都没做"
+
+
 # 一条 300000 字符的回复（75000 个估算 token）与一份 2000 行、每行 150 字符的文件：
 # 两条都超过「窗口减保留额」这条上限（70000 - 100 = 69900）。
 HUGE_TEXT = "x" * 300000

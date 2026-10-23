@@ -20,7 +20,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: 上下文超限的回复是溢出结果
-当真实 provider 返回 4xx（429 除外，它走既有的重试）且响应 JSON 里的错误对象指向「提示词装不进上下文」时，系统 SHALL 产出 `code: PROVIDER_CONTEXT_OVERFLOW` 的失败结果：MUST NOT 为它重试（它不是 429 也不是 5xx），MUST NOT 塌成 `PROVIDER_HTTP_STATUS`。指向它有两种形状：错误对象的 `code` 为 `context_length_exceeded`；或错误对象的 `message` 含固定短语表里的某一条（大小写不敏感）。两者都不指向时仍按既有的「状态码不可接受」路径走；重试耗尽的 5xx 也仍走那条路径。
+当真实 provider 返回 4xx（429 除外，它走既有的重试）且响应 JSON 里的错误对象指向「提示词装不进上下文」时，系统 SHALL 产出 `code: PROVIDER_CONTEXT_OVERFLOW` 的失败结果：MUST NOT 为它重试（它不是 429 也不是 5xx），MUST NOT 塌成 `PROVIDER_HTTP_STATUS`。指向它有两种形状：错误对象的 `code` 为 `context_length_exceeded`；或错误对象的 `message` 含固定短语表里的某一条（大小写不敏感）。两者都不指向时仍按既有的「状态码不可接受」路径走；塌成溢出只发生在不可重试的 4xx，5xx 与 429 的正文里恰好出现短语表里的话时 MUST NOT 塌成溢出。
 
 #### Scenario: 上下文超限的 400 不重试
 - **WHEN** 假端点对一次请求返回 400 且 `error.code` 为 `context_length_exceeded`
@@ -37,3 +37,11 @@
 #### Scenario: 其它 400 仍走既有路径
 - **WHEN** 假端点返回 400 且 `error.code` 是别的值（例如 `invalid_request_error`）、`error.message` 不含固定短语表里的任何一条
 - **THEN** `generate` 返回 `code: PROVIDER_HTTP_STATUS` 的失败结果
+
+#### Scenario: 500 的正文里恰好有短语表里的话仍走既有路径
+- **WHEN** 假端点两次都返回 500 且 `error.message` 含 `context length exceeded`
+- **THEN** `generate` 返回 `code: PROVIDER_HTTP_STATUS` 的失败结果，且恰有一条重试
+
+#### Scenario: 429 的正文里恰好有短语表里的话仍走既有路径
+- **WHEN** 假端点两次都返回 429 且 `error.message` 含 `prompt is too long`
+- **THEN** `generate` 返回 `code: PROVIDER_HTTP_STATUS` 的失败结果，且恰有一条重试
