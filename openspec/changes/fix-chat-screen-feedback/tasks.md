@@ -46,4 +46,5 @@
 - [ ] 5.2 UAT 验收（人跑）：场次表在 `docs/verification/fix-chat-screen-feedback-uat.md`（propose 时已立骨架）。**那张表没填完本 change 不得归档、不得合入 `main`**
 - [x] 5.3 变异测试一轮：记录进 `docs/verification/fix-chat-screen-feedback-mutation.md`；每个变异都要被杀死，存活的补一条判据
   - 14 条变异全部被杀死、无存活、无 dud，本轮没有需要补的判据。11 条跑三条 CLI 判据文件，M1 / M3 / M13 改跑全量对照，红数相同、差 0 条（AGENTS.md 变异段写的是「跑全量测试」，这一处照定向做、用三条全量补测量，记在同一份文档里）。第一版脚手架的文本模式读写把 `cli/main.py` 的行尾整份换成 CRLF、还原检查当场失败，改按字节读写后重跑；还原前后 `git status` 一致
-- [ ] 5.4 Learning Gate：扫本轮证据写进 `docs/lessons.md` 收件箱；ADR-0028 落字（D4 那条规格反面集合的取舍）；归档后跑 `agents-md-slim`
+- [x] 5.4 Learning Gate：扫本轮证据写进 `docs/lessons.md` 收件箱；ADR-0028 落字（D4 那条规格反面集合的取舍）；归档后跑 `agents-md-slim`
+  - 先消化再收（上一轮写明收件箱已到 15 条上限）：关闭 L-036 / L-050，L-053 并入 L-041，另补齐六条早就关闭、Status 行没跟着改的条目（L-025 / L-031 / L-032 / L-033 / L-042 / L-046）。新收一条 L-055（判据的形状比人做的事更狠：连发 40 次 Ctrl-C 撞毫秒级缝隙，真实那一跑 3/3 拿到 `0xC000013A`，单次 Ctrl-C 3/3 是退出码 0），补证据五条（L-019 按字节读写源文件、L-045 `--window` 的前置条件、L-049 三格脚手架坑、L-052、L-054）。AGENTS.md **NO-PROMOTION**：三条候选都与现有家族头同族或是工具事实，一进一出的额度没动用。ADR-0028 落字（反面集合的取舍与三条判据）。`agents-md-slim` 那一步等归档，归档等 5.2 那张表填完
