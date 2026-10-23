@@ -622,3 +622,23 @@ M6 模型层场 2：`--window 66000 --reserve 100` 下第一条输入约 5000 �
 - **chat 日志的逐点重放从 propose 起就没有判据**：delta 的「遮蔽反馈不是日志的投影」那条场景只断言「这一行不在 stdout、不在日志」，没有断言「同一份日志的 `minihns replay` 输出不因它改变」。Spec 轴查出，2026-10-23 补在 seam ⑥（tasks 8.4）。
 - **500 与 429 那两条判据是绿着到的**：`openai_compat.py` 里重试耗尽那条早退已经挡住 5xx 与 429，`status >= 400` 那一处从来没有可达的 5xx。当场用一处变异（把塌成溢出的判断挪到那条早退之前）确认它们不空转，两条都红（`assert 'PROVIDER_CONTEXT_OVERFLOW' == 'PROVIDER_HTTP_STATUS'`）。
 - **小窗口死区到本轮结束仍没有判据、也没有规格**：`W - reserve - 65536 < W * 16 / 100` 时压缩不可能，真端点那一跑撞到的「预算读数 4393 已超过触发线 4364」就是它。记在第 65 条与 `docs/CURRENT.md`，等人裁决是新开一个 change 还是留在 M10。
+
+### `add-key-driven-default-provider` 的判断项（`code-review` 两轴，固定点 `2f93d44`，2026-10-23）
+
+不改代码的那几条，逐条写清为什么这一轮不动：
+
+1. **`EffectiveSettings` 的端点三项变 `str | None`，把收窄推到调用方**（Standards 轴：possible Feature Envy）。「非 mock 的预设必有 `base_url` 与 `api_key_env`」这条事实住在 `loop/settings.py` 的预设表，执行它的却是 `cli/main.py` 那两处 `assert ... is not None`。不动的理由：把这条事实搬回 `ProviderPreset`（例如给它一个 `required_slots()` 之类的方法）是给一个只有三个成员的结构加方法面，四规 #2 不答应。处理时点：**接第二个不兼容 API 时**（ADR-0027 的 Consequences 已经写了届时另开一份 ADR）。
+2. **`_ENDPOINT_FIELDS` + 位置 `zip` 把已经成束的三项拆开又按位置重新束起来**（possible Data Clumps / Speculative Generality）。`ProviderPreset` 本来就是那三项的束，`layer_settings` 却把它摊平成 `tuple` 再 `zip`。不动的理由：换成三次 `_from_layers` 调用要写三行几乎一样的代码，而 `zip(..., strict=True)` 至少保证长度不匹配当场炸。
+3. **`if provider_name != "mock"` 与 `PROVIDER_PRESETS["mock"] = ProviderPreset(None, None, None)` 重复表达同一件事**（possible Repeated Switches / Shotgun Surgery）：加第四个 provider 名字要动 `PROVIDER_NAMES`、`PROVIDER_PRESETS`、CLI 那一处判断。不动的理由：CLI 那一处判的是「mock 用 fixture、其它用端点」，与「预设里有没有端点」不是同一句话，只是今天恰好同值。10.3 补的 parity 判据把三处里最脆的那一环钉住了。
+4. **`DEFAULT_PROVIDER_KEY_ENV` 一个常量两个身份**（Spec 轴 (c)）：它既是「默认 provider 看哪个变量在场」的触发条件，又是 `openai` 预设的 `api_key_env`。delta 把这两件事写成两条独立的事实。不动的理由：它们本来就是同一个变量（人裁的那句「不是应该有 MINIHNS_API_KEY 吗就走默认 openai 吗」）。风险由变异 M1 覆盖——把它改回 `DEEPSEEK_API_KEY` 时 6 条红，两个事实都有判据钉着。
+5. **`layer_settings` 的 `env` 参数与 `cli/main.py` 直读 `os.environ` 不同源**（Spec 轴 (b)）：注入的 env 永远走不到 CLI 的密钥检查，所以「密钥在场决定默认 provider」在 seam ② 判、「缺密钥当场失败」在 seam ⑥ 判。不动的理由：seam ② 要确定性就得能造一份假环境；把 CLI 也改成读注入 env 等于给装配层加一条没人要的配置通道。
+6. **`PROVIDER_PRESETS.get(provider)` 给未知名字返回 `(None, None, None)`**（Spec 轴 (b)、四规 #2「不为不可能的场景写错误处理」）：CLI 在更早处以 `UNKNOWN_PROVIDER` 拒掉了未知名字。不动的理由：`layer_settings` 也在 seam ② 被直接调用，`PROVIDER_PRESETS[provider]` 在那里会炸成 `KeyError`；这一处是 totality，不是错误处理。
+7. **`ProviderEndpoint` 只活到 payload**（possible Middle Man）：`cli/main.py` 构造它之后立刻拆成 `OpenAICompatProvider(...)` 的关键字参数。不动的理由：它同时是 `session/start` payload 的来源，删了它就要在日志那一侧重新拼一遍。
+8. **两处 `assert` 在 `python -O` 下消失**（Spec 轴 (b)）：mypy strict 需要收窄，仓库既有先例是 `cli/serve.py:110`。已补：10.3 那条 seam ② 判据钉住「词表与预设表同名单、非 mock 预设这两项不是 None」，前提成立与否有判据管，不靠 assert 兜。
+
+### `add-key-driven-default-provider` 的提交纪律与流程欠账（不改写历史，只记账）
+
+- **变异轮跑在两轴之前，连续第三轮同一笔欠账**：AGENTS.md 的顺序是 apply → 两轴 → 变异 + Learning Gate → 归档。本轮 8.1 在 2026-10-23 16:29–16:47 跑完，两轴 16:52 才跑。代价实测：10.1 动了 `cli/main.py`，四个变异因此要重跑一遍（tasks 10.7）。上一轮同一笔记在 `fix-compaction-and-context-overflow` 那一节。
+- **一个提交打包四个 task 没写理由**：`5a17fa2` 覆盖 5.1–5.4。规则允许「同一 seam 上相邻 3 个 task」，5.3 与 5.4 是验证命令不是红绿切片——这是减轻情节，不是满足。另 `7cc41cd`（1.1–1.3）把组 4 的「缺 model 当场失败」提前落地，信息里写明了，算如实标注。
+- **被引用的决策晚于引用它的代码**：`settings.py`、`layering.py`、`cli/main.py` 的注释从 `7cc41cd` 起就写「ADR-0027」，而那份 ADR 到 9.2 才提交——中间四个提交里，「密钥先于 model 那一处顺序」只存在于提交信息。同样地，`AGENTS.md` 技术选型那句「默认 `DEEPSEEK_API_KEY`」在 HEAD 上与代码矛盾，到 9.2 才改。
+- **已提交的 `tasks.md` 三处引用本分支不存在的编号**：写的是「按 L-055 实证」，本分支的 `docs/lessons.md` 最高到 L-054（L-055 在并行分支 `fix-small-window-compaction-dead-zone` 上）。Spec/Standards 两轴各查出一次，10.4 更正。两条分支都从 `01573b4` 分叉、都动 `docs/lessons.md` 与 `docs/CURRENT.md`，合并时编号不重排——编号预留比事后重编号便宜。

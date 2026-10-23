@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 
 from mini_harness.config.layering import layer_settings
+from mini_harness.loop.settings import PROVIDER_NAMES, PROVIDER_PRESETS
 
 
 def _layered(provider: str, config: dict[str, object] | None = None) -> object:
@@ -109,3 +110,22 @@ def test_a_given_provider_is_not_overridden_by_the_key() -> None:
 
     assert from_config.provider == "mock"
     assert from_flag.provider == "mock"
+
+
+def test_every_provider_name_has_a_preset_with_the_two_required_slots() -> None:
+    """词表与预设表必须同名单：CLI 里「非 mock 就有 base_url 与 api_key_env」靠这一条成立。
+
+    `cli/main.py` 那两处 `assert ... is not None` 的前提是「名字被 CLI 认了就一定有预设、
+    且预设里这两项不是 None」。这条判据钉的就是这个前提——往词表里加一个名字而预设表没跟上，
+    红在这里，而不是红在用户面前的一条 `AssertionError`。
+    """
+    assert tuple(PROVIDER_PRESETS) == PROVIDER_NAMES
+
+    for name in PROVIDER_NAMES:
+        preset = PROVIDER_PRESETS[name]
+        if name == "mock":
+            assert preset.base_url is None
+            assert preset.api_key_env is None
+            continue
+        assert preset.base_url is not None, f"{name} 预设没有 base_url 默认"
+        assert preset.api_key_env is not None, f"{name} 预设没有 api_key_env 默认"

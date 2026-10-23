@@ -8,6 +8,12 @@ from pathlib import Path
 from typing import Any
 
 from cli_blackbox import _cli, _FakeEndpoint
+from mini_harness.loop.settings import (
+    DEFAULT_MAX_TURNS,
+    DEFAULT_RESERVE,
+    DEFAULT_SANDBOX,
+    DEFAULT_WINDOW,
+)
 from paths import HELLO_SCENARIO
 
 _KEY_ENV = "MINIHNS_TEST_KEY"
@@ -478,14 +484,33 @@ def test_a_missing_model_fails_before_any_request_is_sent(tmp_path: Path) -> Non
     assert len(endpoint.requests) == 0
 
 
+def test_the_help_names_the_builtin_default_of_each_setting_flag(tmp_path: Path) -> None:
+    """delta「--help 写出设置类 flag 的默认值」：数值与档位那几行写的是内置默认本身。
+
+    断言的一侧是 help 输出，另一侧是模块里那四个常量——help 不许自己另写一份数字。
+    """
+    result = _cli("run", "--help", cwd=tmp_path)
+    assert result.returncode == 0, result.stderr
+
+    text = result.stdout
+    for expected in (
+        f"默认 {DEFAULT_MAX_TURNS}",
+        f"默认 {DEFAULT_WINDOW}",
+        f"默认 {DEFAULT_RESERVE}",
+        f"默认 {DEFAULT_SANDBOX}",
+    ):
+        assert expected in text, f"run --help 里没有 {expected}"
+
+
 def test_the_help_names_the_provider_rule_and_both_variable_names(tmp_path: Path) -> None:
     """delta「--help 写出设置类 flag 的默认值」：三个入口的 `--provider` 那行写规则本身。
 
-    写的是规则不是运行期值：这一条判据跑的时候 `MINIHNS_API_KEY` 在不在场都可能，help 里
-    出现的必须是两个变量名与三个名字，不是「当前默认是 X」，也不是任何密钥的值。
+    WHEN 要真建立：判据跑的时候把 `MINIHNS_API_KEY` 设成一把假密钥，help 里出现的必须还是
+    两个变量名与三个名字，不是「当前默认是 X」，也不是那把密钥的值。
     """
+    env = _env_without_default_key(**{"MINIHNS_API_KEY": _KEY_VALUE})
     for entry in ("run", "chat", "serve"):
-        result = _cli(entry, "--help", cwd=tmp_path)
+        result = _cli(entry, "--help", cwd=tmp_path, env=env)
 
         assert result.returncode == 0, result.stderr
         text = result.stdout

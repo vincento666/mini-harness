@@ -13,6 +13,10 @@
 - **WHEN** `MINIHNS_API_KEY` 已设且执行任一 `--help`
 - **THEN** 输出里不含该变量的值，只含变量名
 
+#### Scenario: 数值与档位那几行写着内置默认
+- **WHEN** 执行 `minihns run --help`
+- **THEN** `max-turns`、`window`、`reserve`、`sandbox` 四行的说明里各写出该项的内置默认，且写出的值就是内置默认本身，不是 help 里另抄的一份数字
+
 ## MODIFIED Requirements
 
 ### Requirement: provider 选择与密钥是装配的必需项

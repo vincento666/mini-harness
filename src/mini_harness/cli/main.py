@@ -52,6 +52,12 @@ from mini_harness.loop import (
     run_turn_segment,
     start_session,
 )
+from mini_harness.loop.settings import (
+    DEFAULT_MAX_TURNS,
+    DEFAULT_RESERVE,
+    DEFAULT_SANDBOX,
+    DEFAULT_WINDOW,
+)
 from mini_harness.provider import FixtureLoadFailure, load_fixture_provider
 from mini_harness.provider.contract import Provider
 from mini_harness.provider.openai_compat import OpenAICompatProvider, validate_base_url
@@ -96,9 +102,17 @@ def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
 
     可配字段的 flag 默认值一律是 `None` 哨兵：内置默认只住在 `loop/settings.py`（design D2）。
     """
-    parser.add_argument("--config", default=None)
-    parser.add_argument("--workspace", default=None)
-    parser.add_argument("--session-dir", default=None)
+    parser.add_argument(
+        "--config",
+        default=None,
+        help="配置文件路径。没给时找 workspace 根的那份 mini.config.toml。",
+    )
+    parser.add_argument("--workspace", default=None, help="工作区根。没给时是当前目录。")
+    parser.add_argument(
+        "--session-dir",
+        default=None,
+        help="session 日志目录。没给时是 workspace 下的 sessions。",
+    )
     parser.add_argument(
         "--provider",
         default=None,
@@ -107,9 +121,27 @@ def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
             "已设且非空就是 openai，否则是 mock。"
         ),
     )
-    parser.add_argument("--fixture", default=None)
-    parser.add_argument("--base-url", default=None)
-    parser.add_argument("--model", default=None)
+    parser.add_argument(
+        "--fixture",
+        default=None,
+        help="mock provider 的 JSON 数组路径。provider 是 mock 时必需。",
+    )
+    parser.add_argument(
+        "--base-url",
+        default=None,
+        help=(
+            "OpenAI 兼容端点地址。没给时随 provider：openai 是 https://api.openai.com/v1，"
+            "deepseek 是 https://api.deepseek.com，mock 没有端点。"
+        ),
+    )
+    parser.add_argument(
+        "--model",
+        default=None,
+        help=(
+            "模型名。没给时随 provider：deepseek 预设给 deepseek-chat，"
+            "openai 预设不给默认，缺它当场失败。"
+        ),
+    )
     parser.add_argument(
         "--api-key-env",
         default=None,
@@ -118,11 +150,35 @@ def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
             "openai 读 MINIHNS_API_KEY，deepseek 读 DEEPSEEK_API_KEY。"
         ),
     )
-    parser.add_argument("--max-turns", type=int, default=None)
-    parser.add_argument("--window", type=int, default=None)
-    parser.add_argument("--reserve", type=int, default=None)
-    parser.add_argument("--append-system-prompt", default=None)
-    parser.add_argument("--sandbox", choices=SANDBOX_LEVELS, default=None)
+    parser.add_argument(
+        "--max-turns",
+        type=int,
+        default=None,
+        help=f"一个 session 最多跑几个回合。默认 {DEFAULT_MAX_TURNS}。",
+    )
+    parser.add_argument(
+        "--window",
+        type=int,
+        default=None,
+        help=f"上下文窗口预算，单位 token。默认 {DEFAULT_WINDOW}。",
+    )
+    parser.add_argument(
+        "--reserve",
+        type=int,
+        default=None,
+        help=f"窗口里为回复与工具输出预留的 token。默认 {DEFAULT_RESERVE}。",
+    )
+    parser.add_argument(
+        "--append-system-prompt",
+        default=None,
+        help="追加在系统提示末尾的一段文本。默认是空串。",
+    )
+    parser.add_argument(
+        "--sandbox",
+        choices=SANDBOX_LEVELS,
+        default=None,
+        help=f"围栏档位。默认 {DEFAULT_SANDBOX}。",
+    )
     parser.add_argument("--yes", action="store_true")
 
 
