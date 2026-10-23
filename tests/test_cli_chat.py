@@ -179,6 +179,8 @@ def test_a_provider_failed_segment_says_so_on_stderr(tmp_path: Path) -> None:
     notes = [line for line in result.stderr.splitlines() if "PROVIDER_HTTP_STATUS" in line]
     assert len(notes) == 1, "段以 PROVIDER_ERROR 收尾时 stderr 该有一行"
     assert "PROVIDER_ERROR" in notes[0]
+    # 1.4：新的组装规则下这一行照旧——reason、与 reason 不同的 code、然后 provider 那句 detail。
+    assert "bad tools" in notes[0], "造成它的失败结果带着提供方那句话，那一行得把它说出来"
     assert notes[0] not in result.stdout
     assert notes[0] not in _log_text(tmp_path)
 
@@ -744,3 +746,49 @@ def test_tool_only_turns_leave_no_blank_lines(tmp_path: Path) -> None:
     assert result.returncode == 0
     assert result.stdout == "> 正文\n> "
     assert "\n\n" not in result.stdout
+
+
+def test_the_overflow_segment_note_carries_the_detail_once(tmp_path: Path) -> None:
+    """seam ⑥ 1.3：溢出那一行不许把停止理由重复两遍——它得带上日志里那条非空 detail。
+
+    形状照 UAT 复现：三段工具回合之后第一段以正常回复收尾，`usage.input_tokens` 把预算读数校准到
+    触发线之上；第二个段一开局就压缩、压缩完仍超线，那一行说的是「压缩之后仍超线」，不是两遍词表名。
+    """
+    (tmp_path / "big.md").write_text("内容" * 30000, encoding="utf-8")
+    entries: list[dict[str, Any]] = [
+        {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [
+                {"id": f"c{index}", "name": "read", "arguments": {"file_path": "big.md"}}
+            ],
+            "usage": {"input_tokens": 1000, "output_tokens": 10},
+        }
+        for index in range(1, 4)
+    ]
+    entries += [
+        {
+            "content": "第一段收尾。",
+            "finish_reason": "stop",
+            "usage": {"input_tokens": 60000, "output_tokens": 10},
+        },
+        {"content": "压缩用的摘要。", "finish_reason": "stop", "usage": {"input_tokens": 1000}},
+        {"content": "第二段照常回答。", "finish_reason": "stop", "usage": {"input_tokens": 1000}},
+    ]
+    fixture = _fixture(tmp_path, "overflow.json", entries)
+
+    result = _chat("--fixture", fixture, cwd=tmp_path, stdin_text="第一条\n第二条\n")
+
+    assert result.returncode == 0
+    records = _records(tmp_path)
+    overflows = [record for record in records if record["type"] == "error/context"]
+    assert len(overflows) == 1, "第二个段开局溢出一次"
+    detail = str(overflows[0]["payload"]["detail"])
+    assert detail != "", "日志里那条 detail 非空"
+
+    notes = [line for line in result.stderr.splitlines() if "CONTEXT_WINDOW_EXCEEDED" in line]
+    assert len(notes) == 1, "溢出段在 stderr 上只有一行"
+    assert notes[0].count("CONTEXT_WINDOW_EXCEEDED") == 1, "停止理由这个词在那一行里只出现一次"
+    assert detail in notes[0], "那一行带着日志里那条非空 detail，不是把词表名重复两遍"
+    assert notes[0] not in result.stdout
+    assert notes[0] not in _log_text(tmp_path)

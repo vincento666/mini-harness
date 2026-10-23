@@ -506,14 +506,18 @@ _SEGMENT_NOTE_SUPPRESSED = frozenset({STOP_MODEL_COMPLETED, STOP_ABORTED})
 def _print_segment_note(segment: SegmentOutcome) -> None:
     """段级收尾给人一行（design D5）：走 stderr，不是日志的投影，也不写进日志。
 
-    这一行不是新事实，是 `segment/end` 与 `error/model` 已有的事实说给人听——
-    此前 chat 里一段失败了屏幕上什么都不显示，只有日志能看出来。
+    组装规则是 design D3：停止理由 → 与它**不同**的 `code` → 非空 `detail`，一律不截断。
+    此前 `CONTEXT_WINDOW_EXCEEDED` 那一行把同一个词打两遍、把日志里那句有用的 detail 丢掉。
+    这一行不是新事实，是 `segment/end` 与 `error/*` 已有的事实说给人听。
     """
     if segment.stop_reason in _SEGMENT_NOTE_SUPPRESSED:
         return
-    note = segment.stop_reason
-    if segment.failure_code is not None:
-        note = f"{note}：{segment.failure_code}"
+    parts: list[str] = [segment.stop_reason]
+    if segment.failure_code is not None and segment.failure_code != segment.stop_reason:
+        parts.append(segment.failure_code)
+    if segment.detail:
+        parts.append(segment.detail)
+    note = parts[0] if len(parts) == 1 else f"{parts[0]}：{' '.join(parts[1:])}"
     print(f"[段] {note}", file=sys.stderr)
 
 
