@@ -33,9 +33,9 @@
 
 ## 6. 真实端点验收（完成判据的第二半，ADR-0024）
 
-- [ ] 6.1 本机 Strata：`MINIHNS_API_KEY` 设成端点密钥、`--base-url http://127.0.0.1:8300/v1 --model qwen3.8-flash-next-iq3_xxs`，**不给 `--provider`** → 确认默认落到 openai 且会话正常跑完。
-- [ ] 6.2 同一端点跑 `--provider deepseek` 的失败形状：确认它打的是 `https://api.deepseek.com` 而不是本机端点（看 `error/model` 的 `detail`），并确认这条失败是「名字与端点一致」的证据。
-- [ ] 6.3 观察记进 `docs/verification/add-key-driven-default-provider-real-endpoint.md`。
+- [x] 6.1 本机 Strata：`MINIHNS_API_KEY` 设成端点密钥、`--base-url http://127.0.0.1:8300/v1 --model qwen3.8-flash-next-iq3_xxs`，**不给 `--provider`** → 确认默认落到 openai 且会话正常跑完。**实测**：session `e6250b8560c74198bfe9dd5679ab2493`，退出码 0，payload `provider: openai` / `api_key_env: MINIHNS_API_KEY`，`session/end` 是 `MODEL_COMPLETED` `turns: 2`，中间真发生一次 `tool/call → tool/result`。
+- [x] 6.2 同一端点跑 `--provider deepseek` 的失败形状：确认它打的是 `https://api.deepseek.com` 而不是本机端点（看 `error/model` 的 `detail`），并确认这条失败是「名字与端点一致」的证据。**实测**：session `d3e1246e88c84f4b830093db4db05cd8`，payload 三项是 deepseek 预设的三项，`detail` 是 `HTTP 401：Authentication Fails, Your api key: ****0000 is invalid (request_id: …)`——这句出自 DeepSeek 服务端；同一进程环境里 `MINIHNS_API_KEY` 是本机真密钥而 `DEEPSEEK_API_KEY` 是假值，被掩码的那份是假值，真密钥没被用。退出码 1、`PROVIDER_ERROR`。
+- [x] 6.3 观察记进 `docs/verification/add-key-driven-default-provider-real-endpoint.md`。**已记**：两场各一张观察表，另有一节写清真实那一半没覆盖什么（deepseek 端点能否跑完一个会话本机无证据；「没密钥时裸跑仍是 mock」只在 seam ⑥ 判；本机 `MINIHNS_API_KEY` 平时不在进程环境里，所以「裸跑就能对话」要人自己设上——那是 UAT 的 U1）。
 
 ## 7. UAT 验收（完成判据的第三半，ADR-0025，人跑）
 
