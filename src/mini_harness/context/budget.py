@@ -47,7 +47,7 @@ def trigger_line(window: int, reserve: int) -> int:
     """
     line = min(
         window * TRIGGER_RATIO_NUMERATOR // TRIGGER_RATIO_DENOMINATOR,
-        window - reserve - CONTEXT_HEADROOM_TOKENS,
+        pressure_budget(window, reserve) - CONTEXT_HEADROOM_TOKENS,
     )
     return max(line, 0)
 

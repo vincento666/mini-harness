@@ -404,6 +404,34 @@ async def test_a_provider_reported_overflow_collapses_into_the_same_result(tmp_p
     assert outcome.failure_code == "CONTEXT_WINDOW_EXCEEDED"
 
 
+async def test_a_provider_reported_overflow_detail_carries_the_three_numbers(
+    tmp_path: Path,
+) -> None:
+    """两条触发路径是同一个溢出结果：provider 报出的那条 `detail` 也要给那三个数。"""
+    log, outcome = await run_session_fixture(
+        tmp_path,
+        "s-provider-overflow-numbers",
+        _OverflowProvider(),
+        max_turns=2,
+        registry=ToolRegistry(),
+        window=TIGHT_WINDOW,
+        reserve=TIGHT_RESERVE,
+    )
+    records = read_events(log.path)
+
+    assert [record.type for record in records][-4:] == [
+        "error/context",
+        "turn/end",
+        "segment/end",
+        "session/end",
+    ]
+    assert outcome.stop_reason == "CONTEXT_WINDOW_EXCEEDED"
+    detail = _records_of(log.path, "error/context")[0].payload["detail"]
+    assert "压力预算 69900" in detail
+    assert "触发线 4364" in detail
+    assert re.search(r"预算读数 \d+", detail)
+
+
 class _OverflowOnceProvider:
     """模型层报出上下文超限：第 `fail_plain_calls` 次**带工具表**的回合调用报失败。
 
