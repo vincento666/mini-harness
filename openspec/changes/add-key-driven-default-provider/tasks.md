@@ -48,8 +48,8 @@
 
 ## 9. Learning Gate
 
-- [ ] 9.1 扫本轮证据写进 `docs/lessons.md` 收件箱；**收件箱已到上限 15 条，先消化再收新条**。
-- [ ] 9.2 立 ADR-0027（provider 名字是端点预设名、默认 provider 由 `MINIHNS_API_KEY` 在场决定、为什么不猜 model），并改 `AGENTS.md` 技术选型里「默认 `DEEPSEEK_API_KEY`」那半句（一进一出）。
+- [x] 9.1 扫本轮证据写进 `docs/lessons.md` 收件箱；**收件箱已到上限 15 条，先消化再收新条**。**实测**：关闭 L-050（`rejected`）与 L-043，合并 L-041 + L-053 → L-036、L-052 → L-048、L-037 → L-039，留存九条各补一条本轮证据，新收 L-058 / L-059 / L-060（编号说明：L-055 至 L-057 由并行分支 `fix-small-window-compaction-dead-zone` 占用，合并时不重编号）。消化后 12 条、空闲 3 条。
+- [x] 9.2 立 ADR-0027（provider 名字是端点预设名、默认 provider 由 `MINIHNS_API_KEY` 在场决定、为什么不猜 model），并改 `AGENTS.md` 技术选型里「默认 `DEEPSEEK_API_KEY`」那半句（一进一出）。**实测**：`docs/adr/0027-provider-names-are-endpoint-presets.md`；一进是那句改成「默认变量随 provider 而定」，一出是「MVP 分两阶段」一节里与文件开头重复的两处路径引用（`docs/CURRENT.md` 与 `docs/roadmap.md` 各留一处）。本轮不晋升 lesson。
 
 ## 10. `code-review` 两轴之后的补完（固定点 `2f93d44`）
 
@@ -59,4 +59,4 @@
 - [x] 10.4 已提交的 `tasks.md` 里三处写「按 L-055 实证」，而本分支的 `docs/lessons.md` 最高到 L-054——悬空引用。改为「见 2.1 那一笔」并写明编号在并行分支里、合并时不重编号。
 - [x] 10.5 两条 scenario 的 THEN 写在 payload 上（`session/start` 的 `base_url` 为 `https://api.deepseek.com`、请求打到那个地址），mock 侧判不到：seam ⑥ 的判据不能真去连第三方（CI 无网络保证）。分工写明：mock 那一半在 seam ② 判同一个值（`test_the_deepseek_preset_is_the_deepseek_triple` 断言三项全值），payload 与「真打到那个地址」那一半由真实端点那一半判（6.2 的 session `d3e1246e88c84f4b830093db4db05cd8`，payload 就是 `base_url: https://api.deepseek.com`，401 出自 DeepSeek 服务端）。
 - [x] 10.6 两轴的判断项与本 change 的流程欠账记进 `docs/adr/0002`（不改代码的那几条：`EffectiveSettings` 端点三项变 `str | None` 把收窄推到调用方、`_ENDPOINT_FIELDS` + 位置 `zip` 把已经成束的三项拆开、`provider_name != "mock"` 与预设表重复表达同一件事、`DEFAULT_PROVIDER_KEY_ENV` 一个常量同时当默认 provider 的触发条件与 openai 预设的变量名、`layer_settings` 的 `env` 参数与 `cli/main.py` 直读 `os.environ` 不同源、`PROVIDER_PRESETS.get(...)` 处理 CLI 已拒掉的名字、`ProviderEndpoint` 只活到 payload）。
-- [ ] 10.7 实现改动之后重跑变异一轮（10.1 动了 `cli/main.py`），确认四个变异仍被杀、回到基线，并更新 `docs/verification/add-key-driven-default-provider-mutation.md`。
+- [x] 10.7 实现改动之后重跑变异一轮（10.1 动了 `cli/main.py`），确认四个变异仍被杀、回到基线，并更新 `docs/verification/add-key-driven-default-provider-mutation.md`。**实测**：四个锚点逐条核对仍在（`layering.py:89` / `layering.py:116` / `main.py:379` / `settings.py:48`），基线 **426 passed / 5 skipped**，M1 6 红 / M2 18 红 / M3 2 红 / M4 3 红——**与第一轮逐条相同**，无存活变异，四次还原后 `git status --short -- <file>` 都为空。

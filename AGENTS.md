@@ -79,11 +79,11 @@ uv run coverage report --fail-under=95 --show-missing   # 这三步不可拆，�
 
 ## 技术选型（已定，不要重新讨论）
 
-Python **>= 3.12** · **uv** · `src/mini_harness/` 布局 · **mypy strict** · **pydantic v2** · **httpx** · **aiohttp**（M7 的 serve 服务端与 SSE） · **argparse** · **pytest + pytest-asyncio** · asyncio 单事件循环 · 包名 `mini_harness`，命令名 **`minihns`** · 密钥只走环境变量（默认 `DEEPSEEK_API_KEY`，`--api-key-env` 指定变量名）。
+Python **>= 3.12** · **uv** · `src/mini_harness/` 布局 · **mypy strict** · **pydantic v2** · **httpx** · **aiohttp**（M7 的 serve 服务端与 SSE） · **argparse** · **pytest + pytest-asyncio** · asyncio 单事件循环 · 包名 `mini_harness`，命令名 **`minihns`** · 密钥只走环境变量（默认变量随 provider 而定：`MINIHNS_API_KEY` 配 `openai`、`DEEPSEEK_API_KEY` 配 `deepseek`，`--api-key-env` 指定变量名）。
 
 ## MVP 分两阶段（ADR-0010）
 
-**第一阶段**（M1 至 M9：内核 / 工件 / 组合 / 能力 / 模型的基础，围栏有雏形）**已完成**；进度看 `docs/CURRENT.md`。**第二阶段**（补全成**没有 web / Electron 外壳**的完整类 DSH 形态）：**M10 → M11 → M12 → M13 → M14 → M15**。**第三阶段**（加壳）等前两阶段做完再规划。每个里程碑做什么见 `docs/roadmap.md` 的表。**始终不做**：PTC 工具面塌缩、多模型路由与重试策略、独立工单与 triage 标签体系。
+**第一阶段**（M1 至 M9：内核 / 工件 / 组合 / 能力 / 模型的基础，围栏有雏形）**已完成**。**第二阶段**（补全成**没有 web / Electron 外壳**的完整类 DSH 形态）：**M10 → M11 → M12 → M13 → M14 → M15**。**第三阶段**（加壳）等前两阶段做完再规划。**始终不做**：PTC 工具面塌缩、多模型路由与重试策略、独立工单与 triage 标签体系。
 
 ---
 
