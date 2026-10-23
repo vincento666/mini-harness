@@ -942,6 +942,40 @@ _TIGHT_RESERVE = "100"
 _OVERFLOW_PROMPT = "任务" * 10000
 
 
+# 死区窗口：`--window 70000 --reserve 100` 的触发线 4364 比保留预算 11200 还小。
+# 24000 个字符约 6000 个估算 token，落在 (4364, 11200]：越线、无可遮蔽，压力预算 69900 装得下。
+_DEAD_ZONE_WINDOW = "70000"
+_DEAD_ZONE_RESERVE = "100"
+_DEAD_ZONE_PROMPT = "任务" * 12000
+
+
+def test_a_dead_zone_window_still_holds_a_conversation(tmp_path: Path) -> None:
+    """触发线比保留预算还小的窗口不是运行期撞墙：越线、无可遮蔽，仍照常装配并跑完。"""
+    result = _cli(
+        "run",
+        "-p",
+        _DEAD_ZONE_PROMPT,
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--window",
+        _DEAD_ZONE_WINDOW,
+        "--reserve",
+        _DEAD_ZONE_RESERVE,
+        cwd=tmp_path,
+    )
+
+    lines = _log_files(tmp_path)[0].read_text(encoding="utf-8").splitlines()
+    types = [json.loads(line)["type"] for line in lines]
+
+    assert result.returncode == 0
+    assert "context/assembled" in types
+    assert "model/request" in types
+    assert "error/context" not in types
+    assert "compaction/summary" not in types
+
+
 def test_a_run_that_cannot_fit_its_window_exits_four_with_an_error_context(tmp_path: Path) -> None:
     """窗口小到无可遮蔽：溢出收尾是结果，退出码 4，日志里有 `error/context`。"""
     result = _cli(

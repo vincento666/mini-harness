@@ -19,7 +19,7 @@
 
 ## 4. 黑盒：小窗口能对话，真窗口仍溢出（seam ⑥）
 
-- [ ] 4.1 红：真实子进程跑 `minihns run --window 70000 --reserve 100` 带 2.1 那份 fixture → 断言退出码不是 4、日志里有 `context/assembled`。确认它红。
+- [x] 4.1 红：真实子进程跑 `minihns run --window 70000 --reserve 100` 带 2.1 那份 fixture → 断言退出码不是 4、日志里有 `context/assembled`。确认它红。**实测**：`tests/test_cli_run.py::test_a_dead_zone_window_still_holds_a_conversation`，prompt 24000 个字符（约 6000 个 token，落在 `(4364, 11200]`）。它写在 2.2 之后，红不是当场踩出来的——把 `turn_loop.py` 那一处判据临时改回 `reading > line` 跑一次，它红在 `assert 4 == 0`，改回来它绿。
 - [x] 4.2 红（**构造改了，原判据做不到**）：原写的是「同一 fixture 配 `--window 60000 --reserve 100`（压力预算 59900 小于读数）→ 退出码 4」。做不到有两处：Windows 的命令行上限 32767 字符，59900 个 token 要 24 万字符的上下文，`-p` 传不进去；且那种窗口在旧的启动校验下先以退出码 2 结束。改成 `--window 4000 --reserve 100`（压力预算 3900 个 token）配 20000 个字符的 prompt → 退出码 4、日志里有 `error/context`。判据对象不变。
 - [x] 4.3 绿：既有的「溢出映射到退出码 4」黑盒判据逐条改构造方式并写明——`test_cli_run.py` 的 `_TIGHT_WINDOW` 66000 → 4000、`_OVERFLOW_PROMPT` 2000 → 20000 个字符（两条判据：退出码 4 与「溢出发生在第一次装配之前仍可重放」）；`test_cli_chat.py` 两条 `--window 66000` → `4000`、`--append-system-prompt` 2000 → 20000 个字符；`test_cli_serve.py` 的溢出那条同改；`test_cli_replay.py` 的溢出日志改由「摘要自己 300000 个字符」造出；`test_vocabulary_reachability.py` 两条：prompt 100000 → 300000 个字符、窗口 4000 那条加 20000 个字符的 prompt。
 - [x] 4.4 红：`minihns run --window 4000 --reserve 100`（触发线 0、保留预算 640、压力预算 3900）→ 退出码 0 且 `session/start` 里 `window` 与 `reserve` 照原样。确认它红（今天退出码 2、连日志都不建）。
