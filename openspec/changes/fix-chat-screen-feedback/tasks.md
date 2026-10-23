@@ -44,5 +44,6 @@
 - [x] 5.1 真实端点验收：接上真实端点把本 change 的判据跑一遍，记录进 `docs/verification/fix-chat-screen-feedback-real-endpoint.md`
   - 9 条里 8 条通过。1.6 那一半：单次 Ctrl-C 三次都是退出码 0、无 traceback、`session/end` 恰一条；判据里「连送到进程退出为止」的 40 次连发把 Ctrl-C 压到解释器收尾之后，拿到 `0xC000013A`（日志完整、无 traceback）。两条后果要人裁决，记在同一份文档里
 - [ ] 5.2 UAT 验收（人跑）：场次表在 `docs/verification/fix-chat-screen-feedback-uat.md`（propose 时已立骨架）。**那张表没填完本 change 不得归档、不得合入 `main`**
-- [ ] 5.3 变异测试一轮：记录进 `docs/verification/fix-chat-screen-feedback-mutation.md`；每个变异都要被杀死，存活的补一条判据
+- [x] 5.3 变异测试一轮：记录进 `docs/verification/fix-chat-screen-feedback-mutation.md`；每个变异都要被杀死，存活的补一条判据
+  - 14 条变异全部被杀死、无存活、无 dud，本轮没有需要补的判据。11 条跑三条 CLI 判据文件，M1 / M3 / M13 改跑全量对照，红数相同、差 0 条（AGENTS.md 变异段写的是「跑全量测试」，这一处照定向做、用三条全量补测量，记在同一份文档里）。第一版脚手架的文本模式读写把 `cli/main.py` 的行尾整份换成 CRLF、还原检查当场失败，改按字节读写后重跑；还原前后 `git status` 一致
 - [ ] 5.4 Learning Gate：扫本轮证据写进 `docs/lessons.md` 收件箱；ADR-0028 落字（D4 那条规格反面集合的取舍）；归档后跑 `agents-md-slim`
