@@ -2,9 +2,9 @@
 
 ## 1. 预设表这一处事实（seam ②）
 
-- [ ] 1.1 红：写判据——生效 provider 为 `openai` 且未给端点三项时，装配出的端点是 `https://api.openai.com/v1` / 无 model / `MINIHNS_API_KEY`；为 `deepseek` 时是 `https://api.deepseek.com` / `deepseek-chat` / `DEEPSEEK_API_KEY`；为 `mock` 时没有端点对象。确认它红（今天 openai 落到 deepseek 的默认）。
-- [ ] 1.2 绿：把 `loop/settings.py` 的四个常量换成按 provider 名索引的预设表（`model` 在 `openai` 预设里是 `None`），1.1 变绿且 `uv run mypy --strict src` 无新错。
-- [ ] 1.3 红：写覆盖规则判据——CLI 给过 `--base-url` 时预设不覆盖它、配置文件给过 `model` 时预设也不覆盖它、两者都没给时预设填上。确认它红或确认它已绿（若已绿，用变异确认它咬得住，并记在这里）。
+- [x] 1.1 红：写判据——生效 provider 为 `openai` 且未给端点三项时，装配出的端点是 `https://api.openai.com/v1` / 无 model / `MINIHNS_API_KEY`；为 `deepseek` 时是 `https://api.deepseek.com` / `deepseek-chat` / `DEEPSEEK_API_KEY`；为 `mock` 时没有端点对象。确认它红（今天 openai 落到 deepseek 的默认）。**实测红**：`tests/test_config_presets.py::test_the_openai_preset_is_openai_not_deepseek` 红在 `assert 'https://api.deepseek.com' == 'https://api.openai.com/v1'`，`test_the_mock_preset_has_no_endpoint` 红在 `assert 'https://api.deepseek.com' is None`；`test_the_deepseek_preset_is_the_deepseek_triple` 当时就绿——今天那四个默认恰好就是 deepseek 那一套，这条判据的作用是不让它再当所有人的默认。
+- [x] 1.2 绿：把 `loop/settings.py` 的四个常量换成按 provider 名索引的预设表（`model` 在 `openai` 预设里是 `None`），1.1 变绿且 `uv run mypy --strict src` 无新错。**实测**：`PROVIDER_NAMES` + `ProviderPreset` + `PROVIDER_PRESETS` 三条；`EffectiveSettings` 的端点三项改成 `str | None`（`None` 是「这一项没有默认」，不是空串），`layer_settings` 里 `provider` 与端点三项从 `BUILTIN_DEFAULTS` 挪出来单独算；`cli/main.py` 因此必须处理 `None`——缺 model 当场 `INVALID_ARGUMENT` 指出 `--model`（组 4 的规则提前落地，见 4.1 那一笔）。
+- [x] 1.3 红：写覆盖规则判据——CLI 给过 `--base-url` 时预设不覆盖它、配置文件给过 `model` 时预设也不覆盖它、两者都没给时预设填上。确认它红或确认它已绿（若已绿，用变异确认它咬得住，并记在这里）。**实测：三条落地即绿**（1.2 已把覆盖规则写进 `layer_settings`），红不是当场踩的；它咬不咬得住由组 8 的变异 ②「预设总是覆盖」判，结果记在 `docs/verification/add-key-driven-default-provider-mutation.md`。
 
 ## 2. 默认 provider 由密钥在场决定（seam ② 与 ⑥）
 
