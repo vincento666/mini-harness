@@ -759,11 +759,10 @@ def test_tool_only_turns_leave_no_blank_lines(tmp_path: Path) -> None:
     assert "\n\n" not in result.stdout
 
 
-def test_the_overflow_segment_note_carries_the_detail_once(tmp_path: Path) -> None:
-    """seam ⑥ 1.3：溢出那一行不许把停止理由重复两遍——它得带上日志里那条非空 detail。
+def _overflow_entries(tmp_path: Path) -> list[dict[str, Any]]:
+    """照 UAT 复现的形状：三段工具回合，之后一条把预算读数校准到触发线之上的正常回复。
 
-    形状照 UAT 复现：三段工具回合之后第一段以正常回复收尾，`usage.input_tokens` 把预算读数校准到
-    触发线之上；第二个段一开局就压缩、压缩完仍超线，那一行说的是「压缩之后仍超线」，不是两遍词表名。
+    第二个段一开局就压缩、压缩完仍超线；最后两条给压缩那一次摘要调用与第二个段的正常回复。
     """
     (tmp_path / "big.md").write_text("内容" * 30000, encoding="utf-8")
     entries: list[dict[str, Any]] = [
@@ -786,7 +785,16 @@ def test_the_overflow_segment_note_carries_the_detail_once(tmp_path: Path) -> No
         {"content": "压缩用的摘要。", "finish_reason": "stop", "usage": {"input_tokens": 1000}},
         {"content": "第二段照常回答。", "finish_reason": "stop", "usage": {"input_tokens": 1000}},
     ]
-    fixture = _fixture(tmp_path, "overflow.json", entries)
+    return entries
+
+
+def test_the_overflow_segment_note_carries_the_detail_once(tmp_path: Path) -> None:
+    """seam ⑥ 1.3：溢出那一行不许把停止理由重复两遍——它得带上日志里那条非空 detail。
+
+    形状照 UAT 复现：三段工具回合之后第一段以正常回复收尾，`usage.input_tokens` 把预算读数校准到
+    触发线之上；第二个段一开局就压缩、压缩完仍超线，那一行说的是「压缩之后仍超线」，不是两遍词表名。
+    """
+    fixture = _fixture(tmp_path, "overflow.json", _overflow_entries(tmp_path))
 
     result = _chat("--fixture", fixture, cwd=tmp_path, stdin_text="第一条\n第二条\n")
 
@@ -945,3 +953,60 @@ def test_chat_prints_the_session_id_on_stderr(tmp_path: Path) -> None:
 
     assert replay.returncode == 0
     assert "REPLAY_MISMATCH" not in replay.stderr
+
+
+def test_consecutive_overflows_say_the_session_cannot_come_down(tmp_path: Path) -> None:
+    """seam ⑥ 1.8：连续两段溢出 → stderr 多出一行说明，且每个会话里恰一次。
+
+    三段连续溢出只许说一次；判据只认那一行的前缀标记，不判措辞（design 的 open question）。
+    """
+    fixture = _fixture(
+        tmp_path,
+        "three.json",
+        [{"content": f"摘要{n}", "finish_reason": "stop"} for n in range(1, 7)],
+    )
+
+    result = _chat(
+        "--fixture",
+        fixture,
+        "--window",
+        "66000",
+        "--reserve",
+        "100",
+        "--append-system-prompt",
+        "说明" * 1000,
+        cwd=tmp_path,
+        stdin_text="第一条\n第二条\n第三条\n",
+    )
+
+    assert result.returncode == 0
+    segments = [
+        record["payload"] for record in _records(tmp_path) if record["type"] == "segment/end"
+    ]
+    assert [segment["stop_reason"] for segment in segments] == [
+        "CONTEXT_WINDOW_EXCEEDED",
+        "CONTEXT_WINDOW_EXCEEDED",
+        "CONTEXT_WINDOW_EXCEEDED",
+    ], "这一跑得先真发生连续溢出"
+
+    lines = [line for line in result.stderr.splitlines() if line.startswith("[降不下去]")]
+    assert len(lines) == 1, "连续溢出在 stderr 上多出一行说明，且只说一次"
+    assert lines[0] not in result.stdout
+    assert lines[0] not in _log_text(tmp_path)
+
+
+def test_a_single_overflow_does_not_say_the_session_cannot_come_down(tmp_path: Path) -> None:
+    """seam ⑥ 1.8：只有一段溢出（不连续）时不多出那一行。"""
+    fixture = _fixture(tmp_path, "one-overflow.json", _overflow_entries(tmp_path))
+
+    result = _chat("--fixture", fixture, cwd=tmp_path, stdin_text="第一条\n第二条\n")
+
+    assert result.returncode == 0
+    segments = [
+        record["payload"] for record in _records(tmp_path) if record["type"] == "segment/end"
+    ]
+    assert [segment["stop_reason"] for segment in segments] == [
+        "MODEL_COMPLETED",
+        "CONTEXT_WINDOW_EXCEEDED",
+    ], "这一跑得只有一段溢出"
+    assert not [line for line in result.stderr.splitlines() if line.startswith("[降不下去]")]

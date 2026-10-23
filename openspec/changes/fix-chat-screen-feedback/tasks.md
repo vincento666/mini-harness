@@ -9,7 +9,7 @@
 - [x] 1.6 提示符上取消没有 traceback：真 Ctrl-C 落在没有段在跑时 → 退出码 0、stderr 里没有 `Traceback`、日志以 `session/end`（`MODEL_COMPLETED`）收尾
   - 本机实测：管道上的阻塞 `readline` 不被 Ctrl-C 打断（Windows 的 Ctrl-C 只在解释器回到字节码边界时才被消费），所以信号之后给 stdin 一个 EOF；缝隙只有几毫秒，一次送进缝隙的概率不够高，判据连着送到进程自己退出为止（4/4 红 → 5/5 绿）
 - [x] 1.7 chat 在 stderr 给出 session id：那一行在 stderr、不在 stdout、不在日志；拿它跑 `minihns replay` 找得到这次会话
-- [ ] 1.8 连续两段溢出 → stderr 多出一行「降不下去」的说明，且每个会话恰一次；不连续（中间有一段正常收尾）时不多出
+- [x] 1.8 连续两段溢出 → stderr 多出一行「降不下去」的说明，且每个会话恰一次；不连续（中间有一段正常收尾）时不多出
 - [ ] 1.9 非 0 退出那一行不带悬空冒号：`serve --http` 中途取消 → 退出码 5、stderr 那一行含 `ABORTED` 且不以冒号结尾
 
 ## 2. 实现（把上面那批判据逐个转绿，一次一个红绿循环）
@@ -22,7 +22,8 @@
 - [ ] 2.6 `_report_failure` 在 detail 为空时只打失败码、不带冒号
 - [x] 2.7 会话收尾（含 `end_session` 与它的打印）移进 `except KeyboardInterrupt` 的覆盖范围
   - 本机实测的形状：收尾那一段换一个什么都不做的处理器（`_suppress_sigint`）再写 `session/end`；不置 `SIG_IGN`——Windows 上被忽略的 Ctrl-C 会在解释器里炸成 `OSError: Signal 2 ignored due to race condition`。`_chat` 不再把旧处理器换回去：换回去等于在退出前的缝隙里重新开一个没人接的洞
-- [ ] 2.8 连续溢出的说明：一个局部变量记住上一个段的 `stop_reason`，不进日志、不新增状态机
+- [x] 2.8 连续溢出的说明：一个局部变量记住上一个段的 `stop_reason`，不进日志、不新增状态机
+  - 「每个会话恰一次」还要第二个局部布尔（这一句说过没有）：只记上一个收尾理由的话，连续三段溢出会说两次
 
 ## 3. 门禁与规格
 

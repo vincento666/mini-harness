@@ -582,6 +582,10 @@ async def _chat_session(prepared: _Prepared, signals: _ChatSignals) -> int:
     turn_index = 1
     printed = 0
     scanned = 0
+    # 连续溢出的说明靠这两个局部变量（design 的 Risks）：记住上一个段的收尾理由、这一句说过没有。
+    # 不进日志、不新增状态机。
+    previous_stop_reason: str | None = None
+    said_cannot_come_down = False
 
     def finish() -> SegmentOutcome | None:
         """会话收尾：先换一个什么都不做的处理器，再写 `session/end`（design D7）。
@@ -630,6 +634,20 @@ async def _chat_session(prepared: _Prepared, signals: _ChatSignals) -> int:
                     )
                 turn_index += segment.turns
                 _print_segment_note(segment)
+                if (
+                    segment.stop_reason == STOP_CONTEXT_WINDOW_EXCEEDED
+                    and previous_stop_reason == STOP_CONTEXT_WINDOW_EXCEEDED
+                    and not said_cannot_come_down
+                ):
+                    # 连续两段溢出：这一句每个会话只说一次，措辞留给实现。
+                    # 不进日志、不结束会话、不改退出码。
+                    print(
+                        "[降不下去] 连续两段溢出：这份会话已经降不下去，"
+                        "退出并新开一个会话是可选动作。",
+                        file=sys.stderr,
+                    )
+                    said_cannot_come_down = True
+                previous_stop_reason = segment.stop_reason
                 scanned, shadow_failure = _print_shadow_feedback(prepared.log, scanned)
                 if shadow_failure is not None:
                     return _report_failure(
