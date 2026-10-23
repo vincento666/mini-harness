@@ -9,12 +9,12 @@
 
 - [x] 2.1 红：写死区判据——`window 70000 / reserve 100`，一份 fixture 让某回合的预算读数落在 `(4364, 11200]` 且对话体无可遮蔽内容 → 断言该回合有 `context/assembled` 与不带 `purpose` 的 `model/request`、日志里没有 `error/context`、没有 `compaction/summary`。确认它红（今天这条以退出码 4 收尾）。**实测**：`tests/test_turn_compaction.py::test_a_dead_zone_reading_that_fits_the_window_is_not_an_overflow`，fixture 是让模型 `read` 一份 24000 字符的文件（约 6000 个 token），红在 `error/context` 的 `detail` 结尾是「已超过触发线 4364」。**先踩空一次**：原本用「模型回复本身 100000 字符」做 fixture，它不是无可遮蔽——那一组工具往返被整段遮蔽了，`compaction/summary` 照样写出来（`tokens_after: 25`）；无可遮蔽要的是**整段对话体都装得进保留尾部**，于是改读大文件。
 - [x] 2.2 绿：`turn_loop.py` 的溢出判定改用 `pressure_budget`（触发线只留「要不要压缩」那一处），2.1 变绿；既有的压缩、遮蔽、`compaction/summary` 形状判据全部仍绿。**换轨必然打破既有溢出 fixture**：seam ① 三条（`test_overflow_when_nothing_can_be_shadowed` prompt 100000 → 300000 字符；`test_an_overflow_closes_the_segment_not_the_session` prompt「任务」→ 20000 个字符；`test_one_compaction_then_overflow_...` 摘要 100000 → 300000 字符），seam ⑥ 五条见 4.3。判据对象没变，变的构造数值。
-- [x] 2.3 红：写「压缩之后仍超压力预算」的判据——假 provider 写出一条摘要，重折叠后读数仍超过压力预算 → 断言 `error/context`（`CONTEXT_WINDOW_EXCEEDED`）与 `turn/end`，且 `detail` 里同时出现预算读数、压力预算、触发线三个数。确认它红（今天这条分支不可达）。**实测**：2.2 落地之后这条分支已经可达（`test_one_compaction_then_overflow_when_the_context_still_does_not_fit` 用 300000 字符的摘要打到它），所以真正踩红的是三个数那一半：两条溢出判据都红在缺「触发线 4364」——`无可遮蔽的内容，预算读数 75015 已超过压力预算 69900` 与 `压缩之后预算读数 75024 仍超过压力预算 69900`。
+- [x] 2.3 红：写「压缩之后仍超压力预算」的判据——假 provider 写出一条摘要，重折叠后读数仍超过压力预算 → 断言 `error/context`（`CONTEXT_WINDOW_EXCEEDED`）与 `turn/end`，且 `detail` 里同时出现预算读数、压力预算、触发线三个数。确认它红（**立计划时这条分支不可达；2.2 落地之后它已经可达**，见本条实测）。**实测**：`test_one_compaction_then_overflow_when_the_context_still_does_not_fit` 用 300000 字符的摘要打到那条分支，所以真正踩红的是三个数那一半：两条溢出判据都红在缺「触发线 4364」——`无可遮蔽的内容，预算读数 75015 已超过压力预算 69900` 与 `压缩之后预算读数 75024 仍超过压力预算 69900`。
 - [x] 2.4 绿：两种 `detail` 措辞各带三个数（读数、压力预算、触发线），2.3 变绿；`uv run pytest -q` 全绿。
 
 ## 3. 摘要请求发不出去不再直接溢出（seam ①）
 
-- [x] 3.1 红：写判据——遮蔽范围折出的消息加摘要指令即使裁到只剩一条也超过压力预算 → 断言日志里没有带 `purpose: compaction` 的 `model/request`、没有 `error/model`，且当预算读数本身不超过压力预算时该回合照常写 `context/assembled`。确认它红（今天这条路无条件通向 `error/context`）。**实测**：`test_a_shadowed_range_too_big_to_trim_sends_no_summary_request`（窗口 20000 / 预留 100：压力预算 19900、保留预算 3200、触发线 0；一条 100000 字符约 25000 个 token 的工具结果）。红只在一处——「没有 `purpose: compaction` 的请求」「没有 `error/model`」「没有 `compaction/summary`」三条本来就绿：2.2 换轨之后「发不出摘要请求」已经不再无条件通向溢出。红的是措辞：日志写着「无可遮蔽的内容」，可这一回合**有**可遮蔽的那一段，只是裁到只剩一组往返仍装不下。**顺带查清一件事**：这条 scenario 里「该回合照常装配」那一半在装配缝上走不到——摘要请求的预算就是压力预算，而遮蔽段是对话体的子集，遮蔽段本身就超压力预算时读数必然也超。判据只断言可达的那一半，规格里「除非预算读数本身超过压力预算」正是这一条。
+- [x] 3.1 红：写判据——遮蔽范围折出的消息加摘要指令即使裁到只剩一条也超过压力预算 → 断言日志里没有带 `purpose: compaction` 的 `model/request`、没有 `error/model`、没有 `compaction/summary`，且溢出那一条按这一回合的实际事实说话。**判据只断可达的那一半**（「该回合照常装配」那一半不可达，原因见本条实测），不可达那一半在规格里写成「除非预算读数本身超过压力预算」。确认它红（今天这条路无条件通向 `error/context` 且措辞说「无可遮蔽」）。**实测**：`test_a_shadowed_range_too_big_to_trim_sends_no_summary_request`（窗口 20000 / 预留 100：压力预算 19900、保留预算 3200、触发线 0；一条 100000 字符约 25000 个 token 的工具结果）。红只在一处——「没有 `purpose: compaction` 的请求」「没有 `error/model`」「没有 `compaction/summary`」三条本来就绿：2.2 换轨之后「发不出摘要请求」已经不再无条件通向溢出。红的是措辞：日志写着「无可遮蔽的内容」，可这一回合**有**可遮蔽的那一段，只是裁到只剩一组往返仍装不下。**顺带查清一件事**：这条 scenario 里「该回合照常装配」那一半在装配缝上走不到——摘要请求的预算就是压力预算，而遮蔽段是对话体的子集，遮蔽段本身就超压力预算时读数必然也超。
 - [x] 3.2 绿：措辞跟着日志里的事实走，三种分支各带三个数（真写过摘要 / 给不出遮蔽范围 / 给得出却本身就装不下）；既有的「一段都装不下时不发请求」与「摘要调用失败沿用 provider 失败结果」两组判据仍绿。
 
 ## 4. 黑盒：小窗口能对话，真窗口仍溢出（seam ⑥）
@@ -27,7 +27,7 @@
 
 ## 5. 既有判据与规格的措辞对齐（seam ① 与 ⑥）
 
-- [x] 5.1 把 `tests/` 中断言「仍超过触发线」的溢出判据改判据对象为压力预算，逐条写明改了哪个数值；改完跑全量确认全绿，再用变异确认它们咬得住（不接受「改完就绿」）。**改完的清单在 4.3 与 2.2**（seam ① 三条、seam ⑥ 五条），全量全绿（413 passed / 5 skipped）。「咬得住」由 8.1 的 M1 与 M2 确认：M1 杀掉两条 seam ⑥ 判据，M2 杀掉六条 seam ⑥ 判据加 seam ① 四条加 `test_context_budget.py` 那条。
+- [x] 5.1 把 `tests/` 中断言「仍超过触发线」的溢出判据改判据对象为压力预算，逐条写明改了哪个数值；改完跑全量确认全绿，再用变异确认它们咬得住（不接受「改完就绿」）。**改完的清单在 4.3 与 2.2**（seam ① 三条、seam ⑥ 五条），全量全绿（413 passed / 5 skipped）。「咬得住」由 8.1 的 M1 与 M2 确认：M1 杀掉两条 seam ⑥ 判据，M2 杀掉七条 seam ⑥ 判据（`test_cli_chat.py` 两条、`test_cli_run.py` 四条、`test_cli_serve.py` 一条）加 seam ① 四条加 `test_context_budget.py` 那条，共 12 红。
 - [x] 5.2 跑 `tests/test_vocabulary_reachability.py` 确认没有新增 `code` 或 `stop_reason`、每个既有值仍可达。**实测**：两条判据都在全量里绿；本 change 没进任何新词。
 - [x] 5.3 跑 `openspec validate --all --strict` 确认本 change 的两份 delta 结构合法。**实测**：13 项全绿（12 份主规格 + 本 change）。delta 实际是 ADDED 1 条、MODIFIED **5** 条（比计划多两条：启动校验那条与触发线公式那条，起因见 design D5 的 apply 时改）。
 
@@ -51,3 +51,15 @@
 
 - [ ] 9.1 扫本轮证据写进 `docs/lessons.md` 收件箱；**收件箱已到上限 15 条，先消化再收新条**。
 - [ ] 9.2 关闭 `docs/adr/0002` 的「判据欠账」里小窗口死区那条，立 ADR-0026（溢出判据与压缩触发线是两件事），并在 `docs/roadmap.md` 的 M5 行补一句「压缩仍不够」第一次可达。
+
+## 10. `code-review` 两轴之后的裁决（seam ① 与规格）
+
+两轴跑在 `db61a20...HEAD`（七个提交）之上。Standards 轴三条硬违反、六条判断项；Spec 轴四条「勾与证据对不上」与两条规格缺口。逐条落在这里。
+
+- [x] 10.1 红：provider 报出的那条溢出的 `detail` 也要给三个数——`test_a_provider_reported_overflow_detail_carries_the_three_numbers`（窗口 70000 / 预留 100，provider 自己报 `PROVIDER_CONTEXT_OVERFLOW`、无可遮蔽）。**当场踩红**：`assert "压力预算 69900" in 'provider 报出上下文超限且无可遮蔽的内容：HTTP 400 上下文超限'`。这是 Spec 轴查出的缺口：delta 那条 MODIFIED 写着 `detail` SHALL 含三个数，而两条触发路径共用 `_context_overflow`，只有估算那一侧给了。
+- [x] 10.2 绿：`_budget_triple` 一处给出那三个数，`_retry_after_provider_overflow` 的两个出口都接上它。装配点那三种措辞不动——它的措辞由 delta 钉着、真端点验收文档引的是原文。
+- [x] 10.3 「一处事实」补全（Spec 轴 (a)1 与 Standards 轴的 Duplicated Code）：`_compact_if_over_line` 的 `summary_budget` 改调 `pressure_budget`，`trigger_line` 内部那一处 `W - O` 也改调它。改完 `W - O` 在 `src/` 里只有 `pressure_budget` 一处字面。
+- [x] 10.4 delta 补第 6 条 MODIFIED（Spec 轴 (a)2）：「摘要调用失败沿用 provider 失败结果」——主规格那句「摘要调用**没有发出**时不是 provider 失败：那条路通向 `CONTEXT_WINDOW_EXCEEDED`」与 scenario「没发出的摘要调用不产生 provider 失败」的 THEN 按 design D4 改；两条既有 scenario 名保留。不补这条，sync 之后主规格与本 delta 自相矛盾。
+- [x] 10.5 delta 的 ADDED 措辞收窄（Spec 轴 (c)3）：「并只用它判定上下文溢出」改成「上下文装不装得下 SHALL 只问它」，并写明端点自己报出的超限是另一条触发路径（照 ADR-0019，由回报触发、不由压力预算判定）；MODIFIED「压缩救不了时…」补一句「两条触发路径共用同一串三个数」。delta 结构复核：ADDED 1 条、MODIFIED 6 条，`openspec validate --all --strict` 13/13。
+- [ ] 10.6 两轴改动之后重跑变异：M2（`pressure_budget` 写歪）现在还要打到 `summary_budget` 与 `_budget_triple`，M3（去掉压力预算那个数）的锚点从三处变成四处；M6 = 把 provider 出口那串三个数摘掉，10.1 那条判据在 10.2 之前红过就是它的实证。
+- [ ] 10.7 记账进 `docs/adr/0002`：`cancel.is_set()` 时既不压缩也不判溢出（既有豁免，delta 未处理）；`_compact_if_over_line` 的 `None` 兼表「无可遮蔽」与「裁到最小仍装不下」，调用方只能重算 `shadowed_range` 分辨；`(window, reserve)` 在四处结伴（可能的 Data Clumps）；测试里 70000 / 100 与那三个数硬编码在五个文件。

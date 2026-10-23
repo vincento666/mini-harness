@@ -526,6 +526,20 @@ async def _context_overflow(
     )
 
 
+def _budget_triple(
+    settings: SessionSettings, events: Sequence[EventRecord], messages: Sequence[Message]
+) -> str:
+    """溢出的 `detail` 里那三个数并排：预算读数、压力预算、触发线（ADR-0026）。
+
+    死区只有靠这三个数并排才看得出来——只给触发线，读日志的人判断不了「离窗口还有多远」。
+    两条触发路径共用 `_context_overflow`，也就共用这一串。
+    """
+    reading = budget_reading(events, messages)
+    pressure = pressure_budget(settings.window, settings.reserve)
+    line = trigger_line(settings.window, settings.reserve)
+    return f"预算读数 {reading}、压力预算 {pressure}、触发线 {line}"
+
+
 @dataclass(frozen=True)
 class _RetriedRequest:
     """请求级压缩之后重试拿回的那一次调用：结果连同它带回的重试事实。"""
@@ -581,7 +595,10 @@ async def _recover_overflowed_request(
             log,
             turn_id,
             turns,
-            f"provider 报出上下文超限且无可遮蔽的内容：{failure.detail}",
+            (
+                f"provider 报出上下文超限且无可遮蔽的内容：{failure.detail}"
+                f"（{_budget_triple(settings, reread, context.messages)}）"
+            ),
             retry_events,
         )
 
@@ -606,7 +623,10 @@ async def _recover_overflowed_request(
                 log,
                 turn_id,
                 turns,
-                f"请求级压缩之后 provider 仍报上下文超限：{generated.detail}",
+                (
+                    f"请求级压缩之后 provider 仍报上下文超限：{generated.detail}"
+                    f"（{_budget_triple(settings, reread, folded.messages)}）"
+                ),
                 attempts,
             )
         return await _provider_error(log, turn_id, generated, turns, attempts)
@@ -652,7 +672,7 @@ async def _compact_if_over_line(
     # 摘要请求自己也要装得进窗口：装不下就从该段头部按往返整对丢，一条都不剩时不发请求（ADR-0023）。
     header = context.messages[:1]
     instruction = Message(role="user", content=SUMMARY_INSTRUCTION)
-    summary_budget = settings.window - settings.reserve
+    summary_budget = pressure_budget(settings.window, settings.reserve)
     body = fold_range(events, start=rng["start"], end=rng["end"])
     while body and estimate_tokens([*header, *body, instruction]) > summary_budget:
         body = _drop_leading_unit(body)

@@ -3,7 +3,7 @@
 ## ADDED Requirements
 
 ### Requirement: 溢出判据是压力预算，触发线只决定要不要压缩
-系统 SHALL 把「窗口减保留额」（`W − O`）作为压力预算，并只用它判定上下文溢出：一次装配的预算读数不超过压力预算时 MUST NOT 产出 `CONTEXT_WINDOW_EXCEEDED`，即使它超过触发线、即使本次没有可遮蔽的内容。触发线 SHALL 只决定「这次装配要不要尝试压缩」，MUST NOT 被用作溢出判据。触发线小于保留预算（`floor(W × 0.16)`）的窗口组合 SHALL 可跑。
+系统 SHALL 把「窗口减保留额」（`W − O`）作为压力预算，上下文装不装得下 SHALL 只问它：一次装配的预算读数不超过压力预算时 MUST NOT 产出 `CONTEXT_WINDOW_EXCEEDED`，即使它超过触发线、即使本次没有可遮蔽的内容。触发线 SHALL 只决定「这次装配要不要尝试压缩」，MUST NOT 被用作溢出判据。触发线小于保留预算（`floor(W × 0.16)`）的窗口组合 SHALL 可跑。端点自己报出的上下文超限是另一条触发路径，照「provider 报出的上下文超限塌成同一个溢出结果」那条处理——它由回报触发，不由压力预算判定，两条路产出同一个停止理由。
 
 #### Scenario: 死区窗口里装得下的读数不判溢出
 - **WHEN** `--window` 为 70000、`--reserve` 为 100（触发线 4364、保留预算 11200、压力预算 69900），一次装配的预算读数为 5933 且没有可遮蔽的内容
@@ -35,7 +35,7 @@
 - **THEN** 系统不在同一装配里尝试第二次压缩；该回合是否溢出由压力预算判
 
 ### Requirement: 压缩救不了时是 CONTEXT_WINDOW_EXCEEDED 结果
-当一次装配的预算读数超过**压力预算**（`W − O`）时，系统 SHALL 写一条 `error/context`（payload 含 `turn_id`、`code: CONTEXT_WINDOW_EXCEEDED`、`detail`）与 `turn/end`（`stop_reason: CONTEXT_WINDOW_EXCEEDED`），结束**该回合**；`session/end` 与退出码由入口决定——一次性 `minihns run` 写 `session/end` 并以退出码 4 结束，`minihns chat` 不写 `session/end` 且会话继续。`detail` SHALL 含预算读数、压力预算与触发线三个数，并按这一回合的实际事实区分三种措辞：真写过摘要说「压缩之后」；`shadowed_range` 给不出范围说「无可遮蔽的内容」；给得出范围却裁到只剩一组往返仍装不下说「可遮蔽的那一段本身就装不下」。MUST NOT 抛出未捕获异常，也 MUST NOT 为这个溢出结果调用回合模型——带 `purpose: compaction` 的摘要调用除外。
+当一次装配的预算读数超过**压力预算**（`W − O`）时，系统 SHALL 写一条 `error/context`（payload 含 `turn_id`、`code: CONTEXT_WINDOW_EXCEEDED`、`detail`）与 `turn/end`（`stop_reason: CONTEXT_WINDOW_EXCEEDED`），结束**该回合**；`session/end` 与退出码由入口决定——一次性 `minihns run` 写 `session/end` 并以退出码 4 结束，`minihns chat` 不写 `session/end` 且会话继续。`detail` SHALL 含预算读数、压力预算与触发线三个数，并按这一回合的实际事实区分三种措辞：真写过摘要说「压缩之后」；`shadowed_range` 给不出范围说「无可遮蔽的内容」；给得出范围却裁到只剩一组往返仍装不下说「可遮蔽的那一段本身就装不下」。MUST NOT 抛出未捕获异常，也 MUST NOT 为这个溢出结果调用回合模型——带 `purpose: compaction` 的摘要调用除外。端点自己报出的超限塌成这个结果时，`detail` 同样含那三个数（照「provider 报出的上下文超限塌成同一个溢出结果」，两条触发路径共用同一个溢出结果与同一串数）。
 
 #### Scenario: 溢出的回合不产出该回合自己的模型调用
 - **WHEN** 一次装配以 `CONTEXT_WINDOW_EXCEEDED` 收尾
@@ -93,3 +93,14 @@
 #### Scenario: 小窗口下每次装配都越线
 - **WHEN** 一次 run 的 `--window` 为 70000、`--reserve` 为 100（触发线 4364，比保留预算 11200 还小）
 - **THEN** 每一个需要装配的回合都进入压缩判定，且触发线本身是 4364 而不是负数
+
+### Requirement: 摘要调用失败沿用 provider 失败结果
+生成摘要的那次模型调用失败时，系统 SHALL 沿用既有的 provider 失败形状：写 `error/model`（含 `code`）与 `turn/end`（`stop_reason: PROVIDER_ERROR`）。`session/end` 与退出码由入口决定：一次性 `minihns run` 写 `session/end` 并以退出码 1 结束，`minihns chat` 里这是段级收尾（见 `turn-loop` 的「Provider 失败是回合终止结果」）。此时 MUST NOT 写 `compaction/summary`，也 MUST NOT 产出 `CONTEXT_WINDOW_EXCEEDED`。摘要调用**没有发出**时不是 provider 失败：那条路 MUST NOT 写 `error/model`、MUST NOT 发出带 `purpose: compaction` 的 `model/request`，也 MUST NOT 仅因为它没发出就产出溢出——该回合是否溢出由压力预算判（见「溢出判据是压力预算，触发线只决定要不要压缩」）。
+
+#### Scenario: fixture 里没有摘要回复
+- **WHEN** 一次性 run 里装配越线但 fixture 的回复条目已耗尽
+- **THEN** 日志写 `error/model`（`code: PROVIDER_EXHAUSTED`）与 `session/end`，退出码为 1，且日志里没有任何 `compaction/summary`
+
+#### Scenario: 没发出的摘要调用不产生 provider 失败
+- **WHEN** 装配越线但遮蔽范围裁到最小仍装不下
+- **THEN** 日志里没有 `error/model`、没有带 `purpose: compaction` 的 `model/request`；这一回合的读数超过压力预算时它以 `CONTEXT_WINDOW_EXCEEDED` 收尾，没超过时照常装配
