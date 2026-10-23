@@ -144,7 +144,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _report_failure(code: str, detail: str, exit_code: int) -> int:
-    sys.stderr.write(f"{code}: {detail}\n")
+    # detail 为空时只打失败码：取消没有失败结果，尾巴上挂一个冒号是悬空的（design D6）。
+    sys.stderr.write(f"{code}: {detail}\n" if detail else f"{code}\n")
     return exit_code
 
 
