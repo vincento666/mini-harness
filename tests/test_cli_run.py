@@ -894,7 +894,7 @@ def test_a_budget_argument_below_one_is_a_parameter_error_with_no_log(
 
 
 def test_a_window_that_leaves_no_pressure_budget_is_a_parameter_error(tmp_path: Path) -> None:
-    """窗口减去预留与 headroom 没有剩余：配置期就失败，连日志都不建（ADR-0019）。"""
+    """窗口减去预留之后没有压力预算：配置期就失败，连日志都不建（ADR-0019）。"""
     result = _cli(
         "run",
         "-p",
@@ -904,23 +904,23 @@ def test_a_window_that_leaves_no_pressure_budget_is_a_parameter_error(tmp_path: 
         "--fixture",
         str(HELLO_SCENARIO),
         "--window",
-        "32768",
-        "--reserve",
         "4096",
+        "--reserve",
+        "8192",
         cwd=tmp_path,
     )
 
     assert result.returncode == 2
     assert "INVALID_ARGUMENT" in result.stderr
-    # stderr 要点出那三个数：窗口、预留、headroom 余量。
-    assert all(number in result.stderr for number in ("32768", "4096", "65536"))
+    # stderr 要点出那两个数：窗口与预留。
+    assert all(number in result.stderr for number in ("4096", "8192"))
     assert _log_files(tmp_path) == []
 
 
 def test_a_window_that_leaves_exactly_zero_pressure_budget_is_a_parameter_error(
     tmp_path: Path,
 ) -> None:
-    """`W - O - 65536` 恰为 0 也是「没有剩余压力预算」：触发线 0，任何非空上下文都越线。"""
+    """`W - O` 恰为 0 也是「没有压力预算」：什么都装不下。"""
     result = _cli(
         "run",
         "-p",
@@ -930,15 +930,15 @@ def test_a_window_that_leaves_exactly_zero_pressure_budget_is_a_parameter_error(
         "--fixture",
         str(HELLO_SCENARIO),
         "--window",
-        "70000",
+        "4000",
         "--reserve",
-        "4464",
+        "4000",
         cwd=tmp_path,
     )
 
     assert result.returncode == 2
     assert "INVALID_ARGUMENT" in result.stderr
-    assert all(number in result.stderr for number in ("70000", "4464", "65536"))
+    assert all(number in result.stderr for number in ("4000", "4000"))
     assert _log_files(tmp_path) == []
 
 
@@ -965,11 +965,38 @@ def test_the_smallest_window_with_a_positive_trigger_line_runs(tmp_path: Path) -
     assert payload["reserve"] == 4096
 
 
-# 触发线 364：`66000 - 100 - 65536` 比 `66000 * 4 // 5` 小，所以它是触发线。
-# 2000 个字符约 500 个估算 token，比触发线大；对话体里又无可遮蔽的内容。
-_TIGHT_WINDOW = "66000"
+def test_a_window_with_a_zero_trigger_line_runs(tmp_path: Path) -> None:
+    """触发线为 0 不是配置错误：压力预算 `W - O` 还在，会话照跑，退出码 0。
+
+    窗口 4000 / 预留 100 的触发线是 0（`4000 - 100 - 65536` 为负）、保留预算 640，
+    压力预算 3900。旧口径里这种窗口在配置期就被拒掉。
+    """
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--window",
+        "4000",
+        "--reserve",
+        "100",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 0
+    payload = _session_start(_log_files(tmp_path)[0])
+    assert payload["window"] == 4000
+    assert payload["reserve"] == 100
+
+
+# 压力预算 3900 个 token（15600 个字符）：20000 个字符约 5000 个估算 token，装不下。
+# 对话体里又无可遮蔽的内容——prompt 在 `session/start` 里，受保护、不能遮蔽。
+_TIGHT_WINDOW = "4000"
 _TIGHT_RESERVE = "100"
-_OVERFLOW_PROMPT = "任务" * 1000
+_OVERFLOW_PROMPT = "任务" * 10000
 
 
 def test_a_run_that_cannot_fit_its_window_exits_four_with_an_error_context(tmp_path: Path) -> None:
