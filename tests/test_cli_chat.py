@@ -923,3 +923,25 @@ def test_ctrl_c_at_the_prompt_ends_the_session_without_traceback(tmp_path: Path)
     types = [str(record["type"]) for record in records]
     assert types[-1] == "session/end"
     assert records[-1]["payload"]["stop_reason"] == "MODEL_COMPLETED"
+
+
+def test_chat_prints_the_session_id_on_stderr(tmp_path: Path) -> None:
+    """seam ⑥ 1.7：会话开始时 stderr 上有一行 session id——不在 stdout，也不为它多写记录。
+
+    那一行同时是「这次会话的日志在哪」的入口，所以判据拿它跑一遍 `minihns replay`。
+    """
+    fixture = _fixture(tmp_path, "one.json", [{"content": "回复正文", "finish_reason": "stop"}])
+
+    result = _chat("--fixture", fixture, cwd=tmp_path, stdin_text="第一条\n")
+
+    assert result.returncode == 0
+    session_id = _log_files(tmp_path)[0].stem
+    lines = [line for line in result.stderr.splitlines() if session_id in line]
+    assert len(lines) == 1, "会话开始时 stderr 上该有一行 session id"
+    assert session_id not in result.stdout
+    assert lines[0] not in _log_text(tmp_path)
+
+    replay = _cli("replay", session_id, cwd=tmp_path)
+
+    assert replay.returncode == 0
+    assert "REPLAY_MISMATCH" not in replay.stderr

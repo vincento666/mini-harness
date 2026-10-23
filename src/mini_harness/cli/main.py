@@ -574,6 +574,9 @@ async def _chat_session(prepared: _Prepared, signals: _ChatSignals) -> int:
         return _report_failure(
             started.failure_code or started.stop_reason, started.detail, EXIT_INTERNAL_ERROR
         )
+    # 会话 id 走 stderr（design D5）：stdout 那个投影只有模型回复正文与提示符。
+    # 这一行同时是「这次会话的日志在哪」的入口——拿它跑 `minihns replay <id>` 找得到这次会话。
+    print(f"会话 {prepared.log.session_id}", file=sys.stderr)
 
     segments = 0
     turn_index = 1
