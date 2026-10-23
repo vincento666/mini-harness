@@ -9,8 +9,8 @@
 
 - [x] 2.1 红：写死区判据——`window 70000 / reserve 100`，一份 fixture 让某回合的预算读数落在 `(4364, 11200]` 且对话体无可遮蔽内容 → 断言该回合有 `context/assembled` 与不带 `purpose` 的 `model/request`、日志里没有 `error/context`、没有 `compaction/summary`。确认它红（今天这条以退出码 4 收尾）。**实测**：`tests/test_turn_compaction.py::test_a_dead_zone_reading_that_fits_the_window_is_not_an_overflow`，fixture 是让模型 `read` 一份 24000 字符的文件（约 6000 个 token），红在 `error/context` 的 `detail` 结尾是「已超过触发线 4364」。**先踩空一次**：原本用「模型回复本身 100000 字符」做 fixture，它不是无可遮蔽——那一组工具往返被整段遮蔽了，`compaction/summary` 照样写出来（`tokens_after: 25`）；无可遮蔽要的是**整段对话体都装得进保留尾部**，于是改读大文件。
 - [x] 2.2 绿：`turn_loop.py` 的溢出判定改用 `pressure_budget`（触发线只留「要不要压缩」那一处），2.1 变绿；既有的压缩、遮蔽、`compaction/summary` 形状判据全部仍绿。**换轨必然打破既有溢出 fixture**：seam ① 三条（`test_overflow_when_nothing_can_be_shadowed` prompt 100000 → 300000 字符；`test_an_overflow_closes_the_segment_not_the_session` prompt「任务」→ 20000 个字符；`test_one_compaction_then_overflow_...` 摘要 100000 → 300000 字符），seam ⑥ 五条见 4.3。判据对象没变，变的构造数值。
-- [ ] 2.3 红：写「压缩之后仍超压力预算」的判据——假 provider 写出一条摘要，重折叠后读数仍超过压力预算 → 断言 `error/context`（`CONTEXT_WINDOW_EXCEEDED`）与 `turn/end`，且 `detail` 里同时出现预算读数、压力预算、触发线三个数。确认它红（今天这条分支不可达）。
-- [ ] 2.4 绿：实现两种 `detail` 措辞（「压缩之后」与「无可遮蔽」）各带三个数，2.3 变绿；`uv run pytest -q` 全绿。
+- [x] 2.3 红：写「压缩之后仍超压力预算」的判据——假 provider 写出一条摘要，重折叠后读数仍超过压力预算 → 断言 `error/context`（`CONTEXT_WINDOW_EXCEEDED`）与 `turn/end`，且 `detail` 里同时出现预算读数、压力预算、触发线三个数。确认它红（今天这条分支不可达）。**实测**：2.2 落地之后这条分支已经可达（`test_one_compaction_then_overflow_when_the_context_still_does_not_fit` 用 300000 字符的摘要打到它），所以真正踩红的是三个数那一半：两条溢出判据都红在缺「触发线 4364」——`无可遮蔽的内容，预算读数 75015 已超过压力预算 69900` 与 `压缩之后预算读数 75024 仍超过压力预算 69900`。
+- [x] 2.4 绿：两种 `detail` 措辞各带三个数（读数、压力预算、触发线），2.3 变绿；`uv run pytest -q` 全绿。
 
 ## 3. 摘要请求发不出去不再直接溢出（seam ①）
 

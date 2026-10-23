@@ -849,9 +849,12 @@ async def _run_turns(
                     for event in events
                 )
                 detail = (
-                    f"压缩之后预算读数 {reading} 仍超过压力预算 {pressure}"
+                    f"压缩之后预算读数 {reading} 仍超过压力预算 {pressure}（触发线 {line}）"
                     if compacted_here
-                    else f"无可遮蔽的内容，预算读数 {reading} 已超过压力预算 {pressure}"
+                    else (
+                        f"无可遮蔽的内容，预算读数 {reading} 已超过压力预算 {pressure}"
+                        f"（触发线 {line}）"
+                    )
                 )
                 return await _context_overflow(log, turn_id, turns, detail)
 
