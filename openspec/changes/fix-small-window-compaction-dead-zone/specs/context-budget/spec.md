@@ -35,7 +35,7 @@
 - **THEN** 系统不在同一装配里尝试第二次压缩；该回合是否溢出由压力预算判
 
 ### Requirement: 压缩救不了时是 CONTEXT_WINDOW_EXCEEDED 结果
-当一次装配的预算读数超过**压力预算**（`W − O`）时，系统 SHALL 写一条 `error/context`（payload 含 `turn_id`、`code: CONTEXT_WINDOW_EXCEEDED`、`detail`）与 `turn/end`（`stop_reason: CONTEXT_WINDOW_EXCEEDED`），结束**该回合**；`session/end` 与退出码由入口决定——一次性 `minihns run` 写 `session/end` 并以退出码 4 结束，`minihns chat` 不写 `session/end` 且会话继续。`detail` SHALL 含预算读数、压力预算与触发线三个数，并按这一回合是否真写过摘要区分「压缩之后」与「无可遮蔽」两种措辞。MUST NOT 抛出未捕获异常，也 MUST NOT 为这个溢出结果调用回合模型——带 `purpose: compaction` 的摘要调用除外。
+当一次装配的预算读数超过**压力预算**（`W − O`）时，系统 SHALL 写一条 `error/context`（payload 含 `turn_id`、`code: CONTEXT_WINDOW_EXCEEDED`、`detail`）与 `turn/end`（`stop_reason: CONTEXT_WINDOW_EXCEEDED`），结束**该回合**；`session/end` 与退出码由入口决定——一次性 `minihns run` 写 `session/end` 并以退出码 4 结束，`minihns chat` 不写 `session/end` 且会话继续。`detail` SHALL 含预算读数、压力预算与触发线三个数，并按这一回合的实际事实区分三种措辞：真写过摘要说「压缩之后」；`shadowed_range` 给不出范围说「无可遮蔽的内容」；给得出范围却裁到只剩一组往返仍装不下说「可遮蔽的那一段本身就装不下」。MUST NOT 抛出未捕获异常，也 MUST NOT 为这个溢出结果调用回合模型——带 `purpose: compaction` 的摘要调用除外。
 
 #### Scenario: 溢出的回合不产出该回合自己的模型调用
 - **WHEN** 一次装配以 `CONTEXT_WINDOW_EXCEEDED` 收尾
