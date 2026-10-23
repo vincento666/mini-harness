@@ -99,11 +99,25 @@ def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--config", default=None)
     parser.add_argument("--workspace", default=None)
     parser.add_argument("--session-dir", default=None)
-    parser.add_argument("--provider", default=None)
+    parser.add_argument(
+        "--provider",
+        default=None,
+        help=(
+            "端点预设名 mock / openai / deepseek。没给时这一层看环境变量 MINIHNS_API_KEY："
+            "已设且非空就是 openai，否则是 mock。"
+        ),
+    )
     parser.add_argument("--fixture", default=None)
     parser.add_argument("--base-url", default=None)
     parser.add_argument("--model", default=None)
-    parser.add_argument("--api-key-env", default=None)
+    parser.add_argument(
+        "--api-key-env",
+        default=None,
+        help=(
+            "密钥所在环境变量的名字。没给时随 provider："
+            "openai 读 MINIHNS_API_KEY，deepseek 读 DEEPSEEK_API_KEY。"
+        ),
+    )
     parser.add_argument("--max-turns", type=int, default=None)
     parser.add_argument("--window", type=int, default=None)
     parser.add_argument("--reserve", type=int, default=None)

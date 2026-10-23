@@ -476,3 +476,19 @@ def test_a_missing_model_fails_before_any_request_is_sent(tmp_path: Path) -> Non
     assert "--model" in result.stderr
     assert list(tmp_path.glob("*.jsonl")) == []
     assert len(endpoint.requests) == 0
+
+
+def test_the_help_names_the_provider_rule_and_both_variable_names(tmp_path: Path) -> None:
+    """delta「--help 写出设置类 flag 的默认值」：三个入口的 `--provider` 那行写规则本身。
+
+    写的是规则不是运行期值：这一条判据跑的时候 `MINIHNS_API_KEY` 在不在场都可能，help 里
+    出现的必须是两个变量名与三个名字，不是「当前默认是 X」，也不是任何密钥的值。
+    """
+    for entry in ("run", "chat", "serve"):
+        result = _cli(entry, "--help", cwd=tmp_path)
+
+        assert result.returncode == 0, result.stderr
+        text = result.stdout
+        for word in ("mock", "openai", "deepseek", "MINIHNS_API_KEY", "DEEPSEEK_API_KEY"):
+            assert word in text, f"{entry} --help 里没有 {word}"
+        assert _KEY_VALUE not in text

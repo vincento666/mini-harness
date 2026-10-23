@@ -26,10 +26,10 @@
 
 ## 5. `--help` 写出默认值（seam ⑥）
 
-- [ ] 5.1 红：`minihns chat --help`、`minihns run --help`、`minihns serve --help` 的 `--provider` 说明里同时含 `mock`、`openai`、`deepseek`、`MINIHNS_API_KEY`；`--api-key-env` 说明里含两个变量名；输出里不含任何假密钥的值。确认它红。
-- [ ] 5.2 绿：实现 help 文本（写规则不写运行期值），5.1 变绿。
-- [ ] 5.3 跑 `tests/test_vocabulary_reachability.py` 确认 `UNKNOWN_PROVIDER` 仍可达、没有新增 `code`。
-- [ ] 5.4 跑 `openspec validate --all --strict` 确认两份 delta 结构合法（ADDED 2、MODIFIED 3，被改的每条保留全部既有 scenario 名）。
+- [x] 5.1 红：`minihns chat --help`、`minihns run --help`、`minihns serve --help` 的 `--provider` 说明里同时含 `mock`、`openai`、`deepseek`、`MINIHNS_API_KEY`；`--api-key-env` 说明里含两个变量名；输出里不含任何假密钥的值。确认它红。**实测红**：`test_the_help_names_the_provider_rule_and_both_variable_names` 红在 `assert 'mock' in 'usage: minihns run [-h] …'`——三个入口的 `--provider` / `--api-key-env` 两行当时只有 metavar，没有说明。
+- [x] 5.2 绿：实现 help 文本（写规则不写运行期值），5.1 变绿。**实测**：两条 `help=` 写在 `shared` 那个 parent parser 上，三个入口一起拿到。写的是规则——「没给时这一层看环境变量 MINIHNS_API_KEY：已设且非空就是 openai，否则是 mock」与「没给时随 provider：openai 读 MINIHNS_API_KEY，deepseek 读 DEEPSEEK_API_KEY」。两处刻意不写 `--`：既有的 `test_run_flag_table_is_the_documented_table` 与 `test_chats_flag_table_is_runs_flag_table_minus_two` 都是从 help 输出里捞以 `-` 开头的 token 来判整张 flag 表，说明文字里带 `--` 会让那两条判据捞到不存在的开关。
+- [x] 5.3 跑 `tests/test_vocabulary_reachability.py` 确认 `UNKNOWN_PROVIDER` 仍可达、没有新增 `code`。**实测**：该文件在这一轮里跑过（90 passed / 3 skipped），无红、无新增 code。
+- [x] 5.4 跑 `openspec validate --all --strict` 确认两份 delta 结构合法（ADDED 2、MODIFIED 3，被改的每条保留全部既有 scenario 名）。**实测**：`{"items":13,"passed":13,"failed":0}`，退出码 0。
 
 ## 6. 真实端点验收（完成判据的第二半，ADR-0024）
 
