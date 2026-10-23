@@ -8,9 +8,9 @@
 
 ## 2. 默认 provider 由密钥在场决定（seam ② 与 ⑥）
 
-- [ ] 2.1 红：写判据——CLI 与配置文件都没给 `provider` 时，`MINIHNS_API_KEY` 已设且非空 → 生效 provider 为 `openai`；未设或为空串 → 生效 provider 为 `mock`。判据显式构造子进程环境，MUST NOT 继承本机真实密钥。确认它红。
-- [ ] 2.2 绿：实现这一条内置默认规则，2.1 变绿；既有的「配置文件覆盖内置默认」「命令行覆盖配置文件」「与默认同值的命令行开关仍是显式值」三条判据全部仍绿。
-- [ ] 2.3 红：写「配置文件写 `provider = "openai"` 时不看密钥在场」的判据（该变量未设 → 退出码 2、`INVALID_ARGUMENT` 与变量名）。确认它红。
+- [x] 2.1 红：写判据——CLI 与配置文件都没给 `provider` 时，`MINIHNS_API_KEY` 已设且非空 → 生效 provider 为 `openai`；未设或为空串 → 生效 provider 为 `mock`。判据显式构造子进程环境，MUST NOT 继承本机真实密钥。确认它红。**实测**：seam ② 三条（`test_the_key_present_makes_openai_the_builtin_default` / `test_no_key_means_the_builtin_default_is_still_mock` / `test_a_given_provider_is_not_overridden_by_the_key`）+ seam ⑥ 两条（`test_a_bare_run_with_the_key_present_defaults_to_openai` / `test_a_bare_run_without_the_key_still_defaults_to_mock`）。这一条的红不是当场踩的——1.2 落地时 `_provider_of` 已经写了这条规则（见 1.2 那一笔的提前落地），所以按 L-055 实证：把 `_provider_of` 临时改回 `return DEFAULT_PROVIDER` 跑一次，两条红（`assert 'mock' == 'openai'` 与 `assert '--model' in '…--provider mock 需要 --fixture…'`），还原后 `git status --short -- src/mini_harness/config/layering.py` 为空。子进程环境一律 `env=_env_without_default_key()`：先 `pop("MINIHNS_API_KEY")` 再写假值，本机两个真实变量都不继承（实测进程环境里 `DEEPSEEK_API_KEY` 与 `MINIHNS_API_KEY` 都不在）。
+- [x] 2.2 绿：实现这一条内置默认规则，2.1 变绿；既有的「配置文件覆盖内置默认」「命令行覆盖配置文件」「与默认同值的命令行开关仍是显式值」三条判据全部仍绿。**实测**：规则在 `layer_settings` 的 `_provider_of`——`_from_layers` 先问 CLI 层与配置文件层，两层都没给才看 `env.get(DEFAULT_PROVIDER_KEY_ENV)`；`env` 是第三个参数、默认 `os.environ`，seam ② 的判据因此能显式喂一份假环境。既有的三条在 `tests/test_cli_config.py`，全量跑里仍绿。
+- [x] 2.3 红：写「配置文件写 `provider = "openai"` 时不看密钥在场」的判据（该变量未设 → 退出码 2、`INVALID_ARGUMENT` 与变量名）。确认它红。**实测**：判据是 `test_a_config_file_provider_does_not_look_at_the_key_presence`，落地即绿（1.2 的预设已把 `openai` 的默认变量名换成 `MINIHNS_API_KEY`）。按 L-055 实证它红过：把预设表里 `openai` 的 `api_key_env` 临时改回 `DEEPSEEK_API_KEY` 跑一次，它红在 `assert 'MINIHNS_API_KEY' in 'INVALID_ARGUMENT: 环境变量 DEEPSEEK_API_KEY 未设置或为空…'`，同一轮里 `test_a_bare_run_with_the_key_present_defaults_to_openai` 也红；还原后 `git status --short -- src/mini_harness/loop/settings.py` 为空。这一处临时改动就是组 8 的变异 ①，正式那一轮在 8.1 跑。
 
 ## 3. 词表加 `deepseek`，地雷拆掉（seam ⑥）
 

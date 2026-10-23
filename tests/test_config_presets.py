@@ -79,3 +79,33 @@ def test_a_config_file_provider_gets_its_own_preset() -> None:
     assert layered.base_url == "https://api.deepseek.com"
     assert layered.model == "deepseek-chat"
     assert layered.api_key_env == "DEEPSEEK_API_KEY"
+
+
+def test_the_key_present_makes_openai_the_builtin_default() -> None:
+    """CLI 与配置文件都没给 provider 时，内置默认这一层看 `MINIHNS_API_KEY` 在场。"""
+    args = argparse.Namespace()
+
+    layered = layer_settings(args, {}, {"MINIHNS_API_KEY": "sk-from-the-test-env"})
+
+    assert layered.provider == "openai"
+    assert layered.api_key_env == "MINIHNS_API_KEY"
+
+
+def test_no_key_means_the_builtin_default_is_still_mock() -> None:
+    """未设与设为空串是同一条：空串不是密钥，默认就还是 mock。"""
+    without = layer_settings(argparse.Namespace(), {}, {})
+    empty = layer_settings(argparse.Namespace(), {}, {"MINIHNS_API_KEY": ""})
+
+    assert without.provider == "mock"
+    assert empty.provider == "mock"
+
+
+def test_a_given_provider_is_not_overridden_by_the_key() -> None:
+    """密钥在场只填内置默认那一层：配置文件写了 provider 就不看环境。"""
+    from_config = layer_settings(
+        argparse.Namespace(), {"provider": "mock"}, {"MINIHNS_API_KEY": "x"}
+    )
+    from_flag = layer_settings(argparse.Namespace(provider="mock"), {}, {"MINIHNS_API_KEY": "x"})
+
+    assert from_config.provider == "mock"
+    assert from_flag.provider == "mock"

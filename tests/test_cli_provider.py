@@ -330,3 +330,68 @@ def test_a_200_without_choices_is_a_schema_error_at_the_cli(tmp_path: Path) -> N
     assert error["payload"]["code"] == "PROVIDER_SCHEMA_INVALID"
     assert records[-1]["type"] == "session/end"
     assert len(endpoint.requests) == 1
+
+
+def _env_without_default_key(**extra: str) -> dict[str, str]:
+    """判默认 provider 的环境：先摘掉本机可能已有的那个变量，再按测试写假值。"""
+    env = dict(os.environ)
+    env.pop("MINIHNS_API_KEY", None)
+    env.update(extra)
+    return env
+
+
+def test_a_bare_run_with_the_key_present_defaults_to_openai(tmp_path: Path) -> None:
+    """delta「有密钥时裸跑的默认 provider 是 openai」：默认不再是 mock 那句 `--fixture`。"""
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--session-dir",
+        str(tmp_path),
+        cwd=tmp_path,
+        env=_env_without_default_key(MINIHNS_API_KEY=_KEY_VALUE),
+    )
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert "--model" in result.stderr
+    assert "--fixture" not in result.stderr
+    assert list(tmp_path.glob("*.jsonl")) == []
+
+
+def test_a_bare_run_without_the_key_still_defaults_to_mock(tmp_path: Path) -> None:
+    """delta「没有密钥时裸跑的默认 provider 仍是 mock」：这一半的形状不许变。"""
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--session-dir",
+        str(tmp_path),
+        cwd=tmp_path,
+        env=_env_without_default_key(),
+    )
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert "--fixture" in result.stderr
+    assert list(tmp_path.glob("*.jsonl")) == []
+
+
+def test_a_config_file_provider_does_not_look_at_the_key_presence(tmp_path: Path) -> None:
+    """delta「配置文件指定的 provider 同样判」：写了 openai 就不看密钥在场，缺了当场失败。"""
+    (tmp_path / "mini.config.toml").write_text('provider = "openai"\n', encoding="utf-8")
+
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--session-dir",
+        str(tmp_path),
+        cwd=tmp_path,
+        env=_env_without_default_key(),
+    )
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert "MINIHNS_API_KEY" in result.stderr
+    assert list(tmp_path.glob("*.jsonl")) == []
