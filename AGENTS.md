@@ -60,11 +60,11 @@ uv run coverage report --fail-under=95 --show-missing   # 这三步不可拆，�
 
 ## 流程：每个里程碑一个 OpenSpec change
 
-一个里程碑的顺序：**propose → 人审 proposal / specs / design / tasks → apply（按 tdd 技能，red → green 单切片，一次一个）→ `code-review` 两轴 → 变异测试一轮 + Learning Gate → 在 change 分支上 sync delta 进主规格 + 归档 → 代码与规格一次合入 main**。
+一个里程碑的顺序：**propose → 人审 proposal / specs / design / tasks → apply（按 tdd 技能，red → green 单切片，一次一个）→ `code-review` 两轴 → 收尾三项（见下 Learning Gate）→ 在 change 分支上 sync delta 进主规格 + 归档 → 代码与规格一次合入 main**。
 
 分支纪律：每个 change 一个分支 `change/<id>`；**归档在分支上做**——sync 进主规格、移 `changeRoot`、`openspec validate --all --strict` 全绿，然后代码与规格一次合入 `main`。反过来（先合并再归档）会在主干上留下「代码已合、主规格还停在上一个里程碑」的窗口。**merge 与推 `main` 先征求人的批准、确认了才执行**；agent 可自行推 `change/<id>` 分支与归档提交。
 
-**完成判据含一条人手验收**：拿它用真实工作区办一件真事（不是跑判据），观察记进 `docs/verification/<change-id>-manual.md`；不进 CI，也不替代门禁那四道。**依赖模型回复形状的功能，完成判据里还要有一次真实端点实测**（ADR-0022）：那一跑不进 CI，但不跑完这个 change 不算完成。
+**完成判据有两半，两半都通过才算验收**（ADR-0024）：mock 那一半是上面那四道门禁——mock 桩只负责单元测试与冒烟，mock 全绿不算完成；**真实那一半是接上真实端点把本里程碑的判据跑一遍并通过**，那一跑不进 CI、不替代门禁那四道，但它不通过这个 change 就不算完成。另有一条人手验收：拿它用真实工作区办一件真事（不是跑判据），观察记进 `docs/verification/<change-id>-manual.md`。CI 层的判据用真实端点回过的产物做 fixture（ADR-0022），补的是形状不是验收。
 
 **提交粒度**：一个红绿循环一次提交，提交信息带 task 编号，让 `git log` 能对上 `tasks.md` 的复选框。**一个提交最多覆盖同一 seam 上相邻的 3 个 task**；超过就在提交信息里写明为什么打包（没有理由为了省时间打包）。
 
@@ -73,7 +73,7 @@ uv run coverage report --fail-under=95 --show-missing   # 这三步不可拆，�
 
 **每个里程碑收尾跑一轮变异测试并记录**：改坏一处实现 → 跑全量测试 → 把「变异 / 改法 / 哪些测试变红」记进 `docs/verification/<change-id>-mutation.md` → 还原并确认回到基线（**还原前先看 `git status`**，别把本轮未提交的改动一起回滚）。判据：每个变异都被至少一条测试杀死；存活的算覆盖缺口，补一条能杀死它的测试（先确认它在变异下红）。变异必须改变**可观察行为**，语义等价的改法是 dud mutant，不算。捕获一整个异常类族的代码，判据要用族里不显眼的那个成员。
 
-**Learning Gate（变异测试之后、归档之前）**：扫本轮证据——红过的测试、存活的变异、返工过的规格、踩过的工具坑——可复用教训写进 `docs/lessons.md` 收件箱，没有可复用信号就写 `NO-PROMOTION`。**每个 change 的 `tasks.md` 末尾固定两项收尾任务：变异测试一轮、Learning Gate**（archive 时未勾会警告）。晋升进本文件的只能是一句话规则，且**一进一出**：同时删掉或压缩本文件一条旧内容。收件箱超过 15 条先消化再收；每里程碑归档后跑一次 `agents-md-slim`。
+**Learning Gate（变异测试之后、归档之前）**：扫本轮证据——红过的测试、存活的变异、返工过的规格、踩过的工具坑——可复用教训写进 `docs/lessons.md` 收件箱，没有可复用信号就写 `NO-PROMOTION`。**每个 change 的 `tasks.md` 末尾固定三项收尾任务：真实端点验收、变异测试一轮、Learning Gate**（archive 时未勾会警告）。晋升进本文件的只能是一句话规则，且**一进一出**：同时删掉或压缩本文件一条旧内容。收件箱超过 15 条先消化再收；每里程碑归档后跑一次 `agents-md-slim`。
 
 ---
 

@@ -22,6 +22,8 @@
 | M14 | `m14-skills-and-triggers` | 扩展层最小版：`SKILL.md` 目录发现 + `skill` 工具（正文按需加载）+ 外部触发塌成一条可重放的会话事件 | 仓库内一个 skill 被列出并加载；一条外部触发在日志里是一条事件、replay 仍相等 |
 | M15 | `m15-os-enforcement` | 围栏增厚：Windows 侧从 job object + `KILL_ON_JOB_CLOSE` 起步、再 ACL；Linux 侧 landlock / bwrap（本机没有可用的 Linux） | 一条命令试图写工作区外的文件时被 OS 拒；OS adapter 坐在 M10 那条缝上、工具体不改 |
 
+**每个里程碑的完成判据有两半，两半都通过才算验收**（ADR-0024，2026-10-23 加严）：mock 那一半是四道门禁，mock 桩只负责单元测试与冒烟；**真实那一半是接上真实端点把这一行的完成判据跑一遍并通过**。已归档的 **M5 / M6 / M7 按这条重新验收**（2026-10-23）：三份记录 `docs/verification/m5-context-budget-compaction-reacceptance.md`、`m6-chat-repl-reacceptance.md`、`m7-serve-http-sse-reacceptance.md`——M5 与 M7 全过，M6 除「取消一个回合后会话继续」（要终端前的 Ctrl-C）外全过；M5 那一跑同时证明「压缩仍不够」只能以「无可遮蔽」出现。
+
 **每个里程碑的完成判据里都含一条人手验收**（ADR-0005）：用真实工作区干一件真事——不是跑判据，是拿它办一件事——把观察记进 `docs/verification/<change-id>-manual.md`。它不进 CI、不替代上面任何一条判据；它记的是「用起来是什么样」和「哪儿别扭」。M1 与 M2 的这条补在 `docs/verification/m1-m2-manual-smoke.md`。
 
 **决策 33 预告的 `scripts/acceptance.py` 已被这条替代**（2026-10-19 更正）：仓库里没有 `scripts/` 目录、也没有那个脚本。验收口径换成了上面这条人手验收（ADR-0005 追加的裁决），逐里程碑的实测在 `docs/verification/`。读 `docs/handoff-2026-10-15.md` 时会读到旧口径，以本节为准。
