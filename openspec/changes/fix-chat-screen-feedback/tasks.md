@@ -27,8 +27,10 @@
 
 ## 3. 门禁与规格
 
-- [ ] 3.1 四道门禁全绿（ruff format / ruff check / mypy --strict / coverage --fail-under=95）
-- [ ] 3.2 `openspec validate --all --strict` 全绿（`chat-repl` 与 `cli` 的 delta 进主规格是在归档那一步，不在这里）
+- [x] 3.1 四道门禁全绿（ruff format / ruff check / mypy --strict / coverage --fail-under=95）
+  - 最后一次实现提交（`163c588`）上实测：417 passed / 5 skipped、`TOTAL 1951 93 95%`、ruff format / ruff check / mypy --strict 退出码都是 0
+- [x] 3.2 `openspec validate --all --strict` 全绿（`chat-repl` 与 `cli` 的 delta 进主规格是在归档那一步，不在这里）
+  - 实测：13 passed / 0 failed，含 `change/fix-chat-screen-feedback`
 
 ## 4. 两轴 review
 
