@@ -288,23 +288,34 @@ def _prepare_or_fail(args: argparse.Namespace) -> _Prepared | _Failure:
                 EXIT_INVALID_ARGUMENT,
             )
         # 密钥只从 --api-key-env 指定的环境变量读：它不进 argv、不进日志、不进 payload。
+        # 另两项由预设表保证非空：词表已判过 provider 名字，非 mock 的预设给这两项。
+        assert layered.base_url is not None
+        assert layered.api_key_env is not None
         invalid = validate_base_url(layered.base_url)
         if invalid is not None:
             return _Failure("INVALID_ARGUMENT", invalid, EXIT_INVALID_ARGUMENT)
         # 端点三条在这里塌成一个对象：payload 那三个字段由它派生，不再各判一遍。
+        # 密钥是装配的必需项：未设或空串都在 session 开始之前当场失败，一个请求都不发。
+        api_key = os.environ.get(layered.api_key_env)
+        if not api_key:
+            return _Failure(
+                "INVALID_ARGUMENT",
+                f"环境变量 {layered.api_key_env} 未设置或为空：--provider {provider_name} 需要密钥",
+                EXIT_INVALID_ARGUMENT,
+            )
+        # 补齐之后还可能缺的只有 model：`openai` 预设不给它默认（ADR-0027）。缺它当场失败，
+        # 不带着空值去发一个注定打不到的请求。
+        if layered.model is None:
+            return _Failure(
+                "INVALID_ARGUMENT",
+                f"--provider {provider_name} 需要 --model：{provider_name} 预设不给 model 默认",
+                EXIT_INVALID_ARGUMENT,
+            )
         endpoint = ProviderEndpoint(
             base_url=layered.base_url,
             model=layered.model,
             api_key_env=layered.api_key_env,
         )
-        # 密钥是装配的必需项：未设或空串都在 session 开始之前当场失败，一个请求都不发。
-        api_key = os.environ.get(endpoint.api_key_env)
-        if not api_key:
-            return _Failure(
-                "INVALID_ARGUMENT",
-                f"环境变量 {endpoint.api_key_env} 未设置或为空：--provider openai 需要密钥",
-                EXIT_INVALID_ARGUMENT,
-            )
         provider = OpenAICompatProvider(
             base_url=endpoint.base_url,
             model=endpoint.model,
