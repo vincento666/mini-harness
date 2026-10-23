@@ -39,7 +39,7 @@
 
 ## 7. UAT 验收（完成判据的第三半，ADR-0025，人跑）
 
-- [ ] 7.1 手册骨架已立：`docs/verification/add-key-driven-default-provider-uat.md`（三场：裸跑现在说什么 / `--provider deepseek` 能对话 / `--help` 看得见默认）。
+- [x] 7.1 手册骨架已立：`docs/verification/add-key-driven-default-provider-uat.md`（三场：裸跑现在说什么 / `--provider deepseek` 能对话 / `--help` 看得见默认）。**实测**：三份场次的命令、前置（工作区 `.tmp\reacc\ws` 已在盘上：`big.md` 247,990 字节、`huge.md` 409,251 字节、`long40.md`、`mid12.md`、`small4.md`、`dead.md`、`stat_big.js`）与观察表都在，观察表留空等人填。
 - [ ] 7.2 等人跑完那三场并填回观察表；**表没填完本 change 不得归档、不得合入 `main`**。
 
 ## 8. 变异测试一轮
