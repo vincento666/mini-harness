@@ -137,7 +137,7 @@ def test_max_turns_zero_is_an_invalid_argument(tmp_path: Path) -> None:
 
 
 def test_unknown_provider_is_rejected(tmp_path: Path) -> None:
-    result = _cli("run", "-p", "任务", "--provider", "deepseek", cwd=tmp_path)
+    result = _cli("run", "-p", "任务", "--provider", "claude", cwd=tmp_path)
 
     assert result.returncode == 2
     assert "UNKNOWN_PROVIDER" in result.stderr

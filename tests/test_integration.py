@@ -91,7 +91,7 @@ def test_no_m1_scenario_exits_with_the_reserved_codes(tmp_path: Path) -> None:
         _run_scenario(tmp_path, session_dir / "exhaust", TOOL_THEN_EXHAUST_SCENARIO),
         _cli("run", cwd=tmp_path).returncode,
         _cli("run", "-p", "任务", "--max-turns", "0", cwd=tmp_path).returncode,
-        _cli("run", "-p", "任务", "--provider", "deepseek", cwd=tmp_path).returncode,
+        _cli("run", "-p", "任务", "--provider", "claude", cwd=tmp_path).returncode,
         _run_scenario(tmp_path, session_dir / "broken", broken),
     ]
 
