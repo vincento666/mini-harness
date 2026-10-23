@@ -19,7 +19,9 @@ $EP = @("--provider","openai","--base-url","http://127.0.0.1:8300/v1","--model",
 uv run minihns chat --workspace $WS --session-dir .tmp\uat2\sessions @EP --window 70000 --reserve 100 --max-turns 10 --sandbox workspace-write --yes
 ```
 
-进去之后：让它读 `big.md`（247,988 字符），然后接着问两句关于它的内容。
+进去之后：让它读 `big.md`（245,988 字符 / 2000 行，`read` 一次全回）。
+
+期望的形状（不是判据，只是让你知道看没看对）：压力预算 69900、触发线 4364、保留预算 11200；读完之后预算读数约 6 万，**在压力预算之内**，所以会话不该死；读数越触发线且那一段装不进保留尾部，所以 `[遮蔽]` 那一行**该出现**。
 
 | 要观察的 | 你看到的 |
 |---|---|
@@ -34,12 +36,15 @@ uv run minihns chat --workspace $WS --session-dir .tmp\uat2\sessions @EP --windo
 uv run minihns chat --workspace $WS --session-dir .tmp\uat2\sessions @EP --window 40000 --reserve 100 --max-turns 6 --sandbox workspace-write --yes
 ```
 
-让它读 `huge.md`（409,248 字符）。
+让它读 `huge.md`（405,949 字符 / 3300 行；`read` 默认只回 2000 行，进上下文的是约 246,000 个字符 ≈ 61,500 个估算 token）。
+
+期望的形状：压力预算 39900、触发线 0；那一段工具往返本身就装不进压力预算，所以**不发摘要请求**，屏幕上那句 `detail` 该以「可遮蔽的那一段本身就装不下」开头、三个数都在。
 
 | 要观察的 | 你看到的 |
 |---|---|
 | stderr 那一行 `[段] CONTEXT_WINDOW_EXCEEDED` | |
 | 紧跟的那句 `detail` 里**三个数都在**（读数 / 压力预算 / 触发线） | |
+| 那句 `detail` 的开头是哪一种措辞 | |
 | 会话不崩，你还能接着问一句 | |
 | 退出后 `minihns replay <session id> --session-dir .tmp\uat2\sessions` 退出码 | |
 

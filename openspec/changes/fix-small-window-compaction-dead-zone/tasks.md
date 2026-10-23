@@ -40,7 +40,7 @@
 
 ## 7. UAT 验收（完成判据的第三半，ADR-0025，人跑）
 
-- [ ] 7.1 手册骨架已立：`docs/verification/fix-small-window-compaction-dead-zone-uat.md`（三场：小窗口能对话 / 真溢出看得见那一行 / 压缩看得见）。
+- [x] 7.1 手册骨架已立：`docs/verification/fix-small-window-compaction-dead-zone-uat.md`（三场：小窗口能对话 / 真溢出看得见那一行 / 压缩看得见）。**两轴之后重算过场次数值**：U2 的 `--window 40000 --reserve 100` 压力预算 39900、触发线 0，读 `huge.md`（`read` 只回 2000 行 ≈ 61,500 个估算 token）撞的是「可遮蔽的那一段本身就装不下」；U1 读 `big.md` 读数约 6 万、在压力预算 69900 之内。两场各写明期望的形状（不是判据，是让人知道看没看对）。
 - [ ] 7.2 等人坐在终端前跑完那三场并填回观察表；**表没填完本 change 不得归档、不得合入 `main`**。
 
 ## 8. 变异测试一轮
@@ -49,8 +49,8 @@
 
 ## 9. Learning Gate
 
-- [ ] 9.1 扫本轮证据写进 `docs/lessons.md` 收件箱；**收件箱已到上限 15 条，先消化再收新条**。
-- [ ] 9.2 关闭 `docs/adr/0002` 的「判据欠账」里小窗口死区那条，立 ADR-0026（溢出判据与压缩触发线是两件事），并在 `docs/roadmap.md` 的 M5 行补一句「压缩仍不够」第一次可达。
+- [x] 9.1 扫本轮证据写进 `docs/lessons.md` 收件箱；**收件箱已到上限 15 条，先消化再收新条**。**实测**：先消化——关闭两条（L-050 / L-043）、合并三组（L-041 → L-036、L-052 → L-048、L-037 → L-039，家族头写在被合并的那条上）、补证据六条（L-019 / L-039 / L-045 / L-047 / L-049 / L-054）；再收三条新的：L-055（判据晚于实现时用「临时改回旧实现 → 跑 → 确认红 → 还原 → 确认工作树干净」实证）、L-056（写场景先算每个断言在哪个 seam 可达，不可达那一半删掉或写成「除非」）、L-057（真端点窗口数值按 provider 回报倒推、按 `read` 的行数上限算；撑上下文用大文件不用巨型 `-p`——venv 的 `minihns.exe` 在 24000 字符参数下 `0xC0000005` 崩）。**消化完的收件箱 12 条**，上限之内。AGENTS.md 本轮不晋升（没有一句话规则比得上现有的「判据只断可达那一半」与「变异必须改变可观察行为」）。
+- [x] 9.2 关闭 `docs/adr/0002` 的「判据欠账」里小窗口死区那条，立 ADR-0026（溢出判据与压缩触发线是两件事），并在 `docs/roadmap.md` 的 M5 行补一句「压缩仍不够」第一次可达。**实测**：`docs/adr/0026-overflow-is-the-pressure-budget-not-the-trigger-line.md`（三个被否掉的选项写在里面：删掉 65536、抬高窗口下限到 78138、保留旧校验只改判据）；ADR-0016 尾部加一句「本条的触发线公式被 ADR-0026 收窄」，公式本身不变；`docs/roadmap.md` 的 M5 行与完成判据那两条（三半 / UAT 是第五道门禁）都改了。
 
 ## 10. `code-review` 两轴之后的裁决（seam ① 与规格）
 
@@ -61,5 +61,5 @@
 - [x] 10.3 「一处事实」补全（Spec 轴 (a)1 与 Standards 轴的 Duplicated Code）：`_compact_if_over_line` 的 `summary_budget` 改调 `pressure_budget`，`trigger_line` 内部那一处 `W - O` 也改调它。改完 `W - O` 在 `src/` 里只有 `pressure_budget` 一处字面。
 - [x] 10.4 delta 补第 6 条 MODIFIED（Spec 轴 (a)2）：「摘要调用失败沿用 provider 失败结果」——主规格那句「摘要调用**没有发出**时不是 provider 失败：那条路通向 `CONTEXT_WINDOW_EXCEEDED`」与 scenario「没发出的摘要调用不产生 provider 失败」的 THEN 按 design D4 改；两条既有 scenario 名保留。不补这条，sync 之后主规格与本 delta 自相矛盾。
 - [x] 10.5 delta 的 ADDED 措辞收窄（Spec 轴 (c)3）：「并只用它判定上下文溢出」改成「上下文装不装得下 SHALL 只问它」，并写明端点自己报出的超限是另一条触发路径（照 ADR-0019，由回报触发、不由压力预算判定）；MODIFIED「压缩救不了时…」补一句「两条触发路径共用同一串三个数」。delta 结构复核：ADDED 1 条、MODIFIED 6 条，`openspec validate --all --strict` 13/13。
-- [ ] 10.6 两轴改动之后重跑变异：M2（`pressure_budget` 写歪）现在还要打到 `summary_budget` 与 `_budget_triple`，M3（去掉压力预算那个数）的锚点从三处变成四处；M6 = 把 provider 出口那串三个数摘掉，10.1 那条判据在 10.2 之前红过就是它的实证。
-- [ ] 10.7 记账进 `docs/adr/0002`：`cancel.is_set()` 时既不压缩也不判溢出（既有豁免，delta 未处理）；`_compact_if_over_line` 的 `None` 兼表「无可遮蔽」与「裁到最小仍装不下」，调用方只能重算 `shadowed_range` 分辨；`(window, reserve)` 在四处结伴（可能的 Data Clumps）；测试里 70000 / 100 与那三个数硬编码在五个文件。
+- [x] 10.6 两轴改动之后重跑变异：M2（`pressure_budget` 写歪）现在还要打到 `summary_budget` 与 `_budget_triple`，M3（去掉压力预算那个数）的锚点从三处变成四处；M6 = 把 provider 出口那串三个数摘掉，10.1 那条判据在 10.2 之前红过就是它的实证。**实测**：M2 **28 红**（第一轮 12 红）、M3 **4 红**（第一轮 3 红，多杀的是新判据）、M6 **1 红**（正是新判据），**没有存活的变异**；每条还原后 `git status --short -- <file>` 为空，整轮跑完 `git status --short -- src tests` 为空。记录在 `docs/verification/fix-small-window-compaction-dead-zone-mutation.md` 的「第二轮」。M2 从 12 红涨到 28 红是「一处事实」成立的证据：`trigger_line` 与 `summary_budget` 改调 `pressure_budget` 之后，写歪一处就打歪触发线那两条判据与摘要请求预算那一族判据。
+- [x] 10.7 记账进 `docs/adr/0002`：`cancel.is_set()` 时既不压缩也不判溢出（既有豁免，delta 未处理）；`_compact_if_over_line` 的 `None` 兼表「无可遮蔽」与「裁到最小仍装不下」，调用方只能重算 `shadowed_range` 分辨；`(window, reserve)` 在四处结伴（可能的 Data Clumps）；测试里 70000 / 100 与那三个数硬编码在五个文件。**实测**：四条连同「压缩之后」在真端点不可达、delta 那条 scenario 有一半不可达，都写进 `docs/adr/0002` 的「`fix-small-window-compaction-dead-zone` 的判据欠账」一节；处理时点分别标在 M10（取消信号那一格，与 ADR-0013 一起判）与 M11（预算模块的整理）。本轮不动它们（四规 #3）。
