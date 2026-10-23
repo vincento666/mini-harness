@@ -306,7 +306,7 @@ async def test_every_stop_reason_is_reachable(tmp_path: Path) -> None:
         overflow,
         "s-overflow",
         [],
-        prompt="x" * 100000,
+        prompt="x" * 300000,
         registry=ToolRegistry(),
         window=70000,
         reserve=100,
@@ -321,7 +321,7 @@ async def test_the_new_event_types_are_reached_by_a_real_run(tmp_path: Path) -> 
     """M5 加进词表的两个事件类型各被跑出来一次：`compaction/summary` 与 `error/context`。
 
     同一份 fixture 场景、两个窗口：窗口 70000（触发线 4364、保留预算 11200）时装得下但需要压缩，
-    窗口 4000（触发线 0）时装不下且无可遮蔽。
+    窗口 4000（触发线 0、压力预算 3500）时 prompt 本身就装不下。
     """
     compacted = tmp_path / "compacted"
     compacted.mkdir()
@@ -342,6 +342,7 @@ async def test_the_new_event_types_are_reached_by_a_real_run(tmp_path: Path) -> 
         overflow,
         "s-overflow",
         load_fixture_provider(COMPACTION_SCENARIO),
+        prompt="x" * 20000,
         registry=file_registry(),
         window=4000,
         reserve=500,

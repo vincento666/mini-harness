@@ -358,7 +358,11 @@ async def test_a_log_that_went_through_compaction_replays_pointwise(tmp_path: Pa
 
 
 async def test_a_log_that_ended_in_overflow_replays_pointwise(tmp_path: Path) -> None:
-    """溢出收尾的日志照样逐点重放、退出码 0：收尾是结果，不是把日志弄坏（不变量 A 与 F）。"""
+    """溢出收尾的日志照样逐点重放、退出码 0：收尾是结果，不是把日志弄坏（不变量 A 与 F）。
+
+    窗口 70000 / 预留 100 的压力预算是 69900 个 token：压缩发生一次，摘要自己 75000 个 token，
+    压缩之后仍装不下。
+    """
     session_dir = tmp_path / "sessions"
 
     _, outcome = await run_session_fixture(
@@ -373,7 +377,7 @@ async def test_a_log_that_ended_in_overflow_replays_pointwise(tmp_path: Path) ->
                         {"id": "c1", "name": "read", "arguments": {"file_path": "a.md"}},
                     ],
                 },
-                {"content": "y" * 100000, "finish_reason": "stop"},
+                {"content": "y" * 300000, "finish_reason": "stop"},
             ],
         ),
         session_dir=session_dir,

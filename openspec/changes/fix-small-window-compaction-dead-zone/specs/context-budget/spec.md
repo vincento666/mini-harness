@@ -67,3 +67,29 @@
 #### Scenario: 一段都装不下时不发请求
 - **WHEN** 遮蔽范围折出的消息加摘要指令即使裁到只剩一条也超过压力预算
 - **THEN** 日志里没有带 `purpose: compaction` 的 `model/request`，也没有 `error/model`；该回合照常装配，除非预算读数本身超过压力预算
+
+### Requirement: 窗口预算不成立的配置在 session 开始之前失败
+当有效的 `window − reserve ≤ 0` 时（压力预算非正，没有任何上下文装得下），系统 SHALL 在 session 开始之前以退出码 2 结束，stderr 含 `INVALID_ARGUMENT` 并指出 `window` 与 `reserve` 两个数，且 MUST NOT 创建任何 session 日志。照 DSH：窗口减去预留之后没有压力预算时，这是配置解析期的错误（`TargetPressureConfigError`，`dsh-compaction-basic/lib/index.js:130-131`），不是运行期才发现的溢出。触发线为 0（`W − O − 65536 ≤ 0`）MUST NOT 构成配置错误——它只意味着每次装配都尝试一次压缩，装得下的读数照常跑完。
+
+#### Scenario: 窗口太小是参数错误
+- **WHEN** 执行 `minihns run -p "x" --window 4096 --reserve 8192`
+- **THEN** 退出码为 2、stderr 含 `INVALID_ARGUMENT` 与那两个数，且没有创建任何 session 日志
+
+#### Scenario: 触发线为正的最小窗口照跑
+- **WHEN** 执行 `minihns run -p "x" --window 70000 --reserve 4096`
+- **THEN** 会话开始，`session/start` 的 payload 里 `window` 为 70000、`reserve` 为 4096
+
+#### Scenario: 触发线为 0 的窗口照跑
+- **WHEN** 执行 `minihns run -p "x" --window 4000 --reserve 100`（触发线 0、保留预算 640、压力预算 3900）
+- **THEN** 退出码不是 2，session 日志被创建，`session/start` 的 payload 里 `window` 为 4000、`reserve` 为 100
+
+### Requirement: 触发线由固定公式给出
+系统 SHALL 用 `floor(min(W × 0.8, W − O − 65536))` 给出压缩触发线（W 是 `window`、O 是 `reserve`）；65536 是实现常量，MUST NOT 有命令行开关。该公式算出负数时触发线 SHALL 取 0——触发线对任意合法的 W 与 O 都是全函数。取 0 这一支在 CLI 路径上走得到：它只意味着每次装配都尝试一次压缩，不构成配置错误（配置错误只由「窗口预算不成立的配置在 session 开始之前失败」那条判定）。触发线 MUST NOT 被用作溢出判据（见「溢出判据是压力预算，触发线只决定要不要压缩」）。
+
+#### Scenario: 默认参数下的触发线是一个可断言的数
+- **WHEN** `window` 为 128000、`reserve` 为 8192
+- **THEN** 触发线为 54272（`W − O − 65536` 比 `W × 0.8` 小）
+
+#### Scenario: 小窗口下每次装配都越线
+- **WHEN** 一次 run 的 `--window` 为 70000、`--reserve` 为 100（触发线 4364，比保留预算 11200 还小）
+- **THEN** 每一个需要装配的回合都进入压缩判定，且触发线本身是 4364 而不是负数

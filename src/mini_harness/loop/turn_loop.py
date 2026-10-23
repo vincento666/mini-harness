@@ -11,6 +11,7 @@ from typing import Any, Literal, get_args
 from mini_harness.context.budget import (
     budget_reading,
     estimate_tokens,
+    pressure_budget,
     shadowed_range,
     trigger_line,
 )
@@ -838,16 +839,19 @@ async def _run_turns(
                 return _segment_failure(events, turns)
             context = fold(events)
             reading = budget_reading(events, context.messages)
-            if reading > line:
+            # 溢出判据是压力预算 `W - O`：触发线只决定这次装配要不要尝试压缩。
+            # 小窗口下触发线可以比保留预算还小，拿它判溢出会在真墙之前自己撞墙。
+            pressure = pressure_budget(settings.window, settings.reserve)
+            if reading > pressure:
                 # 措辞跟着日志里的事实走：这一回合真写过摘要才说「压缩之后」。
                 compacted_here = any(
                     event.type == "compaction/summary" and event.payload.get("turn_id") == turn_id
                     for event in events
                 )
                 detail = (
-                    f"压缩之后预算读数 {reading} 仍超过触发线 {line}"
+                    f"压缩之后预算读数 {reading} 仍超过压力预算 {pressure}"
                     if compacted_here
-                    else f"无可遮蔽的内容，预算读数 {reading} 已超过触发线 {line}"
+                    else f"无可遮蔽的内容，预算读数 {reading} 已超过压力预算 {pressure}"
                 )
                 return await _context_overflow(log, turn_id, turns, detail)
 
