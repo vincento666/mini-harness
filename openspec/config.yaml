@@ -19,6 +19,7 @@ rules:
     - 必须写明本里程碑明确不做什么
     - 引用 DSH 时区分「DSH 这么做」与「mini 版故意简化」，简化处要落 ADR
     - 不超过 600 词
+    - 立本 change 的 UAT 场次骨架 docs/verification/<change-id>-uat.md（场次 + 观察表），让人能与实现同步跑（ADR-0025）
   specs:
     - 每个 Requirement 用 SHALL 语句，至少一个 Scenario（WHEN / THEN）
     - 失败路径写成结果，不写成异常
@@ -26,7 +27,7 @@ rules:
     - 写清 seam 边界与测试策略，不写实现代码
   tasks:
     - 每个任务是一个 red → green 单切片，并标注它测哪个 seam
-    - 末尾固定三项收尾：真实端点验收、变异测试一轮、Learning Gate；真实端点验收是完成判据的一半，mock 全绿不算完成（ADR-0024）
+    - 末尾固定四项收尾：真实端点验收、UAT 验收（人跑）、变异测试一轮、Learning Gate；真实端点验收与 UAT 是完成判据的第二、第三半，mock 全绿不算完成（ADR-0024 与 ADR-0025）
 
 operations:
   apply:
