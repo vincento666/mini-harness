@@ -27,7 +27,7 @@
 
 ## 5. 既有判据与规格的措辞对齐（seam ① 与 ⑥）
 
-- [ ] 5.1 把 `tests/` 中断言「仍超过触发线」的溢出判据改判据对象为压力预算，逐条写明改了哪个数值；改完跑全量确认全绿，再用变异确认它们咬得住（不接受「改完就绿」）。**改完的清单在 4.3 与 2.2**（seam ① 三条、seam ⑥ 五条），全量全绿（413 passed / 5 skipped）；「咬得住」那一半由 8.1 的变异 ① 与 ② 确认，跑完再勾。
+- [x] 5.1 把 `tests/` 中断言「仍超过触发线」的溢出判据改判据对象为压力预算，逐条写明改了哪个数值；改完跑全量确认全绿，再用变异确认它们咬得住（不接受「改完就绿」）。**改完的清单在 4.3 与 2.2**（seam ① 三条、seam ⑥ 五条），全量全绿（413 passed / 5 skipped）。「咬得住」由 8.1 的 M1 与 M2 确认：M1 杀掉两条 seam ⑥ 判据，M2 杀掉六条 seam ⑥ 判据加 seam ① 四条加 `test_context_budget.py` 那条。
 - [x] 5.2 跑 `tests/test_vocabulary_reachability.py` 确认没有新增 `code` 或 `stop_reason`、每个既有值仍可达。**实测**：两条判据都在全量里绿；本 change 没进任何新词。
 - [x] 5.3 跑 `openspec validate --all --strict` 确认本 change 的两份 delta 结构合法。**实测**：13 项全绿（12 份主规格 + 本 change）。delta 实际是 ADDED 1 条、MODIFIED **5** 条（比计划多两条：启动校验那条与触发线公式那条，起因见 design D5 的 apply 时改）。
 
@@ -45,7 +45,7 @@
 
 ## 8. 变异测试一轮
 
-- [ ] 8.1 五条变异跑全量并记进 `docs/verification/fix-small-window-compaction-dead-zone-mutation.md`：① 溢出判据改回触发线；② `pressure_budget` 写成 `window - reserve - 65536`；③ `detail` 去掉压力预算那个数；④ 「发不出摘要调用」重新直接通向溢出；⑤ 无可遮蔽时仍写 `compaction/summary`。每条必须被至少一条测试杀死，存活的补判据。
+- [x] 8.1 五条变异跑全量并记进 `docs/verification/fix-small-window-compaction-dead-zone-mutation.md`：① 溢出判据改回触发线；② `pressure_budget` 写成 `window - reserve - 65536`；③ `detail` 去掉压力预算那个数；④ 「发不出摘要调用」重新直接通向溢出；⑤ 无可遮蔽时仍写 `compaction/summary`。每条必须被至少一条测试杀死，存活的补判据。**实测**：五条串行跑完，M1 杀 4 红、M2 杀 12 红、M3 杀 3 红、M4 杀 2 红、M5 杀 6 红，**没有存活的变异**，每条还原后 `git status --short -- <file>` 为空。④ 的改法落成一个可观察的形状：`if not body:` 返回 `ProviderFailure(PROVIDER_CONTEXT_OVERFLOW)` 而不是 `None`，于是日志里冒出 `error/model`。
 
 ## 9. Learning Gate
 
