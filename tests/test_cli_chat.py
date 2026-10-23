@@ -14,7 +14,14 @@ from typing import Any
 
 import pytest
 
-from cli_blackbox import _cli, _cli_process, _FakeEndpoint
+from cli_blackbox import (
+    _cli,
+    _cli_console_process,
+    _cli_process,
+    _FakeEndpoint,
+    _LiveStreams,
+    _send_ctrl_c,
+)
 from mini_harness.cli.main import _chat_sigint_handler, _ChatSignals
 from paths import WRITE_OUTSIDE_SCENARIO
 
@@ -378,11 +385,15 @@ def test_sigint_mid_segment_cancels_the_segment_not_the_session(tmp_path: Path) 
 
     process.stdin.write("第二条\n")
     process.stdin.flush()
-    _, chat_stderr = process.communicate(timeout=30)
+    chat_stdout, chat_stderr = process.communicate(timeout=30)
 
     assert process.returncode == 0
-    # 被取消的段（`ABORTED`）与正常收尾的段都不打那一行。
-    assert "[段]" not in chat_stderr
+    # 被取消的段（`ABORTED`）打那一行；正常收尾的那一段不打。
+    notes = [line for line in chat_stderr.splitlines() if "[段]" in line]
+    assert len(notes) == 1, "只有被取消的那一段在 stderr 上留一行"
+    assert "ABORTED" in notes[0]
+    assert "[段]" not in chat_stdout
+    assert notes[0] not in _log_text(tmp_path)
     records = _records(tmp_path)
     types = [str(record["type"]) for record in records]
     assert "error/abort" in types
@@ -792,3 +803,80 @@ def test_the_overflow_segment_note_carries_the_detail_once(tmp_path: Path) -> No
     assert detail in notes[0], "那一行带着日志里那条非空 detail，不是把词表名重复两遍"
     assert notes[0] not in result.stdout
     assert notes[0] not in _log_text(tmp_path)
+
+
+_NOT_WINDOWS_REASON = (
+    "这一条判的是真 Ctrl-C 的投递，Windows 这一端此前只能跳过（design D8）："
+    "Linux 那一半沿用既有的 SIGINT 判据，两条不重复"
+)
+
+_HANG_SCRIPT = "import time\n\nwhile True:\n    time.sleep(0.1)\n"
+
+
+def _hang_fixture(tmp_path: Path) -> str:
+    """一条挂很久的 `bash` + 一条给第二个段的正常回复。"""
+    (tmp_path / "loop.py").write_text(_HANG_SCRIPT, encoding="utf-8")
+    return _fixture(
+        tmp_path,
+        "hang.json",
+        [
+            {
+                "content": "跑一条挂很久的命令",
+                "finish_reason": "tool_calls",
+                "tool_calls": [
+                    {
+                        "id": "c1",
+                        "name": "bash",
+                        "arguments": {"command": "python loop.py", "timeout_seconds": 30},
+                    }
+                ],
+            },
+            {"content": "第二条输入的回复", "finish_reason": "stop"},
+        ],
+    )
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason=_NOT_WINDOWS_REASON)
+def test_ctrl_c_mid_segment_prints_the_aborted_note(tmp_path: Path) -> None:
+    """seam ⑥ 1.5：真 Ctrl-C 落在段进行中 → stderr 有 `[段] ABORTED`，stdout 与日志里没有。
+
+    同步点是 stdout 上先出现 `> `：提示符不带换行、且已经 flush 到管道里，黑盒才跟得上会话。
+    """
+    process = _cli_console_process(
+        "chat",
+        "--fixture",
+        _hang_fixture(tmp_path),
+        "--yes",
+        cwd=tmp_path,
+        keep_stdin_open=True,
+    )
+    streams = _LiveStreams(process).start()
+    streams.wait_for_stdout("> ", "提示符还没打到管道里")
+    assert process.stdin is not None
+    process.stdin.write("第一条\n")
+    process.stdin.flush()
+
+    _wait_until_log_contains(tmp_path, process, '"tool/call"', "进入工具执行段")
+    _send_ctrl_c(process.pid)
+    _wait_until_log_contains(tmp_path, process, '"segment/end"', "写出被取消段的段边界")
+
+    assert process.poll() is None, "取消当前段之后进程不该退出"
+    process.stdin.write("第二条\n")
+    process.stdin.flush()
+    process.stdin.close()
+    returncode, chat_stdout, chat_stderr = streams.finish()
+
+    assert returncode == 0
+    notes = [line for line in chat_stderr.splitlines() if "[段]" in line]
+    assert len(notes) == 1, "被取消的段在 stderr 上该有一行"
+    assert "ABORTED" in notes[0]
+    assert "[段]" not in chat_stdout
+    assert notes[0] not in _log_text(tmp_path)
+    records = _records(tmp_path)
+    types = [str(record["type"]) for record in records]
+    assert "error/abort" in types
+    segments = [record["payload"] for record in records if record["type"] == "segment/end"]
+    assert segments[0]["stop_reason"] == "ABORTED"
+    assert types.count("session/end") == 1, "会话还在：`session/end` 只在 stdin 关闭之后出现一次"
+    assert types[-2:] == ["segment/end", "session/end"]
+    assert records[-1]["payload"]["stop_reason"] == "MODEL_COMPLETED"

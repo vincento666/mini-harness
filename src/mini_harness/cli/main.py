@@ -499,8 +499,9 @@ def _print_new_replies(log: EventLog, printed: int) -> int | LogReadFailure:
     return seen
 
 
-# 只有这两种收尾不打那一行，其余收尾理由一律打（design D5；2026-10-23 人裁决：规格写反面集合）。
-_SEGMENT_NOTE_SUPPRESSED = frozenset({STOP_MODEL_COMPLETED, STOP_ABORTED})
+# 只有这一种收尾不打那一行，其余收尾理由一律打（design D4 与 D5；2026-10-23 人裁决：写反面集合）。
+# `ABORTED` 从「不打」搬进「打」这一半：取消也是人不打命令、会话却少了一个段，屏幕上要看得见。
+_SEGMENT_NOTE_SUPPRESSED = frozenset({STOP_MODEL_COMPLETED})
 
 
 def _print_segment_note(segment: SegmentOutcome) -> None:

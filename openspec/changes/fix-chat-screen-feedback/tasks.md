@@ -4,7 +4,8 @@
 - [x] 1.2 只带工具调用的回合不留空行：fixture 三条只带 `tool_calls`（`content` 为空）加一条带正文 → 正文之前不出现连续空行
 - [x] 1.3 段收尾那一行不重复同一个词、带非空 detail：让一次 chat 的段以 `CONTEXT_WINDOW_EXCEEDED` 收尾（fixture 带 `usage.input_tokens` 做校准，形状照 `.tmp/uat-repro/fixture2.json`；这是 mock 形状不是验收，ADR-0022）→ stderr 那一行含 `CONTEXT_WINDOW_EXCEEDED` 恰一次、含非空 detail
 - [x] 1.4 既有的 provider 那一行照旧：`[段] PROVIDER_ERROR：PROVIDER_HTTP_STATUS` 那条判据在新组装规则下仍绿（不许为了新形状把它改松）
-- [ ] 1.5 取消的段打 `[段] ABORTED`：真 Ctrl-C（`CREATE_NEW_PROCESS_GROUP` + `CTRL_C_EVENT`，同步点是 stdout 上先出现 `> `）落在段进行中 → stderr 有那一行、stdout 没有、日志没有、会话继续接受下一条输入
+- [x] 1.5 取消的段打 `[段] ABORTED`：真 Ctrl-C（`CREATE_NEW_PROCESS_GROUP` + `CTRL_C_EVENT`，同步点是 stdout 上先出现 `> `）落在段进行中 → stderr 有那一行、stdout 没有、日志没有、会话继续接受下一条输入
+  - 本机实测偏离 design D8：只带 `CREATE_NEW_PROCESS_GROUP` 时 `GenerateConsoleCtrlEvent` 静默无效；判据用 `CREATE_NEW_CONSOLE` + `FreeConsole` + `AttachConsole(pid)` + `GenerateConsoleCtrlEvent(CTRL_C_EVENT, pid)`，见 `tests/cli_blackbox.py`
 - [ ] 1.6 提示符上取消没有 traceback：真 Ctrl-C 落在没有段在跑时 → 退出码 0、stderr 里没有 `Traceback`、日志以 `session/end`（`MODEL_COMPLETED`）收尾
 - [ ] 1.7 chat 在 stderr 给出 session id：那一行在 stderr、不在 stdout、不在日志；拿它跑 `minihns replay` 找得到这次会话
 - [ ] 1.8 连续两段溢出 → stderr 多出一行「降不下去」的说明，且每个会话恰一次；不连续（中间有一段正常收尾）时不多出
@@ -15,7 +16,7 @@
 - [x] 2.1 提示符改用 `sys.stdout.write` + `flush`（不再 `print`）
 - [x] 2.2 `_print_new_replies` 跳过 `content.strip()` 为空的回复
 - [x] 2.3 `_print_segment_note` 按 D3 组装：reason → 与 reason 不同的 code → 非空 detail
-- [ ] 2.4 `_SEGMENT_NOTE_SUPPRESSED` 只剩 `MODEL_COMPLETED`
+- [x] 2.4 `_SEGMENT_NOTE_SUPPRESSED` 只剩 `MODEL_COMPLETED`
 - [ ] 2.5 chat 启动时往 stderr 打印 session id 一行
 - [ ] 2.6 `_report_failure` 在 detail 为空时只打失败码、不带冒号
 - [ ] 2.7 会话收尾（含 `end_session` 与它的打印）移进 `except KeyboardInterrupt` 的覆盖范围
