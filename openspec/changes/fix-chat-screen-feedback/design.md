@@ -29,7 +29,7 @@ mock 那一半照不出这一族的原因要说清楚：seam ⑥ 的判据断言
 **为什么不放 stdout**：`chat-repl` 的 stdout 规则是「只有模型回复正文与提示符」，把 id 塞进去会让那条判据变形，也会让「逐行读 stdout 拿回复」这条路混进一行不是回复的东西。**为什么放 stderr 成立**：stderr 已经是段收尾与遮蔽反馈那两行的去处，人已经在读它；`serve` 已经在 stdout 打 id（一次性入口，stdout 归 id），chat 不是。代价：把 stderr 丢掉（`2>$null`）的人拿不到 id——那一行同时是「这次会话的日志在哪」的入口，值得留在屏幕上。
 
 ### D6 非 0 退出那一行：detail 为空时只打失败码，不带冒号
-`_report_failure` 现在无条件打 `f"{code}: {detail}"`。**取舍**：取消收尾那一行只剩 `ABORTED`。日志里 `error/abort` 写着「取消被置位」（`turn_loop.py:944`），但 `SegmentOutcome.detail` 不带它（`turn_loop.py:961-966` 只带 `denial_detail`）。把它搬进 outcome 要改 `turn_loop` 的失败结果形状——那是另一族（内核的失败结果里该带什么），不在本 change。**待裁决**：要那一行也带上「取消被置位」就说一声，判据加一条、`turn_loop` 动一处。
+`_report_failure` 现在无条件打 `f"{code}: {detail}"`。**取舍**：取消收尾那一行只剩 `ABORTED`。日志里 `error/abort` 写着「取消被置位」（`turn_loop.py:944`），但 `SegmentOutcome.detail` 不带它（`turn_loop.py:961-966` 只带 `denial_detail`）。把它搬进 outcome 要改 `turn_loop` 的失败结果形状——那是另一族（内核的失败结果里该带什么），不在本 change。**已裁决（2026-10-23）**：就这样——那一行只剩 `ABORTED`，不把「取消被置位」搬进 `SegmentOutcome.detail`。搬它要动内核失败结果的形状，属于另一族。
 
 ### D7 traceback 的修法：把会话收尾纳入 `except KeyboardInterrupt` 的覆盖范围
 现在 handler 装在 `_prepare_or_fail` 之后（`main.py:639`），`except KeyboardInterrupt` 只包住那个 while 循环（`main.py:644-686`），`end_session` 在 try 之外（`main.py:690`）——取消落进缝隙里就没人接。**改法**：收尾段（含 `end_session` 与它的打印）移进同一个 try 的覆盖范围，handler 的判定不变（有段在跑置位、没有段在跑走 `KeyboardInterrupt`）。判据：seam ⑥ 发真 Ctrl-C 在提示符上 → 退出码 0、stderr 里没有 `Traceback`。
@@ -46,5 +46,5 @@ mock 那一半照不出这一族的原因要说清楚：seam ⑥ 的判据断言
 
 ## Open questions
 
-- 取消那一行要不要带「取消被置位」（D6 的待裁决）。
+- ~~取消那一行要不要带「取消被置位」~~ 已裁决（2026-10-23）：不带，只剩 `ABORTED`。
 - 那句「降不下去」的说明要不要同时给出建议命令（例如提示 `minihns chat` 新开一个会话）——规格只承诺「说明这件事」，措辞留给实现，UAT 那一半由人判它够不够。
