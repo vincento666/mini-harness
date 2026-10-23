@@ -31,6 +31,7 @@ from mini_harness.loop import (
     ENTRY_CHAT,
     ENTRY_RUN,
     ENTRY_SERVE,
+    PROVIDER_NAMES,
     SANDBOX_LEVELS,
     STOP_ABORTED,
     STOP_CONTEXT_WINDOW_EXCEEDED,
@@ -238,10 +239,10 @@ def _prepare_or_fail(args: argparse.Namespace) -> _Prepared | _Failure:
         return _Failure(
             "INVALID_ARGUMENT", f"--max-turns 至少为 1，收到 {max_turns}", EXIT_INVALID_ARGUMENT
         )
-    if provider_name not in ("mock", "openai"):
+    if provider_name not in PROVIDER_NAMES:
         return _Failure(
             "UNKNOWN_PROVIDER",
-            f"--provider 只接受 mock 或 openai，收到 {provider_name}",
+            f"--provider 只接受 {' / '.join(PROVIDER_NAMES)}，收到 {provider_name}",
             EXIT_INVALID_ARGUMENT,
         )
     # 围栏两条轴的取值词表由围栏规定：配置文件写错档位不是「运行期再说」，是参数错误。
@@ -280,11 +281,11 @@ def _prepare_or_fail(args: argparse.Namespace) -> _Prepared | _Failure:
 
     provider: Provider
     endpoint: ProviderEndpoint | None = None
-    if provider_name == "openai":
+    if provider_name != "mock":
         if fixture is not None:
             return _Failure(
                 "INVALID_ARGUMENT",
-                "--provider openai 不使用 --fixture",
+                f"--provider {provider_name} 不使用 --fixture",
                 EXIT_INVALID_ARGUMENT,
             )
         # 密钥只从 --api-key-env 指定的环境变量读：它不进 argv、不进日志、不进 payload。

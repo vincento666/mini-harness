@@ -14,15 +14,15 @@
 
 ## 3. 词表加 `deepseek`，地雷拆掉（seam ⑥）
 
-- [ ] 3.1 红：`minihns run -p "x" --provider deepseek`（`DEEPSEEK_API_KEY` 在假环境里已设、base_url 用 loopback 假 server）→ 退出码 0、`session/start` 的 payload 里 `provider` 为 `deepseek`、请求打到预设地址。确认它红（今天 `UNKNOWN_PROVIDER`）。
-- [ ] 3.2 红：`--provider claude` 仍打 `UNKNOWN_PROVIDER`、退出码 2、没有 session 日志。确认它已绿，并用变异确认它咬得住。
-- [ ] 3.3 红：`--provider openai` 不带 `--base-url` 时装配出的端点是 `https://api.openai.com/v1`（黑盒里用 `--dry-run` 类判据不可用，改为断言 stderr 里缺 `--model` 的那条 `INVALID_ARGUMENT` 与日志未创建）。确认它红。
-- [ ] 3.4 绿：实现词表与端点构造，3.1 与 3.3 变绿；既有的「未知 provider」「密钥变量未设」「密钥只进请求头」三条判据仍绿。
+- [x] 3.1 红：`minihns run -p "x" --provider deepseek`（`DEEPSEEK_API_KEY` 在假环境里已设、base_url 用 loopback 假 server）→ 退出码 0、`session/start` 的 payload 里 `provider` 为 `deepseek`、请求打到预设地址。确认它红。**实测红**：`test_the_deepseek_name_is_accepted_and_its_preset_is_recorded` 红在 `assert 2 == 0`，stderr 是 `UNKNOWN_PROVIDER: --provider 只接受 mock 或 openai，收到 deepseek`。判据里「请求打到预设地址」那一半没在黑盒判：拿 loopback 假 server 就得给 `--base-url`，给了就不叫预设——地址由 seam ② 的 `test_a_config_file_provider_gets_its_own_preset` 断言（`base_url == https://api.deepseek.com`），真实那一半由 6.2 判。黑盒判的是名字进 payload 且 `model` / `api_key_env` 由预设填上（`deepseek-chat` / `DEEPSEEK_API_KEY`）。
+- [x] 3.2 红：`--provider claude` 仍打 `UNKNOWN_PROVIDER`、退出码 2、没有 session 日志。确认它已绿，并用变异确认它咬得住。**实测**：既有判据 `test_unknown_provider_is_exit_2_and_creates_no_log` 加了一条断言 `assert "deepseek" in result.stderr`（词表现在三个词，那句话得写全），加完即红在 `assert 'deepseek' in '…只接受 mock 或 openai…'`，3.4 变绿。咬合由组 8 判。
+- [x] 3.3 红：`--provider openai` 不带 `--base-url` 时装配出的端点是 `https://api.openai.com/v1`（黑盒里用 `--dry-run` 类判据不可用，改为断言 stderr 里缺 `--model` 的那条 `INVALID_ARGUMENT` 与日志未创建）。确认它红。**实测：落地即绿**（判据 `test_openai_without_a_base_url_does_not_run_on_the_deepseek_default`，1.2 已把 openai 的默认端点换成 openai 自己的、并把缺 model 写成 `INVALID_ARGUMENT`）。生效地址本身在 seam ② 判（`test_the_openai_preset_is_openai_not_deepseek` 红过，见 1.1）。
+- [x] 3.4 绿：实现词表与端点构造，3.1 与 3.3 变绿；既有的「未知 provider」「密钥变量未设」「密钥只进请求头」三条判据仍绿。**实测**：词表那一行从硬编码 `("mock", "openai")` 换成 `PROVIDER_NAMES`（`loop/__init__.py` 导出、CLI 从 `mini_harness.loop` 引），那句话由 `' / '.join(PROVIDER_NAMES)` 生成；端点分支从 `provider_name == "openai"` 换成 `provider_name != "mock"`，`--fixture` 那句也带上名字。既有的三条仍绿。两处连带：`tests/test_cli_run.py::test_unknown_provider_is_rejected` 与 `tests/test_integration.py` 第 94 行原本拿 `deepseek` 当「不认识的 provider」——它现在认识了，两处换成 `claude`；后者在换名之前仍绿但绿的原因变了（从「名字不认识」变成「缺密钥」），换名是为了让它继续测它本来测的那件事。
 
 ## 4. 缺 model 当场失败（seam ② 与 ⑥）
 
-- [ ] 4.1 红：`--provider openai --api-key-env <已设的假变量>` 且未给 `--model` → 退出码 2、stderr 含 `INVALID_ARGUMENT` 与 `--model`、session 目录里没有新文件、假 server 没收到任何请求。确认它红。
-- [ ] 4.2 绿：实现这一条，4.1 变绿；`--provider deepseek` 不带 `--model` 仍成功（预设给了）。
+- [x] 4.1 红：`--provider openai --api-key-env <已设的假变量>` 且未给 `--model` → 退出码 2、stderr 含 `INVALID_ARGUMENT` 与 `--model`、session 目录里没有新文件、假 server 没收到任何请求。确认它红。**实测：落地即绿**（判据 `test_a_missing_model_fails_before_any_request_is_sent`，`len(endpoint.requests) == 0` 是「一个请求都不发」那一半）。按 L-055 实证它红过：把 `cli/main.py` 里那条检查临时改成 `if False and layered.model is None:` 跑一次，三条红——它自己红在 `assert 0 == 0`（退出码 0，请求发了）、`test_openai_without_a_base_url_does_not_run_on_the_deepseek_default` 与 `test_a_bare_run_with_the_key_present_defaults_to_openai` 也红；还原后 `git status --short -- src/mini_harness/cli/main.py` 为空。**记一笔代价**：变异 ④ 之下 `test_openai_without_a_base_url_…` 那条会真去连 `https://api.openai.com/v1`（假密钥，连接失败/401），全量跑从 3 分 39 秒涨到 6 分 60 秒——这条判据的形状只能这样立，跑变异时要知道它会出网。
+- [x] 4.2 绿：实现这一条，4.1 变绿；`--provider deepseek` 不带 `--model` 仍成功（预设给了）。**实测**：检查在 1.2 落地时就写进 `cli/main.py`（排在密钥检查之后——既有判据 `test_a_missing_required_item_leaves_no_log_file` 与 `test_a_config_supplied_provider_is_checked_the_same_way` 都要求密钥那一先报，delta 没规定两件事的顺序，这一处顺序记进 ADR-0027）；`--provider deepseek` 不带 `--model` 成功由 3.1 的判据证（`payload["model"] == "deepseek-chat"`）。
 
 ## 5. `--help` 写出默认值（seam ⑥）
 

@@ -72,6 +72,7 @@ def test_unknown_provider_is_exit_2_and_creates_no_log(tmp_path: Path) -> None:
 
     assert result.returncode == 2
     assert "UNKNOWN_PROVIDER" in result.stderr
+    assert "deepseek" in result.stderr
     assert list(tmp_path.glob("*.jsonl")) == []
 
 
@@ -395,3 +396,83 @@ def test_a_config_file_provider_does_not_look_at_the_key_presence(tmp_path: Path
     assert "INVALID_ARGUMENT" in result.stderr
     assert "MINIHNS_API_KEY" in result.stderr
     assert list(tmp_path.glob("*.jsonl")) == []
+
+
+def test_the_deepseek_name_is_accepted_and_its_preset_is_recorded(tmp_path: Path) -> None:
+    """delta「deepseek 预设走自己的默认变量」：名字进 payload，model 与变量名由预设填。
+
+    「请求打到预设地址」那一半在 seam ② 判（`test_config_presets.py` 断言 `base_url` 就是
+    `https://api.deepseek.com`）与真实端点判（tasks 6.2）：黑盒里要拿 loopback 假 server 就得给
+    `--base-url`，给了就不叫预设。
+    """
+    with _FakeEndpoint(status=200, body=_STOP_BODY) as endpoint:
+        result = _cli(
+            "run",
+            "-p",
+            "任务",
+            "--provider",
+            "deepseek",
+            "--base-url",
+            endpoint.base_url,
+            "--session-dir",
+            str(tmp_path),
+            "--yes",
+            cwd=tmp_path,
+            env=_env_without_default_key(DEEPSEEK_API_KEY=_KEY_VALUE),
+        )
+
+    assert result.returncode == 0, result.stderr
+    payload = _session_records(tmp_path)[0]["payload"]
+    assert payload["provider"] == "deepseek"
+    assert payload["model"] == "deepseek-chat"
+    assert payload["api_key_env"] == "DEEPSEEK_API_KEY"
+
+
+def test_openai_without_a_base_url_does_not_run_on_the_deepseek_default(tmp_path: Path) -> None:
+    """地雷的形状：`--provider openai` 不带 `--base-url` 不再静默连 deepseek 端点。
+
+    黑盒判的是这句话指向哪一项——缺的是 `--model`（openai 预设不给它默认），不是别的东西；
+    生效地址本身在 seam ② 判（`test_the_openai_preset_is_openai_not_deepseek`）。
+    """
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "openai",
+        "--session-dir",
+        str(tmp_path),
+        cwd=tmp_path,
+        env=_env_without_default_key(MINIHNS_API_KEY=_KEY_VALUE),
+    )
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert "--model" in result.stderr
+    assert list(tmp_path.glob("*.jsonl")) == []
+
+
+def test_a_missing_model_fails_before_any_request_is_sent(tmp_path: Path) -> None:
+    """delta「openai 预设缺 model 当场失败」：一个请求都不发，一个文件都不多。"""
+    with _FakeEndpoint(status=200, body=_STOP_BODY) as endpoint:
+        result = _cli(
+            "run",
+            "-p",
+            "任务",
+            "--provider",
+            "openai",
+            "--base-url",
+            endpoint.base_url,
+            "--api-key-env",
+            _KEY_ENV,
+            "--session-dir",
+            str(tmp_path),
+            cwd=tmp_path,
+            env=_env_without_default_key(**{_KEY_ENV: _KEY_VALUE}),
+        )
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert "--model" in result.stderr
+    assert list(tmp_path.glob("*.jsonl")) == []
+    assert len(endpoint.requests) == 0
