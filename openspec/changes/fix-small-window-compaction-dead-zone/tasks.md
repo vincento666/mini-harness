@@ -2,8 +2,8 @@
 
 ## 1. 压力预算这一处事实（seam ④ 的预算模块）
 
-- [ ] 1.1 红：写判据——`pressure_budget(window, reserve)` 对三组参数给出可断言的数：128000 / 8192 → 119808、70000 / 100 → 69900、100000 / 100 → 99900；且它与 `trigger_line`、`retain_line` 是三个不同的数（70000 / 100 下分别是 69900 / 4364 / 11200）。跑 `uv run pytest -q` 确认它红。
-- [ ] 1.2 绿：在 `context/budget.py` 提供 `pressure_budget`，与 `trigger_line` / `retain_line` 同一模块、同一份常量表，并从 `context/__init__.py` 导出；1.1 变绿且 `uv run mypy --strict src` 无新错。
+- [x] 1.1 红：写判据——`pressure_budget(window, reserve)` 对三组参数给出可断言的数：128000 / 8192 → 119808、70000 / 100 → 69900、100000 / 100 → 99900；且它与 `trigger_line`、`retain_line` 是三个不同的数（70000 / 100 下分别是 69900 / 4364 / 11200）。跑 `uv run pytest -q` 确认它红。
+- [x] 1.2 绿：在 `context/budget.py` 提供 `pressure_budget`，与 `trigger_line` / `retain_line` 同一模块、同一份常量表，并从 `context/__init__.py` 导出；1.1 变绿且 `uv run mypy --strict src` 无新错。**1.1 的红是 `ImportError: cannot import name 'pressure_budget'`（整个文件收集失败）**；判据里 `retain_line` 只吃一个参数（`retain_line(70000) == 11200`），写错成两个参数时它先红在 `TypeError`。
 
 ## 2. 溢出判据换轨（seam ①）
 
