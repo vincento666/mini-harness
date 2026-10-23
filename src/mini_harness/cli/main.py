@@ -476,6 +476,16 @@ def _chat_sigint_handler(signals: _ChatSignals) -> Callable[[int, FrameType | No
     return handle
 
 
+def _suppress_sigint(signum: int, frame: FrameType | None) -> None:
+    """会话收尾这一段的 Ctrl-C 处理器：什么都不做（design D7）。
+
+    收尾已经开始就走完——取消落进「`end_session` 还在跑」那道缝隙里不该留下未捕获异常，
+    也不该把 `session/end` 写成半条。不置 `SIG_IGN`：Windows 上被忽略的 Ctrl-C 会在解释器里
+    炸成 `OSError: Signal 2 ignored due to race condition`。
+    """
+    return None
+
+
 def _print_new_replies(log: EventLog, printed: int) -> int | LogReadFailure:
     """把日志里新增的模型回复正文按发生顺序打到 stdout（design D11）。
 
@@ -547,8 +557,12 @@ def _print_shadow_feedback(log: EventLog, through: int) -> tuple[int, LogReadFai
     return latest, None
 
 
-async def _chat_session(prepared: _Prepared) -> int:
-    """读一行、开一个段、回到提示符；EOF 或提示符上的 Ctrl-C 收尾整个会话。"""
+async def _chat_session(prepared: _Prepared, signals: _ChatSignals) -> int:
+    """读一行、开一个段、回到提示符；EOF 或提示符上的 Ctrl-C 收尾整个会话。
+
+    SIGINT 处理器由 `_chat` 装（design D7）：会话收尾也在它的覆盖范围里，
+    取消落进「循环已经退出、`end_session` 还没开始」那道缝隙里也有人接。
+    """
     env = SessionEnv(
         provider=prepared.provider,
         log=prepared.log,
@@ -561,63 +575,74 @@ async def _chat_session(prepared: _Prepared) -> int:
             started.failure_code or started.stop_reason, started.detail, EXIT_INTERNAL_ERROR
         )
 
-    signals = _ChatSignals()
-    previous = signal.getsignal(signal.SIGINT)
-    signal.signal(signal.SIGINT, _chat_sigint_handler(signals))
     segments = 0
     turn_index = 1
     printed = 0
     scanned = 0
-    try:
-        while True:
-            # 提示符不带换行（design D1）：人输入的那一行紧跟在它之后，不落在空行上。
-            # 显式 flush：stdout 是管道时它自带缓冲，不 flush 就等于屏幕上还没有提示符。
-            sys.stdout.write(_CHAT_PROMPT)
-            sys.stdout.flush()
-            line = sys.stdin.readline()
-            if line == "":
-                # EOF：会话正常收尾。
-                break
-            text = line.strip()
-            if not text:
-                # 空白输入不写记录，也不开段。
-                continue
-            segments += 1
-            cancel = asyncio.Event()
-            signals.active = cancel
-            try:
-                segment = await run_turn_segment(
-                    env=env,
-                    segment_id=f"s{segments}",
-                    first_turn_index=turn_index,
-                    cancel=cancel,
-                    user_message=text,
-                )
-            finally:
-                signals.active = None
-            if segment.stop_reason not in STOP_REASONS:
-                # 内核坏了：不再回到提示符，按内部错误收尾。
-                return _report_failure(
-                    segment.failure_code or segment.stop_reason, segment.detail, EXIT_INTERNAL_ERROR
-                )
-            turn_index += segment.turns
-            _print_segment_note(segment)
-            scanned, shadow_failure = _print_shadow_feedback(prepared.log, scanned)
-            if shadow_failure is not None:
-                return _report_failure(
-                    shadow_failure.code, shadow_failure.detail, EXIT_INTERNAL_ERROR
-                )
-            replies = _print_new_replies(prepared.log, printed)
-            if isinstance(replies, LogReadFailure):
-                return _report_failure(replies.code, replies.detail, EXIT_INTERNAL_ERROR)
-            printed = replies
-    except KeyboardInterrupt:
-        # 提示符上的 Ctrl-C：与 EOF 同一条路，写 `session/end`、退出码 0。
-        pass
-    finally:
-        signal.signal(signal.SIGINT, previous)
 
-    ended = end_session(env=env, stop_reason=STOP_MODEL_COMPLETED, turns=turn_index - 1)
+    def finish() -> SegmentOutcome | None:
+        """会话收尾：先换一个什么都不做的处理器，再写 `session/end`（design D7）。
+
+        收尾已经开始就走完——`session/end` 不会被写成半条，也不留未捕获异常。
+        不置 `SIG_IGN`：Windows 上被忽略的 Ctrl-C 会在解释器里炸成
+        `OSError: Signal 2 ignored due to race condition`。
+        """
+        signal.signal(signal.SIGINT, _suppress_sigint)
+        return end_session(env=env, stop_reason=STOP_MODEL_COMPLETED, turns=turn_index - 1)
+
+    try:
+        try:
+            while True:
+                # 提示符不带换行（design D1）：人输入的那一行紧跟在它之后，不落在空行上。
+                # 显式 flush：stdout 是管道时它自带缓冲，不 flush 就等于屏幕上还没有提示符。
+                sys.stdout.write(_CHAT_PROMPT)
+                sys.stdout.flush()
+                line = sys.stdin.readline()
+                if line == "":
+                    # EOF：会话正常收尾。
+                    break
+                text = line.strip()
+                if not text:
+                    # 空白输入不写记录，也不开段。
+                    continue
+                segments += 1
+                cancel = asyncio.Event()
+                signals.active = cancel
+                try:
+                    segment = await run_turn_segment(
+                        env=env,
+                        segment_id=f"s{segments}",
+                        first_turn_index=turn_index,
+                        cancel=cancel,
+                        user_message=text,
+                    )
+                finally:
+                    signals.active = None
+                if segment.stop_reason not in STOP_REASONS:
+                    # 内核坏了：不再回到提示符，按内部错误收尾。
+                    return _report_failure(
+                        segment.failure_code or segment.stop_reason,
+                        segment.detail,
+                        EXIT_INTERNAL_ERROR,
+                    )
+                turn_index += segment.turns
+                _print_segment_note(segment)
+                scanned, shadow_failure = _print_shadow_feedback(prepared.log, scanned)
+                if shadow_failure is not None:
+                    return _report_failure(
+                        shadow_failure.code, shadow_failure.detail, EXIT_INTERNAL_ERROR
+                    )
+                replies = _print_new_replies(prepared.log, printed)
+                if isinstance(replies, LogReadFailure):
+                    return _report_failure(replies.code, replies.detail, EXIT_INTERNAL_ERROR)
+                printed = replies
+        except KeyboardInterrupt:
+            # 提示符上的 Ctrl-C：与 EOF 同一条路，写 `session/end`、退出码 0。
+            pass
+        ended = finish()
+    except KeyboardInterrupt:
+        # 取消正落在「循环已经退出、收尾还没开始」那道缝里：会话已经在收尾，把它收完。
+        ended = finish()
     if ended is not None:
         return _report_failure(
             ended.failure_code or ended.stop_reason, ended.detail, EXIT_INTERNAL_ERROR
@@ -630,7 +655,11 @@ def _chat(args: argparse.Namespace) -> int:
     prepared = _prepare_or_fail(args)
     if isinstance(prepared, _Failure):
         return _report_failure(prepared.code, prepared.detail, prepared.exit_code)
-    return asyncio.run(_chat_session(prepared))
+    signals = _ChatSignals()
+    signal.signal(signal.SIGINT, _chat_sigint_handler(signals))
+    # 不换回旧处理器（design D7）：会话收尾之后进程正在退出，换回去等于在退出前的缝隙里
+    # 重新开一个没人接的洞——那里落进一次 Ctrl-C 就是一段 traceback 加一个非 0 退出码。
+    return asyncio.run(_chat_session(prepared, signals))
 
 
 def _replay(args: argparse.Namespace) -> int:
