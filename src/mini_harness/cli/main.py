@@ -561,7 +561,10 @@ async def _chat_session(prepared: _Prepared) -> int:
     scanned = 0
     try:
         while True:
-            print(_CHAT_PROMPT)
+            # 提示符不带换行（design D1）：人输入的那一行紧跟在它之后，不落在空行上。
+            # 显式 flush：stdout 是管道时它自带缓冲，不 flush 就等于屏幕上还没有提示符。
+            sys.stdout.write(_CHAT_PROMPT)
+            sys.stdout.flush()
             line = sys.stdin.readline()
             if line == "":
                 # EOF：会话正常收尾。

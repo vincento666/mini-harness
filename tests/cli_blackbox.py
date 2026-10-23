@@ -2,18 +2,36 @@
 
 from __future__ import annotations
 
+import ctypes
 import json
 import os
 import subprocess
 import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from paths import PYPROJECT_TOML, REPO_ROOT
 
-__all__ = ["_FakeEndpoint", "_cli", "_cli_process"]
+__all__ = [
+    "_FakeEndpoint",
+    "_LiveStreams",
+    "_cli",
+    "_cli_console_process",
+    "_cli_process",
+    "_send_ctrl_c",
+]
+
+# Windows 的控制台常量：`CREATE_NEW_CONSOLE` 与 `CREATE_NEW_PROCESS_GROUP` 是
+# `subprocess` 的同名值，`ATTACH_PARENT_PROCESS` 是 `AttachConsole` 的「接回父进程的控制台」。
+CREATE_NEW_CONSOLE = 0x00000010
+CREATE_NEW_PROCESS_GROUP = 0x00000200
+ATTACH_PARENT_PROCESS = 0xFFFFFFFF
+CTRL_C_EVENT = 0
 
 
 class _FakeEndpoint:
@@ -131,3 +149,109 @@ def _cli_process(*args: str, cwd: Path, keep_stdin_open: bool = False) -> subpro
         env=_child_env(None),
         stdin=subprocess.PIPE if keep_stdin_open else subprocess.DEVNULL,
     )
+
+
+def _cli_console_process(
+    *args: str, cwd: Path, keep_stdin_open: bool = False
+) -> subprocess.Popen[str]:
+    """Windows 的 Ctrl-C 黑盒：子进程有自己的真实控制台、在新的进程组里。
+
+    本机实测（2026-10-23）：只带 `CREATE_NEW_PROCESS_GROUP` 时 `GenerateConsoleCtrlEvent` 返回成功、
+    子进程却收不到（`os.kill` 不报错，进程照常跑完）；先 `AttachConsole` 到子进程自己新开的那个
+    控制台才送得进去——同一条路线在 M2 的 approval 冒烟脚手架上用过（`WriteConsoleInput` 那一版）。
+    控制台是新开的，std 三条句柄仍是管道，所以 tty 检测与别的黑盒一致。
+    """
+    return subprocess.Popen(
+        _command(*args),
+        cwd=str(cwd),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        env=_child_env(None),
+        stdin=subprocess.PIPE if keep_stdin_open else subprocess.DEVNULL,
+        creationflags=CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP,
+    )
+
+
+def _send_ctrl_c(pid: int) -> None:
+    """把 Ctrl-C 只发给那一个进程组；发完把控制台接回父进程。"""
+    kernel32 = ctypes.windll.kernel32
+    kernel32.FreeConsole()
+    if not kernel32.AttachConsole(pid):
+        error = kernel32.GetLastError()
+        kernel32.FreeConsole()
+        kernel32.AttachConsole(ATTACH_PARENT_PROCESS)
+        raise RuntimeError(f"AttachConsole({pid}) 失败：win32 error {error}")
+    try:
+        if not kernel32.GenerateConsoleCtrlEvent(CTRL_C_EVENT, pid):
+            raise RuntimeError(
+                f"GenerateConsoleCtrlEvent(CTRL_C_EVENT, {pid}) 失败："
+                f"win32 error {kernel32.GetLastError()}"
+            )
+    finally:
+        kernel32.FreeConsole()
+        kernel32.AttachConsole(ATTACH_PARENT_PROCESS)
+
+
+class _LiveStreams:
+    """把子进程的 stdout / stderr 实时读进内存：判据能在会话进行中看到已经打出来的东西。
+
+    逐字符读，不按行：提示符不带换行之后，按行读要等到下一条带换行的输出才看得见它。
+    """
+
+    def __init__(self, process: subprocess.Popen[str]) -> None:
+        self._process = process
+        self._out: list[str] = []
+        self._err: list[str] = []
+        self._lock = threading.Lock()
+        self._threads = [
+            threading.Thread(target=self._pump, args=(stream, sink), daemon=True)
+            for stream, sink in ((process.stdout, self._out), (process.stderr, self._err))
+        ]
+
+    @staticmethod
+    def _pump(stream: Any, sink: list[str]) -> None:
+        if stream is None:
+            return
+        while True:
+            char = stream.read(1)
+            if not char:
+                return
+            sink.append(char)
+
+    def start(self) -> _LiveStreams:
+        for thread in self._threads:
+            thread.start()
+        return self
+
+    def stdout(self) -> str:
+        with self._lock:
+            return "".join(self._out)
+
+    def stderr(self) -> str:
+        with self._lock:
+            return "".join(self._err)
+
+    def wait_for_stdout(self, needle: str, reason: str, timeout: float = 25.0) -> None:
+        """等到 stdout 上出现那串字符；等不到就是「屏幕上还没到那一刻」，判据当场失败。"""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if needle in self.stdout():
+                return
+            if self._process.poll() is not None:
+                break
+            time.sleep(0.05)
+        self._process.kill()
+        pytest.fail(f"子进程的 stdout 上没出现 {needle!r}（{reason}）：实得 {self.stdout()!r}")
+
+    def finish(self, timeout: float = 40.0) -> tuple[int, str, str]:
+        """等子进程退出、把两条流收全，返回 (退出码, stdout, stderr)。"""
+        try:
+            returncode = self._process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            self._process.kill()
+            raise
+        for thread in self._threads:
+            thread.join(timeout=10)
+        return returncode, self.stdout(), self.stderr()

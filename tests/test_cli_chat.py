@@ -430,7 +430,7 @@ def test_stdout_carries_only_model_reply_text_and_the_prompt(tmp_path: Path) -> 
     result = _chat("--fixture", fixture, cwd=tmp_path, stdin_text="读一下 a.md\n")
 
     assert result.returncode == 0
-    assert result.stdout.splitlines() == ["> ", "先读一下", "这是回复正文", "> "]
+    assert result.stdout.splitlines() == ["> 先读一下", "这是回复正文", "> "]
     assert "工具结果的内容不该出现在 stdout" not in result.stdout
     assert "context/assembled" not in result.stdout
 
@@ -566,7 +566,7 @@ def test_a_segments_summary_never_appears_on_stdout(tmp_path: Path) -> None:
     assert result.returncode == 0
     assert "compaction/summary" in _types(tmp_path)
     assert "那是摘要不该出现" not in result.stdout
-    assert result.stdout.splitlines() == ["> ", "先读一下", "这是回复", "> "]
+    assert result.stdout.splitlines() == ["> 先读一下", "这是回复", "> "]
 
 
 def test_a_compaction_shows_what_it_shadowed_on_stderr(tmp_path: Path) -> None:
@@ -702,3 +702,21 @@ def test_a_chat_that_cannot_start_leaves_no_log(tmp_path: Path) -> None:
     assert "INVALID_ARGUMENT" in result.stderr
     assert "MINIHNS_ABSENT_KEY" in result.stderr
     assert _log_files(tmp_path) == []
+
+
+# ---------------------------------------------------------------------------
+# change `fix-chat-screen-feedback`：屏幕上说了什么、怎么说（seam ⑥ 判排版，不只判「有没有」）
+# ---------------------------------------------------------------------------
+
+
+def test_the_prompt_does_not_carry_its_own_newline(tmp_path: Path) -> None:
+    """seam ⑥ 1.1：提示符打在不带换行的同一行上，输入紧跟在它之后。
+
+    判的是 stdout 的**排版**：此前 `print(_CHAT_PROMPT)` 自带一个回车，人输入的那一行落在空行上。
+    """
+    fixture = _fixture(tmp_path, "one.json", [{"content": "回复正文", "finish_reason": "stop"}])
+
+    result = _chat("--fixture", fixture, cwd=tmp_path, stdin_text="第一条\n")
+
+    assert result.returncode == 0
+    assert result.stdout == "> 回复正文\n> "
