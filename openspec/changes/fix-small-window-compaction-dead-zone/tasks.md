@@ -27,16 +27,16 @@
 
 ## 5. 既有判据与规格的措辞对齐（seam ① 与 ⑥）
 
-- [ ] 5.1 把 `tests/` 中断言「仍超过触发线」的溢出判据改判据对象为压力预算，逐条写明改了哪个数值；改完跑全量确认全绿，再用变异确认它们咬得住（不接受「改完就绿」）。
-- [ ] 5.2 跑 `tests/test_vocabulary_reachability.py` 确认没有新增 `code` 或 `stop_reason`、每个既有值仍可达。
-- [ ] 5.3 跑 `openspec validate --all --strict` 确认本 change 的两份 delta 结构合法（ADDED 1 条、MODIFIED 4 条，被改的每条保留全部既有 scenario 名）。
+- [ ] 5.1 把 `tests/` 中断言「仍超过触发线」的溢出判据改判据对象为压力预算，逐条写明改了哪个数值；改完跑全量确认全绿，再用变异确认它们咬得住（不接受「改完就绿」）。**改完的清单在 4.3 与 2.2**（seam ① 三条、seam ⑥ 五条），全量全绿（413 passed / 5 skipped）；「咬得住」那一半由 8.1 的变异 ① 与 ② 确认，跑完再勾。
+- [x] 5.2 跑 `tests/test_vocabulary_reachability.py` 确认没有新增 `code` 或 `stop_reason`、每个既有值仍可达。**实测**：两条判据都在全量里绿；本 change 没进任何新词。
+- [x] 5.3 跑 `openspec validate --all --strict` 确认本 change 的两份 delta 结构合法。**实测**：13 项全绿（12 份主规格 + 本 change）。delta 实际是 ADDED 1 条、MODIFIED **5** 条（比计划多两条：启动校验那条与触发线公式那条，起因见 design D5 的 apply 时改）。
 
 ## 6. 真实端点验收（完成判据的第二半，ADR-0024）
 
-- [ ] 6.1 本机 Strata（`http://127.0.0.1:8300/v1`、`qwen3.8-flash-next-iq3_xxs`）跑 `--window 70000 --reserve 100` 读 `.tmp/reacc/ws/big.md`：确认不再以退出码 4 结束、会话正常收尾，记下真实的预算读数与触发线。
-- [ ] 6.2 同一端点跑一次真溢出（`--window 100000 --reserve 100` 读 `huge.md`）：确认退出码 4、`error/context` 的 `detail` 含三个数。
-- [ ] 6.3 跑一次「压缩发生了但仍不够」：小窗口 + 长摘要，如实记录**撞没撞到**那条字面分支；撞不到就写明撞不到与原因。
-- [ ] 6.4 观察记进 `docs/verification/fix-small-window-compaction-dead-zone-real-endpoint.md`。
+- [x] 6.1 本机 Strata（`http://127.0.0.1:8300/v1`、`qwen3.8-flash-next-iq3_xxs`）跑 `--window 70000 --reserve 100` 读一个大文件：确认不再以退出码 4 结束、会话正常收尾，记下真实的预算读数与触发线。**实测**：会话 `00dfb231b9eb445e95d01be466d1d02a`，触发线 4364、保留预算 11200、压力预算 69900、估算 9058、读数 27444，退出码 0，零条 `compaction/summary`、零条 `error/context`。
+- [x] 6.2 同一端点跑一次真溢出：确认退出码 4、`error/context` 的 `detail` 含三个数。**实测**：会话 `bfe6d7ae75eb422fa370cf088b04c304`，`--window 60000 --reserve 100`，退出码 4，`可遮蔽的那一段本身就装不下，预算读数 64276 超过压力预算 59900（触发线 0）`。**与计划不同**：计划写的 `--window 100000` 读 `huge.md` 撞不到溢出——`read` 默认只回 2000 行而 `huge.md` 有 3300 行，进上下文的只有约 61500 个估算 token，比压力预算 99900 小得多。
+- [x] 6.3 跑一次「压缩发生了但仍不够」：小窗口 + 长摘要，如实记录**撞没撞到**那条字面分支；撞不到就写明撞不到与原因。**撞不到**（会话 `474d8e4c59b64f8ea97304cdfc0fba73` 在第一次装配就溢出，走「无可遮蔽」那条）。两条算术原因记进验收文档：真端点回报的 `input_tokens` 主导读数（中文实测约 1.3 字符/token，`CHARS_PER_TOKEN = 4` 低估三倍），以及摘要要超过压力预算的约八成才撞得到那条分支——真模型写摘要恰恰是把它缩短（实测 `tokens_after` 106）。
+- [x] 6.4 观察记进 `docs/verification/fix-small-window-compaction-dead-zone-real-endpoint.md`。**顺带查出一件与代码无关的事**：venv 的 `minihns.exe` 启动器在 24000 个字符的参数下以 `0xC0000005` 崩、无输出无日志；同一参数走 `python.exe -m mini_harness.cli.main` 正常。溢出场次因此用「模型读一个大文件」而不是巨型 `-p`。
 
 ## 7. UAT 验收（完成判据的第三半，ADR-0025，人跑）
 
