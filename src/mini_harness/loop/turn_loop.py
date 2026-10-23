@@ -843,20 +843,19 @@ async def _run_turns(
             # 小窗口下触发线可以比保留预算还小，拿它判溢出会在真墙之前自己撞墙。
             pressure = pressure_budget(settings.window, settings.reserve)
             if reading > pressure:
-                # 措辞跟着日志里的事实走：这一回合真写过摘要才说「压缩之后」。
+                # 措辞跟着日志里的事实走：真写过摘要才说「压缩之后」；什么都没遮蔽才说
+                # 「无可遮蔽」；有可遮蔽的那一段、只是它本身就装不进窗口，就说它装不下。
                 compacted_here = any(
                     event.type == "compaction/summary" and event.payload.get("turn_id") == turn_id
                     for event in events
                 )
-                detail = (
-                    f"压缩之后预算读数 {reading} 仍超过压力预算 {pressure}（触发线 {line}）"
-                    if compacted_here
-                    else (
-                        f"无可遮蔽的内容，预算读数 {reading} 已超过压力预算 {pressure}"
-                        f"（触发线 {line}）"
-                    )
-                )
-                return await _context_overflow(log, turn_id, turns, detail)
+                if compacted_here:
+                    head = f"压缩之后预算读数 {reading} 仍超过压力预算 {pressure}"
+                elif shadowed_range(events, settings.window) is None:
+                    head = f"无可遮蔽的内容，预算读数 {reading} 已超过压力预算 {pressure}"
+                else:
+                    head = f"可遮蔽的那一段本身就装不下，预算读数 {reading} 超过压力预算 {pressure}"
+                return await _context_overflow(log, turn_id, turns, f"{head}（触发线 {line}）")
 
         failure = _append_all(
             log,

@@ -36,6 +36,12 @@ DEAD_ZONE_TEXT = "x" * 24000
 # 75000 个估算 token：比 `70000 - 100` 这个压力预算还大，装不下才是溢出。
 OVERFLOW_TEXT = "x" * 300000
 
+# 窗口 20000 / 预留 100：压力预算 19900 个 token、保留预算 3200、触发线 0。
+# 100000 个字符约 25000 个估算 token：比压力预算还大的一组工具往返，裁到只剩它也装不下。
+SMALL_WINDOW = 20000
+SMALL_RESERVE = 100
+UNTRIMMABLE_TEXT = "长" * 100000
+
 SUMMARY_TEXT = "那是此前的对话摘要"
 
 
@@ -221,6 +227,37 @@ async def test_a_dead_zone_reading_that_fits_the_window_is_not_an_overflow(
     ]
     assert [record.payload["turn_id"] for record in requests] == ["t1", "t2"]
     assert outcome.stop_reason == "MODEL_COMPLETED"
+
+
+async def test_a_shadowed_range_too_big_to_trim_sends_no_summary_request(
+    tmp_path: Path,
+) -> None:
+    """遮蔽范围存在、但那一组往返本身就装不进压力预算：不发摘要请求、不写 `error/model`。
+
+    溢出仍然发生，可它发生的原因是**读数本身超过压力预算**，不是「摘要请求发不出去」——
+    这两件事不该互相冒充（design D4）。措辞也不该说「无可遮蔽的内容」：这一回合有可遮蔽的
+    那一段，只是它本身就装不下。
+    """
+    (tmp_path / "big.md").write_text(UNTRIMMABLE_TEXT, encoding="utf-8")
+    log, outcome = await run_fixture_session(
+        tmp_path,
+        "s-untrimmable",
+        [_read_big_file_turn(), DONE_ENTRY],
+        max_turns=2,
+        window=SMALL_WINDOW,
+        reserve=SMALL_RESERVE,
+    )
+
+    assert _records_of(log.path, "compaction/summary") == []
+    assert _records_of(log.path, "error/model") == []
+    requests = _records_of(log.path, "model/request")
+    assert [record for record in requests if record.payload.get("purpose") == "compaction"] == []
+    error = _records_of(log.path, "error/context")[0]
+    assert error.payload["code"] == "CONTEXT_WINDOW_EXCEEDED"
+    assert error.payload["detail"].startswith("可遮蔽的那一段")
+    assert "压力预算 19900" in error.payload["detail"]
+    assert "触发线 0" in error.payload["detail"]
+    assert outcome.stop_reason == "CONTEXT_WINDOW_EXCEEDED"
 
 
 async def test_an_overflow_closes_the_segment_not_the_session(tmp_path: Path) -> None:
