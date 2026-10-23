@@ -622,3 +622,25 @@ M6 模型层场 2：`--window 66000 --reserve 100` 下第一条输入约 5000 �
 - **chat 日志的逐点重放从 propose 起就没有判据**：delta 的「遮蔽反馈不是日志的投影」那条场景只断言「这一行不在 stdout、不在日志」，没有断言「同一份日志的 `minihns replay` 输出不因它改变」。Spec 轴查出，2026-10-23 补在 seam ⑥（tasks 8.4）。
 - **500 与 429 那两条判据是绿着到的**：`openai_compat.py` 里重试耗尽那条早退已经挡住 5xx 与 429，`status >= 400` 那一处从来没有可达的 5xx。当场用一处变异（把塌成溢出的判断挪到那条早退之前）确认它们不空转，两条都红（`assert 'PROVIDER_CONTEXT_OVERFLOW' == 'PROVIDER_HTTP_STATUS'`）。
 - **小窗口死区到本轮结束仍没有判据、也没有规格**：`W - reserve - 65536 < W * 16 / 100` 时压缩不可能，真端点那一跑撞到的「预算读数 4393 已超过触发线 4364」就是它。记在第 65 条与 `docs/CURRENT.md`，等人裁决是新开一个 change 还是留在 M10。
+
+### `fix-chat-screen-feedback` 的两轴审查（2026-10-24，固定点 `1fd9820`）
+
+Standards 轴查出的三条：
+
+- **一处打包跨四个 task**：`a34c63e` 打包 1.7 + 2.5 + 1.8 + 2.8。提交信息写了打包理由，可那句理由（「两个红绿循环各自独立」）正是前半句「一个红绿循环一次提交」的拆分理由。分支未推，当场拆成 `d2395c7`（1.7 + 2.5）与 `5bf86d3`（1.8 + 2.8），后面两条 cherry-pick 成 `9f4819f` / `7d8845d`；拆完每个提交最多三个 task。
+- **测试里的重复**：溢出那套 fixture（`big.md` 加六条 entries）在 1.3 与 1.8 的反面判据里逐字各写一遍 → 抽成 `_overflow_entries`，在 `5bf86d3` 里一并收掉。`_NOT_WINDOWS_REASON` 与挂起脚本 + 挂起 fixture 在 `test_cli_chat.py` 与 `test_cli_serve.py` 各一份：**记账不动**，两处判的是不同的落点（chat 的段中取消 / serve 的中途取消），抽进 `cli_blackbox.py` 等第三处出现再抽。
+- **脚手架早于它的使用者**：`a5ff271` 引入 `_cli_console_process` / `_send_ctrl_c` / `_LiveStreams`，到 `662731e` 才有判据用它们，中间两个提交带着未使用的代码。记账，不改写历史。
+
+Spec 轴查出的判据缺口，六条已在 seam ⑥ 补上（2026-10-24）：
+
+- **cli「那一行 MUST NOT 出现在 stdout、MUST NOT 写进事件日志」**：serve 那条 Ctrl-C 判据原来 `_, stderr = communicate()` 把 stdout 丢了。现在断 stdout 不含 `ABORTED`、日志里没有它这么一行、日志里的类型都在词表里。`run` 溢出那条同样补上 stdout 与日志两半。
+- **cli「带非空 `detail` 时那一行 SHALL 含那句 `detail`」**：`run` 溢出那条原来只断那个词在 stderr。现在断日志里那条 `detail` 出现在那一行里。
+- **chat「含当时的预算读数与触发线两个数」**：1.3 那条补上「那一行里的整数含触发线 54272（默认窗口 128000、预留 8192 按规格那条公式给出的数），且有一个整数越线」——只认数，不认措辞。
+- **chat「含 `FENCE_DENIED` 与造成它的失败结果的 `code`」**：围栏那条补上从 `error/fence` 记录里读出的那个 code 出现在那一行里。
+- **chat「空或全空白的 `content`」**：1.2 那条把第三条工具回合的 `content` 换成全空白，两条半边都喂到。
+- **冒号那条只有 Windows 半边**：Linux-only 的 `test_sigint_in_a_serve_subprocess_exits_with_five` 补上「恰一行、不以冒号结尾、不在 stdout」。本机仍 skip，等 Linux runner 才算跑过。
+
+两条没补的形状（记账）：
+
+- **`_chat` 不再把旧 SIGINT 处理器换回去、收尾那一段换 `_suppress_sigint`**：delta 里没有这一条，也没有判据钉住「不换回去」。它是 D7 在本机 Windows 上的直接后果——换回去等于在退出前的缝隙里重新开一个没人接的洞（实测：换回去时 5 次里 3 次红，`KeyboardInterrupt` 落在 `coverage/cmdline.py` 里，退出码 `0xC000013A`）。处理时点：M10 与「取消的落点」那条一起收；真要钉住它，得先决定跨平台的形状（POSIX 上 `add_signal_handler` 与 Windows 上 `signal.signal` 不是一回事）。
+- **`[降不下去]` 那一行的前缀标记写死在判据里**：规格说措辞留给实现（design 的 open question），判据认前缀。UAT 若改措辞就要同时改判据——这一条是刻意的取舍：不认前缀就只能去数 stderr 上「不是 `[段]` 也不是 session id」的行，那种判据更脆。

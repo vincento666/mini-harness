@@ -34,8 +34,12 @@ mock 那一半照不出这一族的原因要说清楚：seam ⑥ 的判据断言
 ### D7 traceback 的修法：把会话收尾纳入 `except KeyboardInterrupt` 的覆盖范围
 现在 handler 装在 `_prepare_or_fail` 之后（`main.py:639`），`except KeyboardInterrupt` 只包住那个 while 循环（`main.py:644-686`），`end_session` 在 try 之外（`main.py:690`）——取消落进缝隙里就没人接。**改法**：收尾段（含 `end_session` 与它的打印）移进同一个 try 的覆盖范围，handler 的判定不变（有段在跑置位、没有段在跑走 `KeyboardInterrupt`）。判据：seam ⑥ 发真 Ctrl-C 在提示符上 → 退出码 0、stderr 里没有 `Traceback`。
 
+**本机落下来的形状**（apply 之后补记）：收尾收成一个局部 `finish()`，两处调用——循环正常走完之后一次，外层 `except KeyboardInterrupt` 里一次（取消落在「循环已经退出、收尾还没开始」那道缝里时，会话已经在收尾，把它收完）。`finish()` 先给 SIGINT 换一个什么都不做的处理器（`_suppress_sigint`）再写 `session/end`；**不置 `SIG_IGN`**——Windows 上被忽略的 Ctrl-C 会在解释器里炸成 `OSError: Signal 2 ignored due to race condition`。`_chat` 不把旧处理器换回去：换回去等于在退出前的缝隙里重新开一个没人接的洞（实测换回去时 5 次里 3 次红）。handler 的判定本身不变。
+
 ### D8 取消类判据在 Windows 上不再 skip
 `CREATE_NEW_PROCESS_GROUP` + `os.kill(pid, signal.CTRL_C_EVENT)` 发真 Ctrl-C，同步点是「先等 stdout 上出现 `> ` 再发信号」。**取舍**：这类判据对时序敏感、可能 flaky。接受并写死同步点，因为现在四条 SIGINT 子进程判据全被 skip，取消这条只有人在 U4 里判——ADR-0025 之后这条不该只靠人。
+
+**本机实测（apply 之后补记）**：上面那个写法在本机**静默无效**——`GenerateConsoleCtrlEvent` 调用成功、子进程毫无反应。跑得通的形状是 `CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP` 起子进程，父进程 `FreeConsole()` → `AttachConsole(child_pid)` → `GenerateConsoleCtrlEvent(CTRL_C_EVENT, pid)`，发完 `AttachConsole(0xFFFFFFFF)` 接回自己（`tests/cli_blackbox.py::_send_ctrl_c`）。另一条本机事实：管道上的阻塞 `sys.stdin.readline()` **不被 Ctrl-C 打断**，信号只在解释器回到字节码边界时才被消费——所以提示符上那条判据在信号之后给 stdin 一个 EOF。
 
 ## Risks & Trade-offs
 
@@ -48,3 +52,4 @@ mock 那一半照不出这一族的原因要说清楚：seam ⑥ 的判据断言
 
 - ~~取消那一行要不要带「取消被置位」~~ 已裁决（2026-10-23）：不带，只剩 `ABORTED`。
 - 那句「降不下去」的说明要不要同时给出建议命令（例如提示 `minihns chat` 新开一个会话）——规格只承诺「说明这件事」，措辞留给实现，UAT 那一半由人判它够不够。
+  - **实现给出的措辞**（apply 之后）：`[降不下去] 连续两段溢出：这份会话已经降不下去，退出并新开一个会话是可选动作。` 建议以「可选动作」的形式给出，不写具体命令行。判据只认 `[降不下去]` 这个前缀、不认整句；UAT 判它够不够，不够就改措辞、判据跟着改前缀。

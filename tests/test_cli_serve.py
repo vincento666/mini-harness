@@ -751,12 +751,15 @@ def test_sigint_in_a_serve_subprocess_exits_with_five(tmp_path: Path) -> None:
         pytest.fail("serve 进程没有进入工具执行段")
 
     process.send_signal(signal.SIGINT)
-    _, stderr = process.communicate(timeout=30)
+    stdout, stderr = process.communicate(timeout=30)
 
     records = _log_records(tmp_path)
     types = [record["type"] for record in records]
+    lines = [line for line in stderr.splitlines() if "ABORTED" in line]
     assert process.returncode == 5
-    assert "ABORTED" in stderr
+    assert len(lines) == 1, "serve 中途取消在 stderr 上该有一行"
+    assert not lines[0].rstrip().endswith(":"), f"那一行不带悬空冒号：{lines[0]!r}"
+    assert "ABORTED" not in stdout, "stdout 归 session id，那一行不在它上面"
     assert "Traceback" not in stderr
     assert types[-4:] == ["error/abort", "turn/end", "segment/end", "session/end"]
     assert records[-1]["payload"]["stop_reason"] == "ABORTED"
@@ -826,14 +829,21 @@ def test_ctrl_c_in_a_serve_subprocess_exits_with_five_without_a_dangling_colon(
         pytest.fail("serve 进程没有进入工具执行段")
 
     _send_ctrl_c(process.pid)
-    _, stderr = process.communicate(timeout=30)
+    stdout, stderr = process.communicate(timeout=30)
 
+    records = _log_records(tmp_path)
     lines = [line for line in stderr.splitlines() if "ABORTED" in line]
     assert len(lines) == 1, "serve 中途取消在 stderr 上该有一行"
     assert not lines[0].rstrip().endswith(":"), f"那一行不带悬空冒号：{lines[0]!r}"
+    assert "ABORTED" not in stdout, "stdout 归 session id，那一行不在它上面"
+    assert lines[0] not in _log_files(tmp_path)[0].read_text(encoding="utf-8").splitlines(), (
+        "那一行不写进事件日志：日志里没有它这么一行"
+    )
+    assert all(is_known_type(str(record["type"])) for record in records), (
+        "也不为它多写一条记录：日志里的类型都在词表里"
+    )
     assert process.returncode == 5
     assert "Traceback" not in stderr
-    records = _log_records(tmp_path)
     types = [record["type"] for record in records]
     assert types[-4:] == ["error/abort", "turn/end", "segment/end", "session/end"]
     assert records[-1]["payload"]["stop_reason"] == "ABORTED"

@@ -254,6 +254,13 @@ def test_a_fence_denied_segment_says_so_on_stderr(tmp_path: Path) -> None:
     notes = [line for line in result.stderr.splitlines() if "[段]" in line]
     assert len(notes) == 1, "段以 FENCE_DENIED 收尾时 stderr 该有一行"
     assert "FENCE_DENIED" in notes[0]
+    codes = [
+        str(record["payload"]["code"])
+        for record in _records(tmp_path)
+        if record["type"] == "error/fence" and "code" in record["payload"]
+    ]
+    assert codes and codes[0] != "FENCE_DENIED"
+    assert codes[0] in notes[0], "那一行含造成它的失败结果的 code，不是只有停止理由"
     assert notes[0] not in result.stdout
     assert notes[0] not in _log_text(tmp_path)
 
@@ -743,7 +750,8 @@ def test_tool_only_turns_leave_no_blank_lines(tmp_path: Path) -> None:
     (tmp_path / "a.md").write_text("工具结果的内容\n", encoding="utf-8")
     entries: list[dict[str, Any]] = [
         {
-            "content": "",
+            # 第三条的 `content` 全是空白：规格说的是「空或全空白」那一半，两条都得喂。
+            "content": "" if index < 3 else "   \n  ",
             "finish_reason": "tool_calls",
             "tool_calls": [{"id": f"c{index}", "name": "read", "arguments": {"file_path": "a.md"}}],
         }
@@ -809,6 +817,10 @@ def test_the_overflow_segment_note_carries_the_detail_once(tmp_path: Path) -> No
     assert len(notes) == 1, "溢出段在 stderr 上只有一行"
     assert notes[0].count("CONTEXT_WINDOW_EXCEEDED") == 1, "停止理由这个词在那一行里只出现一次"
     assert detail in notes[0], "那一行带着日志里那条非空 detail，不是把词表名重复两遍"
+    # 默认窗口 128000、预留 8192：规格那条公式给出的触发线是 54272。判据只认这两个数，不认措辞。
+    numbers = [int(match) for match in re.findall(r"\d+", notes[0])]
+    assert 54272 in numbers, "那一行含触发线那个数"
+    assert any(number > 54272 for number in numbers), "那一行含越线的预算读数"
     assert notes[0] not in result.stdout
     assert notes[0] not in _log_text(tmp_path)
 
@@ -930,6 +942,8 @@ def test_ctrl_c_at_the_prompt_ends_the_session_without_traceback(tmp_path: Path)
     records = _records(tmp_path)
     types = [str(record["type"]) for record in records]
     assert types[-1] == "session/end"
+    assert types.count("session/end") == 1, "连着送几次 Ctrl-C 也不能写出第二条 `session/end`"
+    assert types.count("session/start") == 1
     assert records[-1]["payload"]["stop_reason"] == "MODEL_COMPLETED"
 
 
@@ -948,6 +962,10 @@ def test_chat_prints_the_session_id_on_stderr(tmp_path: Path) -> None:
     assert len(lines) == 1, "会话开始时 stderr 上该有一行 session id"
     assert session_id not in result.stdout
     assert lines[0] not in _log_text(tmp_path)
+    assert all(
+        session_id not in json.dumps(record["payload"], ensure_ascii=False)
+        for record in _records(tmp_path)
+    ), "日志里没有一条记录是为了打印这一行而存在"
 
     replay = _cli("replay", session_id, cwd=tmp_path)
 

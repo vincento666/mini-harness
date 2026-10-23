@@ -34,8 +34,10 @@
 
 ## 4. 两轴 review
 
-- [ ] 4.1 Standards 轴：`cli/main.py` 的改动是否只动了必须动的（内核 `loop/` 与 `context/` 不许动）
-- [ ] 4.2 Spec 轴：delta 里每一条 scenario 对上一条判据，逐条核；对不上的写进 `docs/adr/0002-deferred-refactors.md`
+- [x] 4.1 Standards 轴：`cli/main.py` 的改动是否只动了必须动的（内核 `loop/` 与 `context/` 不许动）
+  - 内核 `loop/` 与 `context/` 没动，`src/` 里只有 `cli/main.py` 一处改动。查出一条打包超数：`a34c63e` 打 1.7 + 2.5 + 1.8 + 2.8，信息里的理由自证应拆——分支未推，当场拆成 `d2395c7` + `5bf86d3`。测试里的重复：溢出那套 fixture 两份，抽成 `_overflow_entries`。记账不动的两条：脚手架（`_cli_console_process` / `_send_ctrl_c` / `_LiveStreams`）早于它的使用者两个提交；挂起 fixture 在 chat 与 serve 两个测试文件各一份。细节记进 `docs/adr/0002-deferred-refactors.md` 的「`fix-chat-screen-feedback` 的两轴审查」一节
+- [x] 4.2 Spec 轴：delta 里每一条 scenario 对上一条判据，逐条核；对不上的写进 `docs/adr/0002-deferred-refactors.md`
+  - 补上六条判据缺口：serve 与 run 那两行各补「不在 stdout、不在日志」两半；run 溢出补「含日志里那句非空 detail」；1.3 补「那一行的整数含触发线 54272、且有一个整数越线」；围栏那条补「含 `error/fence` 里那个 code」；1.2 把第三条工具回合的 `content` 换成全空白；Linux-only 的 serve SIGINT 那条补「恰一行、不以冒号结尾、不在 stdout」（本机 skip）。两条没补的形状（`_chat` 不换回旧处理器、`[降不下去]` 前缀写死在判据里）记进同一节
 
 ## 5. 收尾四项（ADR-0024 + ADR-0025）
 
