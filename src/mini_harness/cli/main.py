@@ -490,8 +490,12 @@ def _print_new_replies(log: EventLog, printed: int) -> int | LogReadFailure:
         if event.type != "model/response" or "purpose" in event.payload:
             continue
         seen += 1
-        if seen > printed:
-            print(str(event.payload.get("content", "")))
+        if seen <= printed:
+            continue
+        # 只带工具调用的回合 `content` 是空串：打出去就是一条空行（design D2）。
+        content = str(event.payload.get("content", ""))
+        if content.strip():
+            print(content)
     return seen
 
 

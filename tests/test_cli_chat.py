@@ -720,3 +720,27 @@ def test_the_prompt_does_not_carry_its_own_newline(tmp_path: Path) -> None:
 
     assert result.returncode == 0
     assert result.stdout == "> 回复正文\n> "
+
+
+def test_tool_only_turns_leave_no_blank_lines(tmp_path: Path) -> None:
+    """seam ⑥ 1.2：只带工具调用的回合 `content` 是空串——它不该在 stdout 上留下空行。
+
+    工具回合越多空行越多，提示符被推到很远下面；UAT 里人报的「工具调用看得见」其实就是这些空行。
+    """
+    (tmp_path / "a.md").write_text("工具结果的内容\n", encoding="utf-8")
+    entries: list[dict[str, Any]] = [
+        {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [{"id": f"c{index}", "name": "read", "arguments": {"file_path": "a.md"}}],
+        }
+        for index in range(1, 4)
+    ]
+    entries.append({"content": "正文", "finish_reason": "stop"})
+    fixture = _fixture(tmp_path, "blanks.json", entries)
+
+    result = _chat("--fixture", fixture, cwd=tmp_path, stdin_text="读一下 a.md\n")
+
+    assert result.returncode == 0
+    assert result.stdout == "> 正文\n> "
+    assert "\n\n" not in result.stdout
