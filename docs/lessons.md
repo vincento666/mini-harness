@@ -404,6 +404,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Next use: 任何时候「修完 bug 全量全绿」都当覆盖缺口处理，补一条能区分对错的判据并确认它在旧实现下红
 - Promotion candidate: 与 AGENTS.md 变异段「存活的算覆盖缺口」同族，本轮不占额度
 - Status: merged into L-039（2026-10-23 消化：「修完全绿」与「绿着到的守卫」是同一族的两个面）
+- Status: merged into L-039（2026-10-23 `add-key-driven-default-provider` 收尾消化：「修完 bug 全量全绿」与「绿着到的守卫」是同一族的两个面，都要在提交信息里如实标注它不是红绿对）
 
 ### L-038
 - Date: 2026-10-21
@@ -453,6 +454,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Promotion candidate: 与 L-036（断言两侧不能同源）同族
 - Status: inbox（家族头：L-041 判值不判在 / L-053 投影规则的另一半。2026-10-24 收 L-053 进来）
 - Status: merged into L-036（2026-10-23 消化：「值错了这条还红吗」与「断言两侧不能同源」是同一条）
+- Status: merged into L-036（2026-10-23 `add-key-driven-default-provider` 收尾消化：与 L-053 一起并入——「值错了这条还红吗」与「投影规则的两半都要判」判的是同一件事）
 
 ### L-042
 - Date: 2026-10-21
@@ -471,6 +473,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Next use: 读用户会手写的文本输入（配置、导入文件）时，先确认它实际会遇到的编码方言；报错文案要指认编码而不是只抄解析器的话
 - Promotion candidate: 与 L-011 家族（错误消息要指认原因）同族
 - Status: rejected（2026-10-23 关闭：它是 Active Lesson 5「文本文件绝不经 PowerShell 往返」的一个实例；BOM 那一半从 M5 挂到现在没有新证据，要动它得先有人裁决配置文件编码方言）
+- Status: closed（2026-10-23 `add-key-driven-default-provider` 收尾消化：它是 Active Lesson 5 的一个实例；配置文件 BOM 那一半从 M5 挂到现在没有新证据，要动它得先有人裁决编码方言，那笔账挂在 ADR-0018 的 Consequences 里）
 
 ### L-044
 - Date: 2026-10-21
@@ -565,6 +568,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Promotion candidate: 与四规 #4「修 bug 先写能复现它的测试」同族，本轮不占 AGENTS.md 额度
 - Status: closed（2026-10-24 `fix-chat-screen-feedback` 收尾消化：`bind()` 的构造与清理顺序已由 `src/mini_harness/cli/serve.py` 的实现与 `test_an_occupied_port_fails_before_the_session_starts` 承载；本 change 没引入新外部依赖，也没有新的失败路径缺口。规则本身是四规 #4，不占额度）
 - Status: rejected（2026-10-23 关闭：规则在四规 #4 与 AGENTS.md 变异段里本来就写着；本轮没有新外部依赖、没有新证据）
+- Status: closed（2026-10-23 `add-key-driven-default-provider` 收尾消化，关闭为 `rejected`：四规 #4 与流程节的变异段本来就写着「先写它失败时怎样」；本轮没动 `httpx` 也没动 `aiohttp`，没有新外部依赖、没有新证据）
 
 ### M7 收尾轮的消化记录（2026-10-22，tasks 10.3）
 
@@ -600,6 +604,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Promotion candidate: 与 L-048 同族（入口常见的形状 ≠ 入口里从没发生过的那件事），本轮不占额度
 - Status: inbox（2026-10-24 补一条本轮证据，方向相反但同源：**判据的形状比人做的事更狠**。1.6 那条判据为了撞进几毫秒的缝隙「一次 Ctrl-C 之后连送到进程退出为止」（40 次），mock 那一半 5/5 全绿；真实端点那一跑按同样形状 3/3 拿到 `0xC000013A`，而「人按一次 Ctrl-C」的形状 3/3 是退出码 0。连发越过了「会话收尾」这条边界、跑到解释器收尾里去了。真实那一半不只是补模型形状，也量出 mock 判据的形状偏离人的动作多远）
 - Status: merged into L-048（2026-10-23 消化：跨段与跨回合是同一件事——新入口里那个从没发生过的形状）
+- Status: merged into L-048（2026-10-23 `add-key-driven-default-provider` 收尾消化：跨段与跨入口是同一件事，都是「这个入口里从没发生过的那件事」）
 
 ### L-053
 - Date: 2026-10-23
@@ -610,6 +615,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Promotion candidate: 与 L-041 同族（判据要判值对不对，不是判有没有一行），本轮不占额度
 - Status: merged into L-041（2026-10-24 `fix-chat-screen-feedback` 收尾消化：同一件事——「有一行」与「重放方看不见它」都是「判据只判了一半」。本轮的两条 chat 判据把两半一起判（1.7 判 id 不在任何一条记录的 payload 里、1.8 判那句说明不在 stdout 也不在日志），没有新形状）
 - Status: merged into L-036（2026-10-23 消化：投影规则的两半都要判，判的还是「这一行的值对不对」）
+- Status: merged into L-036（2026-10-23 `add-key-driven-default-provider` 收尾消化：与 L-041 一起并入 L-036）
 
 ### `fix-compaction-and-context-overflow` 收尾轮的消化记录（2026-10-22，tasks 6.4 与 7.3）
 
@@ -762,6 +768,79 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Evidence: `docs/verification/fix-small-window-compaction-dead-zone-real-endpoint.md`（会话 `00dfb231b9eb445e95d01be466d1d02a` / `bfe6d7ae75eb422fa370cf088b04c304` / `474d8e4c59b64f8ea97304cdfc0fba73`）。
 - Next use: 真端点验收与 UAT runbook 里「把上下文撑大」一律用「模型读一个大文件」，先数文件行数与 `read` 的行数上限，不用巨型 `-p`；窗口数值按回报倒推，不按 `CHARS_PER_TOKEN = 4` 倒推。
 - Promotion candidate: 与 L-049（工具与环境事实，去处是 runbook 写法与 ADR）同族，本轮不占额度
+- Status: inbox
+
+### `add-key-driven-default-provider` 收尾轮的消化记录（2026-10-23，tasks 9.1）
+
+**先消化**（收件箱 15 条 = 上限，收新条之前）。并行分支 `fix-small-window-compaction-dead-zone` 同一轮做的是
+同一批决定，合并时两节的消化记录要核对——两条分支都从 `01573b4` 分叉、都动这一节。
+
+**关闭两条**：L-050 关闭为 `rejected`（四规 #4「修 bug 先写能复现它的测试」与流程节的变异段本来就写着「先写
+它失败时怎样」；本轮没动 `httpx` 也没动 `aiohttp`，没有新外部依赖、没有新证据）；L-043 关闭（它是 Active
+Lesson 5「文本文件绝不经 PowerShell 往返」的一个实例，配置文件 BOM 那一半从 M5 挂到现在没有新证据，要动它
+得先有人裁决配置文件的编码方言——那笔账挂在 ADR-0018 的 Consequences 里，不是收件箱该常驻的事）。
+
+**合并三组**：L-041 与 L-053 并入 L-036——「值错了这条还红吗」与「投影规则的两半都要判」判的是同一件事
+（断言的一侧必须是另一个来源的值）；L-052 并入 L-048——跨段与跨入口是同一件事，都是「这个入口里从没发生过
+的那件事」；L-037 并入 L-039——「修完 bug 全量全绿」与「绿着到的守卫」是同一族的两个面，都要在提交信息里
+如实标注它不是红绿对。
+
+**留存九条，各补一条本轮证据**：L-005（本轮两处词表都有「改它就红」的判据：`PROVIDER_NAMES` 与
+`PROVIDER_PRESETS` 的 parity 判据、help 里那四个数值取自 `loop/settings.py` 的常量而不是 help 自己写一份）、
+L-019（又踩一次：`edit` 的 `old_string` 以下一段的首行作锚，把紧随的 `def` 行吃掉，`test_cli_provider.py`
+返工一次）、L-036（10.1 那条判据两侧不同源：一侧是 `--help` 的输出，一侧是模块常量本身）、L-039（10.3 的
+parity 判据与 10.2 的 WHEN 补强都是**绿着到的**，提交信息里如实标注；10.3 那条的价值在「词表加名字而预设表
+没跟上」时兑现）、L-045（10.5 那两条 scenario 的 THEN 写在 payload 上、mock 侧做不到，写明分工而不是含糊
+过去；`MINIHNS_API_KEY` 在本机进程环境里不存在是实测过的前置条件）、L-047（delta 那句「设置类 flag 的说明
+里写出该项当前的默认」是全称量词，两轴按 flag 清单逐处核对才发现 11 个 flag 一行说明都没有）、L-048（本轮
+的「新入口」不是新命令而是**词表加一个合法名字**：`deepseek` 从非法变合法，旧判据里把它当反例的两处必须动
+——这是「常见形状 vs 从没发生过的那件事」的另一型，新收的 L-058 是它的判据侧）、L-049（两条新实例：变异
+M4 之下 mock 判据真去连 `https://api.openai.com/v1`、全量跑从 3 分 15 秒涨到 4 分 02 秒；变异 runner 解析
+`FAILED` 行写成 `line.split(" ")[0]`，两轮计数逐条相同而第一轮只有计数没有判据名字，重跑一次 12 分钟）。
+L-054 本轮没有新证据：两场真实端点判的都是装配与 payload，不需要「在会话进行中」做的事。
+
+**新收三条**：L-058、L-059、L-060。**编号说明**：L-055 至 L-057 由并行分支
+`fix-small-window-compaction-dead-zone` 占用（那条分支的 L-055 正是「红状态不可达时用临时改回旧实现那一套」）；
+两条分支各自从 `01573b4` 分叉，`docs/lessons.md` 与 `docs/CURRENT.md` 预期冲突，**编号预留比事后重编号便宜**。
+
+**AGENTS.md 一进一出（tasks 9.2）**：一进是技术选型那句「密钥只走环境变量（默认 `DEEPSEEK_API_KEY`，
+`--api-key-env` 指定变量名）」——HEAD 上默认变量随 provider 而定，那句话与代码矛盾；一出是同文件「MVP 分两
+阶段」一节里与文件开头完全重复的两处路径引用（`docs/CURRENT.md` 与 `docs/roadmap.md` 各留一处）。**这不是
+lesson 晋升**：改的是与代码矛盾的一句既有事实。本轮不晋升 lesson——三条候选（L-058 / L-059 / L-060）分别挂在
+Active Lesson 1、L-045、L-049 家族下面，都不够独立到值得挤掉现有五条里的任何一条。
+
+**提交纪律的欠账记进 ADR-0002，不在这里立规则**：`5a17fa2` 打包 5.1–5.4 四个 task 没写理由；变异轮跑在两轴
+之前（连续第三轮）；`settings.py` / `layering.py` / `cli/main.py` 的注释从 `7cc41cd` 起引用 ADR-0027，而那份
+ADR 到 9.2 才提交；已提交的 `tasks.md` 三处引用本分支不存在的 L-055。都在 `docs/adr/0002` 的本 change 两节。
+
+收件箱：12 条（L-005 / L-019 / L-036 / L-039 / L-045 / L-047 / L-048 / L-049 / L-054 / L-058 / L-059 / L-060），
+空闲 3 条。
+
+### L-058
+- Date: 2026-10-23
+- Context: `add-key-driven-default-provider` 组 3——`deepseek` 从「非法 provider 取值」变成合法名字
+- Observation: 扩充一个词表时，既有判据里把这个词当**反例**的地方要逐处核对，而且「还绿」不等于「还判那件事」。本轮两处拿 `deepseek` 当未知 provider 的例子：`test_cli_run.py::test_unknown_provider_is_rejected` 红过一次（`assert 'UNKNOWN_PROVIDER' in 'INVALID_ARGUMENT: 环境变量 DEEPSEEK_API_KEY 未设置或为空…'`），`test_integration.py` 那一处**从来没红过**——它断言退出码 2 与 stderr 含某个词，`deepseek` 变合法之后它靠「缺密钥」拿到同样的退出码与同样的词，判的已经不是那件事了
+- Evidence: 两处例子改成 `--provider claude`（提交 `0e16d66`）；`tests/test_cli_provider.py::test_unknown_provider_is_exit_2_and_creates_no_log` 加一条 `assert "deepseek" in result.stderr`，把新词表钉在反例判据里
+- Next use: 词表加一个值时，grep 那个值在 `tests/` 里的每一处出现，逐处问一句「它现在判的还是那件事吗」；只红过的那处容易找，没红过的那处只能靠 grep
+- Promotion candidate: 与 Active Lesson 1（每个值可达）与 L-047（全称量词按清单核对）同族，本轮不占 AGENTS.md 额度
+- Status: inbox
+
+### L-059
+- Date: 2026-10-23
+- Context: 同一 change 组 2「`MINIHNS_API_KEY` 在场决定默认 provider」的 seam ⑥ 判据
+- Observation: 「环境决定默认值」这类判据不能依赖跑它的那个环境。本机进程环境里 `MINIHNS_API_KEY` 不存在（实测），所以「裸跑默认 mock」在裸 `os.environ` 下会绿——它绿的是本机恰好没有那个变量，不是规则。判据一律显式构造环境：先 `pop("MINIHNS_API_KEY")` 再写假值，本机两个真实变量都不继承
+- Evidence: `tests/test_cli_provider.py` 的 `_env_without_default_key()`；seam ② 那三条直接传环境字典（`{}` / `{"MINIHNS_API_KEY": ""}` / `{"MINIHNS_API_KEY": "sk-…"}`），未设与空串是同一条判据的两半
+- Next use: 任何「读环境」的默认值判据都要跑到「未设」「设为空串」「设为有值」三种环境，且不在判据里继承本机环境；写判据之前先实测本机环境里那个变量在不在
+- Promotion candidate: 与 L-045（判据的前置条件先核实）同族，本轮不占 AGENTS.md 额度
+- Status: inbox
+
+### L-060
+- Date: 2026-10-23
+- Context: 同一 change 的变异轮 M4（把「缺 model 当场失败」那条检查撤掉）
+- Observation: 变异会让 mock 判据真出网。`test_openai_without_a_base_url_does_not_run_on_the_deepseek_default` 与 `test_a_bare_run_with_the_key_present_defaults_to_openai` 的 argv 里没有 `--base-url`，而 openai 预设给的就是 `https://api.openai.com/v1`；撤掉那条检查之后这两条真向公网发请求（假密钥），全量跑从 3 分 15 秒涨到 4 分 02 秒。判据的形状只能这样立——它判的正是「没给 `--base-url` 时用的是 openai 预设的地址」
+- Evidence: `docs/verification/add-key-driven-default-provider-mutation.md` 的代价一节；`.tmp/mutB/results2.json`
+- Next use: 变异轮之前先扫一遍「哪些判据的 argv 里没有端点地址」，把出网代价写进 mutation 文档；CI 无网络时这类变异可能因连接超时而不是因断言失败被杀，那是假阳性，要在记录里写明它被杀的方式
+- Promotion candidate: 与 L-049 家族（本机环境伪装成缺陷）同族，本轮不占 AGENTS.md 额度
 - Status: inbox
 
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）

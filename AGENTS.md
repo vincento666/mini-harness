@@ -79,7 +79,7 @@ uv run coverage report --fail-under=95 --show-missing   # 这三步不可拆，�
 
 ## 技术选型（已定，不要重新讨论）
 
-Python **>= 3.12** · **uv** · `src/mini_harness/` 布局 · **mypy strict** · **pydantic v2** · **httpx** · **aiohttp**（M7 的 serve 服务端与 SSE） · **argparse** · **pytest + pytest-asyncio** · asyncio 单事件循环 · 包名 `mini_harness`，命令名 **`minihns`** · 密钥只走环境变量（默认 `DEEPSEEK_API_KEY`，`--api-key-env` 指定变量名）。
+Python **>= 3.12** · **uv** · `src/mini_harness/` 布局 · **mypy strict** · **pydantic v2** · **httpx** · **aiohttp**（M7 的 serve 服务端与 SSE） · **argparse** · **pytest + pytest-asyncio** · asyncio 单事件循环 · 包名 `mini_harness`，命令名 **`minihns`** · 密钥只走环境变量（默认变量名随 provider 而定：`MINIHNS_API_KEY` 配 `openai`、`DEEPSEEK_API_KEY` 配 `deepseek`；`--api-key-env` 指定变量名）。
 
 ## MVP 分两阶段（ADR-0010）
 

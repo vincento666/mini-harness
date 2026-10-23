@@ -67,6 +67,23 @@ seam ② 两条（`test_the_preset_never_overrides_a_flag_that_was_given`、
 
 四条都被至少一条测试杀死，本轮没有覆盖缺口要补。
 
+## 第二轮（tasks 10.7，两轴之后）
+
+两轴的 10.1 动了 `src/mini_harness/cli/main.py`（给 11 个设置类 flag 补说明），四个变异的锚点逐条核对仍在
+（`layering.py:89` / `layering.py:116` / `main.py:379` / `settings.py:48`），四个变异全部重跑一遍。基线
+**426 passed / 5 skipped**（比第一轮多两条：10.1 的 help 判据与 10.3 的 parity 判据）。
+
+| 变异 | 结果 | 红数 | 该轮全量 | 还原后 `git status --short -- <file>` |
+| --- | --- | --- | --- | --- |
+| M1 预设表里 `openai` 的 `api_key_env` 改回 `DEEPSEEK_API_KEY` | 被杀 | 6 | 6 failed / 420 passed / 5 skipped，3 分 46 秒 | 空 |
+| M2 覆盖规则改成「预设总是覆盖」 | 被杀 | **18** | 18 failed / 408 passed / 5 skipped，2 分 48 秒 | 空 |
+| M3 密钥在场规则改成「总是 mock」 | 被杀 | 2 | 2 failed / 424 passed / 5 skipped，2 分 54 秒 | 空 |
+| M4 缺 model 的检查删掉 | 被杀 | 3 | 3 failed / 423 passed / 5 skipped，3 分 47 秒 | 空 |
+
+**计数与第一轮逐条相同**（6 / 18 / 2 / 3），**没有存活的变异**，也没有新增的存活变异要补判据。M4 出网那两条
+照旧（3 分 47 秒对 M3 的 2 分 54 秒）。这一轮重跑本身就是「变异跑在两轴之前」那笔欠账的代价，已记进
+`docs/adr/0002` 的「`add-key-driven-default-provider` 的提交纪律与流程欠账」一节。
+
 ## 流程欠账（记进 `docs/adr/0002`）
 
 AGENTS.md 的顺序是 apply → 两轴 → 变异 + Learning Gate → 归档。本轮**变异跑在两轴之前**，这是连续第三轮
