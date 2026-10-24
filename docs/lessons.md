@@ -663,7 +663,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Context: `fix-chat-screen-feedback` 的 task 5.1 真实端点验收，判据 1.6（提示符上 Ctrl-C 不留 traceback）那一半
 - Observation: **判据的形状比人做的事更狠，而只有真实那一半量得出来。** 1.6 在 seam ⑥ 的形状是「一次 Ctrl-C，之后连着送到进程自己退出为止」（收尾缝隙只有几毫秒，单次信号撞不稳）：mock 那一半 5/5 全绿、退出码 0。真实端点按同样形状跑 3/3 拿到 `0xC000013A`（STATUS_CONTROL_C_EXIT），而「人按一次 Ctrl-C、之后照常 EOF」的形状 3/3 是退出码 0。两种形状下日志都是 `session/start` → `session/end`、都没有 traceback、`session/end` 都是 `MODEL_COMPLETED`——差别只在最后那几毫秒里有没有 Python 层的 SIGINT 处理器在场（CPython 在解释器收尾中把 SIGINT 换回默认处置）。连发撞毫秒级缝隙会越过「会话收尾」这条边界，把解释器的边界算成产品的失败
 - Evidence: `.tmp/real-endpoint/probe_r6.py` 的对照（burst=0 → 退出码 `[0, 0, 0]`；burst=40 → `[3221225786, 3221225786, 3221225786]`）与 `docs/verification/fix-chat-screen-feedback-real-endpoint.md` 的「R6 那一半」一节；判据本身 `test_ctrl_c_at_the_prompt_ends_the_session_without_traceback`
-- Next use: 要撞毫秒级缝隙的判据优先用可注入的同步点（收尾那段里放一个可等待的事件）而不是连发信号；这类判据跑真实端点时把「单次」与「连发」两种形状都跑一遍、分开记，并写明哪一种对应人的动作
+- Next use: 裁决（2026-10-24 人认可，落字进 `docs/adr/0002-deferred-refactors.md` 的「真实端点那一半的两条裁决」）：撞毫秒级缝隙的判据**按 seam 拆开**——seam ① 进程内用「已经是可等待事件」的 `signals.active` 钉住收尾形状、一个信号都不发，seam ⑥ 只留人的形状（一次 Ctrl-C、退出码 0、无 traceback）；在 seam ⑥ 上造锚点要往生产代码加只有测试会用的钩子，撞四规 #2，要 ADR。规则候选「撞时序缝隙先找可观察锚点，找不到就把判据挪到能判它的那个 seam」按一进一出不占 AGENTS.md 额度，等 M10 真的省下一次漏判再说。这类判据跑真实端点时把「单次」与「连发」两种形状都跑一遍、分开记，并写明哪一种对应人的动作
 - Promotion candidate: 与 L-052 同族（判据的形状与人的动作之间的距离），本轮不占 AGENTS.md 额度
 - Status: inbox
 

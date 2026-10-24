@@ -644,3 +644,10 @@ Spec 轴查出的判据缺口，六条已在 seam ⑥ 补上（2026-10-24）：
 
 - **`_chat` 不再把旧 SIGINT 处理器换回去、收尾那一段换 `_suppress_sigint`**：delta 里没有这一条，也没有判据钉住「不换回去」。它是 D7 在本机 Windows 上的直接后果——换回去等于在退出前的缝隙里重新开一个没人接的洞（实测：换回去时 5 次里 3 次红，`KeyboardInterrupt` 落在 `coverage/cmdline.py` 里，退出码 `0xC000013A`）。处理时点：M10 与「取消的落点」那条一起收；真要钉住它，得先决定跨平台的形状（POSIX 上 `add_signal_handler` 与 Windows 上 `signal.signal` 不是一回事）。
 - **`[降不下去]` 那一行的前缀标记写死在判据里**：规格说措辞留给实现（design 的 open question），判据认前缀。UAT 若改措辞就要同时改判据——这一条是刻意的取舍：不认前缀就只能去数 stderr 上「不是 `[段]` 也不是 session id」的行，那种判据更脆。
+
+### `fix-chat-screen-feedback` 真实端点那一半的两条裁决（2026-10-24，人认可）
+
+两条都在 5.1 那一跑里暴露（`docs/verification/fix-chat-screen-feedback-real-endpoint.md` 的「R6 那一半」）。**本 change 不改代码、不改判据**，只落字。
+
+- **撞时序缝隙的判据按 seam 拆开，处理时点 M10**：毫秒级缝隙那一半改到 seam ①（进程内）判——`signals.active` 已经是「当前活跃段的可等待事件」（`cli/main.py` 每段开局 `cancel = asyncio.Event()`、`signals.active = cancel`），进程内判据 `set()` 它、await 段结束、再断收尾形状，一个信号都不用发；seam ⑥ 只留人的形状（一次 Ctrl-C、退出码 0、无 traceback）。理由与代价：连发 40 次越过了「会话收尾」这条边界、把 CPython 解释器收尾（`_PySignal_Fini` 把 SIGINT 换回默认处置）算成产品的失败；而 seam ⑥ 上造锚点必然要往生产代码里加只有测试会用的钩子，撞四规 #2，要 ADR。规则候选「撞时序缝隙先找可观察锚点，找不到就把判据挪到能判它的那个 seam」按一进一出不占 AGENTS.md 额度，等它在 M10 真的省下一次漏判再说。同族的既有形状：L-034 那三条硬杀判据约束（杀点由日志定位）——同一件事，M15 直接复用。
+- **不让进程在收尾之后硬退出（`os._exit`），按现状结案**：不硬退出没有资源代价，三条代码事实——provider 每次请求一个 `async with httpx.AsyncClient(...)`（`provider/openai_compat.py`），在 `finish()` 之前早就关完；日志每条记录自己 `open("a")` → 写 → 关（`events/writer.py`），`session/end` 在 `finish()` 返回前已在盘上；chat 里没有非守护线程、没有常驻连接。唯一可观察后果是那几毫秒里再来信号就是 `0xC000013A`。硬退出的代价是它跳过 stdout / stderr 的缓冲刷新：stdout 是管道时 `print()` 块缓冲，最后几条模型回复可能丢——为「连发 40 次」这种没人会造的形状，冒这个险不划算。若以后要它，先显式 flush，且那等于给进程第二种结束方式，要新开一份 ADR 写清谁守这条不变量。
