@@ -84,10 +84,10 @@ uv run minihns chat --workspace $WS --session-dir .tmp\uat-c\sessions @EP --wind
 ## 2026-10-24 这一轮 UAT 看见的三条新事实（不在本 change 的六条里）
 
 1. **模型对运行平台无知**。屏幕上出现的那段「我先查看工作区里有哪些文件 / 命令 `ls` 似乎不可用 / 这是一台 Windows shell（cmd）环境」不是 harness 的思考流——mini-harness 没有把 reasoning 与回复分开的通道，provider 一条消息里 `content` 与 `tool_calls` 同时回来，屏幕上打的就是它自己写的 `content`（1.2 的规则：非空就打）。它之所以要试错才发现平台：系统提示只有两句加一份工具名清单（`events/fold.py` 的 `SYSTEM_PROMPT`），**没有任何 OS / shell 事实**，而 `bash` 在 Windows 上走 `cmd.exe /c`（`tools/bash_tools.py`），`ls` / `wc` 必然失败。
-2. **`cmd.exe` 的输出碎成 U+FFFD**。你贴回来的 `tool` 内容里 `'ls' 不是内部或外部命令` 是一串乱码：`bash` 把命令输出按 `utf-8, errors="replace"` 解码（`tools/bash_tools.py`），而 `cmd.exe` 在本机用 GBK。这一条早已记在 `docs/adr/0002-deferred-refactors.md` 第 30 条（「解码选型要人裁决」），本轮是**第一次让人亲眼看见它**。
+2. **`cmd.exe` 的输出碎成 U+FFFD**。你贴回来的 `tool` 内容里 `'ls' 不是内部或外部命令` 是一串乱码：`bash` 把命令输出按 `utf-8, errors="replace"` 解码（`tools/bash_tools.py`），而 `cmd.exe` 在本机用 GBK。这一条记在 `docs/adr/0002-deferred-refactors.md` 第 30 条，**2026-10-22 已按 DSH 结案**——DSH 自己就是 lossy UTF-8（子进程输出 `Buffer.toString("utf8")`，只有文件读是严格的），所以 U+FFFD 是这一层共同的形状、不是 mini 的缺口。本轮是**第一次让人亲眼看见它**；M3 那次实测（34 个 U+FFFD）记在 `docs/verification/m3-bash-concurrency-timeout-manual.md`。
 3. **取消落在「请求还没发出」那道缝里时，屏幕上说的是 provider 出错了**。会话 `2e0e6cde81494d15a1ae4ac91429aff0` 里 Ctrl-C 落在 `context/assembled` 之后、`model/request` 之前：日志是 `error/model`（code `PROVIDER_ABORTED`、detail「取消信号已置位，未发出请求」）→ `turn/end PROVIDER_ERROR` → `segment/end PROVIDER_ERROR`，屏幕上那一行因此是 `[段] PROVIDER_ERROR：PROVIDER_ABORTED 取消信号已置位，未发出请求`。同一只手按下去的 Ctrl-C，落在派发之前是 `[段] ABORTED`，落在请求之前是「provider 出错」。这一条与 `docs/adr/0002-deferred-refactors.md` 里那条没闭合的形状「取消的落点」是同一族。
 
-**裁决（2026-10-24，人）**：第 1、2 条立成一个新 change（平台事实 + `bash` 输出解码选型）。第 3 条是我核对日志时新看见的，我的建议是**不进那个 change**、留在「取消的落点」那一族等 M10——要一起办你说一声。
+**裁决（2026-10-24，人）**：第 1、2 条立成一个新 change `add-platform-facts-to-protected-header`。解码那一半**不动**——保持 lossy UTF-8，与第 30 条 2026-10-22 的结案一致，补的只是平台事实；平台事实**写进 `session/start` 再让 fold 读回**（像 `tools` 与 `append_system_prompt` 那样），不碰 `SYSTEM_PROMPT` 那个内置常量——改常量会让所有旧日志 replay 出 `REPLAY_MISMATCH`。第 3 条是我核对日志时新看见的，我的建议是**不进那个 change**、留在「取消的落点」那一族等 M10——要一起办你说一声。
 
 ## 跑完之后
 
