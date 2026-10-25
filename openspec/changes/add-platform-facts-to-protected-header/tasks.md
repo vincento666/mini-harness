@@ -22,8 +22,8 @@
 
 ## 4. 旧日志不受影响（seam ④ + ⑥）
 
-- [ ] 4.1 红：seam ④ 折叠一份 `session/start` 没有 `platform` 的日志，断言头部只有内置常量、工具块与追加文本，`header_fingerprint` 与该记录里的一致，且没有为缺失事实填入猜测值。绿：缺失时不产出这块。
-- [ ] 4.2 红：seam ⑥ 对一份既有 fixture 日志跑 `minihns replay`，断言每个装配点 `verified … OK`、退出码 0、没有 `REPLAY_MISMATCH`。绿：确认旧日志的字节与折叠结果都不变。
+- [x] 4.1 红：seam ④ 折叠一份 `session/start` 没有 `platform` 的日志，断言头部只有内置常量、工具块与追加文本，`header_fingerprint` 与该记录里的一致，且没有为缺失事实填入猜测值。绿：缺失时不产出这块。
+- [x] 4.2 红：seam ⑥ 对一份既有 fixture 日志跑 `minihns replay`，断言每个装配点 `verified … OK`、退出码 0、没有 `REPLAY_MISMATCH`。绿：确认旧日志的字节与折叠结果都不变。
 
 ## 5. 既有判据对齐（seam ④ / ⑥）
 

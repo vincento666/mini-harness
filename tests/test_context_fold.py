@@ -93,6 +93,19 @@ def test_the_advice_follows_the_recorded_platform() -> None:
     assert windows.header_fingerprint != posix.header_fingerprint
 
 
+def test_a_log_without_the_platform_facts_keeps_the_old_header() -> None:
+    """没有 `platform` 的日志：头部只有内置常量、工具块与追加文本，不填猜测值（ADR-0029）。"""
+    folded = fold(_one_turn_events(tools=("read",), append_system_prompt="额外规则"))
+
+    content = folded.messages[0].content
+    assert content.startswith(SYSTEM_PROMPT)
+    assert "可用工具" in content
+    assert "额外规则" in content
+    assert "运行环境" not in content
+    assert "dir" not in content
+    assert "Get-Content" not in content
+
+
 def test_the_environment_block_says_how_command_output_is_decoded() -> None:
     """那一块把「输出按 UTF-8 解码」讲给模型听：乱码不再是「工具坏了」（ADR-0029）。"""
     header = (
