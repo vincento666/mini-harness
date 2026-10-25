@@ -27,12 +27,15 @@
 
 ## 5. 既有判据对齐（seam ④ / ⑥）
 
-- [ ] 5.1 跑全量测试，把因头部多一块而红的判据逐条改判据（不改实现来迁就 fixture）；提交信息里列出改了哪几条、为什么。门禁四道全绿。
-- [ ] 5.2 复核小窗口那一族的判据（`--window 70000 --reserve 100` 那条路）：触发线公式不变，若某条判据因头部变多而失效，只改那条判据的窗口数值并写明理由。门禁四道全绿。
+- [x] 5.1 跑全量测试，把因头部多一块而红的判据逐条改判据（不改实现来迁就 fixture）；提交信息里列出改了哪几条、为什么。门禁四道全绿。
+  - 实况：一条都没红。既有会话骨架（`tool_harness.build_session_env` 与各处 `SessionSettings`）走的是「没有 platform 就是没有这份事实」，头部因此与改动前逐字节相同——这既是设计（旧日志不变），也意味着头部那一块的形状只在 seam ⑥ 的黑盒与新建的 seam ④ 判据里被钉住。全量 431 passed / 5 skipped，TOTAL 1971 93 95%。
+- [x] 5.2 复核小窗口那一族的判据（`--window 70000 --reserve 100` 那条路）：触发线公式不变，若某条判据因头部变多而失效，只改那条判据的窗口数值并写明理由。门禁四道全绿。
+  - 实况：触发线公式没动，小窗口那一族全绿，一条都没改。头部那块大约两百来字节，对 `--window 70000 --reserve 100` 那种触发线 4364 的场合可以忽略；预算判据走的也是没有 platform 的骨架，所以量到的还是改动前的形状。
 
 ## 6. 收尾四项
 
-- [ ] 6.1 真实端点验收（完成判据的第二半，ADR-0024）：接上真实端点跑一次 `chat`，断言模型收到的头部里有这两个事实（从 `context/assembled` 里读），观察记进 `docs/verification/add-platform-facts-to-protected-header-real-endpoint.md`。
+- [x] 6.1 真实端点验收（完成判据的第二半，ADR-0024）：接上真实端点跑一次 `chat`，断言模型收到的头部里有这两个事实（从 `context/assembled` 里读），观察记进 `docs/verification/add-platform-facts-to-protected-header-real-endpoint.md`。
+  - 实况：会话 `4d05e370b49247e596c566a3abc917ec`，头部三块齐（内置常量 → 工具块 → 运行环境块），模型第一次调用就 `bash {"command": "dir"}`，一次成功、没有试错正文；它没选 `glob`，头部建议与工具描述在同一次装配里竞争——记进那篇文档的「三条判读」，留给人裁。
 - [ ] 6.2 UAT 验收（完成判据的第三半，ADR-0025，人跑）：按 `docs/verification/add-platform-facts-to-protected-header-uat.md` 的场次跑，观察表填完才算通过；那张表没填完不得归档、不得合入 `main`。
 - [ ] 6.3 变异测试一轮：改坏一处实现（例如把这块的位置挪到追加文本之后、把缺失事实填成猜测值、把 `shell` 换成 CLI 自己判平台、把建议改回读 `process.platform`），跑全量，记进 `docs/verification/add-platform-facts-to-protected-header-mutation.md`，还原并确认回到基线（还原前先看 `git status`）。
 - [ ] 6.4 Learning Gate：扫本轮证据，可复用教训写进 `docs/lessons.md` 收件箱，没有信号就写 `NO-PROMOTION`；ADR-0029（平台事实与本平台建议）与 ADR-0030（原生工具优先、不拿脚本兜底）已在 propose 这一轮落字，收尾时核对它们是否还成立、必要时加 `Status`；把「保持 lossy UTF-8」这条裁决补进 `docs/adr/0002-deferred-refactors.md` 第 30 条。
