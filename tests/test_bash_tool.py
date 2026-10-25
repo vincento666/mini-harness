@@ -83,6 +83,12 @@ async def test_bash_names_the_shell_it_actually_runs_through(tmp_path: Path) -> 
         assert shell_form() == "/bin/sh -c"
 
 
+def test_the_shell_is_not_a_tool_argument() -> None:
+    """`shell` 形态不是入参：模型不能挑 shell，它由平台决定（ADR-0029）。"""
+    spec = next(spec for spec in _registry().specs() if spec.name == "bash")
+    assert set(spec.parameters["properties"]) == {"command", "timeout_seconds"}
+
+
 async def test_read_only_denies_bash_and_the_command_never_runs(tmp_path: Path) -> None:
     command = _script(tmp_path, "make_marker.py", _MARKER)
     outcome = await dispatch_call(

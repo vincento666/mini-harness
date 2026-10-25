@@ -103,6 +103,8 @@ def bash_tool_definitions() -> list[ToolDefinition]:
             description=(
                 "在工作区根跑一条 shell 命令并返回它的输出。"
                 "命令自己的退出码非 0 不是 harness 失败，它出现在结果内容里。"
+                "列目录用 glob、搜内容用 grep、读文件用 read：不要用 ls / grep / cat 这类等价命令，"
+                "也不要临时写脚本。"
             ),
             args_model=BashArgs,
             mutates=True,
