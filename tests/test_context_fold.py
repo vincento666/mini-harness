@@ -89,7 +89,7 @@ def test_the_advice_follows_the_recorded_platform() -> None:
     assert "findstr" in windows_header
     assert "ls -R" not in windows_header
     assert "ls -R" in posix_header
-    assert "grep" in posix_header
+    assert "dir" not in posix_header
     assert windows.header_fingerprint != posix.header_fingerprint
 
 

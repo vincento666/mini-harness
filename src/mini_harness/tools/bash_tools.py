@@ -19,13 +19,18 @@ MAX_TIMEOUT_SECONDS = 600
 OUTPUT_LIMIT_BYTES = 16 * 1024
 TRUNCATION_MARK = "[输出已截断]"
 
-SHELL_FORM_WINDOWS = "cmd.exe /c"
 SHELL_FORM_POSIX = "/bin/sh -c"
 
 
 def shell_form() -> str:
-    """`bash` 实际用来执行命令的 shell 形态：平台在起进程时已经定了，这里把它说出来（ADR-0009）。"""
-    return SHELL_FORM_WINDOWS if sys.platform == "win32" else SHELL_FORM_POSIX
+    """`bash` 实际用来执行命令的 shell 形态（ADR-0009）。
+
+    不写死：Windows 上 `create_subprocess_shell` 用的是 `COMSPEC`，所以这里也读它——被改写时
+    记录值才跟实际执行的那条一致；POSIX 一边 `create_subprocess_shell` 固定落 `/bin/sh`。
+    """
+    if sys.platform == "win32":
+        return f"{os.path.basename(os.environ.get('COMSPEC', 'cmd.exe'))} /c"
+    return SHELL_FORM_POSIX
 
 
 def platform_facts() -> dict[str, str]:
@@ -110,9 +115,9 @@ def bash_tool_definitions() -> list[ToolDefinition]:
         ToolDefinition(
             name="bash",
             description=(
-                "在工作区根跑一条 shell 命令并返回它的输出。"
+                "在工作区根跑一条真命令（构建、测试、版本控制、进程）并返回它的输出。"
                 "命令自己的退出码非 0 不是 harness 失败，它出现在结果内容里。"
-                "列目录用 glob、搜内容用 grep、读文件用 read：不要用 ls / grep / cat 这类等价命令，"
+                "列文件用 glob、搜内容用 grep、读文件用 read：不要用 ls / grep / cat 这类等价命令，"
                 "也不要临时写脚本。"
             ),
             args_model=BashArgs,

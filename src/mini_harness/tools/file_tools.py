@@ -247,7 +247,8 @@ def file_tool_definitions() -> list[ToolDefinition]:
             name="glob",
             description=(
                 "按 glob 模式匹配工作区里的文件，返回相对路径，按修改时间从新到旧。"
-                "要列目录就用它：不要用 bash 里的 ls 这类等价命令，也不必临时写脚本。"
+                "要列文件就用它（只列文件，不含子目录）：不要用 bash 里的 ls 这类等价命令，"
+                "也不必临时写脚本。"
             ),
             args_model=GlobArgs,
             mutates=False,

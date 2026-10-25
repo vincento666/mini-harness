@@ -653,3 +653,14 @@ Spec 轴查出的判据缺口，六条已在 seam ⑥ 补上（2026-10-24）：
 
 - **撞时序缝隙的判据按 seam 拆开，处理时点 M10**：毫秒级缝隙那一半改到 seam ①（进程内）判——`signals.active` 已经是「当前活跃段的可等待事件」（`cli/main.py` 每段开局 `cancel = asyncio.Event()`、`signals.active = cancel`），进程内判据 `set()` 它、await 段结束、再断收尾形状，一个信号都不用发；seam ⑥ 只留人的形状（一次 Ctrl-C、退出码 0、无 traceback）。理由与代价：连发 40 次越过了「会话收尾」这条边界、把 CPython 解释器收尾（`_PySignal_Fini` 把 SIGINT 换回默认处置）算成产品的失败；而 seam ⑥ 上造锚点必然要往生产代码里加只有测试会用的钩子，撞四规 #2，要 ADR。规则候选「撞时序缝隙先找可观察锚点，找不到就把判据挪到能判它的那个 seam」按一进一出不占 AGENTS.md 额度，等它在 M10 真的省下一次漏判再说。同族的既有形状：L-034 那三条硬杀判据约束（杀点由日志定位）——同一件事，M15 直接复用。
 - **不让进程在收尾之后硬退出（`os._exit`），按现状结案**：不硬退出没有资源代价，三条代码事实——provider 每次请求一个 `async with httpx.AsyncClient(...)`（`provider/openai_compat.py`），在 `finish()` 之前早就关完；日志每条记录自己 `open("a")` → 写 → 关（`events/writer.py`），`session/end` 在 `finish()` 返回前已在盘上；chat 里没有非守护线程、没有常驻连接。唯一可观察后果是那几毫秒里再来信号就是 `0xC000013A`。硬退出的代价是它跳过 stdout / stderr 的缓冲刷新：stdout 是管道时 `print()` 块缓冲，最后几条模型回复可能丢——为「连发 40 次」这种没人会造的形状，冒这个险不划算。若以后要它，先显式 flush，且那等于给进程第二种结束方式，要新开一份 ADR 写清谁守这条不变量。
+
+## `add-platform-facts-to-protected-header` 两轴审查的账（2026-10-25，只记账）
+
+两条轴各跑了一个子代理，问题分两类：**提交与流程的偏差**（已就在本轮的工作里，不改写历史）与**代码结构性欠账**（这条 change 不改，留处理时点）。
+
+- **提交纪律三处**：`e7b6c92` 打包 3.1–3.4 四个 task（超 3 且没写打包理由——它们是一次 `fold` 改动上的四条判据，拆开会让中间态无法单独验证）；`9d3fb3d`（5.1–5.2 + 6.1）与 `b25f942`（3.5 + 6.2）跨分组打包；`fd8a485` 是「提交纪律更正」，没有 task 编号；`3561db4`、`fd8a485` 的门禁行写的是「沿用 / 未跑」，不是 ADR-0002 要的门禁实测行。**只记账，不改写历史**；下一次只 stage 明确列出的路径、提交前看 `git status --short` 的 `A` 行。
+- **折叠层持有 shell 知识（Feature Envy）**：`events/fold.py` 认 `"cmd.exe"`、给出 `dir` / `findstr` / `ls -R` 这些平台建议，而这份知识本来住在 `tools/bash_tools.py`。方向是把「这个平台的那半句建议」也由 `bash_tools` 提供、随 `session/start` 一起记下来，fold 只搬运；**处理时点 M10**（要动 payload 形状，得连着重新论证一次「旧日志不变」那条判据）。
+- **`{"os", "shell"}` 以裸 dict 穿三层（Primitive Obsession / Data Clumps）**：CLI → `session/start` → fold，`get("os", "")` 会造出一条空事实。ADR-0002 第 14 条为同形的三条 `str` 立过 `ProviderEndpoint`，这里值得一个 `PlatformFacts` 值对象；**处理时点 M10**。
+- **`SessionSettings.platform = None` 的默认只为测试保留旧形状**：生产唯一写入方（`cli/main.py`）永远填值，seam ①–⑤ 的骨架都不填，于是「5.1 一条既有判据都没红」——那块形状只在 seam ⑥ 被钉住。**要补一条 seam ① 的判据让运行路径也见到那块**；处理时点：本 change 的收尾轮（若预算够）否则 M10。
+- **判据里的重复**：`_free_port` 在 `tests/test_cli_run.py` 与 `tests/test_cli_serve.py` 各一份；`tests/test_cli_replay.py` 的 `emit` 与同文件后面的 helper 重复；`test_context_fold.py` 里 `{"os": "nt", "shell": "cmd.exe /c"}` 出现四次——值得提成 fixture。**处理时点：下一次动这些测试文件时顺手收**。
+- **变异轮只跑定向判据**：AGENTS.md 写的是「跑全量」，本轮九个变异跑的是定向，只在还原之后跑了一次全量。上一轮 `fix-chat-screen-feedback` 用「3 条代表跑全量、差 0 条」补过同样的测量；本轮补测 M3 与 M9 两条代表，结果记进 `docs/verification/add-platform-facts-to-protected-header-mutation.md`。

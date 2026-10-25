@@ -76,7 +76,7 @@ def test_the_registry_holds_exactly_the_five_file_tools() -> None:
 def test_the_native_file_tools_say_they_are_the_way_to_do_it() -> None:
     """三个原生工具的描述各带一句「什么时候用我」，并点明不必用 `bash` 的等价命令（ADR-0030）。"""
     by_name = {tool.name: tool for tool in file_tool_definitions()}
-    expected = {"glob": "列目录", "grep": "搜内容", "read": "读文件"}
+    expected = {"glob": "列文件", "grep": "搜内容", "read": "读文件"}
 
     for name, purpose in expected.items():
         description = by_name[name].description

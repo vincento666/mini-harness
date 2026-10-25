@@ -33,7 +33,7 @@ PROTECTED_EVENT_TYPES: frozenset[str] = frozenset({"session/start", "compaction/
 # 建议先给原生工具、再给这个平台的 shell 命令：2026-10-25 的 UAT 里，
 # 模型先按描述用了 glob、又按这句用了 dir，然后自己把这一步撤回。
 # 同一件事不能有两处说法（ADR-0030）。
-_NATIVE_ADVICE = "列目录用 glob、搜内容用 grep、读文件用 read。"
+_NATIVE_ADVICE = "列文件用 glob、搜内容用 grep、读文件用 read。"
 _WINDOWS_SHELL_ADVICE = "真要跑 shell 命令时，用 dir / findstr / Get-Content。"
 _POSIX_SHELL_ADVICE = "真要跑 shell 命令时，用 ls -R / tail。"
 _DECODE_NOTE = "命令输出按 UTF-8 解码，不是合法 UTF-8 的字节会显示为替换字符。"

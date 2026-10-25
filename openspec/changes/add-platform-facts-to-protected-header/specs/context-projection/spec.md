@@ -18,7 +18,7 @@
 - **THEN** 追加文本仍在运行环境块之后，头部里没有替换掉 `os` 与 `shell` 的入口
 
 ### Requirement: 运行环境块先点原生工具、再点本平台的 shell 命令
-运行环境块 SHALL 在事实之外带一句建议：**先**点出原生工具（列目录用 `glob`、搜内容用 `grep`、读文件用 `read`），**再**点出这个平台的 shell 命令——记下来的 `shell` 是 `cmd.exe` 一类时给 `dir` / `findstr` / `Get-Content`，是 POSIX shell 时给 `ls -R` / `tail`。这句建议 MUST 由记下来的 `platform` 推出，MUST NOT 看折叠那一刻所在机器的平台——否则换一台机器重放会得到不同的头部。
+运行环境块 SHALL 在事实之外带一句建议：**先**点出原生工具（列文件用 `glob`、搜内容用 `grep`、读文件用 `read`），**再**点出这个平台的 shell 命令——记下来的 `shell` 是 `cmd.exe` 一类时给 `dir` / `findstr` / `Get-Content`，是 POSIX shell 时给 `ls -R` / `tail`。这句建议 MUST 由记下来的 `platform` 推出，MUST NOT 看折叠那一刻所在机器的平台——否则换一台机器重放会得到不同的头部。
 
 #### Scenario: 原生工具排在 shell 命令之前
 - **WHEN** 折叠一份带 `platform` 的日志
@@ -30,7 +30,7 @@
 
 #### Scenario: POSIX 事实给 POSIX 建议
 - **WHEN** 折叠一份 `platform` 记着 `os` 为 `posix`、`shell` 为 `/bin/sh -c` 的日志
-- **THEN** 运行环境块里点出 `ls -R`、`grep`、`tail`，且没有把 `dir` 说成可用命令
+- **THEN** 运行环境块里点出 `ls -R`、`tail`（`grep` 已在前一句原生工具里点过），且没有把 `dir` 说成可用命令
 
 ### Requirement: 没有平台事实的旧日志头部逐字节不变
 当 `session/start` 的 payload 里没有 `platform` 时，系统 SHALL 不产出运行环境块，折叠出来的头部只有内置系统提示、工具块与追加文本。系统 MUST NOT 为缺失的平台事实填入猜测值。
