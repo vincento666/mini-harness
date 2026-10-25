@@ -17,8 +17,12 @@
 - **WHEN** 运行时传入 `--append-system-prompt "额外规则"`
 - **THEN** 追加文本仍在运行环境块之后，头部里没有替换掉 `os` 与 `shell` 的入口
 
-### Requirement: 运行环境块带本平台的命令建议
-运行环境块 SHALL 在事实之外带一句本平台的命令建议：记下来的 `shell` 是 `cmd.exe` 一类时点出目录、搜内容、看文件该用哪些命令（`dir` / `findstr` / `Get-Content`），是 POSIX shell 时点出对应的那些（`ls -R` / `grep` / `tail`）。这句建议 MUST 由记下来的 `platform` 推出，MUST NOT 看折叠那一刻所在机器的平台——否则换一台机器重放会得到不同的头部。
+### Requirement: 运行环境块先点原生工具、再点本平台的 shell 命令
+运行环境块 SHALL 在事实之外带一句建议：**先**点出原生工具（列目录用 `glob`、搜内容用 `grep`、读文件用 `read`），**再**点出这个平台的 shell 命令——记下来的 `shell` 是 `cmd.exe` 一类时给 `dir` / `findstr` / `Get-Content`，是 POSIX shell 时给 `ls -R` / `tail`。这句建议 MUST 由记下来的 `platform` 推出，MUST NOT 看折叠那一刻所在机器的平台——否则换一台机器重放会得到不同的头部。
+
+#### Scenario: 原生工具排在 shell 命令之前
+- **WHEN** 折叠一份带 `platform` 的日志
+- **THEN** 运行环境块里 `glob` 出现的位置在 `dir`（记 posix 时是 `ls -R`）之前，两处建议不构成「同一件事两个说法」
 
 #### Scenario: Windows 事实给 Windows 建议
 - **WHEN** 折叠一份 `platform` 记着 `os` 为 `nt`、`shell` 为 `cmd.exe /c` 的日志（判据跑在哪个平台上都一样）

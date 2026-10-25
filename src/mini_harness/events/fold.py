@@ -30,14 +30,19 @@ PROTECTED_EVENT_TYPES: frozenset[str] = frozenset({"session/start", "compaction/
 # 运行环境块（ADR-0029）：事实、本平台的命令建议、一句关于解码的说明。
 # 建议只由记下来的 `shell` 推出，不看折叠那一刻所在机器的平台——否则同一份日志在两台机器上重放
 # 会产出不同的头部，M5 的逐点重放判据就守不住了。
-_WINDOWS_ADVICE = "列目录用 dir、搜内容用 findstr、看文件用 Get-Content；不要用 ls / grep / cat。"
-_POSIX_ADVICE = "列目录用 ls -R、搜内容用 grep、看文件用 tail；不要用 dir / findstr / Get-Content。"
+# 建议先给原生工具、再给这个平台的 shell 命令：2026-10-25 的 UAT 里，
+# 模型先按描述用了 glob、又按这句用了 dir，然后自己把这一步撤回。
+# 同一件事不能有两处说法（ADR-0030）。
+_NATIVE_ADVICE = "列目录用 glob、搜内容用 grep、读文件用 read。"
+_WINDOWS_SHELL_ADVICE = "真要跑 shell 命令时，用 dir / findstr / Get-Content。"
+_POSIX_SHELL_ADVICE = "真要跑 shell 命令时，用 ls -R / tail。"
 _DECODE_NOTE = "命令输出按 UTF-8 解码，不是合法 UTF-8 的字节会显示为替换字符。"
 
 
 def _environment_block(os_name: str, shell: str) -> str:
-    advice = _WINDOWS_ADVICE if "cmd.exe" in shell else _POSIX_ADVICE
-    return f"运行环境：os={os_name}，bash 经 {shell} 执行。{advice}{_DECODE_NOTE}"
+    shell_advice = _WINDOWS_SHELL_ADVICE if "cmd.exe" in shell else _POSIX_SHELL_ADVICE
+    head = f"运行环境：os={os_name}，bash 经 {shell} 执行。"
+    return f"{head}{_NATIVE_ADVICE}{shell_advice}{_DECODE_NOTE}"
 
 
 class Message(BaseModel):

@@ -19,6 +19,7 @@
 - [x] 3.2 红：seam ④ 断言「命令输出按 UTF-8 解码、非法字节显示为替换字符」那句说明随这块一起出现，且它是关于 harness 自己的说明、不是猜测出来的平台事实。绿：把它固定在那一块里。
 - [x] 3.3 红：seam ④ 逐点重放一份带 `platform` 的新日志，断言每个装配点与该记录逐字段相等。绿：确认派生只依赖该点之前的前缀。
 - [x] 3.4 红：seam ④ 同一份会话骨架分别记 `os: nt` + `shell: cmd.exe /c` 与记 `os: posix` + `shell: /bin/sh -c`，断言前者点出 `dir` / `findstr` / `Get-Content`、后者点出 `ls -R` / `grep` / `tail`，且各自不把对方的命令说成可用；判据跑在哪个平台上都一样（ADR-0029）。绿：建议由 `platform` 推出，不读 `process.platform`。
+- [x] 3.5 红（2026-10-25 UAT 之后加的一条）：seam ④ 断言那块建议里 `glob` 的位置在 `dir`（记 posix 时是 `ls -R`）之前——原生工具排在 shell 命令之前，同一件事不能两处说法。绿：改两句建议的措辞，事实与建议的推出方向不变。门禁四道全绿。
 
 ## 4. 旧日志不受影响（seam ④ + ⑥）
 
@@ -36,7 +37,8 @@
 
 - [x] 6.1 真实端点验收（完成判据的第二半，ADR-0024）：接上真实端点跑一次 `chat`，断言模型收到的头部里有这两个事实（从 `context/assembled` 里读），观察记进 `docs/verification/add-platform-facts-to-protected-header-real-endpoint.md`。
   - 实况：会话 `4d05e370b49247e596c566a3abc917ec`，头部三块齐（内置常量 → 工具块 → 运行环境块），模型第一次调用就 `bash {"command": "dir"}`，一次成功、没有试错正文；它没选 `glob`，头部建议与工具描述在同一次装配里竞争——记进那篇文档的「三条判读」，留给人裁。
-- [ ] 6.2 UAT 验收（完成判据的第三半，ADR-0025，人跑）：按 `docs/verification/add-platform-facts-to-protected-header-uat.md` 的场次跑，观察表填完才算通过；那张表没填完不得归档、不得合入 `main`。
+- [x] 6.2 UAT 验收（完成判据的第三半，ADR-0025，人跑）：按 `docs/verification/add-platform-facts-to-protected-header-uat.md` 的场次跑，观察表填完才算通过；那张表没填完不得归档、不得合入 `main`。
+  - 实况（2026-10-25，人跑 + agent 核对日志，人确认通过）：五场跑完、表填满——U1/U1b/U2 同一场 `b245f717…`（第一次就用 `glob`、13 回合、无 `ls`；U1b 里它逐字复述了工具描述那句引导）、U3 旧日志 `b861ceee…` 6 个装配点全 OK 且新日志三条也全 OK、U4 两场 `7d71754f…` / `d329a3e6…` 头部顺序正确且回答是中文。UAT 抓到的两处竞争（头部那句与描述那句）已按 3.5 改掉。
 - [x] 6.3 变异测试一轮：改坏一处实现（例如把这块的位置挪到追加文本之后、把缺失事实填成猜测值、把 `shell` 换成 CLI 自己判平台、把建议改回读 `process.platform`），跑全量，记进 `docs/verification/add-platform-facts-to-protected-header-mutation.md`，还原并确认回到基线（还原前先看 `git status`）。
   - 实况：9 个变异 **9/9 被杀、0 存活**，定向跑（脚手架 `.tmp/mutation/run_platform_mutants.py`，字节级还原）；还原后跑了一次全量确认回到基线：430 passed / 5 skipped / 1 failed，那 1 条是 L-055 的已知 Windows Ctrl-C 偶发（单独复跑 1 passed）。记下两条读变异的事实：同一处逻辑的多个 return 各是一个变异口（M2 只压到兜底分支，M9 才压到「`session/start` 在但没有 `platform`」那条常走的路）；M3 能被杀靠的是判据不看本机平台。
 - [x] 6.4 Learning Gate：扫本轮证据，可复用教训写进 `docs/lessons.md` 收件箱，没有信号就写 `NO-PROMOTION`；ADR-0029（平台事实与本平台建议）与 ADR-0030（原生工具优先、不拿脚本兜底）已在 propose 这一轮落字，收尾时核对它们是否还成立、必要时加 `Status`；把「保持 lossy UTF-8」这条裁决补进 `docs/adr/0002-deferred-refactors.md` 第 30 条。

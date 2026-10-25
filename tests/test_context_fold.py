@@ -106,6 +106,19 @@ def test_a_log_without_the_platform_facts_keeps_the_old_header() -> None:
     assert "Get-Content" not in content
 
 
+def test_the_advice_names_the_native_tools_before_the_shell_commands() -> None:
+    """建议先给原生工具、再给这个平台的 shell 命令：同一件事不能有两处说法（ADR-0030）。"""
+    cases = (
+        ({"os": "nt", "shell": "cmd.exe /c"}, "dir"),
+        ({"os": "posix", "shell": "/bin/sh -c"}, "ls -R"),
+    )
+    for platform, shell_word in cases:
+        header = fold(_one_turn_events(platform=platform)).messages[0].content
+
+        assert "glob" in header
+        assert header.index("glob") < header.index(shell_word)
+
+
 def test_the_environment_block_says_how_command_output_is_decoded() -> None:
     """那一块把「输出按 UTF-8 解码」讲给模型听：乱码不再是「工具坏了」（ADR-0029）。"""
     header = (
