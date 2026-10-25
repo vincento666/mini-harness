@@ -37,10 +37,11 @@
 
 - [x] 6.1 真实端点验收（完成判据的第二半，ADR-0024）：接上真实端点跑一次 `chat`，断言模型收到的头部里有这两个事实（从 `context/assembled` 里读），观察记进 `docs/verification/add-platform-facts-to-protected-header-real-endpoint.md`。
   - 实况：会话 `4d05e370b49247e596c566a3abc917ec`，头部三块齐（内置常量 → 工具块 → 运行环境块），模型第一次调用就 `bash {"command": "dir"}`，一次成功、没有试错正文；它没选 `glob`，头部建议与工具描述在同一次装配里竞争——记进那篇文档的「三条判读」，留给人裁。
+  - 第二轮（3.5 改完建议之后，2026-10-25 晚）：会话 `8a1d826fb0be42a89df3878ce1785ab0`，同 prompt 同工作区，**turns=2**、只有两条 `glob`（`*` 与 `**/*`）、一次 `bash` 都没有。从 13 回合（还烧出一次 `MAX_TURNS`）降到 2 回合——那是「先原生工具、后平台 shell 命令」那句措辞的可观察效果。
 - [x] 6.2 UAT 验收（完成判据的第三半，ADR-0025，人跑）：按 `docs/verification/add-platform-facts-to-protected-header-uat.md` 的场次跑，观察表填完才算通过；那张表没填完不得归档、不得合入 `main`。
   - 实况（2026-10-25，人跑 + agent 核对日志，人确认通过）：五场跑完、表填满——U1/U1b/U2 同一场 `b245f717…`（第一次就用 `glob`、13 回合、无 `ls`；U1b 里它逐字复述了工具描述那句引导）、U3 旧日志 `b861ceee…` 6 个装配点全 OK 且新日志三条也全 OK、U4 两场 `7d71754f…` / `d329a3e6…` 头部顺序正确且回答是中文。UAT 抓到的两处竞争（头部那句与描述那句）已按 3.5 改掉。
 - [x] 6.3 变异测试一轮：改坏一处实现（例如把这块的位置挪到追加文本之后、把缺失事实填成猜测值、把 `shell` 换成 CLI 自己判平台、把建议改回读 `process.platform`），跑全量，记进 `docs/verification/add-platform-facts-to-protected-header-mutation.md`，还原并确认回到基线（还原前先看 `git status`）。
-  - 实况：9 个变异 **9/9 被杀、0 存活**，定向跑（脚手架 `.tmp/mutation/run_platform_mutants.py`，字节级还原）；还原后跑了一次全量确认回到基线：430 passed / 5 skipped / 1 failed，那 1 条是 L-055 的已知 Windows Ctrl-C 偶发（单独复跑 1 passed）。记下两条读变异的事实：同一处逻辑的多个 return 各是一个变异口（M2 只压到兜底分支，M9 才压到「`session/start` 在但没有 `platform`」那条常走的路）；M3 能被杀靠的是判据不看本机平台。
+  - 实况：9 个变异 **9/9 被杀、0 存活**，定向跑（脚手架 `.tmp/mutation/run_platform_mutants.py`，字节级还原）；还原后跑了一次全量确认回到基线：430 passed / 5 skipped / 1 failed，那 1 条是 L-055 的已知 Windows Ctrl-C 偶发（单独复跑 1 passed）。记下两条读变异的事实：同一处逻辑的多个 return 各是一个变异口（M2 只压到兜底分支，M9 才压到「`session/start` 在但没有 `platform`」那条常走的路）；M3 能被杀靠的是判据不看本机平台。**两轴审查之后补测了 M3 与 M9 的全量**：红数与定向完全相同（各 2 条），差 0——AGENTS.md 要的「跑全量」在这一轮用两条代表补齐了。
 - [x] 6.4 Learning Gate：扫本轮证据，可复用教训写进 `docs/lessons.md` 收件箱，没有信号就写 `NO-PROMOTION`；ADR-0029（平台事实与本平台建议）与 ADR-0030（原生工具优先、不拿脚本兜底）已在 propose 这一轮落字，收尾时核对它们是否还成立、必要时加 `Status`；把「保持 lossy UTF-8」这条裁决补进 `docs/adr/0002-deferred-refactors.md` 第 30 条。
   - 实况：新收 L-056（mypy 的平台窄化只认 `sys.platform` 字面量）与 L-057（这台机器的 PowerShell 5.1 写 UTF-8 带 BOM）；给 L-055 与 L-019 补了证据；**NO-PROMOTION**（两条都不是新的全局规则，额度没动）。ADR-0029 / 0030 仍然成立、没加 `Status`；ADR-0002 第 30 条补了一行「结案不动，补的是让模型知道为什么」。收件箱 15 条，到上限。
 

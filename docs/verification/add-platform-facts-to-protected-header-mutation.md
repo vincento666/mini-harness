@@ -29,6 +29,17 @@
 1. **M2 与 M9 是两个不同的口子。** 最初只写了 M2（兜底分支），它杀掉的是排序类判据——因为 `session/start` 存在时走的是另一条 return。真正危险的是「`session/start` 在、但里面没有 `platform`」这条最常走的路，那要 M9 才压到；它一压，正好是那两条「旧日志不变」的判据红。**同一处逻辑的多个 return 各是一个变异口，不能只改一个就以为覆盖了。**
 2. **M3 能被杀，靠的是判据不看本机平台。** 判据在一台 Windows 机器上跑一份「记着 `posix`」的日志，如果实现读 `process.platform`，它就会吐出 Windows 建议——这条判据在哪个平台上跑都同样有效，正是 ADR-0029 那条「建议只由日志推出」的可测形态。
 
+## 定向 vs 全量（2026-10-25 两轴审查之后补测）
+
+AGENTS.md 写的是「改坏一处实现 → 跑**全量**测试」，本轮九个变异跑的是定向、只在还原之后跑了一次全量——这是偏差，补测两条代表：
+
+| 代表 | 定向 | 全量 | 差 |
+|---|---|---|---|
+| M3（建议改读折叠时本机平台） | 2 failed：`test_the_advice_follows_the_recorded_platform`、`test_the_advice_names_the_native_tools_before_the_shell_commands` | 同样这 2 条 | **0** |
+| M9（旧日志缺 `platform` 时填猜测值） | 2 failed：`test_replay_of_a_log_without_the_platform_facts_still_verifies`、`test_a_log_without_the_platform_facts_keeps_the_old_header` | 同样这 2 条 | **0** |
+
+补测里还踩到一个脚手架坑：3.5 把建议拆成 `_NATIVE_ADVICE` / `_WINDOWS_SHELL_ADVICE` / `_POSIX_SHELL_ADVICE` 之后，M3 原来的锚点失效（脚本报 `SKIP-锚点没找到`）——**变异脚本的锚点是「当时源码的字面量」**，实现一改就得重新对锚；对完再跑仍然是 KILLED。
+
 ## 还原纪律
 
 - 每个变异改的都是**一个**文件的字节；写回用的是改前读到的原始 `bytes`，不经过文本模式，不碰行尾（`docs/lessons.md` L-019 记的就是文本模式把 LF 换成 CRLF 那一课）。
