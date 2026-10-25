@@ -7,6 +7,7 @@ import codecs
 import json
 import os
 import signal
+import socket
 import sys
 import time
 from pathlib import Path
@@ -20,6 +21,7 @@ from mini_harness.config import build_registry
 from mini_harness.events import EventLog
 from mini_harness.loop import ENTRY_RUN, STOP_REASONS, RunOutcome, SessionSettings
 from mini_harness.provider import AssistantTurn
+from mini_harness.tools.bash_tools import shell_form
 from paths import HELLO_SCENARIO
 
 
@@ -711,6 +713,61 @@ def test_sandbox_and_yes_are_accepted_without_changing_a_write_free_run(tmp_path
 
     assert result.returncode == 0
     assert len(_log_files(tmp_path)) == 1
+
+
+def test_session_start_records_the_platform_facts(tmp_path: Path) -> None:
+    """`session/start` 记下 os 与 shell，且与 bash 实际执行用的那条一致（ADR-0029）。"""
+    result = _cli(
+        "run", "-p", "任务", "--provider", "mock", "--fixture", str(HELLO_SCENARIO), cwd=tmp_path
+    )
+
+    records = [
+        json.loads(line)
+        for line in _log_files(tmp_path)[0].read_text(encoding="utf-8").splitlines()
+    ]
+    payload = next(record["payload"] for record in records if record["type"] == "session/start")
+
+    assert result.returncode == 0
+    assert payload["platform"] == {"os": os.name, "shell": shell_form()}
+
+
+def _free_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+def test_the_three_entries_record_the_same_platform_facts(tmp_path: Path) -> None:
+    """run / chat / serve 同一条装配路：三份 `session/start` 带同一份平台事实（ADR-0029）。"""
+    expected = {"os": os.name, "shell": shell_form()}
+    extra = {"run": [], "chat": [], "serve": ["--http", "--port", str(_free_port())]}
+
+    for entry, flags in extra.items():
+        cwd = tmp_path / entry
+        cwd.mkdir()
+        args = [entry, *flags]
+        if entry != "chat":
+            args += ["-p", "任务"]
+        result = _cli(*args, "--provider", "mock", "--fixture", str(HELLO_SCENARIO), cwd=cwd)
+
+        records = [
+            json.loads(line) for line in _log_files(cwd)[0].read_text(encoding="utf-8").splitlines()
+        ]
+        payload = next(record["payload"] for record in records if record["type"] == "session/start")
+
+        assert result.returncode == 0, (entry, result.stderr)
+        assert payload["platform"] == expected, entry
+
+
+def test_the_platform_facts_are_not_a_cli_flag(tmp_path: Path) -> None:
+    """平台事实没有开关：`--help` 里不出现它，`--platform` 是不认识的参数（ADR-0029）。"""
+    help_result = _cli("run", "--help", cwd=tmp_path)
+    assert "platform" not in help_result.stdout
+
+    rejected = _cli("run", "-p", "任务", "--platform", "posix", cwd=tmp_path)
+    assert rejected.returncode == 2
+    assert "unrecognized arguments" in rejected.stderr
+    assert _log_files(tmp_path) == []
 
 
 def test_session_start_records_sandbox_approval_and_tools(tmp_path: Path) -> None:

@@ -55,6 +55,7 @@ from mini_harness.provider import FixtureLoadFailure, load_fixture_provider
 from mini_harness.provider.contract import Provider
 from mini_harness.provider.openai_compat import OpenAICompatProvider, validate_base_url
 from mini_harness.tools import ToolRegistry
+from mini_harness.tools.bash_tools import platform_facts
 
 EXIT_OK = 0
 EXIT_INTERNAL_ERROR = 1
@@ -337,6 +338,7 @@ def _prepare_or_fail(args: argparse.Namespace) -> _Prepared | _Failure:
         window=layered.window,
         reserve=layered.reserve,
         endpoint=endpoint,
+        platform=platform_facts(),
     )
     return _Prepared(provider=provider, settings=settings, log=log, registry=registry)
 

@@ -56,3 +56,5 @@ class SessionSettings:
     reserve: int = DEFAULT_RESERVE
     # 端点三条结伴出现：payload 里那三个字段由这一个对象派生。
     endpoint: ProviderEndpoint | None = None
+    # 平台事实（ADR-0029）：由入口填，`session/start` 原样写下去；`None` 就是「这次没有这份事实」。
+    platform: dict[str, str] | None = None

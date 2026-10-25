@@ -9,9 +9,9 @@
 
 ## 2. `session/start` 记下平台事实（seam ⑥）
 
-- [ ] 2.1 红：seam ⑥ 黑盒跑一次 `minihns run`，断言 `session/start` 的 payload 里 `platform` 含非空的 `os` 与 `shell`，且 `shell` 与该日志里 `bash` 实际执行用的形态一致。绿：CLI 把它写进 payload。
-- [ ] 2.2 红：seam ⑥ 黑盒分别跑 `chat`（EOF 退出）与 `serve`，断言两份日志都有 `platform` 且两处的 `os` 与 `shell` 相同。绿：三个入口走同一条装配路。
-- [ ] 2.3 红：seam ⑥ 断言 `platform` 不出现在命令行开关表与配置文件的合法键表里（`--help` 里没有它、配置文件里写它是既有那条「配置文件只接受这些键」的失败形状）。绿：确认没有为它开可配置性。
+- [x] 2.1 红：seam ⑥ 黑盒跑一次 `minihns run`，断言 `session/start` 的 payload 里 `platform` 含非空的 `os` 与 `shell`，且 `shell` 与该日志里 `bash` 实际执行用的形态一致。绿：CLI 把它写进 payload。
+- [x] 2.2 红：seam ⑥ 黑盒分别跑 `chat`（EOF 退出）与 `serve`，断言两份日志都有 `platform` 且两处的 `os` 与 `shell` 相同。绿：三个入口走同一条装配路。
+- [x] 2.3 红：seam ⑥ 断言 `platform` 不出现在命令行开关表与配置文件的合法键表里（`--help` 里没有它、配置文件里写它是既有那条「配置文件只接受这些键」的失败形状）。绿：确认没有为它开可配置性。
 
 ## 3. 折叠头部多一块（seam ④）
 

@@ -28,6 +28,15 @@ def shell_form() -> str:
     return SHELL_FORM_WINDOWS if sys.platform == "win32" else SHELL_FORM_POSIX
 
 
+def platform_facts() -> dict[str, str]:
+    """进 `session/start` 的平台事实：`os` 与 `shell`（ADR-0029）。
+
+    shell 这份事实住在知道它的这一层——`run_bash` 就是按它起进程的；CLI 只负责把它写下去，
+    不再自己判一次平台（两处判断同一件事早晚分叉）。
+    """
+    return {"os": os.name, "shell": shell_form()}
+
+
 def _bounded(content: str) -> str:
     """进日志的结果内容有界：超限截到上限字节数，末尾留下固定标记。"""
     encoded = content.encode("utf-8")

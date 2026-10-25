@@ -728,6 +728,9 @@ def start_session(*, prompt: str, entry: SessionEntry, env: SessionEnv) -> Segme
         "reserve": settings.reserve,
         "tools": [spec.name for spec in env.registry.specs()],
     }
+    if settings.platform is not None:
+        # 平台事实由入口填（ADR-0029）：`session/start` 原样写下去，折叠头部据此出运行环境块。
+        start_payload["platform"] = dict(settings.platform)
     if settings.endpoint is not None:
         # 记的是密钥环境变量的名字，不是它的值（cli spec：密钥 MUST NOT 进 payload）。
         start_payload["base_url"] = settings.endpoint.base_url
