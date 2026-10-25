@@ -16,7 +16,7 @@ from subprocess import Popen
 import httpx
 import pytest
 
-from cli_blackbox import _cli, _cli_process
+from cli_blackbox import _cli, _cli_console_process, _cli_process, _send_ctrl_c
 from mini_harness.events.vocabulary import is_known_type
 from paths import HELLO_SCENARIO
 
@@ -751,13 +751,100 @@ def test_sigint_in_a_serve_subprocess_exits_with_five(tmp_path: Path) -> None:
         pytest.fail("serve 进程没有进入工具执行段")
 
     process.send_signal(signal.SIGINT)
-    _, stderr = process.communicate(timeout=30)
+    stdout, stderr = process.communicate(timeout=30)
 
     records = _log_records(tmp_path)
     types = [record["type"] for record in records]
+    lines = [line for line in stderr.splitlines() if "ABORTED" in line]
     assert process.returncode == 5
-    assert "ABORTED" in stderr
+    assert len(lines) == 1, "serve 中途取消在 stderr 上该有一行"
+    assert not lines[0].rstrip().endswith(":"), f"那一行不带悬空冒号：{lines[0]!r}"
+    assert "ABORTED" not in stdout, "stdout 归 session id，那一行不在它上面"
     assert "Traceback" not in stderr
+    assert types[-4:] == ["error/abort", "turn/end", "segment/end", "session/end"]
+    assert records[-1]["payload"]["stop_reason"] == "ABORTED"
+
+
+_NOT_WINDOWS_REASON = (
+    "这一条判的是真 Ctrl-C 的投递，Windows 这一端此前只能跳过（design D8）："
+    "Linux 那一半沿用既有的 SIGINT 判据，两条不重复"
+)
+
+_HANG_SCRIPT = "import time\n\nwhile True:\n    time.sleep(0.1)\n"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason=_NOT_WINDOWS_REASON)
+def test_ctrl_c_in_a_serve_subprocess_exits_with_five_without_a_dangling_colon(
+    tmp_path: Path,
+) -> None:
+    """seam ⑥ 1.9：serve 进程里真 Ctrl-C → 退出码 5、那一行含 `ABORTED` 且不以冒号结尾。
+
+    取消没有失败结果：`SegmentOutcome.detail` 不带「取消被置位」（design D6 已裁决），
+    所以那一行只剩失败码，尾巴上不该挂一个冒号。
+    """
+    (tmp_path / "loop.py").write_text(_HANG_SCRIPT, encoding="utf-8")
+    fixture = tmp_path / "hang.json"
+    fixture.write_text(
+        json.dumps(
+            [
+                {
+                    "content": "跑一条挂很久的命令",
+                    "finish_reason": "tool_calls",
+                    "tool_calls": [
+                        {
+                            "id": "c1",
+                            "name": "bash",
+                            "arguments": {"command": "python loop.py", "timeout_seconds": 30},
+                        }
+                    ],
+                },
+                {"content": "不该走到这里", "finish_reason": "stop"},
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    process = _cli_console_process(
+        "serve",
+        "--http",
+        "-p",
+        "任务",
+        "--port",
+        str(_free_port()),
+        "--provider",
+        "mock",
+        "--fixture",
+        str(fixture),
+        "--yes",
+        cwd=tmp_path,
+    )
+    for _ in range(200):
+        logs = _log_files(tmp_path)
+        if logs and '"tool/call"' in logs[0].read_text(encoding="utf-8"):
+            break
+        time.sleep(0.1)
+    else:
+        process.kill()
+        pytest.fail("serve 进程没有进入工具执行段")
+
+    _send_ctrl_c(process.pid)
+    stdout, stderr = process.communicate(timeout=30)
+
+    records = _log_records(tmp_path)
+    lines = [line for line in stderr.splitlines() if "ABORTED" in line]
+    assert len(lines) == 1, "serve 中途取消在 stderr 上该有一行"
+    assert not lines[0].rstrip().endswith(":"), f"那一行不带悬空冒号：{lines[0]!r}"
+    assert "ABORTED" not in stdout, "stdout 归 session id，那一行不在它上面"
+    assert lines[0] not in _log_files(tmp_path)[0].read_text(encoding="utf-8").splitlines(), (
+        "那一行不写进事件日志：日志里没有它这么一行"
+    )
+    assert all(is_known_type(str(record["type"])) for record in records), (
+        "也不为它多写一条记录：日志里的类型都在词表里"
+    )
+    assert process.returncode == 5
+    assert "Traceback" not in stderr
+    types = [record["type"] for record in records]
     assert types[-4:] == ["error/abort", "turn/end", "segment/end", "session/end"]
     assert records[-1]["payload"]["stop_reason"] == "ABORTED"
 

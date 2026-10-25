@@ -1,4 +1,4 @@
-"""词表可达性：四份词表的每个取值都真的被跑出来一次（Active Lesson 1）。
+"""词表可达性：五份词表的每个取值都真的被跑出来一次（Active Lesson 1）。
 
 断言的是「跑出来的取值集合 == 词表」：词表加了新取值而没人能跑到它，这条就红。
 """
@@ -10,10 +10,17 @@ import io
 from pathlib import Path
 from typing import get_args
 
+import httpx
+
 from mini_harness.events import EventLog, read_events
-from mini_harness.events.fold import fold
+from mini_harness.events.fold import Message, fold
 from mini_harness.loop import STOP_REASONS
-from mini_harness.provider import AssistantTurn, load_fixture_provider
+from mini_harness.provider import AssistantTurn, ProviderFailure, load_fixture_provider
+from mini_harness.provider.openai_compat import (
+    CONTEXT_OVERFLOW_PHRASES,
+    ContextOverflowPhrase,
+    OpenAICompatProvider,
+)
 from mini_harness.tools import DispatchOutcome, ToolRegistry
 from mini_harness.tools.fences import (
     ApprovalDecision,
@@ -343,3 +350,30 @@ async def test_the_new_event_types_are_reached_by_a_real_run(tmp_path: Path) -> 
 
     assert "compaction/summary" in {r.type for r in read_events(compacted_log.path)}
     assert "error/context" in {r.type for r in read_events(overflow_log.path)}
+
+
+def _overflow_provider(message: str) -> OpenAICompatProvider:
+    """400 加一句没有 `error.code` 的 `message`：真端点报超限的那种形状。"""
+    return OpenAICompatProvider(
+        base_url="http://127.0.0.1:9/v1",
+        model="test-model",
+        api_key=None,
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                400, json={"error": {"type": "invalid_request_error", "message": message}}
+            )
+        ),
+    )
+
+
+async def test_every_context_overflow_phrase_is_reachable() -> None:
+    """短语表四条各被跑到一次，且是大写形式——大小写不敏感这条也一起判掉。"""
+    reached: set[str] = set()
+    for phrase in get_args(ContextOverflowPhrase):
+        outcome = await _overflow_provider(f"Your request failed: {phrase.upper()}").generate(
+            [Message(role="user", content="任务")], [], asyncio.Event()
+        )
+        if isinstance(outcome, ProviderFailure) and outcome.code == "PROVIDER_CONTEXT_OVERFLOW":
+            reached.add(phrase)
+
+    assert reached == CONTEXT_OVERFLOW_PHRASES, "有短语没被跑到，或词表里多了跑不到的短语"

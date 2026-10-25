@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import json
 import os
-import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from cli_blackbox import _cli
+from cli_blackbox import _cli, _FakeEndpoint
 from paths import HELLO_SCENARIO
 
 _KEY_ENV = "MINIHNS_TEST_KEY"
@@ -26,51 +24,6 @@ _STOP_BODY: dict[str, Any] = {
     ],
     "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5},
 }
-
-
-class _FakeEndpoint:
-    """一个只监听 127.0.0.1 的 chat completions 端点：记下收到的请求，回放固定响应。"""
-
-    def __init__(self, *, status: int, body: dict[str, Any]) -> None:
-        self.requests: list[dict[str, Any]] = []
-        endpoint = self
-
-        class _Handler(BaseHTTPRequestHandler):
-            def do_POST(self) -> None:
-                length = int(self.headers.get("content-length", "0"))
-                payload = json.loads(self.rfile.read(length).decode("utf-8"))
-                endpoint.requests.append(
-                    {
-                        "path": self.path,
-                        "authorization": self.headers.get("authorization"),
-                        "body": payload,
-                    }
-                )
-                encoded = json.dumps(body).encode("utf-8")
-                self.send_response(status)
-                self.send_header("content-type", "application/json")
-                self.send_header("content-length", str(len(encoded)))
-                self.end_headers()
-                self.wfile.write(encoded)
-
-            def log_message(self, *args: Any) -> None:
-                return
-
-        self._server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
-        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
-
-    def __enter__(self) -> _FakeEndpoint:
-        self._thread.start()
-        return self
-
-    def __exit__(self, *exc_info: object) -> None:
-        self._server.shutdown()
-        self._server.server_close()
-
-    @property
-    def base_url(self) -> str:
-        host, port = self._server.server_address
-        return f"http://{host}:{port}/v1"
 
 
 def _run_openai(

@@ -3,12 +3,22 @@
 from __future__ import annotations
 
 import asyncio
+import json
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 
 from mini_harness.events import EventRecord, read_events
-from mini_harness.events.fold import TOOL_OUTCOME_UNKNOWN, assembly_points, fold
+from mini_harness.events.fold import (
+    SYSTEM_PROMPT,
+    TOOL_OUTCOME_UNKNOWN,
+    Message,
+    assembly_points,
+    fold,
+)
 from mini_harness.loop import ENTRY_RUN, run_turn_segment, start_session
+from mini_harness.loop.turn_loop import SUMMARY_INSTRUCTION
 from mini_harness.provider import FixtureProvider, ProviderFailure
+from mini_harness.provider.contract import AssistantTurn, ToolSpec
 from mini_harness.tools import ToolRegistry
 from tool_harness import build_session_env, run_fixture_session, run_session_fixture
 
@@ -411,3 +421,186 @@ async def test_a_provider_reported_overflow_that_survives_the_retry_collapses(
     assert _records_of(log.path, "error/model") == []
     assert outcome.stop_reason == "CONTEXT_WINDOW_EXCEEDED"
     assert outcome.failure_code == "CONTEXT_WINDOW_EXCEEDED"
+
+
+class _RecordingProvider:
+    """记下每次调用实际收到的消息与工具：判「摘要请求装了什么」只能从这里看。"""
+
+    def __init__(self, entries: list[dict[str, object]]) -> None:
+        self.calls: list[tuple[list[Message], list[ToolSpec]]] = []
+        self._inner = FixtureProvider(entries=entries)
+
+    async def generate(
+        self,
+        messages: Sequence[Message],
+        tools: Sequence[ToolSpec],
+        signal: asyncio.Event,
+    ) -> AssistantTurn | ProviderFailure:
+        self.calls.append((list(messages), list(tools)))
+        return await self._inner.generate(messages, tools, signal)
+
+
+# 折叠会产出消息的记录类型：判「请求里装的是哪些记录」按它们取内容。
+_CONTENT_TYPES = ("user/message", "model/response", "tool/result")
+
+
+def _contents_of(records: Iterable[EventRecord]) -> set[str]:
+    return {
+        str(record.payload.get("content", ""))
+        for record in records
+        if record.type in _CONTENT_TYPES
+    }
+
+
+async def test_the_summary_request_carries_only_the_shadowed_range(tmp_path: Path) -> None:
+    """seam ①：摘要请求只装本次要遮蔽的那一段——保留尾部与受保护头部不在其中。"""
+    provider = _RecordingProvider([_big_turn(), _summary_entry(), DONE_ENTRY])
+    log, _ = await run_session_fixture(
+        tmp_path,
+        "s-summary-shape",
+        provider,
+        max_turns=3,
+        window=TIGHT_WINDOW,
+        reserve=TIGHT_RESERVE,
+    )
+    records = read_events(log.path)
+    summary = _records_of(log.path, "compaction/summary")[0]
+    rng = summary.payload["shadowed_range"]
+    assert isinstance(rng, dict)
+
+    summary_call = next(messages for messages, tools in provider.calls if not tools)
+    contents = [message.content for message in summary_call]
+    body = contents[1:-1]
+
+    in_range = [record for record in records if rng["start"] <= record.seq <= rng["end"]]
+    tail = [record for record in records if record.seq > rng["end"]]
+    range_contents = _contents_of(in_range)
+    tail_contents = _contents_of(tail)
+
+    assert contents[0].startswith(SYSTEM_PROMPT)
+    assert contents[-1] == SUMMARY_INSTRUCTION
+    assert BIG_TEXT in contents, "要被摘要的那段回复不在摘要请求里"
+    assert tail_contents, f"保留尾部为空，这条判据没有意义：{rng}"
+    assert not [content for content in body if content in tail_contents], (
+        f"保留尾部进了摘要请求：rng={rng} 尾部 seq={[r.seq for r in tail]}"
+    )
+    assert all(content in range_contents for content in body), (
+        f"摘要请求里有区间外的消息：rng={rng}"
+    )
+
+
+# 一条 12000 字符的回复（3000 个估算 token）与一条 268000 字符的回复（67000 个）：
+# 两组工具往返都在本次遮蔽范围里，合起来超过「窗口减保留额」这条上限（70000 - 100 = 69900）。
+_ROUND_ONE_TEXT = "x" * 12000
+_ROUND_TWO_TEXT = "x" * 268000
+
+
+def _round_turn(call_id: str, text: str) -> dict[str, object]:
+    return {
+        "content": text,
+        "finish_reason": "tool_calls",
+        "tool_calls": [{"id": call_id, "name": "read", "arguments": {"file_path": "a.md"}}],
+    }
+
+
+async def test_the_summary_trim_drops_whole_round_trips(tmp_path: Path) -> None:
+    """seam ①：摘要请求装不下时按往返整对丢——留下的 tool 消息不能没有请求它的那条 assistant。"""
+    (tmp_path / "a.md").write_text("x" * 400, encoding="utf-8")
+    provider = _RecordingProvider(
+        [
+            _round_turn("c1", _ROUND_ONE_TEXT),
+            _round_turn("c2", _ROUND_TWO_TEXT),
+            _summary_entry(),
+            DONE_ENTRY,
+        ]
+    )
+    await run_session_fixture(
+        tmp_path,
+        "s-trim-in-pairs",
+        provider,
+        max_turns=4,
+        window=TIGHT_WINDOW,
+        reserve=TIGHT_RESERVE,
+    )
+
+    summary_call = next(messages for messages, tools in provider.calls if not tools)
+    requested: set[str] = set()
+    for message in summary_call:
+        for call in message.tool_calls:
+            requested.add(str(call["id"]))
+        if message.role == "tool":
+            assert message.tool_call_id in requested, (
+                f"裁剪把一组工具往返拆开了：{[message.role for message in summary_call]}"
+            )
+    assert len(summary_call) > 2, "裁到只剩头部与指令等于这次压缩什么都没做"
+
+
+# 一条 300000 字符的回复（75000 个估算 token）与一份 2000 行、每行 150 字符的文件：
+# 两条都超过「窗口减保留额」这条上限（70000 - 100 = 69900）。
+HUGE_TEXT = "x" * 300000
+HUGE_FILE_LINES = 2000
+HUGE_FILE_WIDTH = 150
+
+
+def _huge_turn() -> dict[str, object]:
+    return {
+        "content": HUGE_TEXT,
+        "finish_reason": "tool_calls",
+        "tool_calls": [{"id": "c1", "name": "read", "arguments": {"file_path": "a.md"}}],
+    }
+
+
+async def test_a_summary_request_that_cannot_be_made_to_fit_is_never_sent(tmp_path: Path) -> None:
+    """seam ①：遮蔽范围裁到只剩一条也超「窗口减保留额」时不发请求，直接塌成溢出。"""
+    (tmp_path / "a.md").write_text(
+        "\n".join(f"{n:04d}{'x' * (HUGE_FILE_WIDTH - 4)}" for n in range(HUGE_FILE_LINES)),
+        encoding="utf-8",
+    )
+    log, outcome = await run_fixture_session(
+        tmp_path,
+        "s-summary-too-big",
+        [_huge_turn(), _summary_entry(), DONE_ENTRY],
+        max_turns=3,
+        window=TIGHT_WINDOW,
+        reserve=TIGHT_RESERVE,
+    )
+    records = read_events(log.path)
+
+    assert _records_of(log.path, "compaction/summary") == []
+    assert [r for r in records if r.payload.get("purpose") == "compaction"] == []
+    assert _records_of(log.path, "error/model") == []
+    assert [record.type for record in records][-4:] == [
+        "error/context",
+        "turn/end",
+        "segment/end",
+        "session/end",
+    ]
+    assert outcome.stop_reason == "CONTEXT_WINDOW_EXCEEDED"
+    assert outcome.failure_code == "CONTEXT_WINDOW_EXCEEDED"
+
+
+_FIXTURE_DIR = Path(__file__).parent / "fixtures" / "real_endpoint"
+
+
+async def test_the_compaction_record_has_the_keys_the_real_run_wrote(tmp_path: Path) -> None:
+    """seam ①：`compaction/summary` 的 payload 键与真端点那一次真写出来的那份一致。
+
+    fixture 来自真 session（来源见 `tests/fixtures/real_endpoint/README.md`）。遮蔽反馈那一行
+    （seam ⑥）只读这四个键——键名在这里钉住，实现与屏幕两边不必互相猜。
+    """
+    real = json.loads((_FIXTURE_DIR / "compaction_summary.json").read_text(encoding="utf-8"))
+    log, _ = await run_fixture_session(
+        tmp_path,
+        "s-record-shape",
+        [_big_turn(), _summary_entry(), DONE_ENTRY],
+        max_turns=3,
+        window=TIGHT_WINDOW,
+        reserve=TIGHT_RESERVE,
+    )
+
+    written = _records_of(log.path, "compaction/summary")[0]
+    assert set(written.payload) == set(real["payload"])
+    assert set(written.payload["shadowed_range"]) == set(real["payload"]["shadowed_range"])
+    assert isinstance(written.payload["tokens_before"], int)
+    assert isinstance(written.payload["tokens_after"], int)
+    assert isinstance(written.payload["summary"], str) and written.payload["summary"]

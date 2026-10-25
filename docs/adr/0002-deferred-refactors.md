@@ -556,6 +556,20 @@ M6 模型层场 2：`--window 66000 --reserve 100` 下第一条输入约 5000 �
 - 记账不动的理由：溢出只到回合级、入口决定会话是 ADR-0019 定过的；「要不要在屏幕上说一句话」与「退出码要不要反映整段会话」是两条新的产品判断，本机有真 runbook 证据（`ff7d94d71c2846d598e11eae873b2484`）才记。
 - 处理时点：**M10**（与第 55 条「溢出在事件流上的形状」一起判）。
 
+### 64. 估算与真端点差多少取决于内容，而且估算里没有固定开销
+
+`context/budget.py::estimate_tokens` 是「字符数除以 4 向上取整逐条相加」。真端点上的实测散得很：M5 那次校准出偏小 2.24 倍；`fix-compaction-and-context-overflow` 的探针那次，端点报 `prompt (222233 tokens)` 而我们的触发线是 54272，约 4 倍；同一 change 的 `minihns chat` 实测里正文部分是 1.29 至 1.40 倍（内容是重复 ASCII，tokenize 得省），而正文只有 195 字符的那次估算 49、provider 报 1031——**工具 schema 与 chat 模板那约 980 token 估算里根本没有**。窗口越小、对话越短，这一项占比越大，而触发线恰恰是在对话短的时候先动。
+
+- 记账不动的理由：「按倍数校准」这条路被实测否掉了（倍数随内容变），剩下的两条改法各有代价——把 provider 回报的 `input_tokens` 回灌成下一回合的读数（M5 的校准只做了一半，且被遮蔽的读数与摘要调用的读数都要排除），或给估算加一项固定开销（那个数每个端点不同）。本机有真 runbook 证据（`docs/verification/fix-compaction-and-context-overflow-manual.md` 的比值表）才记。
+- 处理时点：**M10**（与第 16 条「每回合全量重读日志」那笔预算账一起判）。
+
+### 65. 摘要请求装不下时从区间头部丢弃，等于最旧的内容不进摘要
+
+`turn_loop.py::_compact_if_over_line` 里 `while body and estimate_tokens(...) > summary_budget: body = body[1:]`——`body` 是本次要遮蔽的那一段折出的消息，按 seq 从旧到新；超「窗口减保留额」时从**头部**丢。于是被遮蔽的最旧内容既不进上下文也不进摘要，遮蔽范围照写 `{start, end}`，那一段就消失了。真端点那一次实测到它的近亲：第二次压缩 `15364 → 13239` 只省 14%，因为保留线逼着尾部几乎全留，能折掉的只剩头部那一小截。
+
+- 记账不动的理由：改法要么改成「从尾部丢、保住最旧的」（与「保留近期尾部」这条既有规则正面冲突），要么「装不下就不压缩、直接溢出」（M5 起既有判据就是这么定的，`test_a_summary_request_that_cannot_be_made_to_fit_is_never_sent` 钉着）。两条都是产品判断，这次只把代价写清。
+- 处理时点：**M10**（与第 63 条一起判；第 63 条与本条同源——都是「遮蔽范围怎么选」）。
+
 ### M6 的提交纪律欠账（不改写历史，只记账）
 
 - **两个规划提交没有门禁那一行**：`cf1543d`、`0f49b39` 的信息里只有 `openspec validate m6-chat-repl --strict` 通过。与「提交纪律」一节同一条规矩：四道门禁是「一次提交算完成」的定义，不分代码与文档。
@@ -580,3 +594,60 @@ M6 模型层场 2：`--window 66000 --reserve 100` 下第一条输入约 5000 �
 - 组 4 与组 5 的六条判据（4.2 / 4.3 / 4.4 / 4.5 / 5.2）与组 6 的三条（6.1 / 6.2 / 6.3）都是**绿着到的守卫**：帧、游标与断开处理在各自组的第一次红绿里就写完了。当场用定点变异确认它们不空转（4.5 那条还查出一个只在 seam ⑥ 存活的变异，人裁决定位到 seam ④ 补判据）。
 - **收尾轮补的四条**（Spec 轴查出的是判据缺失）：`test_non_utf8_output_collapses_into_replacement_characters`（seam ②③，bash delta 那条 Scenario 从 propose 起就没有判据）；`test_the_start_record_names_the_serve_entry_and_the_prompt_verbatim`（seam ⑥，`entry` 此前只有 seam ① 的进程内判据，把 CLI 的 `entry=ENTRY_SERVE` 改成 `ENTRY_RUN` 全仓不红——L-048 那条教训在 M7 复发）；`test_a_cursor_ahead_of_what_is_written_is_not_an_error` 加强成同时判「不报错」与「开始送帧」；`test_serve_without_the_http_flag_is_the_same_session`（seam ⑥，真红过——先红在 `assert 2 == 0`，`--http` 改成可选之后绿；人裁决定的是「保留 `--http` 但可选」，规格 flag 表与 delta 的 Scenario 同步补上）。
 - **9.1 的 Ctrl-C 那一半等人跑**（Linux runner）；四条 SIGINT 子进程判据（run 一条、chat 两条、serve 一条）本机 skip，沿用 M3 的边界。9.2 的模型层那一半 2026-10-22 晚跑完（用户作用域的密钥显式注入后），观察在 `docs/verification/m7-serve-http-sse-manual.md` 最后一节；同一轮把 M6 的模型层非 tty 那一半一并跑完，查出的两条新形状记进上面的第 62 与 63 条。
+
+### 66. 「受保护的事件类型」有两份定义
+
+`context/budget.py` 与 `events/fold.py` 各有一份 `PROTECTED_EVENT_TYPES = frozenset({"session/start", "compaction/summary"})`。前者用它算「哪一段可以遮蔽」，后者用它决定「哪一些记录不产出消息」——两边必须同意同一份名单。改一处而另一处没跟上，遮蔽范围就会盖住一条折叠方认为受保护的记录，而这条不一致在日志里看不出来。
+
+- 记账不动的理由：两处不在同一个包，把它提到第三处等于给 `context` 加一条对 `events` 导出面的依赖；本轮两处都照同一份名单写、没有判据因此变红，也没有判据能抓到「只改了一份」。
+- 处理时点：**M10**（与第 16 条同一处 `context` ↔ `events` 边界一起判；真要动，先补一条「名单只有一份」的判据）。
+
+### 67. 遮蔽反馈每开一个段就整读一次日志
+
+`cli/main.py::_print_shadow_feedback` 每段开头 `read_events(log.path)` 读整份日志，只为找出 `through` 之后新写出的那几条 `compaction/summary`。第 16 条记的是「每回合全量重读日志」那笔账，这一处是它在 chat 入口上的新实例：段越多、日志越长，读的字节越多，而它要的只有那几条新记录。
+
+- 记账不动的理由：本轮的判据是「屏幕上那一行说得清折掉了哪一段、同一条只报一次」，不是读几遍；改法（段内自己记下写出的 `compaction/summary`，不回头读日志）要动 `_chat_session` 与段边界的交接，与第 16 条是同一笔账。
+- 处理时点：**M10**（与第 16 条一起判）。
+
+### `fix-compaction-and-context-overflow` 的提交纪律与流程欠账（不改写历史，只记账）
+
+- **两个规划提交只有 validate 那一行**：`14a7b48`（propose）与 `1bc5e94`（update change）。四道门禁是「一次提交算完成」的定义、不分代码与文档——与 M6 / M7 / M8 / M9 同一条欠账。
+- **两个提交完全没有门禁行**：`34dd4e8`（docs 记账）与 `c7df1d1`（tasks 6.1–6.3，**实现提交**）。后者跑了红绿循环、信息里没有门禁数字，缺的是记录不是没跑。
+- **一处打包跨四个 task、跨三个 seam、没写理由**：`e5ad72f` 打包 7.1–7.2 与 6.4 + 7.3（门禁在 seam ⑥①⑤、变异轮与 Learning Gate 都在 docs）。提交粒度那条只允许「同一 seam 上相邻 3 个 task」，超过要在信息里写打包理由，这条没有理由。
+- **变异轮与 Learning Gate 跑在 `code-review` 两轴之前**：AGENTS.md 定的顺序是 apply → 两轴 → 变异 + Learning Gate → 归档。本轮 7.2 与 7.3 在 2026-10-22 23:44–23:58 跑完，两轴 2026-10-23 才跑；两轴查出的四条裁决与两条规格欠账因此要再补一轮变异（tasks 8.7）。违这个顺序的代价就是这一轮重跑。
+- **一句写错的话**：`docs/lessons.md` 的收尾消化记录里「本轮的提交纪律没有欠账」。上面五条就是欠账，就地更正那句。
+
+### `fix-compaction-and-context-overflow` 的判据欠账（不改写历史，只记账）
+
+- **chat 日志的逐点重放从 propose 起就没有判据**：delta 的「遮蔽反馈不是日志的投影」那条场景只断言「这一行不在 stdout、不在日志」，没有断言「同一份日志的 `minihns replay` 输出不因它改变」。Spec 轴查出，2026-10-23 补在 seam ⑥（tasks 8.4）。
+- **500 与 429 那两条判据是绿着到的**：`openai_compat.py` 里重试耗尽那条早退已经挡住 5xx 与 429，`status >= 400` 那一处从来没有可达的 5xx。当场用一处变异（把塌成溢出的判断挪到那条早退之前）确认它们不空转，两条都红（`assert 'PROVIDER_CONTEXT_OVERFLOW' == 'PROVIDER_HTTP_STATUS'`）。
+- **小窗口死区到本轮结束仍没有判据、也没有规格**：`W - reserve - 65536 < W * 16 / 100` 时压缩不可能，真端点那一跑撞到的「预算读数 4393 已超过触发线 4364」就是它。记在第 65 条与 `docs/CURRENT.md`，等人裁决是新开一个 change 还是留在 M10。
+
+### `fix-chat-screen-feedback` 的两轴审查（2026-10-24，固定点 `1fd9820`）
+
+Standards 轴查出的三条：
+
+- **一处打包跨四个 task**：`a34c63e` 打包 1.7 + 2.5 + 1.8 + 2.8。提交信息写了打包理由，可那句理由（「两个红绿循环各自独立」）正是前半句「一个红绿循环一次提交」的拆分理由。分支未推，当场拆成 `d2395c7`（1.7 + 2.5）与 `5bf86d3`（1.8 + 2.8），后面两条 cherry-pick 成 `9f4819f` / `7d8845d`；拆完每个提交最多三个 task。
+- **测试里的重复**：溢出那套 fixture（`big.md` 加六条 entries）在 1.3 与 1.8 的反面判据里逐字各写一遍 → 抽成 `_overflow_entries`，在 `5bf86d3` 里一并收掉。`_NOT_WINDOWS_REASON` 与挂起脚本 + 挂起 fixture 在 `test_cli_chat.py` 与 `test_cli_serve.py` 各一份：**记账不动**，两处判的是不同的落点（chat 的段中取消 / serve 的中途取消），抽进 `cli_blackbox.py` 等第三处出现再抽。
+- **脚手架早于它的使用者**：`a5ff271` 引入 `_cli_console_process` / `_send_ctrl_c` / `_LiveStreams`，到 `662731e` 才有判据用它们，中间两个提交带着未使用的代码。记账，不改写历史。
+
+Spec 轴查出的判据缺口，六条已在 seam ⑥ 补上（2026-10-24）：
+
+- **cli「那一行 MUST NOT 出现在 stdout、MUST NOT 写进事件日志」**：serve 那条 Ctrl-C 判据原来 `_, stderr = communicate()` 把 stdout 丢了。现在断 stdout 不含 `ABORTED`、日志里没有它这么一行、日志里的类型都在词表里。`run` 溢出那条同样补上 stdout 与日志两半。
+- **cli「带非空 `detail` 时那一行 SHALL 含那句 `detail`」**：`run` 溢出那条原来只断那个词在 stderr。现在断日志里那条 `detail` 出现在那一行里。
+- **chat「含当时的预算读数与触发线两个数」**：1.3 那条补上「那一行里的整数含触发线 54272（默认窗口 128000、预留 8192 按规格那条公式给出的数），且有一个整数越线」——只认数，不认措辞。
+- **chat「含 `FENCE_DENIED` 与造成它的失败结果的 `code`」**：围栏那条补上从 `error/fence` 记录里读出的那个 code 出现在那一行里。
+- **chat「空或全空白的 `content`」**：1.2 那条把第三条工具回合的 `content` 换成全空白，两条半边都喂到。
+- **冒号那条只有 Windows 半边**：Linux-only 的 `test_sigint_in_a_serve_subprocess_exits_with_five` 补上「恰一行、不以冒号结尾、不在 stdout」。本机仍 skip，等 Linux runner 才算跑过。
+
+两条没补的形状（记账）：
+
+- **`_chat` 不再把旧 SIGINT 处理器换回去、收尾那一段换 `_suppress_sigint`**：delta 里没有这一条，也没有判据钉住「不换回去」。它是 D7 在本机 Windows 上的直接后果——换回去等于在退出前的缝隙里重新开一个没人接的洞（实测：换回去时 5 次里 3 次红，`KeyboardInterrupt` 落在 `coverage/cmdline.py` 里，退出码 `0xC000013A`）。处理时点：M10 与「取消的落点」那条一起收；真要钉住它，得先决定跨平台的形状（POSIX 上 `add_signal_handler` 与 Windows 上 `signal.signal` 不是一回事）。
+- **`[降不下去]` 那一行的前缀标记写死在判据里**：规格说措辞留给实现（design 的 open question），判据认前缀。UAT 若改措辞就要同时改判据——这一条是刻意的取舍：不认前缀就只能去数 stderr 上「不是 `[段]` 也不是 session id」的行，那种判据更脆。
+
+### `fix-chat-screen-feedback` 真实端点那一半的两条裁决（2026-10-24，人认可）
+
+两条都在 5.1 那一跑里暴露（`docs/verification/fix-chat-screen-feedback-real-endpoint.md` 的「R6 那一半」）。**本 change 不改代码、不改判据**，只落字。
+
+- **撞时序缝隙的判据按 seam 拆开，处理时点 M10**：毫秒级缝隙那一半改到 seam ①（进程内）判——`signals.active` 已经是「当前活跃段的可等待事件」（`cli/main.py` 每段开局 `cancel = asyncio.Event()`、`signals.active = cancel`），进程内判据 `set()` 它、await 段结束、再断收尾形状，一个信号都不用发；seam ⑥ 只留人的形状（一次 Ctrl-C、退出码 0、无 traceback）。理由与代价：连发 40 次越过了「会话收尾」这条边界、把 CPython 解释器收尾（`_PySignal_Fini` 把 SIGINT 换回默认处置）算成产品的失败；而 seam ⑥ 上造锚点必然要往生产代码里加只有测试会用的钩子，撞四规 #2，要 ADR。规则候选「撞时序缝隙先找可观察锚点，找不到就把判据挪到能判它的那个 seam」按一进一出不占 AGENTS.md 额度，等它在 M10 真的省下一次漏判再说。同族的既有形状：L-034 那三条硬杀判据约束（杀点由日志定位）——同一件事，M15 直接复用。
+- **不让进程在收尾之后硬退出（`os._exit`），按现状结案**：不硬退出没有资源代价，三条代码事实——provider 每次请求一个 `async with httpx.AsyncClient(...)`（`provider/openai_compat.py`），在 `finish()` 之前早就关完；日志每条记录自己 `open("a")` → 写 → 关（`events/writer.py`），`session/end` 在 `finish()` 返回前已在盘上；chat 里没有非守护线程、没有常驻连接。唯一可观察后果是那几毫秒里再来信号就是 `0xC000013A`。硬退出的代价是它跳过 stdout / stderr 的缓冲刷新：stdout 是管道时 `print()` 块缓冲，最后几条模型回复可能丢——为「连发 40 次」这种没人会造的形状，冒这个险不划算。若以后要它，先显式 flush，且那等于给进程第二种结束方式，要新开一份 ADR 写清谁守这条不变量。

@@ -937,7 +937,14 @@ def test_a_run_that_cannot_fit_its_window_exits_four_with_an_error_context(tmp_p
     types = [record["type"] for record in records]
 
     assert result.returncode == 4
-    assert "CONTEXT_WINDOW_EXCEEDED" in result.stderr
+    notes = [line for line in result.stderr.splitlines() if "CONTEXT_WINDOW_EXCEEDED" in line]
+    assert len(notes) == 1, "非 0 退出在 stderr 上该有一行"
+    assert notes[0].count("CONTEXT_WINDOW_EXCEEDED") == 1
+    detail = str(records[-4]["payload"]["detail"])
+    assert detail != "", "日志里那条 detail 非空"
+    assert detail in notes[0], "那一行含日志里那句非空 detail"
+    assert notes[0] not in result.stdout, "stdout 归 session id，那一行不在它上面"
+    assert notes[0] not in "\n".join(lines), "那一行不写进事件日志"
     assert types[-4:] == ["error/context", "turn/end", "segment/end", "session/end"]
     assert "model/request" not in types
     assert records[-4]["payload"]["code"] == "CONTEXT_WINDOW_EXCEEDED"

@@ -24,6 +24,9 @@ TOOL_OUTCOME_UNKNOWN = "TOOL_OUTCOME_UNKNOWN"
 # 摘要那次模型调用的标记值：它的回复不产出 assistant 消息，它的 `usage` 不参与预算校准。
 PURPOSE_COMPACTION = "compaction"
 
+# 不进遮蔽范围、也不进按 seq 区间折出的对话的两类事件（规格）。
+PROTECTED_EVENT_TYPES: frozenset[str] = frozenset({"session/start", "compaction/summary"})
+
 
 class Message(BaseModel):
     """进入模型的一条消息。"""
@@ -185,6 +188,24 @@ def fold(events: Sequence[EventRecord]) -> AssembledContext:
         "\n".join(message.content for message in header).encode("utf-8")
     ).hexdigest()
     return AssembledContext(messages=[*header, *body], header_fingerprint=fingerprint)
+
+
+def fold_range(events: Sequence[EventRecord], *, start: int, end: int) -> list[Message]:
+    """按 seq 闭区间折出对话体：受保护头部不进来，区间外的记录一条都不算。
+
+    给「摘要只装本次要遮蔽的那一段」用（ADR-0023）。区间盖住 `session/start` 或既有
+    `compaction/summary` 时它们不产出消息——它们不进范围（规格）。起点大于终点折出空对话。
+    """
+    window = [
+        event
+        for event in events
+        if start <= event.seq <= end and event.type not in PROTECTED_EVENT_TYPES
+    ]
+    if not window:
+        return []
+    context = fold(window)
+    # `fold` 的头部恒为一条 `system`；调用方自己带头部，这里只要对话体。
+    return context.messages[len(protected_header()) :]
 
 
 def assembled_payload(turn_id: str, context: AssembledContext) -> dict[str, Any]:

@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Literal, get_args
 from urllib.parse import urlsplit
 
 import httpx
@@ -28,8 +28,23 @@ from mini_harness.provider.contract import (
 # 决策 15：模型请求的超时是实现常量 120 秒，`minihns run` 没有改变它的开关。
 _TIMEOUT_S = 120.0
 
-# 上下文超限在 OpenAI 兼容协议里的错误码；只有它塌成 `PROVIDER_CONTEXT_OVERFLOW`。
+# 上下文超限在 OpenAI 兼容协议里的错误码；它加下面那张短语表塌成 `PROVIDER_CONTEXT_OVERFLOW`。
 CONTEXT_OVERFLOW_ERROR_CODE = "context_length_exceeded"
+
+# 各家兼容端点报「提示词装不进上下文」的措辞不一样：本机真端点给的是 `type:
+# invalid_request_error` 加一句 `leaves no room to answer in the context`，没有 `error.code`
+# （ADR-0022）。短语表由适配层维护——照 DSH「分类由适配器维护」的口径，猜正文的代价记在那里。
+ContextOverflowPhrase = Literal[
+    "leaves no room to answer",
+    "maximum context length",
+    "context length exceeded",
+    "prompt is too long",
+]
+
+CONTEXT_OVERFLOW_PHRASES: frozenset[str] = frozenset(get_args(ContextOverflowPhrase))
+
+# 失败结果里那句正文摘要的长度上限（design D4）：一次 502 的 HTML 不该把日志撑爆。
+_DETAIL_MAX_CHARS = 200
 
 
 def _wire_messages(messages: Sequence[Message]) -> list[dict[str, Any]]:
@@ -116,11 +131,36 @@ def _schema_failure(detail: str, attempts: Sequence[ProviderAttempt]) -> Provide
     return ProviderFailure(code="PROVIDER_SCHEMA_INVALID", detail=detail, attempts=attempts)
 
 
-def _reports_context_overflow(response: httpx.Response) -> bool:
-    """design D8：只认 `error.code == "context_length_exceeded"` 这一个值。
+def _error_sentence(payload: Any) -> str:
+    """响应 JSON 里错误对象的那句话：`error.message`，或 `error` 本身就是字符串。"""
+    if not isinstance(payload, dict):
+        return ""
+    error = payload.get("error")
+    if isinstance(error, dict):
+        message = error.get("message")
+        return message if isinstance(message, str) else ""
+    return error if isinstance(error, str) else ""
 
-    不猜 `message` 的文本、也不按状态码猜——各家兼容端点的措辞不一样，而 400 里绝大多数
-    不是超限。读不出 body 就当不是。
+
+def _failure_detail(response: httpx.Response) -> str:
+    """design D4：`HTTP <状态码>：<有界摘要>`。单行（换行压成空格）、整条至多 200 字符；
+    取不到错误对象那句话就取正文本身，正文为空时只有状态码。"""
+    try:
+        payload: Any = response.json()
+    except ValueError:
+        payload = None
+    prefix = f"HTTP {response.status_code}"
+    summary = " ".join((_error_sentence(payload) or response.text).split())
+    if not summary:
+        return prefix
+    return f"{prefix}：{summary[: _DETAIL_MAX_CHARS - len(prefix) - 1]}"
+
+
+def _reports_context_overflow(response: httpx.Response) -> bool:
+    """design D8 与 D3：错误对象的 `code` 命中，或 `message` 命中短语表里的某一条。
+
+    短语表大小写不敏感、整句里找子串；不解析消息里的 token 数、也不按状态码猜。
+    读不出 body、错误对象不是对象、`message` 不是字符串，都当不是。
     """
     try:
         payload = response.json()
@@ -129,7 +169,15 @@ def _reports_context_overflow(response: httpx.Response) -> bool:
     if not isinstance(payload, dict):
         return False
     error = payload.get("error")
-    return isinstance(error, dict) and error.get("code") == CONTEXT_OVERFLOW_ERROR_CODE
+    if not isinstance(error, dict):
+        return False
+    if error.get("code") == CONTEXT_OVERFLOW_ERROR_CODE:
+        return True
+    message = error.get("message")
+    if not isinstance(message, str):
+        return False
+    lowered = message.lower()
+    return any(phrase in lowered for phrase in CONTEXT_OVERFLOW_PHRASES)
 
 
 def _parse_response(
@@ -261,20 +309,22 @@ class OpenAICompatProvider:
                 if _retryable(response.status_code):
                     return ProviderFailure(
                         code="PROVIDER_HTTP_STATUS",
-                        detail=f"HTTP {response.status_code}",
+                        detail=_failure_detail(response),
                         attempts=attempts,
                     )
 
         if response.status_code >= 400:
-            if _reports_context_overflow(response):
+            # 塌成溢出只发生在不可重试的 4xx：429 与 5xx 说的是服务端那一刻接不住，
+            # 它们的正文里恰好出现短语表里的话时仍走 `PROVIDER_HTTP_STATUS`（ADR-0023）。
+            if not _retryable(response.status_code) and _reports_context_overflow(response):
                 return ProviderFailure(
                     code="PROVIDER_CONTEXT_OVERFLOW",
-                    detail=f"HTTP {response.status_code}：上下文超出窗口",
+                    detail=_failure_detail(response),
                     attempts=attempts,
                 )
             return ProviderFailure(
                 code="PROVIDER_HTTP_STATUS",
-                detail=f"HTTP {response.status_code}",
+                detail=_failure_detail(response),
                 attempts=attempts,
             )
         return _parse_response(response, attempts)

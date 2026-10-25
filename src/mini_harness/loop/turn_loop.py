@@ -20,6 +20,7 @@ from mini_harness.events.fold import (
     Message,
     assembled_payload,
     fold,
+    fold_range,
 )
 from mini_harness.events.reader import LogReadFailure, read_events
 from mini_harness.events.record import EventRecord
@@ -611,6 +612,22 @@ async def _recover_overflowed_request(
     return _RetriedRequest(generated=generated, retry_events=attempts)
 
 
+def _drop_leading_unit(body: list[Message]) -> list[Message]:
+    """从头部丢一个完整单位：带调用的那条 assistant 与回答它的那些 tool 消息一起丢。
+
+    逐条丢会把一组工具往返拆散——留下的 tool 消息带着没人请求它的 `tool_call_id`（ADR-0023）。
+    """
+    first = body[0]
+    if not first.tool_calls:
+        return body[1:]
+    called = {call["id"] for call in first.tool_calls if isinstance(call.get("id"), str)}
+    rest = body[1:]
+    cut = 0
+    while cut < len(rest) and rest[cut].role == "tool" and rest[cut].tool_call_id in called:
+        cut += 1
+    return rest[cut:]
+
+
 async def _compact_if_over_line(
     *,
     log: EventLog,
@@ -623,12 +640,24 @@ async def _compact_if_over_line(
 ) -> ProviderFailure | LogWriteFailure | LogReadFailure | None:
     """越线时压缩一次：调模型生成摘要、写一条 `compaction/summary`（design D1 与 D2）。
 
-    没有可遮蔽的内容时什么都不写、返回 `None`：调用方重新读数，那条路通向溢出。
+    没有可遮蔽的内容、或那段裁到最小仍装不进窗口时什么都不写、返回 `None`：调用方重新读数，
+    那条路通向溢出。
     """
     rng = shadowed_range(events, settings.window)
     if rng is None:
         return None
     tokens_before = budget_reading(events, context.messages)
+
+    # 摘要请求自己也要装得进窗口：装不下就从该段头部按往返整对丢，一条都不剩时不发请求（ADR-0023）。
+    header = context.messages[:1]
+    instruction = Message(role="user", content=SUMMARY_INSTRUCTION)
+    summary_budget = settings.window - settings.reserve
+    body = fold_range(events, start=rng["start"], end=rng["end"])
+    while body and estimate_tokens([*header, *body, instruction]) > summary_budget:
+        body = _drop_leading_unit(body)
+    if not body:
+        return None
+
     written = _append_all(
         log,
         [("model/request", {"turn_id": turn_id, "tools": [], "purpose": PURPOSE_COMPACTION})],
@@ -637,7 +666,9 @@ async def _compact_if_over_line(
         return written
 
     generated = await provider.generate(
-        [*context.messages, Message(role="user", content=SUMMARY_INSTRUCTION)],
+        # 摘要请求只装本次要遮蔽的那一段（ADR-0023）：受保护头部加区间折出的对话，
+        # 不是整份表层——整份表层正是它要缩小的那个东西。
+        [*header, *body, instruction],
         [],
         cancel,
     )

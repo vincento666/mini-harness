@@ -1,0 +1,6 @@
+{
+  "error": {
+    "type": "invalid_request_error",
+    "message": "prompt (222233 tokens) leaves no room to answer in the context (196608); requests are never truncated"
+  }
+}

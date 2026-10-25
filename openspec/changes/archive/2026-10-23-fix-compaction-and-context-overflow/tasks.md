@@ -1,0 +1,67 @@
+# Tasks
+
+## 1. 折叠层：按 seq 区间折出对话（seam ④）
+
+- [x] 1.1 红：写判据——给定一份日志与一个 seq 闭区间，折出的消息只含该区间内的对话记录；`session/start` 与既有 `compaction/summary` 不参与区间；区间外（含保留尾部）的记录一条都不出现。跑 `uv run pytest -q` 确认它红。
+- [x] 1.2 绿：在 `events/fold.py` 提供该入口（复用既有 `fold` 与投影语义，不新增第二套折叠），1.1 变绿且 `uv run mypy --strict src` 无新错。
+
+## 2. 摘要请求只装被遮蔽那一段（seam ①）
+
+- [x] 2.1 红：假 provider 记下收到的消息，断言除系统消息与末条摘要指令外，每条都落在本次 `compaction/summary.payload.shadowed_range` 之内、保留尾部不在其中。跑测试确认它红（今天发的是整份表层）。
+- [x] 2.2 绿：`_compact_if_over_line` 改用 1.2 的入口构造摘要调用，2.1 变绿；既有压缩相关判据（`compaction/summary` 的四个键、一次装配最多一次）全部仍绿。
+- [x] 2.3 红：写「区间裁到最小仍装不进窗口」的判据——日志里没有带 `purpose: compaction` 的 `model/request`、没有 `error/model`，该回合有 `error/context`（`CONTEXT_WINDOW_EXCEEDED`）与 `turn/end`（同一停止理由）。确认它红。
+- [x] 2.4 绿：实现「上限是窗口减保留额，从区间头部逐条丢弃直到装得下、一条都装不下就不发请求」，2.3 变绿；`uv run pytest -q` 全绿。
+
+## 3. 适配层的溢出识别与失败正文（seam ⑤）
+
+- [x] 3.1 红：假端点返回 400、错误对象没有 `code`、`message` 是**真实端点实际回过的那句** `prompt (222233 tokens) leaves no room to answer in the context (196608); requests are never truncated`（取自 fixture，见 5.3）→ 断言 `code: PROVIDER_CONTEXT_OVERFLOW` 且没有 `model/retry`。确认它红。
+- [x] 3.2 绿：加短语表词表（`Literal` + `frozenset`，四个短语、大小写不敏感）并放宽识别，3.1 变绿；既有「`error.code` 命中」「413」「其它 400 仍走既有路径」三条判据不变绿。
+- [x] 3.3 绿：把短语表接进 `tests/test_vocabulary_reachability.py` 的「每个值可达」判据，跑该文件确认每个短语都有一条判据打到它。
+- [x] 3.4 红：写 `detail` 的三种形状判据——响应 JSON 有 `error.message`（detail 含状态码与那句话）、正文是 HTML（detail 含状态码与正文开头且 ≤200 字符）、正文为空（detail 就是 `HTTP 400`）。确认它们红。
+- [x] 3.5 绿：实现 `detail` 构造（单行、换行压成空格、至多 200 字符），3.4 变绿；`error/model` 的 payload 里 `detail` 与失败结果一致，`code` 不因摘要改变。
+
+## 4. chat 里段级收尾看得见（seam ⑥）
+
+- [x] 4.1 红：真实子进程跑 `minihns chat`，让一段以 `error/model`（`PROVIDER_HTTP_STATUS`）收尾 → 断言 stderr 有一行含 `PROVIDER_ERROR` 与 `PROVIDER_HTTP_STATUS`、stdout 不含该行、日志里也没有这一行。确认它红。
+- [x] 4.2 绿：实现 stderr 那一行，4.1 变绿；`chat` 既有的 stdout 投影判据（工具结果不上 stdout、带 `purpose` 的摘要不上 stdout）全部仍绿。
+- [x] 4.3 红：写其余形状的判据——`CONTEXT_WINDOW_EXCEEDED` 段与 `MAX_TURNS` 段各打一行且会话继续接受下一条输入；`MODEL_COMPLETED` 段与被取消的段不打。**确认方式与计划不同，记在这里**：4.2 的实现一次覆盖了三种收尾，这两条写完直接就是绿的，无法「确认它们红」；改用变异确认它们咬得住——把 `_SEGMENT_NOTE_REASONS` 临时收窄成只剩 `PROVIDER_ERROR`，两条立刻变红，还原后回到绿。「被取消的段不打」那一半挂在 Windows 跳过的 SIGINT 黑盒上（既有边界），实现同样不打。
+- [x] 4.4 绿：补齐形状判定，4.3 变绿；`uv run pytest -q` 全绿。
+
+## 5. 遮蔽反馈看得见，与真实端点的两层判据（seam ⑥ 与 seam ⑤）
+
+- [x] 5.1 红：真实子进程跑 `minihns chat`，让某段写出一条 `compaction/summary` → 断言 stderr 有一行含该记录的 `shadowed_range` 起点与终点、`tokens_before` 与 `tokens_after`；stdout 与日志里都没有这一行；没有压缩的段不打这一行。确认它红（`assert 0 == 1`）。
+- [x] 5.2 绿：实现遮蔽反馈那一行（内容取自 `compaction/summary` 已有的四个键，不新增事件类型、不改 payload），5.1 变绿。**真端点那一跑（5.4）先跑出了这一版的缺陷**：同一条记录报两遍——每段都重读整份日志、没卡 `through` 这条线。mock 判据抓不到（那些判据每段只喂一条输入）。修法是只报 `through` 之后新写出的记录，判据里补的是第二条输入；这条判据在变异（去掉那条线）下确认变红。
+- [x] 5.3 绿：真实产物落成 fixture——`tests/fixtures/real_endpoint/context_overflow_400.json`（3.1 读它）与 `compaction_summary.json`（真 session 里真写出的 `compaction/summary`，来源 session id 写在 fixture README）。**5.1 那条判据不直接读 fixture**：它断言的数字是子进程当场算出来、当场写进日志的，fixture 在那条判据里的作用只有「读哪四个键」。所以把读 fixture 的判据落在 seam ①（`test_the_compaction_record_has_the_keys_the_real_run_wrote`）：写出来的 payload 键集必须等于真那一份的键集。
+- [x] 5.4 **完成判据（不进 CI）**：跑完，记进 `docs/verification/fix-compaction-and-context-overflow-manual.md`。两次真 run：`--window 70000 --reserve 100`（session `608ef8e48b214e2892da23456da267dc`，压缩不可能发生、塌成溢出，屏幕上看得见）与 `--window 80000 --reserve 100`（session `d31a7790e92c49fcb47d9a5dc8b25636`，段 `s1` 的回合 `t2` 与 `t4` 各压缩一次，遮蔽反馈两行原文）。**还撞出一个无声死掉的段**：段 `s2` 以 `FENCE_DENIED` 收尾，屏幕上那一行没有——它不在打那一行的三种理由里。
+- [x] 5.5 绿：同一份 manual 里记了「别扭在哪」五条与每回合的估算 / provider 回报比值（1.29 至 1.40 倍，正文 195 字符那次是 21 倍——工具 schema 与模板那约 980 token 估算里根本没有）。
+
+## 6. 账与文档
+
+- [x] 6.1 立 `docs/adr/0022-model-features-need-a-real-endpoint-gate.md`（照 `domain-modeling` 的 ADR-FORMAT）：模型相关功能的完成判据含一次真实端点实测，CI 的 mock 判据不算验收；编号连续（现有最大号 0021），与 handoff 决策 6 的关系写明（「隔离的是 CI，不是验收」）。
+- [x] 6.2 立 `docs/adr/0023-summary-replays-only-the-shadowed-range-and-overflow-needs-a-phrase-table.md`：更正「摘要请求送整份表层」——那是 M5 人批准的偏离（M5 tasks 9.3「改措辞，保留实现」），DSH 的形状有出处（`re/verified/dsh/node_modules/@deepseek-ai/dsh-compaction-basic/README.md` 第 119 与 187 行）；另记「猜正文短语」的代价。`docs/adr/` 里 0022 / 0023 各一份、无重复。
+- [x] 6.3 `docs/adr/0002-deferred-refactors.md` 追加第 64 条（估算与真端点差多少取决于内容、固定开销不在估算里：2.24 倍 / 约 4 倍 / 1.29 至 1.40 倍 / 195 字符那次 21 倍）与第 65 条（摘要请求装不下时从区间头部丢弃，等于最旧的内容不进摘要；实测第二次压缩只省 14%）；`docs/CURRENT.md` 的已知缺口清单更新：本 change 的进度一行、这一跑新撞出的两件没修的事（`FENCE_DENIED` 段无声、小窗口里触发线在保留线之下）、估算那条补上新的三个数、ADR 清单从二十一份改成二十三份并写明第 62 至 65 条与本 change 的对应关系（第 63 条修掉屏幕上那一半、「每一段都溢出」那一半仍在）。
+- [x] 6.4 Learning Gate 的晋升那一半：L-051「依赖模型回复形状的功能，完成判据里要有一次真实端点实测」晋升进 `AGENTS.md` 流程节的完成判据那句；一进一出换掉的是 ruff 例外那句里的括号（「本项目的 docstring / 注释 / 用户可见字符串一律用中文全角标点」）。收件箱先消化再收：关闭 L-042（与 L-027 同一理由）、L-046、L-025，留存十二条并各补一条本轮证据，新收 L-051（晋升）与 L-052。
+
+## 7. 集成检查与收尾
+
+- [x] 7.1 跑门禁四道并确认退出码 0：`uv run ruff format --diff src tests`、`uv run ruff check src tests`、`uv run mypy --strict src`、`uv run coverage erase` + `uv run coverage run -m pytest -q` + `uv run coverage combine` + `uv run coverage report --fail-under=95 --show-missing`。实测 2026-10-22 23:44：四道退出码 0，**403 passed / 5 skipped**，`TOTAL 1921 / 92 / 95%`。
+- [x] 7.2 变异测试一轮并记进 `docs/verification/fix-compaction-and-context-overflow-mutation.md`：计划里的五处全部跑过，另加一处（遮蔽反馈不卡 `through` 这条线，apply 5.2 时真端点那一跑先撞出来的那个缺陷）——**六个变异全部被杀死，没有存活、没有 dud**；还原后 `git diff HEAD -- src tests` 是 0 行、基线复现同一组数字。
+- [x] 7.3 Learning Gate 的收件箱那一半：扫本轮证据写进 `docs/lessons.md`——新收 L-051（真实端点那一跑是判据不是补充，已晋升）与 L-052（mock 判据每段只喂一条输入，跨段的缺陷抓不到）；L-049 补一处新实例（PowerShell 把子进程 stderr 包成 ErrorRecords、同一行显示两遍，第一次读真 run 时把它当成实现缺陷）；L-047 / L-048 / L-037 / L-039 / L-045 各补一条本轮证据。不是 `NO-PROMOTION`。
+
+## 8. `code-review` 两轴之后的四条裁决与两条规格欠账（2026-10-23）
+
+- [x] 8.1 裁决一（反面集合）：屏幕上那一行改成「不以 `MODEL_COMPLETED` / `ABORTED` 收尾就打」。先写 seam ⑥ 判据 `test_a_fence_denied_segment_says_so_on_stderr`——红在 `assert len(notes) == 1` 实得 0，正是真端点那一跑撞到的「`FENCE_DENIED` 段无声」。实现把 `_SEGMENT_NOTE_REASONS` 白名单换成 `_SEGMENT_NOTE_SUPPRESSED = {STOP_MODEL_COMPLETED, STOP_ABORTED}`；delta 的需求正文改成反面集合并补「围栏拒绝收尾的段在屏幕上有一行」场景。
+- [x] 8.2 裁决二（按往返整对丢）：seam ① 判据 `test_the_summary_trim_drops_whole_round_trips` 先红——摘要请求里的角色序列是 `system / tool / assistant / tool / user`，那条 `tool` 没有请求它的 `assistant`。实现加 `_drop_leading_unit`：带调用的那条 assistant 与回答它的 tool 消息一起丢；delta 补「裁剪不拆散工具往返」场景。
+- [x] 8.3 裁决三（收紧溢出识别）：`openai_compat.py` 塌成溢出那一处加 `not _retryable(response.status_code)` 守卫——只有不可重试的 4xx 塌成溢出。seam ⑤ 补两条判据：500 与 429 的正文里恰好含短语表里的话仍走 `PROVIDER_HTTP_STATUS`。这两条在改前就是绿的（重试耗尽那条早退已经挡住了 5xx 与 429），所以先确认它们在变异下红：把塌成溢出的判断挪到那条早退之前，两条都红（`assert 'PROVIDER_CONTEXT_OVERFLOW' == 'PROVIDER_HTTP_STATUS'`），还原。delta 正文与两个场景同步。
+- [x] 8.4 规格轴欠账 (a)1：补 seam ⑥ 判据 `test_a_chat_that_compacted_replays_the_same_log_unchanged`——真跑一次 chat 让屏幕上出现 `[遮蔽]`，同一份日志的 `minihns replay` 退出码 0、stdout 与 stderr 里都没有那一行、没有 `REPLAY_MISMATCH`。delta 里「遮蔽反馈不是日志的投影」那条场景原本没有判据。
+- [x] 8.5 规格轴欠账 (a)2：`proposal.md` 的「What Changes」与「Capabilities」按实现实况改写——塌成溢出只发生在不可重试的 4xx 且不重试、那一行写反面集合、同一条压缩记录只报一次、真实产物 fixture 只喂 seam ① 与 ⑤ 的判据（seam ⑥ 跑 mock 与 loopback 假端点）。
+- [x] 8.6 规格轴欠账 (b)1：`event.seq <= through` 这条去重规则写进 delta——需求正文加一句「同一条 `compaction/summary` MUST NOT 被打印第二次」，并补「同一条压缩记录只报一次」场景。
+- [x] 8.7 裁决四（变异轮重跑）：六条变异全部跑全量测试，变异 4 拆成两处单点（4a 段注脚那一行、4b 遮蔽反馈那一行），另加三条打本轮新判据的变异（7 塌成溢出的位置、8 把 `FENCE_DENIED` 也压掉、9 裁剪改回逐条丢）。实测 2026-10-23 09:51 至 10:42：**十条全部跑全量、全部被杀死，无存活、无 dud**，基线 **408 passed / 5 skipped**；记进 `docs/verification/fix-compaction-and-context-overflow-mutation.md` 的「第二轮」。
+- [x] 8.8 Standards 轴记账：`docs/adr/0002` 加第 66 条（`PROTECTED_EVENT_TYPES` 在 `context/budget.py` 与 `events/fold.py` 各一份）与第 67 条（`_print_shadow_feedback` 每段整读一次日志，与第 16 条同一笔账），另加「本 change 的提交纪律与流程欠账」五条与「本 change 的判据欠账」三条；更正 `docs/lessons.md` 收尾消化记录里那句「本轮的提交纪律没有欠账」，并补 2026-10-23 的消化记录（新收 L-053、补证据五条、本轮不晋升）。
+- [x] 8.9 跑门禁四道、更新 `docs/CURRENT.md` 的门禁行与本轮四条裁决，提交并推 `change/fix-compaction-and-context-overflow`。
+
+## Workflow follow-up
+
+- 跑 `code-review` 两轴（Standards / Spec）核对实现与四条 delta 一致。
+- 在 change 分支上 sync delta 进主规格（`context-budget`、`provider`、`chat-repl`）并归档，然后 `openspec validate --all --strict` 全绿。
+- 征求人批准后再合入 `main` 并推；合并后跑一次 `agents-md-slim`。

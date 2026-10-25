@@ -7,6 +7,7 @@ import inspect
 import json
 import os
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -17,6 +18,9 @@ from mini_harness.provider.contract import AssistantTurn, ProviderFailure, ToolS
 from mini_harness.provider.openai_compat import OpenAICompatProvider
 
 _BASE_URL = "http://127.0.0.1:9/v1"
+
+# 真端点回来的东西：判据读 fixture，不读手编的桩数据（ADR-0022）。
+_FIXTURE_DIR = Path(__file__).parent / "fixtures" / "real_endpoint"
 
 _OK_BODY: dict[str, Any] = {
     "id": "chatcmpl-1",
@@ -312,7 +316,7 @@ async def test_the_model_request_carries_a_120_second_timeout() -> None:
 
 
 async def test_a_400_saying_context_length_exceeded_is_a_context_overflow() -> None:
-    """design D8：只认 `error.code == "context_length_exceeded"` 这一个值。
+    """design D8：`error.code == "context_length_exceeded"` 命中。
     400 不是重试的理由，所以这里一次请求、零次重试。"""
     provider, seen = _provider(
         handler=lambda request: httpx.Response(
@@ -347,8 +351,103 @@ async def test_a_413_saying_context_length_exceeded_collapses_to_the_same_overfl
     assert outcome.attempts == []
 
 
+async def test_a_400_whose_message_says_it_leaves_no_room_is_a_context_overflow() -> None:
+    """design D3：错误对象没有 `code`、只有 `message` 时也要认得出溢出。
+
+    正文取自真端点实际回过的那次（`tests/fixtures/real_endpoint/README.md` 写明来源 session）。
+    """
+    provider, seen = _provider(
+        handler=lambda request: httpx.Response(
+            400, text=(_FIXTURE_DIR / "context_overflow_400.json").read_text(encoding="utf-8")
+        )
+    )
+
+    outcome = await _generate(provider)
+
+    assert len(seen) == 1
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_CONTEXT_OVERFLOW"
+    assert outcome.attempts == []
+
+
+async def test_a_500_saying_context_length_exceeded_is_not_an_overflow() -> None:
+    """2026-10-23 人裁决：塌成溢出只发生在 4xx（429 除外）——5xx 说的是服务端那一刻接不住。"""
+    provider, seen = _provider(
+        handler=lambda request: httpx.Response(
+            500,
+            json={"error": {"type": "server_error", "message": "context length exceeded upstream"}},
+        )
+    )
+
+    outcome = await _generate(provider)
+
+    assert len(seen) == 2, "500 可重试一次"
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_HTTP_STATUS"
+
+
+async def test_a_429_saying_prompt_is_too_long_is_not_an_overflow() -> None:
+    """429 走既有的重试：它的正文里恰好出现短语表里的话也不塌成溢出。"""
+    provider, seen = _provider(
+        handler=lambda request: httpx.Response(
+            429,
+            json={"error": {"type": "rate_limit_error", "message": "prompt is too long right now"}},
+        )
+    )
+
+    outcome = await _generate(provider)
+
+    assert len(seen) == 2, "429 可重试一次"
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_HTTP_STATUS"
+
+
+async def test_the_provider_sentence_goes_into_the_failure_detail() -> None:
+    """design D4：失败结果不只带状态码，还带提供方说的那句话。"""
+    provider, _ = _provider(
+        handler=lambda request: httpx.Response(
+            400,
+            json={
+                "error": {
+                    "type": "invalid_request_error",
+                    "message": "prompt leaves no room to answer",
+                }
+            },
+        )
+    )
+
+    outcome = await _generate(provider)
+
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.detail.startswith("HTTP 400：")
+    assert "prompt leaves no room to answer" in outcome.detail
+
+
+async def test_a_non_json_body_goes_into_the_detail_as_itself() -> None:
+    """正文不是 JSON 时取正文本身；整条 `detail` 不超过 200 字符。"""
+    html = "<html><body>Bad Gateway</body></html>" * 30
+    provider, _ = _provider(handler=lambda request: httpx.Response(502, text=html))
+
+    outcome = await _generate(provider)
+
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_HTTP_STATUS"
+    assert outcome.detail.startswith("HTTP 502：<html>")
+    assert len(outcome.detail) <= 200
+
+
+async def test_an_empty_body_does_not_make_an_empty_sentence() -> None:
+    """正文为空时只有状态码，不制造「HTTP 400：」这种空话。"""
+    provider, _ = _provider(handler=lambda request: httpx.Response(400, text=""))
+
+    outcome = await _generate(provider)
+
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.detail == "HTTP 400"
+
+
 async def test_a_400_with_any_other_error_code_is_still_an_http_status_result() -> None:
-    """不猜 `message` 文本：`error.code` 不是那个值就沿用既有分类。"""
+    """`error.code` 不是那个值、`message` 也不含短语表里的任何一条：沿用既有分类。"""
     provider, _ = _provider(
         handler=lambda request: httpx.Response(
             400, json={"error": {"code": "invalid_request_error", "message": "bad tools"}}

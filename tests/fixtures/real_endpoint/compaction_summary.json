@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "type": "compaction/summary",
+  "session_id": "d31a7790e92c49fcb47d9a5dc8b25636",
+  "seq": 13,
+  "ts": "2026-10-22T15:30:26.590909+00:00",
+  "payload": {
+    "turn_id": "t2",
+    "shadowed_range": { "start": 1, "end": 8 },
+    "summary": "任务：用 `read` 工具读取 `big.md` 四次。已做：已完成第一次读取。下一步：继续读 offset=200、400、600 三次。",
+    "tokens_before": 15196,
+    "tokens_after": 74
+  }
+}
