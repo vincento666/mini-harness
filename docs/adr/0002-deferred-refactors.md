@@ -255,6 +255,7 @@ payload 是 `turn_id` / `tool_call_id` / `code` / `detail`。规格要求「被�
 - **条件成立，改判到 M6（2026-10-21，M5 收尾核实）**：M5 之后工具输出确实是模型的主要输入面——人手验收里那条 55118 字符的 `tool/result` 正是被遮蔽的东西，窗口预算量主要就是量它。但解码选型（OEM 代码页 / `locale.getpreferredencoding(False)` / 先试 UTF-8 失败再回退）是选型不是修补，**要人裁决**；M6 让工具输出直接进对话，在那之前定下来。判据形状照原文那条写。
 - **未处理，改判到 M7（2026-10-21，M6 收尾核实）**：M6 让工具输出直接进对话（chat 的 stdout 不打印它，但它进上下文、进预算），条件更成立了，可解码选型仍**要人裁决**——三条读法各自的失败模式不同，agent 不许自己选。M7 的 serve 会把工具输出送到人的屏幕上，届时必须定。
 - **按 DSH 结案（2026-10-22，M7 任务 8.2）**：不用裁决了——DSH 自己就是 lossy UTF-8。子进程输出走 `dsh-subprocess-local/lib/output.js:193` 与 `:232` 的 `Buffer.toString("utf8")`（Node 对非法字节产出 U+FFFD），文件读走 `dsh-fs-local/lib/index.js:333` 的 `new TextDecoder("utf-8", { fatal: true })`（非法字节是错误）。mini 两条都照到了：`tools/bash_tools.py` 对子进程输出用 `errors="replace"`，`tools/file_tools.py` 对文件读用 `read_text(encoding="utf-8")` 并把 `UnicodeDecodeError` 收成一条结果。cmd.exe 的 GBK 输出碎成 U+FFFD 因此不是 mini 的缺口，是这一层共同的形状。真正的差在溢出那一侧——新记第 53 条。
+- **结案不动，补的是「让模型知道为什么」（2026-10-25，change `add-platform-facts-to-protected-header`）**：2026-10-24 的 UAT 让人又亲眼看见一次（`ls` 的 GBK 输出碎成 U+FFFD）。人裁决解码**保持 lossy UTF-8**，不猜平台代码页；改的是把平台事实与本平台的命令建议放进受保护头部，并在那一块里说明「非合法 UTF-8 的字节会显示为替换字符」，于是乱码从「工具坏了」变成「知道为什么」。见 ADR-0029 与 ADR-0030。
 
 ## 提交纪律：本轮审查查出的三处措辞欠账（不改写历史，只记账）
 

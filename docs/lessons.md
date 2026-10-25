@@ -667,6 +667,24 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Promotion candidate: 与 L-052 同族（判据的形状与人的动作之间的距离），本轮不占 AGENTS.md 额度
 - Status: inbox
 
+### L-056
+- Date: 2026-10-25
+- Context: `add-platform-facts-to-protected-header` 的 task 1.1，`tools/bash_tools.py` 第一次要把「用哪个 shell」变成一个可读的事实
+- Observation: **mypy 的 platform 窄化只认 `sys.platform == "win32"` 这种字面量。** 三处平台判断抽成 `_IS_WINDOWS = sys.platform == "win32"` 之后，`else` 分支里的 `os.killpg` / `os.getpgid` / `signal.SIGKILL` 当场变成三个 `attr-defined` 错误——mypy 按 Windows 的 stub 去分析那个分支，因为它不再认识那个布尔量「在 POSIX 下才成立」。判据全绿、只有 mypy 红，这种红最容易被当成无害重构放过去
+- Evidence: `mypy --strict src` 的 `L64: [attr-defined] Module has no attribute "killpg"`，与改回字面量之后的全绿；提交 `38ee5d0`
+- Next use: 平台判断就留在分支处写字面量，事实（`shell_form()`）另行导出；真要把判断收成一处，mypy 与判据都得跟着走，别只动一处
+- Promotion candidate: 可压成一句话（「平台窄化用字面量，事实单独导出」），但更适合住进 `bash_tools.py` 的 docstring——本轮已经写在那儿，不占 AGENTS.md 额度
+- Status: inbox
+
+### L-057
+- Date: 2026-10-25
+- Context: 勾 `tasks.md` 的复选框、批量改仓库里的文本文件时
+- Observation: **这台机器的 PowerShell 5.1 写 UTF-8 会带 BOM。** `Set-Content -Encoding utf8` 加 `-replace` 把 BOM 写进了 `tasks.md` 第一行，`git diff` 里表现成首行多一个不可见字符；`-Encoding utf8NoBOM` 是 pwsh 7 的枚举，这台机器上直接报「无法转换为 FileSystemCmdletProviderEncoding」。另一件事：`git checkout -- <file>` 之后 `edit` 工具会以「file changed since it was read」拒绝写入，得先重新 `read`
+- Evidence: 本轮 `git diff` 里 `-# Tasks` / `+# Tasks` 那一段；改用 `[System.IO.File]::WriteAllText(path, text, New-Object System.Text.UTF8Encoding($false))` 之后干净；提交 `e7b6c92` 前后的两次写入
+- Next use: 改仓库文本就用 `edit` 工具；非要用 PowerShell 批量改，走 .NET 的 `WriteAllText` + `UTF8Encoding($false)`，改完 `git diff` 看首行有没有多出字符
+- Promotion candidate: 与 L-019（按字节读写源文件）同族，是工具与环境事实——去处是这个家族头，不进 AGENTS.md
+- Status: inbox
+
 ### `fix-chat-screen-feedback` 收尾轮的消化记录（2026-10-24，tasks 5.4）
 
 **先消化再收**（上一轮写明「已到上限」）。关闭三条：L-036（断言两侧不同源已是 seam ⑥ 写判据的默认形状，本轮补强的判据都从日志记录里取值再判屏幕上那一行）、L-050（`bind()` 的构造与清理顺序由实现与 `test_an_occupied_port_fails_before_the_session_starts` 承载，本 change 没有新外部依赖）、L-053 并入 L-041（「有一行」与「重放方看不见它」是同一件事——判据只判了一半；L-041 作家族头）。**另补齐六条 Status 行**：L-025 / L-031 / L-032 / L-033 / L-042 / L-046 早在 2026-10-21 与 2026-10-22 的消化记录里就关闭了，条目自己的 Status 行没跟着改；本轮核对全表（54 条条目 / 54 行 Status）后补齐，收件箱的真实数字因此比上一轮记的 15 条少。
@@ -682,6 +700,18 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 **本轮没照自己写的做的一处**：5.2 的 UAT 手册立起来了、三场命令与观察表都在，但**表是空的**——那一半要人跑。按 ADR-0025，这张表没填完本 change 不得归档、不得合入 `main`；A（`30bb7cf`）、B（`96abe4a`）、D（`5910a5c`）三条也卡在同一张表上。
 
 收件箱：13 条（L-005 / L-019 / L-037 / L-039 / L-041 / L-043 / L-045 / L-047 / L-048 / L-049 / L-052 / L-054 / L-055），空闲 2 条。
+
+### `add-platform-facts-to-protected-header` 收尾轮的消化记录（2026-10-25，tasks 6.4）
+
+**新收两条**：L-056（mypy 的平台窄化只认 `sys.platform` 字面量，抽成布尔常量会让 POSIX 分支被拿到 Windows 上算）、L-057（这台机器的 PowerShell 5.1 写 UTF-8 会带 BOM；`git checkout` 之后要重新 `read` 才能 `edit`）。
+
+**补证据两条**：L-055（本轮全量跑里那条 Windows Ctrl-C 判据又偶发一次 `0xC000013A`，单独复跑 1 passed——同一个 L-055 家族，不是新条目）、L-019（变异脚手架继续按字节读写源文件，9 个变异、9 次还原，`git status` 每次都只剩那四个未跟踪的 `docs/tools/` 文件）。
+
+**AGENTS.md 本轮不晋升（NO-PROMOTION）**：L-056 的规则已经住进 `bash_tools.py` 的 docstring，L-057 是工具坑（去处是本文件的家族头），L-055 的裁决 2026-10-24 就落了字。一进一出的额度没有动用。
+
+**变异轮测量**：9 个变异全杀、0 存活，定向跑；还原之后另跑一次全量确认回到基线（430 passed / 5 skipped / 1 failed——那 1 条是 L-055 的已知偶发，单独复跑绿）。定向与全量在这一轮没有可比的红数差，因为定向跑的判据文件本来就覆盖了九条变异的全部被杀点。
+
+收件箱：15 条（L-005 / L-019 / L-037 / L-039 / L-041 / L-043 / L-045 / L-047 / L-048 / L-049 / L-052 / L-054 / L-055 / L-056 / L-057），**到 15 条上限**：下个 change 收新条之前先消化。
 
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 - 每个里程碑收尾扫一次，**允许输出 `NO-PROMOTION`**（没有可复用信号就不写条目）。
