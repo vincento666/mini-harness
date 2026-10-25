@@ -37,8 +37,14 @@ def _one_turn_events(
     *,
     append_system_prompt: str = "",
     tools: tuple[str, ...] = (),
+    platform: dict[str, str] | None = None,
 ) -> list[EventRecord]:
-    start_payload = {"append_system_prompt": append_system_prompt, "tools": list(tools)}
+    start_payload: dict[str, Any] = {
+        "append_system_prompt": append_system_prompt,
+        "tools": list(tools),
+    }
+    if platform is not None:
+        start_payload["platform"] = platform
     return [
         _rec(0, "session/start", start_payload),
         _rec(1, "turn/start", {"turn_id": "t1"}),
@@ -49,6 +55,52 @@ def _one_turn_events(
         ),
         _rec(3, "turn/end", {"turn_id": "t1", "stop_reason": "MODEL_COMPLETED"}),
     ]
+
+
+def test_the_header_carries_a_runtime_environment_block() -> None:
+    """受保护头部多一块运行环境，位置在工具块之后、追加文本之前（ADR-0029）。"""
+    events = _one_turn_events(
+        tools=("read", "bash"),
+        append_system_prompt="额外规则",
+        platform={"os": "nt", "shell": "cmd.exe /c"},
+    )
+
+    header = fold(events).messages[0].content
+
+    assert "可用工具" in header
+    assert "运行环境" in header
+    assert header.index("可用工具") < header.index("运行环境") < header.index("额外规则")
+    assert "nt" in header
+    assert "cmd.exe /c" in header
+    assert (
+        fold(events).header_fingerprint
+        != fold(_one_turn_events(tools=("read", "bash"))).header_fingerprint
+    )
+
+
+def test_the_advice_follows_the_recorded_platform() -> None:
+    """建议由记下来的 `platform` 推出，不看折叠时所在机器的平台（ADR-0029）。"""
+    windows = fold(_one_turn_events(platform={"os": "nt", "shell": "cmd.exe /c"}))
+    posix = fold(_one_turn_events(platform={"os": "posix", "shell": "/bin/sh -c"}))
+    windows_header = windows.messages[0].content
+    posix_header = posix.messages[0].content
+
+    assert "dir" in windows_header
+    assert "findstr" in windows_header
+    assert "ls -R" not in windows_header
+    assert "ls -R" in posix_header
+    assert "grep" in posix_header
+    assert windows.header_fingerprint != posix.header_fingerprint
+
+
+def test_the_environment_block_says_how_command_output_is_decoded() -> None:
+    """那一块把「输出按 UTF-8 解码」讲给模型听：乱码不再是「工具坏了」（ADR-0029）。"""
+    header = (
+        fold(_one_turn_events(platform={"os": "nt", "shell": "cmd.exe /c"})).messages[0].content
+    )
+
+    assert "UTF-8" in header
+    assert "替换字符" in header
 
 
 def test_the_tool_block_in_the_header_comes_from_session_start() -> None:

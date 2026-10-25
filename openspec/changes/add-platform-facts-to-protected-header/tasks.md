@@ -15,10 +15,10 @@
 
 ## 3. 折叠头部多一块（seam ④）
 
-- [ ] 3.1 红：seam ④ 断言折叠结果的受保护头部里多一块运行环境，内容含 `os` 与 `shell`，位置在内置常量与工具块之后、`--append-system-prompt` 的追加文本之前；`header_fingerprint` 覆盖它。绿：`_start_facts` 读回、`protected_header` 拼这块。
-- [ ] 3.2 红：seam ④ 断言「命令输出按 UTF-8 解码、非法字节显示为替换字符」那句说明随这块一起出现，且它是关于 harness 自己的说明、不是猜测出来的平台事实。绿：把它固定在那一块里。
-- [ ] 3.3 红：seam ④ 逐点重放一份带 `platform` 的新日志，断言每个装配点与该记录逐字段相等。绿：确认派生只依赖该点之前的前缀。
-- [ ] 3.4 红：seam ④ 同一份会话骨架分别记 `os: nt` + `shell: cmd.exe /c` 与记 `os: posix` + `shell: /bin/sh -c`，断言前者点出 `dir` / `findstr` / `Get-Content`、后者点出 `ls -R` / `grep` / `tail`，且各自不把对方的命令说成可用；判据跑在哪个平台上都一样（ADR-0029）。绿：建议由 `platform` 推出，不读 `process.platform`。
+- [x] 3.1 红：seam ④ 断言折叠结果的受保护头部里多一块运行环境，内容含 `os` 与 `shell`，位置在内置常量与工具块之后、`--append-system-prompt` 的追加文本之前；`header_fingerprint` 覆盖它。绿：`_start_facts` 读回、`protected_header` 拼这块。
+- [x] 3.2 红：seam ④ 断言「命令输出按 UTF-8 解码、非法字节显示为替换字符」那句说明随这块一起出现，且它是关于 harness 自己的说明、不是猜测出来的平台事实。绿：把它固定在那一块里。
+- [x] 3.3 红：seam ④ 逐点重放一份带 `platform` 的新日志，断言每个装配点与该记录逐字段相等。绿：确认派生只依赖该点之前的前缀。
+- [x] 3.4 红：seam ④ 同一份会话骨架分别记 `os: nt` + `shell: cmd.exe /c` 与记 `os: posix` + `shell: /bin/sh -c`，断言前者点出 `dir` / `findstr` / `Get-Content`、后者点出 `ls -R` / `grep` / `tail`，且各自不把对方的命令说成可用；判据跑在哪个平台上都一样（ADR-0029）。绿：建议由 `platform` 推出，不读 `process.platform`。
 
 ## 4. 旧日志不受影响（seam ④ + ⑥）
 

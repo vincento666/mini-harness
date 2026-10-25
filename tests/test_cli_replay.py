@@ -64,6 +64,21 @@ def test_replay_final_context_matches_the_recorded_context_assembled(tmp_path: P
     assert "model/request" not in replay.stdout
 
 
+def test_replay_verifies_every_assembly_point_of_a_log_that_carries_the_platform_facts(
+    tmp_path: Path,
+) -> None:
+    """带 `platform` 的新日志逐点重放一致：运行环境块只由日志前缀派生（ADR-0029）。"""
+    session_id, log_path = _run_once(tmp_path)
+
+    replay = _cli("replay", session_id, cwd=tmp_path)
+
+    assert '"platform"' in log_path.read_text(encoding="utf-8")
+    assert replay.returncode == 0
+    assert "verified seq=" in replay.stdout
+    assert "REPLAY_MISMATCH" not in replay.stdout
+    assert "REPLAY_MISMATCH" not in replay.stderr
+
+
 def test_replay_of_an_unknown_session_id_names_the_path_it_looked_for(tmp_path: Path) -> None:
     session_dir = tmp_path / "sessions"
 
