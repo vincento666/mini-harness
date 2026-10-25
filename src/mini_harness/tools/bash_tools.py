@@ -19,6 +19,28 @@ MAX_TIMEOUT_SECONDS = 600
 OUTPUT_LIMIT_BYTES = 16 * 1024
 TRUNCATION_MARK = "[输出已截断]"
 
+SHELL_FORM_POSIX = "/bin/sh -c"
+
+
+def shell_form() -> str:
+    """`bash` 实际用来执行命令的 shell 形态（ADR-0009）。
+
+    不写死：Windows 上 `create_subprocess_shell` 用的是 `COMSPEC`，所以这里也读它——被改写时
+    记录值才跟实际执行的那条一致；POSIX 一边 `create_subprocess_shell` 固定落 `/bin/sh`。
+    """
+    if sys.platform == "win32":
+        return f"{os.path.basename(os.environ.get('COMSPEC', 'cmd.exe'))} /c"
+    return SHELL_FORM_POSIX
+
+
+def platform_facts() -> dict[str, str]:
+    """进 `session/start` 的平台事实：`os` 与 `shell`（ADR-0029）。
+
+    shell 这份事实住在知道它的这一层——`run_bash` 就是按它起进程的；CLI 只负责把它写下去，
+    不再自己判一次平台（两处判断同一件事早晚分叉）。
+    """
+    return {"os": os.name, "shell": shell_form()}
+
 
 def _bounded(content: str) -> str:
     """进日志的结果内容有界：超限截到上限字节数，末尾留下固定标记。"""
@@ -93,8 +115,10 @@ def bash_tool_definitions() -> list[ToolDefinition]:
         ToolDefinition(
             name="bash",
             description=(
-                "在工作区根跑一条 shell 命令并返回它的输出。"
+                "在工作区根跑一条真命令（构建、测试、版本控制、进程）并返回它的输出。"
                 "命令自己的退出码非 0 不是 harness 失败，它出现在结果内容里。"
+                "列文件用 glob、搜内容用 grep、读文件用 read：不要用 ls / grep / cat 这类等价命令，"
+                "也不要临时写脚本。"
             ),
             args_model=BashArgs,
             mutates=True,

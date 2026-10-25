@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from pathlib import Path
 from typing import Any, get_args
 
 from mini_harness.config import ConfigFailure, build_registry
+from mini_harness.tools.bash_tools import bash_tool_definitions
 from mini_harness.tools.fences import ApprovalDecision, DispatchContext, path_key
 from mini_harness.tools.file_tools import file_tool_definitions
 from mini_harness.tools.registry import (
@@ -69,6 +71,31 @@ def test_the_registry_holds_exactly_the_five_file_tools() -> None:
     assert all(
         set(spec.model_dump()) == {"name", "description", "parameters"} for spec in registry.specs()
     )
+
+
+def test_the_native_file_tools_say_they_are_the_way_to_do_it() -> None:
+    """三个原生工具的描述各带一句「什么时候用我」，并点明不必用 `bash` 的等价命令（ADR-0030）。"""
+    by_name = {tool.name: tool for tool in file_tool_definitions()}
+    expected = {"glob": "列文件", "grep": "搜内容", "read": "读文件"}
+
+    for name, purpose in expected.items():
+        description = by_name[name].description
+        assert purpose in description
+        assert "bash" in description
+
+
+def test_the_bash_description_points_at_the_native_tools() -> None:
+    """`bash` 的描述把等价能力指给原生工具，六份描述都不写平台专用命令（ADR-0029 / 0030）。"""
+    by_name = {
+        tool.name: tool.description for tool in [*file_tool_definitions(), *bash_tool_definitions()]
+    }
+
+    assert "glob" in by_name["bash"]
+    assert "grep" in by_name["bash"]
+    for description in by_name.values():
+        assert re.search(r"\bdir\b", description) is None
+        assert "findstr" not in description
+        assert "Get-Content" not in description
 
 
 def test_the_parameter_schema_a_model_sees_comes_from_the_dispatch_side_model() -> None:

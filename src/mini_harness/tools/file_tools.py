@@ -221,7 +221,10 @@ def file_tool_definitions() -> list[ToolDefinition]:
     return [
         ToolDefinition(
             name="read",
-            description="读取 UTF-8 文本文件，返回带行号前缀的窗口。",
+            description=(
+                "读取 UTF-8 文本文件，返回带行号前缀的窗口。"
+                "要读文件就用它：不要用 bash 里的 cat 这类等价命令，也不必临时写脚本。"
+            ),
             args_model=ReadArgs,
             mutates=False,
             run=read_file,
@@ -242,14 +245,21 @@ def file_tool_definitions() -> list[ToolDefinition]:
         ),
         ToolDefinition(
             name="glob",
-            description="按 glob 模式匹配工作区里的文件，返回相对路径，按修改时间从新到旧。",
+            description=(
+                "按 glob 模式匹配工作区里的文件，返回相对路径，按修改时间从新到旧。"
+                "要列文件就用它（只列文件，不含子目录）：不要用 bash 里的 ls 这类等价命令，"
+                "也不必临时写脚本。"
+            ),
             args_model=GlobArgs,
             mutates=False,
             run=glob_files,
         ),
         ToolDefinition(
             name="grep",
-            description="按正则搜索文本文件，返回「文件:行号: 行内容」形式的匹配行。",
+            description=(
+                "按正则搜索文本文件，返回「文件:行号: 行内容」形式的匹配行。"
+                "要搜内容就用它：不要用 bash 里的 grep 这类等价命令，也不必临时写脚本。"
+            ),
             args_model=GrepArgs,
             mutates=False,
             run=search_files,

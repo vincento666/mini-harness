@@ -31,6 +31,15 @@ def test_an_unknown_key_is_a_distinct_failure() -> None:
     assert failure.code == "CONFIG_UNKNOWN_KEY"
 
 
+def test_the_platform_facts_are_not_configurable() -> None:
+    """平台事实是事实不是设置：配置文件里写它就是那条「未知的键」（ADR-0029）。"""
+    failure = validate_config({"platform": {"os": "posix", "shell": "/bin/sh -c"}})
+
+    assert isinstance(failure, ConfigFailure)
+    assert failure.code == "CONFIG_UNKNOWN_KEY"
+    assert "platform" in failure.detail
+
+
 def test_a_wrong_typed_value_is_a_distinct_failure() -> None:
     failure = validate_config({"max_turns": "three"})
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 from pathlib import Path
 
 from mini_harness.events import read_events
@@ -14,6 +15,7 @@ from mini_harness.tools.bash_tools import (
     TRUNCATION_MARK,
     BashArgs,
     bash_tool_definitions,
+    shell_form,
 )
 from mini_harness.tools.fences import ApprovalDecision
 from mini_harness.tools.file_tools import file_tool_definitions
@@ -63,6 +65,28 @@ def _script(workspace: Path, name: str, body: str) -> str:
     """
     (workspace / name).write_text(body, encoding="utf-8")
     return f"python {name}"
+
+
+async def test_bash_names_the_shell_it_actually_runs_through(tmp_path: Path) -> None:
+    """报出来的 shell 形态与它实际起进程用的那条一致：判据拿命令的输出对，不听自述。"""
+    probe = "echo %COMSPEC%" if sys.platform == "win32" else "echo $0"
+    outcome = await dispatch_call(tmp_path, "bash", {"command": probe}, registry=_registry())
+    assert outcome.result.outcome == "OK"
+    if sys.platform == "win32":
+        # `%VAR%` 只有 `cmd.exe` 会展开，POSIX shell 把它原样打出来。
+        assert "cmd.exe" in outcome.result.content.lower()
+        assert "cmd.exe" in shell_form()
+    else:
+        # `$0` 只有 POSIX shell 会展开。
+        assert "sh" in outcome.result.content
+        assert "%COMSPEC%" not in outcome.result.content
+        assert shell_form() == "/bin/sh -c"
+
+
+def test_the_shell_is_not_a_tool_argument() -> None:
+    """`shell` 形态不是入参：模型不能挑 shell，它由平台决定（ADR-0029）。"""
+    spec = next(spec for spec in _registry().specs() if spec.name == "bash")
+    assert set(spec.parameters["properties"]) == {"command", "timeout_seconds"}
 
 
 async def test_read_only_denies_bash_and_the_command_never_runs(tmp_path: Path) -> None:

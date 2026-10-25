@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -27,6 +27,23 @@ PURPOSE_COMPACTION = "compaction"
 # 不进遮蔽范围、也不进按 seq 区间折出的对话的两类事件（规格）。
 PROTECTED_EVENT_TYPES: frozenset[str] = frozenset({"session/start", "compaction/summary"})
 
+# 运行环境块（ADR-0029）：事实、本平台的命令建议、一句关于解码的说明。
+# 建议只由记下来的 `shell` 推出，不看折叠那一刻所在机器的平台——否则同一份日志在两台机器上重放
+# 会产出不同的头部，M5 的逐点重放判据就守不住了。
+# 建议先给原生工具、再给这个平台的 shell 命令：2026-10-25 的 UAT 里，
+# 模型先按描述用了 glob、又按这句用了 dir，然后自己把这一步撤回。
+# 同一件事不能有两处说法（ADR-0030）。
+_NATIVE_ADVICE = "列文件用 glob、搜内容用 grep、读文件用 read。"
+_WINDOWS_SHELL_ADVICE = "真要跑 shell 命令时，用 dir / findstr / Get-Content。"
+_POSIX_SHELL_ADVICE = "真要跑 shell 命令时，用 ls -R / tail。"
+_DECODE_NOTE = "命令输出按 UTF-8 解码，不是合法 UTF-8 的字节会显示为替换字符。"
+
+
+def _environment_block(os_name: str, shell: str) -> str:
+    shell_advice = _WINDOWS_SHELL_ADVICE if "cmd.exe" in shell else _POSIX_SHELL_ADVICE
+    head = f"运行环境：os={os_name}，bash 经 {shell} 执行。"
+    return f"{head}{_NATIVE_ADVICE}{shell_advice}{_DECODE_NOTE}"
+
 
 class Message(BaseModel):
     """进入模型的一条消息。"""
@@ -48,18 +65,25 @@ def protected_header(
     *,
     append_system_prompt: str = "",
     tool_names: Sequence[str] = (),
+    platform: Mapping[str, str] | None = None,
 ) -> list[Message]:
     """受保护头部：内置常量在前，只能追加不能替换。"""
     parts = [SYSTEM_PROMPT]
     if tool_names:
         parts.append("可用工具：\n" + "\n".join(tool_names))
+    if platform is not None:
+        parts.append(
+            _environment_block(str(platform.get("os", "")), str(platform.get("shell", "")))
+        )
     if append_system_prompt:
         parts.append(append_system_prompt)
     return [Message(role="system", content="\n\n".join(parts))]
 
 
-def _start_facts(events: Sequence[EventRecord]) -> tuple[list[str], str]:
-    """头部里的工具块与追加段取自日志里的 `session/start`，不取自进程内注册表。
+def _start_facts(
+    events: Sequence[EventRecord],
+) -> tuple[list[str], str, dict[str, str] | None]:
+    """头部里的工具块、追加段与平台事实取自日志里的 `session/start`，不取自进程内注册表。
 
     这样实时装配与回放折叠的是同一份事实：注册表在回放时根本不存在。
     """
@@ -71,8 +95,14 @@ def _start_facts(events: Sequence[EventRecord]) -> tuple[list[str], str]:
         if isinstance(raw_tools, list):
             names = [name for name in raw_tools if isinstance(name, str)]
         appended = event.payload.get("append_system_prompt")
-        return names, appended if isinstance(appended, str) else ""
-    return [], ""
+        raw_platform = event.payload.get("platform")
+        platform = (
+            {str(key): str(value) for key, value in raw_platform.items()}
+            if isinstance(raw_platform, Mapping)
+            else None
+        )
+        return names, appended if isinstance(appended, str) else "", platform
+    return [], "", None
 
 
 def _body_message(event: EventRecord) -> Message | None:
@@ -148,10 +178,11 @@ def fold(events: Sequence[EventRecord]) -> AssembledContext:
     闭合排在它该在的位置：未配对的调用先闭合，再轮到它之后的那条消息。于是半截日志折叠出来的
     上下文仍然配平——assistant 的工具请求后面跟着工具结果，之后才是既有消息。
     """
-    tool_names, append_system_prompt = _start_facts(events)
+    tool_names, append_system_prompt, platform = _start_facts(events)
     header = protected_header(
         append_system_prompt=append_system_prompt,
         tool_names=tool_names,
+        platform=platform,
     )
     shadowed = shadowed_seqs(events)
     body: list[Message] = []
