@@ -19,6 +19,14 @@ MAX_TIMEOUT_SECONDS = 600
 OUTPUT_LIMIT_BYTES = 16 * 1024
 TRUNCATION_MARK = "[输出已截断]"
 
+SHELL_FORM_WINDOWS = "cmd.exe /c"
+SHELL_FORM_POSIX = "/bin/sh -c"
+
+
+def shell_form() -> str:
+    """`bash` 实际用来执行命令的 shell 形态：平台在起进程时已经定了，这里把它说出来（ADR-0009）。"""
+    return SHELL_FORM_WINDOWS if sys.platform == "win32" else SHELL_FORM_POSIX
+
 
 def _bounded(content: str) -> str:
     """进日志的结果内容有界：超限截到上限字节数，末尾留下固定标记。"""
