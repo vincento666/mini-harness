@@ -17,6 +17,17 @@
 - **WHEN** 运行时传入 `--append-system-prompt "额外规则"`
 - **THEN** 追加文本仍在运行环境块之后，头部里没有替换掉 `os` 与 `shell` 的入口
 
+### Requirement: 运行环境块带本平台的命令建议
+运行环境块 SHALL 在事实之外带一句本平台的命令建议：记下来的 `shell` 是 `cmd.exe` 一类时点出目录、搜内容、看文件该用哪些命令（`dir` / `findstr` / `Get-Content`），是 POSIX shell 时点出对应的那些（`ls -R` / `grep` / `tail`）。这句建议 MUST 由记下来的 `platform` 推出，MUST NOT 看折叠那一刻所在机器的平台——否则换一台机器重放会得到不同的头部。
+
+#### Scenario: Windows 事实给 Windows 建议
+- **WHEN** 折叠一份 `platform` 记着 `os` 为 `nt`、`shell` 为 `cmd.exe /c` 的日志（判据跑在哪个平台上都一样）
+- **THEN** 运行环境块里点出 `dir`、`findstr`、`Get-Content`，且没有把 `ls` 说成可用命令
+
+#### Scenario: POSIX 事实给 POSIX 建议
+- **WHEN** 折叠一份 `platform` 记着 `os` 为 `posix`、`shell` 为 `/bin/sh -c` 的日志
+- **THEN** 运行环境块里点出 `ls -R`、`grep`、`tail`，且没有把 `dir` 说成可用命令
+
 ### Requirement: 没有平台事实的旧日志头部逐字节不变
 当 `session/start` 的 payload 里没有 `platform` 时，系统 SHALL 不产出运行环境块，折叠出来的头部只有内置系统提示、工具块与追加文本。系统 MUST NOT 为缺失的平台事实填入猜测值。
 
