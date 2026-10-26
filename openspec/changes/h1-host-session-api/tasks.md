@@ -3,7 +3,7 @@
 ## 1. 装配抽成库（seam ② 与 ⑥）
 
 - [x] 1.1 seam ②：红判据 `test_assemble_returns_a_prepared_for_a_mock_request`——`assemble(request, environ)` 返回 `Prepared`（provider / settings / log / registry 四样齐），临时目录里出现一份日志；实现 `session/assembly.py`，把 `cli/main.py::_prepare_or_fail` 的主体搬过去，`run` / `chat` / `serve` 改成调用它，既有 seam ⑥ 判据全绿
-- [ ] 1.2 seam ②：红判据 `test_assemble_failure_happens_before_any_log`——缺密钥、非法配置、未知工具名各返回 `Failure`，`session_dir.glob("*.jsonl") == []`；实现校验顺序（配置 → 窗口 → 工具 → provider/密钥 → 开日志）
+- [x] 1.2 seam ②：红判据 `test_assemble_failure_happens_before_any_log`——缺密钥、非法配置、未知工具名各返回 `Failure`，`session_dir.glob("*.jsonl") == []`；实现校验顺序（配置 → 窗口 → 工具 → provider/密钥 → 开日志）
 - [ ] 1.3 seam ⑥：守卫判据 `test_the_three_entries_still_write_the_same_payload`——`run` / `chat` / `serve` 的 `session/start` payload 与重构前逐字段相同（mock fixture）；只加判据，确认 1.1 没改行为
 
 ## 2. host 骨架、鉴权与健康（seam ⑥）
