@@ -759,6 +759,73 @@ def test_the_three_entries_record_the_same_platform_facts(tmp_path: Path) -> Non
         assert payload["platform"] == expected, entry
 
 
+def test_the_three_entries_still_write_the_same_payload(tmp_path: Path) -> None:
+    """装配抽成库之后，run / chat / serve 的 `session/start` 仍是同一份事实（H1 task 1.3）。
+
+    `entry` 与 `prompt` 是入口自己的两格：run 与 serve 带 prompt，chat 的 prompt 是空串。
+    其余字段逐字段相等——任一入口少写或多写一格，都说明装配路被分叉了。
+    """
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    extra = {"run": [], "chat": [], "serve": ["--http", "--port", str(_free_port())]}
+    payloads: dict[str, dict[str, object]] = {}
+
+    for entry, flags in extra.items():
+        session_dir = tmp_path / entry / "sessions"
+        args = [
+            entry,
+            *flags,
+            "--provider",
+            "mock",
+            "--fixture",
+            str(HELLO_SCENARIO),
+            "--workspace",
+            str(workspace),
+            "--session-dir",
+            str(session_dir),
+        ]
+        if entry == "chat":
+            result = _cli(*args, cwd=workspace, stdin_text="任务\n")
+        else:
+            result = _cli(*args, "-p", "任务", cwd=workspace)
+
+        log = next(session_dir.glob("*.jsonl"))
+        records = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+        payloads[entry] = next(
+            record["payload"] for record in records if record["type"] == "session/start"
+        )
+        assert result.returncode == 0, (entry, result.stderr)
+
+    normalized = {
+        entry: {key: value for key, value in payload.items() if key not in {"entry", "prompt"}}
+        for entry, payload in payloads.items()
+    }
+    assert normalized["run"] == normalized["chat"] == normalized["serve"]
+    assert [payloads[entry]["entry"] for entry in ("run", "chat", "serve")] == [
+        "run",
+        "chat",
+        "serve",
+    ]
+    assert payloads["run"]["prompt"] == "任务"
+    assert payloads["chat"]["prompt"] == ""
+    # `serve` 仍是一次性入口，prompt 由 `-p` 给；只有 chat 与 H1 的 host 把它留空。
+    assert payloads["serve"]["prompt"] == "任务"
+    assert set(payloads["run"]) == {
+        "entry",
+        "workspace",
+        "provider",
+        "max_turns",
+        "append_system_prompt",
+        "prompt",
+        "sandbox",
+        "approval",
+        "window",
+        "reserve",
+        "tools",
+        "platform",
+    }
+
+
 def test_the_platform_facts_are_not_a_cli_flag(tmp_path: Path) -> None:
     """平台事实没有开关：`--help` 里不出现它，`--platform` 是不认识的参数（ADR-0029）。"""
     help_result = _cli("run", "--help", cwd=tmp_path)
