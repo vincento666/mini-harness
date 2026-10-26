@@ -15,6 +15,7 @@ from pathlib import Path
 from types import FrameType
 from typing import NoReturn
 
+from mini_harness.cli.host import DEFAULT_HOST_PORT, host_main
 from mini_harness.cli.serve import DEFAULT_HOST, DEFAULT_PORT, SERVE_HOSTS, BindFailure, ServeServer
 from mini_harness.events import EventLog, LogReadFailure, read_events
 from mini_harness.events.fold import assembled_payload, assembly_points, fold
@@ -196,6 +197,15 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("-p", "--prompt", default=None)
     serve.add_argument("--port", type=int, default=DEFAULT_PORT)
     serve.add_argument("--host", default=DEFAULT_HOST)
+
+    # `host` 是常驻多会话入口，不是 `serve` 的模式开关（ADR-0031）：`--http` 同样是装饰。
+    # 服务器级许可只在这里给：请求体不能自己给自己放行 `danger-full-access` / `auto`。
+    host = subcommands.add_parser("host", help="常驻多会话宿主服务（HTTP + SSE）", parents=[shared])
+    host.add_argument("--http", action="store_true")
+    host.add_argument("--port", type=int, default=DEFAULT_HOST_PORT)
+    host.add_argument("--host", default=DEFAULT_HOST)
+    host.add_argument("--allow-danger-full-access", action="store_true")
+    host.add_argument("--allow-auto-approval", action="store_true")
 
     # `chat` 没有 `-p/--prompt`，也没有 `--events`：一个会话的人话从 stdin 按行进来，
     # stdout 上只有模型回复正文与提示符（chat-repl 规格）。
@@ -682,6 +692,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _serve(args)
     if args.command == "chat":
         return _chat(args)
+    if args.command == "host":
+        return host_main(args)
     return _replay(args)
 
 

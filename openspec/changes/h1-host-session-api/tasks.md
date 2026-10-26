@@ -8,10 +8,10 @@
 
 ## 2. host 骨架、鉴权与健康（seam ⑥）
 
-- [ ] 2.1 seam ⑥：红判据 `test_host_starts_and_health_is_public`——无 token 启动 `minihns host --http --port <free>` 时退出码 2、stderr 含 `INVALID_ARGUMENT`、不建日志；带 `MINIHNS_HOST_TOKEN`（≥32 字符）启动后 `GET /health` 200、`{protocol: 1}`
-- [ ] 2.2 seam ⑥：红判据 `test_host_rejects_missing_or_wrong_token`——`GET /sessions` 无 token 401、错 token 401、对 token 200；错误信封是 `{"error": {"code": "UNAUTHORIZED", ...}}`
-- [ ] 2.3 seam ⑥：红判据 `test_a_foreign_origin_is_forbidden`——带 `Origin: https://example.com` 与正确 token 的 `POST /sessions` 返回 403；`Origin: null` 与同源放行
-- [ ] 2.4 seam ⑥：红判据 `test_host_can_bind_all_interfaces_with_a_token`——`--host 0.0.0.0` + token 能绑定；无 token 时启动已在上一条失败（只判绑定与 `/health`，不判外网可达）
+- [x] 2.1 seam ⑥：红判据 `test_host_starts_and_health_is_public`——无 token 启动 `minihns host --http --port <free>` 时退出码 2、stderr 含 `INVALID_ARGUMENT`、不建日志；带 `MINIHNS_HOST_TOKEN`（≥32 字符）启动后 `GET /health` 200、`{protocol: 1}`
+- [x] 2.2 seam ⑥：红判据 `test_host_rejects_missing_or_wrong_token`——`GET /sessions` 无 token 401、错 token 401、对 token 200；错误信封是 `{"error": {"code": "UNAUTHORIZED", ...}}`
+- [x] 2.3 seam ⑥：红判据 `test_a_foreign_origin_is_forbidden`——带 `Origin: https://example.com` 与正确 token 的 `POST /sessions` 返回 403；`Origin: null` 与同源放行
+- [x] 2.4 seam ⑥：红判据 `test_host_can_bind_all_interfaces_with_a_token`——`--host 0.0.0.0` + token 能绑定；无 token 时启动已在上一条失败（只判绑定与 `/health`，不判外网可达）
 
 ## 3. 创建会话与资源上限（seam ⑥）
 
