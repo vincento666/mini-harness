@@ -15,10 +15,10 @@
 
 ## 3. 创建会话与资源上限（seam ⑥）
 
-- [ ] 3.1 seam ⑥：红判据 `test_create_session_writes_the_host_entry`——`POST /sessions`（mock fixture）返回 201、`session_id` 匹配 `^[0-9a-f]{32}$`，日志第一条 `session/start` 的 `entry` 为 `host`、`prompt` 为空串、其余设置与请求体一致
-- [ ] 3.2 seam ⑥：红判据 `test_a_bad_session_request_leaves_no_log`——非法配置、缺密钥、未知工具名各返回 400 且会话目录无新文件
-- [ ] 3.3 seam ⑥：红判据 `test_the_session_cap_is_enforced`——同时存在 4 个会话后第 5 个返回 429 `TOO_MANY_SESSIONS`，不建日志
-- [ ] 3.4 seam ⑥：红判据 `test_an_invalid_session_id_is_rejected`——`GET /sessions/../secret/events`、`GET /sessions/xyz` 都是 400，且不读任何日志
+- [x] 3.1 seam ⑥：红判据 `test_create_session_writes_the_host_entry`——`POST /sessions`（mock fixture）返回 201、`session_id` 匹配 `^[0-9a-f]{32}$`，日志第一条 `session/start` 的 `entry` 为 `host`、`prompt` 为空串、其余设置与请求体一致
+- [x] 3.2 seam ⑥：红判据 `test_a_bad_session_request_leaves_no_log`——非法配置、缺密钥、未知工具名各返回 400 且会话目录无新文件
+- [x] 3.3 seam ⑥：红判据 `test_the_session_cap_is_enforced`——同时存在 4 个会话后第 5 个返回 429 `TOO_MANY_SESSIONS`，不建日志
+- [x] 3.4 seam ⑥：红判据 `test_an_invalid_session_id_is_rejected`——`GET /sessions/../secret/events`、`GET /sessions/xyz` 都是 400，且不读任何日志
 
 ## 4. 消息、段与排队（seam ⑥ 与 ①）
 

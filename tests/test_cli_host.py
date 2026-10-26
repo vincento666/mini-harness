@@ -5,7 +5,9 @@
 
 from __future__ import annotations
 
+import json
 import os
+import re
 import signal
 import socket
 import subprocess
@@ -81,6 +83,59 @@ def _stop(process: subprocess.Popen[str]) -> None:
         process.wait(timeout=10)
 
 
+def _headers() -> dict[str, str]:
+    return {"Authorization": f"Bearer {HOST_TOKEN}"}
+
+
+def _mock_fixture(tmp_path: Path, name: str = "turns.json") -> Path:
+    fixture = tmp_path / name
+    fixture.write_text(
+        json.dumps([{"content": "好", "finish_reason": "stop"}], ensure_ascii=False),
+        encoding="utf-8",
+    )
+    return fixture
+
+
+def test_create_session_writes_the_host_entry(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = _mock_fixture(tmp_path)
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=5.0
+        ) as client:
+            response = client.post(
+                "/sessions",
+                headers=_headers(),
+                json={
+                    "workspace": str(workspace),
+                    "provider": "mock",
+                    "fixture": str(fixture),
+                    "max_turns": 3,
+                },
+            )
+        assert response.status_code == 201
+        created = response.json()
+        session_id = created["session_id"]
+        assert re.fullmatch(r"[0-9a-f]{32}", session_id)
+        assert isinstance(created["cursor"], int)
+
+        log = session_dir / f"{session_id}.jsonl"
+        records = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+        started = next(record["payload"] for record in records if record["type"] == "session/start")
+        assert started["entry"] == "host"
+        assert started["prompt"] == ""
+        assert started["workspace"] == str(workspace.resolve())
+        assert started["provider"] == "mock"
+        assert started["max_turns"] == 3
+    finally:
+        _stop(process)
+
+
 def test_host_can_bind_all_interfaces_with_a_token(tmp_path: Path) -> None:
     port = _free_port()
     process = _start_host(tmp_path, port, HOST_TOKEN, "--host", "0.0.0.0")
@@ -123,6 +178,108 @@ def test_a_bind_failure_exits_two_without_a_log(tmp_path: Path) -> None:
     assert result.returncode == 2
     assert "INVALID_ARGUMENT" in result.stderr
     assert list(tmp_path.rglob("*.jsonl")) == []
+
+
+def test_a_bad_session_request_leaves_no_log(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    fixture = _mock_fixture(tmp_path)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    invalid_config_workspace = tmp_path / "invalid-config"
+    invalid_config_workspace.mkdir()
+    (invalid_config_workspace / "mini.config.toml").write_text(
+        'max_turns = "three"\n', encoding="utf-8"
+    )
+    unknown_tool_workspace = tmp_path / "unknown-tool"
+    unknown_tool_workspace.mkdir()
+    (unknown_tool_workspace / "mini.config.toml").write_text(
+        'tools = ["web_search"]\n', encoding="utf-8"
+    )
+
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        bad_bodies = [
+            {
+                "workspace": str(invalid_config_workspace),
+                "provider": "mock",
+                "fixture": str(fixture),
+            },
+            {
+                "workspace": str(workspace),
+                "provider": "openai",
+                "base_url": "http://127.0.0.1:1/v1",
+                "model": "m",
+                "api_key_env": "MINIHNS_HOST_TEST_UNSET_KEY",
+            },
+            {"workspace": str(unknown_tool_workspace), "provider": "mock", "fixture": str(fixture)},
+            {"auto_approve": True},
+            {"max_turns": "three"},
+        ]
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=5.0
+        ) as client:
+            for body in bad_bodies:
+                response = client.post("/sessions", headers=_headers(), json=body)
+                assert response.status_code == 400, body
+                assert response.json()["error"]["code"] == "INVALID_ARGUMENT"
+
+        assert list(session_dir.glob("*.jsonl")) == []
+    finally:
+        _stop(process)
+
+
+def test_the_session_cap_is_enforced(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = _mock_fixture(tmp_path)
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    body = {"workspace": str(workspace), "provider": "mock", "fixture": str(fixture)}
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=5.0
+        ) as client:
+            for _ in range(4):
+                created = client.post("/sessions", headers=_headers(), json=body)
+                assert created.status_code == 201
+
+            fifth = client.post("/sessions", headers=_headers(), json=body)
+            listed = client.get("/sessions", headers=_headers())
+
+        assert fifth.status_code == 429
+        assert fifth.json()["error"]["code"] == "TOO_MANY_SESSIONS"
+        assert len(listed.json()["sessions"]) == 4
+        assert len(list(session_dir.glob("*.jsonl"))) == 4
+    finally:
+        _stop(process)
+
+
+def test_an_invalid_session_id_is_rejected(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=5.0
+        ) as client:
+            short = client.get("/sessions/xyz", headers=_headers())
+            traversal = client.get("/sessions/%2E%2E/secret/events", headers=_headers())
+            unknown = client.get("/sessions/" + "0" * 32, headers=_headers())
+
+        assert short.status_code == 400
+        assert short.json()["error"]["code"] == "INVALID_ARGUMENT"
+        assert traversal.status_code == 400
+        assert traversal.json()["error"]["code"] == "INVALID_ARGUMENT"
+        assert unknown.status_code == 404
+        assert unknown.json()["error"]["code"] == "SESSION_NOT_FOUND"
+    finally:
+        _stop(process)
 
 
 def test_a_foreign_origin_is_forbidden(tmp_path: Path) -> None:

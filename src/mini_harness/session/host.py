@@ -8,12 +8,19 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from mini_harness.events import EventLog
-from mini_harness.loop import SessionEnv, SessionSettings
-from mini_harness.session.assembly import AssemblyRequest
+from mini_harness.loop import ENTRY_HOST, SessionEnv, SessionSettings, start_session
+from mini_harness.session.assembly import (
+    EXIT_INTERNAL_ERROR,
+    EXIT_INVALID_ARGUMENT,
+    AssemblyRequest,
+    Failure,
+    assemble,
+)
 
 # 同时在跑的会话上限（H1 spec：默认 4）。
 MAX_SESSIONS = 4
@@ -42,6 +49,21 @@ class HostSession:
     segments: int = 0
     turns: int = 0
 
+    @property
+    def last_seq(self) -> int:
+        return self.log.last_seq
+
+    def view(self) -> dict[str, object]:
+        """`GET /sessions` / `GET /sessions/{id}` 的一条：不返回密钥或 Authorization。"""
+        return {
+            "session_id": self.log.session_id,
+            "status": self.status,
+            "workspace": str(self.settings.workspace.resolve()),
+            "created_at": self.created_at,
+            "last_seq": self.last_seq,
+            "turns": self.turns,
+        }
+
 
 class HostState:
     """服务器级状态：默认设置、许可、会话表。"""
@@ -62,3 +84,41 @@ class HostState:
 
     def session_count(self) -> int:
         return len(self.sessions)
+
+
+def create_session(
+    state: HostState,
+    request: AssemblyRequest,
+    environ: Mapping[str, str],
+) -> HostSession | Failure:
+    """装配并开一个空闲会话：写 `session/start`（`entry=host`、`prompt=""`），不跑段。"""
+    if state.session_count() >= state.max_sessions:
+        return Failure(
+            "TOO_MANY_SESSIONS",
+            f"同时在跑的会话上限是 {state.max_sessions}",
+            EXIT_INVALID_ARGUMENT,
+        )
+    prepared = assemble(
+        request,
+        environ,
+        allow_danger_full_access=state.allow_danger_full_access,
+        allow_auto_approval=state.allow_auto_approval,
+    )
+    if isinstance(prepared, Failure):
+        return prepared
+    env = SessionEnv(
+        provider=prepared.provider,
+        log=prepared.log,
+        registry=prepared.registry,
+        settings=prepared.settings,
+    )
+    started = start_session(prompt="", entry=ENTRY_HOST, env=env)
+    if started is not None:
+        return Failure(
+            started.failure_code or started.stop_reason,
+            started.detail,
+            EXIT_INTERNAL_ERROR,
+        )
+    handle = HostSession(settings=prepared.settings, log=prepared.log, env=env)
+    state.sessions[prepared.log.session_id] = handle
+    return handle

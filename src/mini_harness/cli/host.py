@@ -10,17 +10,24 @@ import argparse
 import asyncio
 import hmac
 import os
+import re
 import signal
 import sys
 from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import replace
 from types import FrameType
 from typing import Any
 
 from aiohttp import web
 
 from mini_harness.cli.serve import SERVE_HOSTS
-from mini_harness.session.assembly import EXIT_INVALID_ARGUMENT, AssemblyRequest
-from mini_harness.session.host import HostState
+from mini_harness.session.assembly import (
+    EXIT_INTERNAL_ERROR,
+    EXIT_INVALID_ARGUMENT,
+    AssemblyRequest,
+    Failure,
+)
+from mini_harness.session.host import HostState, create_session
 
 HOST_TOKEN_ENV = "MINIHNS_HOST_TOKEN"
 MIN_TOKEN_LENGTH = 32
@@ -29,6 +36,26 @@ PROTOCOL_VERSION = 1
 
 HEALTH_PATH = "/health"
 SESSIONS_PATH = "/sessions"
+SESSION_ID_PATTERN = r"[0-9a-f]{32}"
+_SESSION_PATH = re.compile(r"^/sessions/([^/]+)")
+
+# 请求体只接受这些设置；`session_dir` 与 `config` 是服务器路径，不接受客户端给
+# （H1 spec：日志路径由 id 派生，MUST NOT 接受客户端给路径）。
+_SESSION_STRING_FIELDS = frozenset(
+    {
+        "workspace",
+        "provider",
+        "fixture",
+        "base_url",
+        "model",
+        "api_key_env",
+        "append_system_prompt",
+        "sandbox",
+        "approval",
+    }
+)
+_SESSION_INT_FIELDS = frozenset({"max_turns", "window", "reserve"})
+_SESSION_FIELDS = _SESSION_STRING_FIELDS | _SESSION_INT_FIELDS
 
 _RequestHandler = Callable[[web.Request], Awaitable[web.StreamResponse]]
 
@@ -67,6 +94,8 @@ class HostServer:
         router = self._application.router
         router.add_get(HEALTH_PATH, self._health)
         router.add_get(SESSIONS_PATH, self._list_sessions)
+        router.add_post(SESSIONS_PATH, self._create_session)
+        router.add_get(f"{SESSIONS_PATH}/{{session_id}}", self._get_session)
         self._runner: web.AppRunner | None = None
 
     def _authorized(self, request: web.Request) -> bool:
@@ -85,6 +114,9 @@ class HostServer:
         else:
             if request.path != HEALTH_PATH and not self._authorized(request):
                 return _error(401, "UNAUTHORIZED", "缺少或错误的 Bearer token")
+            match = _SESSION_PATH.match(request.path)
+            if match is not None and re.fullmatch(SESSION_ID_PATTERN, match.group(1)) is None:
+                return _error(400, "INVALID_ARGUMENT", "session_id 只接受 32 位小写十六进制")
             response = await handler(request)
         if origin is not None:
             response.headers.update(_cors_headers(origin))
@@ -96,7 +128,36 @@ class HostServer:
         )
 
     async def _list_sessions(self, request: web.Request) -> web.Response:
-        return web.json_response({"sessions": []})
+        return web.json_response(
+            {"sessions": [handle.view() for handle in self._state.sessions.values()]}
+        )
+
+    async def _create_session(self, request: web.Request) -> web.Response:
+        try:
+            body = await request.json()
+        except (ValueError, TypeError, web.HTTPBadRequest):
+            return _error(400, "INVALID_ARGUMENT", "请求体必须是 JSON 对象")
+        parsed = _session_request(self._state.defaults, body)
+        if isinstance(parsed, str):
+            return _error(400, "INVALID_ARGUMENT", parsed)
+        created = create_session(self._state, parsed, os.environ)
+        if isinstance(created, Failure):
+            if created.code == "TOO_MANY_SESSIONS":
+                return _error(429, "TOO_MANY_SESSIONS", created.detail)
+            if created.exit_code == EXIT_INTERNAL_ERROR:
+                return _error(500, "INTERNAL", created.detail)
+            return _error(400, "INVALID_ARGUMENT", created.detail)
+        return web.json_response(
+            {"session_id": created.log.session_id, "cursor": created.last_seq},
+            status=201,
+        )
+
+    async def _get_session(self, request: web.Request) -> web.Response:
+        session_id = request.match_info["session_id"]
+        handle = self._state.sessions.get(session_id)
+        if handle is None:
+            return _error(404, "SESSION_NOT_FOUND", f"没有会话 {session_id}")
+        return web.json_response(handle.view())
 
     async def bind(self) -> str | None:
         """绑定并开始接收连接；失败返回 detail（调用方映射成退出码 2）。
@@ -121,6 +182,21 @@ class HostServer:
         if self._runner is not None:
             await self._runner.cleanup()
             self._runner = None
+
+
+def _session_request(defaults: AssemblyRequest, body: object) -> AssemblyRequest | str:
+    """请求体覆盖服务器默认设置；不认识的键与错类型都是 INVALID_ARGUMENT 的 detail。"""
+    if not isinstance(body, dict):
+        return "请求体必须是 JSON 对象"
+    unknown = set(body) - _SESSION_FIELDS
+    if unknown:
+        return f"请求体里有不认识的设置：{' / '.join(sorted(str(key) for key in unknown))}"
+    for key, value in body.items():
+        if key in _SESSION_STRING_FIELDS and not isinstance(value, str):
+            return f"设置 {key} 必须是字符串"
+        if key in _SESSION_INT_FIELDS and (not isinstance(value, int) or isinstance(value, bool)):
+            return f"设置 {key} 必须是整数"
+    return replace(defaults, **body)
 
 
 def _request_defaults(args: argparse.Namespace) -> AssemblyRequest:
