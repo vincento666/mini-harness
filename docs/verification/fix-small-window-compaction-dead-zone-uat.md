@@ -77,7 +77,7 @@ uv run minihns chat --workspace $WS --session-dir .tmp\uat2\sessions @EP --windo
 三条要留意的观察（都不改本 change 的代码）：
 
 1. **修复本身成立**：`--window 70000 --reserve 100` 下读 248 KB 的 `big.md`，两段都活下来、第二句也答上了。这就是本 change 要修的那个死区。
-2. **屏幕上那一行在这条分支上不含 `detail`**：U2 印的是 `[段] CONTEXT_WINDOW_EXCEEDED：CONTEXT_WINDOW_EXCEEDED`（失败码重复），三个数只进了日志。原因是这条分支早于 `fix-chat-screen-feedback` 那版段收尾措辞；**rebase 到当前 `main` 之后会变成打印 `detail`**，届时 U2 那一格要复跑确认（一次 chat 就够）。
+2. **屏幕上那一行在这条分支上不含 `detail`**：U2 印的是 `[段] CONTEXT_WINDOW_EXCEEDED：CONTEXT_WINDOW_EXCEEDED`（失败码重复），三个数只进了日志。原因是这条分支早于 `fix-chat-screen-feedback` 那版段收尾措辞。**rebase 到当前 `main` 之后已复跑确认**（2026-10-26，会话 `9d5f36ffc174477391732384c7b8f2a7`）：那一行现在是 `[段] CONTEXT_WINDOW_EXCEEDED：可遮蔽的那一段本身就装不下，预算读数 63411 超过压力预算 39900（触发线 0）`——三个数都在屏幕上，这一格转成通过。
 3. **U3 的「压缩之后仍超过压力预算」这一种措辞没有可达**：三次跑里压缩之后都降到了几百 token，没有一条落到「仍超过压力预算」。如实记成「没撞到」——这不是判据失败，是这一组窗口 / 文件组合下那条路没被走到。
 
 ## 填完之后
