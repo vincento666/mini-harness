@@ -8,6 +8,7 @@ from typing import Any
 from mini_harness.context.budget import (
     budget_reading,
     estimate_tokens,
+    pressure_budget,
     retain_line,
     shadowed_range,
     trigger_line,
@@ -67,6 +68,15 @@ def test_the_trigger_line_is_never_negative() -> None:
     """小窗口下 `W - O - 65536` 为负：触发线是 0，每一次装配都算越线。"""
     assert trigger_line(2000, DEFAULT_RESERVE) == 0
     assert trigger_line(1, 1) == 0
+
+
+def test_the_pressure_budget_is_the_window_minus_the_reserve() -> None:
+    """溢出判据的量纲是「窗口减保留额」，不是触发线：70000 / 100 下三个数各是各的。"""
+    assert pressure_budget(DEFAULT_WINDOW, DEFAULT_RESERVE) == 119808
+    assert pressure_budget(70000, 100) == 69900
+    assert pressure_budget(100000, 100) == 99900
+    assert trigger_line(70000, 100) == 4364
+    assert retain_line(70000) == 11200
 
 
 def test_estimation_counts_content_and_tool_call_arguments() -> None:

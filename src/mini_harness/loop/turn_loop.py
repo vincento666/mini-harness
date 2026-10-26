@@ -11,6 +11,7 @@ from typing import Any, Literal, get_args
 from mini_harness.context.budget import (
     budget_reading,
     estimate_tokens,
+    pressure_budget,
     shadowed_range,
     trigger_line,
 )
@@ -525,6 +526,20 @@ async def _context_overflow(
     )
 
 
+def _budget_triple(
+    settings: SessionSettings, events: Sequence[EventRecord], messages: Sequence[Message]
+) -> str:
+    """溢出的 `detail` 里那三个数并排：预算读数、压力预算、触发线（ADR-0026）。
+
+    死区只有靠这三个数并排才看得出来——只给触发线，读日志的人判断不了「离窗口还有多远」。
+    两条触发路径共用 `_context_overflow`，也就共用这一串。
+    """
+    reading = budget_reading(events, messages)
+    pressure = pressure_budget(settings.window, settings.reserve)
+    line = trigger_line(settings.window, settings.reserve)
+    return f"预算读数 {reading}、压力预算 {pressure}、触发线 {line}"
+
+
 @dataclass(frozen=True)
 class _RetriedRequest:
     """请求级压缩之后重试拿回的那一次调用：结果连同它带回的重试事实。"""
@@ -580,7 +595,10 @@ async def _recover_overflowed_request(
             log,
             turn_id,
             turns,
-            f"provider 报出上下文超限且无可遮蔽的内容：{failure.detail}",
+            (
+                f"provider 报出上下文超限且无可遮蔽的内容：{failure.detail}"
+                f"（{_budget_triple(settings, reread, context.messages)}）"
+            ),
             retry_events,
         )
 
@@ -605,7 +623,10 @@ async def _recover_overflowed_request(
                 log,
                 turn_id,
                 turns,
-                f"请求级压缩之后 provider 仍报上下文超限：{generated.detail}",
+                (
+                    f"请求级压缩之后 provider 仍报上下文超限：{generated.detail}"
+                    f"（{_budget_triple(settings, reread, folded.messages)}）"
+                ),
                 attempts,
             )
         return await _provider_error(log, turn_id, generated, turns, attempts)
@@ -651,7 +672,7 @@ async def _compact_if_over_line(
     # 摘要请求自己也要装得进窗口：装不下就从该段头部按往返整对丢，一条都不剩时不发请求（ADR-0023）。
     header = context.messages[:1]
     instruction = Message(role="user", content=SUMMARY_INSTRUCTION)
-    summary_budget = settings.window - settings.reserve
+    summary_budget = pressure_budget(settings.window, settings.reserve)
     body = fold_range(events, start=rng["start"], end=rng["end"])
     while body and estimate_tokens([*header, *body, instruction]) > summary_budget:
         body = _drop_leading_unit(body)
@@ -841,18 +862,23 @@ async def _run_turns(
                 return _segment_failure(events, turns)
             context = fold(events)
             reading = budget_reading(events, context.messages)
-            if reading > line:
-                # 措辞跟着日志里的事实走：这一回合真写过摘要才说「压缩之后」。
+            # 溢出判据是压力预算 `W - O`：触发线只决定这次装配要不要尝试压缩。
+            # 小窗口下触发线可以比保留预算还小，拿它判溢出会在真墙之前自己撞墙。
+            pressure = pressure_budget(settings.window, settings.reserve)
+            if reading > pressure:
+                # 措辞跟着日志里的事实走：真写过摘要才说「压缩之后」；什么都没遮蔽才说
+                # 「无可遮蔽」；有可遮蔽的那一段、只是它本身就装不进窗口，就说它装不下。
                 compacted_here = any(
                     event.type == "compaction/summary" and event.payload.get("turn_id") == turn_id
                     for event in events
                 )
-                detail = (
-                    f"压缩之后预算读数 {reading} 仍超过触发线 {line}"
-                    if compacted_here
-                    else f"无可遮蔽的内容，预算读数 {reading} 已超过触发线 {line}"
-                )
-                return await _context_overflow(log, turn_id, turns, detail)
+                if compacted_here:
+                    head = f"压缩之后预算读数 {reading} 仍超过压力预算 {pressure}"
+                elif shadowed_range(events, settings.window) is None:
+                    head = f"无可遮蔽的内容，预算读数 {reading} 已超过压力预算 {pressure}"
+                else:
+                    head = f"可遮蔽的那一段本身就装不下，预算读数 {reading} 超过压力预算 {pressure}"
+                return await _context_overflow(log, turn_id, turns, f"{head}（触发线 {line}）")
 
         failure = _append_all(
             log,

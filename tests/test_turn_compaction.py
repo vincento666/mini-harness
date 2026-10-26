@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
@@ -29,6 +30,18 @@ TIGHT_RESERVE = 100
 # 25000 个估算 token：比保留预算大一倍，比触发线大得多。
 BIG_TEXT = "x" * 100000
 
+# 约 6000 个估算 token：比触发线 4364 大、比保留预算 11200 小——整段对话体都装得进保留尾部。
+DEAD_ZONE_TEXT = "x" * 24000
+
+# 75000 个估算 token：比 `70000 - 100` 这个压力预算还大，装不下才是溢出。
+OVERFLOW_TEXT = "x" * 300000
+
+# 窗口 20000 / 预留 100：压力预算 19900 个 token、保留预算 3200、触发线 0。
+# 100000 个字符约 25000 个估算 token：比压力预算还大的一组工具往返，裁到只剩它也装不下。
+SMALL_WINDOW = 20000
+SMALL_RESERVE = 100
+UNTRIMMABLE_TEXT = "长" * 100000
+
 SUMMARY_TEXT = "那是此前的对话摘要"
 
 
@@ -38,6 +51,15 @@ def _big_turn() -> dict[str, object]:
         "content": BIG_TEXT,
         "finish_reason": "tool_calls",
         "tool_calls": [{"id": "c1", "name": "read", "arguments": {"file_path": "a.md"}}],
+    }
+
+
+def _read_big_file_turn() -> dict[str, object]:
+    """让工具结果本身长：模型只说一句就去读一个大文件。"""
+    return {
+        "content": "",
+        "finish_reason": "tool_calls",
+        "tool_calls": [{"id": "c1", "name": "read", "arguments": {"file_path": "big.md"}}],
     }
 
 
@@ -133,12 +155,12 @@ async def test_a_run_with_room_to_spare_never_compacts(tmp_path: Path) -> None:
 
 
 async def test_overflow_when_nothing_can_be_shadowed(tmp_path: Path) -> None:
-    """用户 prompt 本身就超线：它受保护、不能遮蔽，于是不调模型直接溢出。"""
+    """用户 prompt 本身就超压力预算：它受保护、不能遮蔽，于是不调模型直接溢出。"""
     log, outcome = await run_session_fixture(
         tmp_path,
         "s-giant-prompt",
         provider=FixtureProvider(entries=[DONE_ENTRY]),
-        prompt=BIG_TEXT,
+        prompt=OVERFLOW_TEXT,
         max_turns=1,
         registry=ToolRegistry(),
         window=TIGHT_WINDOW,
@@ -160,6 +182,10 @@ async def test_overflow_when_nothing_can_be_shadowed(tmp_path: Path) -> None:
     assert error.payload["turn_id"] == "t1"
     # 人手验收里发现的措辞：没有发生压缩时不能说「压缩之后」。
     assert error.payload["detail"].startswith("无可遮蔽的内容")
+    # 三个数并排才看得出来死区：预算读数、压力预算 69900、触发线 4364。
+    assert "压力预算 69900" in error.payload["detail"]
+    assert "触发线 4364" in error.payload["detail"]
+    assert re.search(r"预算读数 \d+", error.payload["detail"])
     closers = [
         record.payload["stop_reason"]
         for record in records
@@ -170,10 +196,76 @@ async def test_overflow_when_nothing_can_be_shadowed(tmp_path: Path) -> None:
     assert outcome.failure_code == "CONTEXT_WINDOW_EXCEEDED"
 
 
+async def test_a_dead_zone_reading_that_fits_the_window_is_not_an_overflow(
+    tmp_path: Path,
+) -> None:
+    """死区：读数超过触发线 4364，但整段对话体都装得进保留尾部 11200，于是没有可遮蔽的内容；
+    而它离压力预算 69900 还远——装得下就不是溢出，照常装配、照常调模型。
+
+    这是 M5 真实端点重新验收里 session `70fa85600d484109b2f266506ee24c42` 的形状：
+    读数 5933 在 `--window 70000 --reserve 100` 下以退出码 4 收尾。
+    """
+    (tmp_path / "big.md").write_text(DEAD_ZONE_TEXT, encoding="utf-8")
+    log, outcome = await run_fixture_session(
+        tmp_path,
+        "s-dead-zone",
+        [_read_big_file_turn(), DONE_ENTRY],
+        max_turns=2,
+        window=TIGHT_WINDOW,
+        reserve=TIGHT_RESERVE,
+    )
+    records = read_events(log.path)
+
+    assert _records_of(log.path, "compaction/summary") == []
+    assert _records_of(log.path, "error/context") == []
+    assembled = [record for record in records if record.type == "context/assembled"]
+    assert [record.payload["turn_id"] for record in assembled] == ["t1", "t2"]
+    requests = [
+        record
+        for record in records
+        if record.type == "model/request" and record.payload.get("purpose") != "compaction"
+    ]
+    assert [record.payload["turn_id"] for record in requests] == ["t1", "t2"]
+    assert outcome.stop_reason == "MODEL_COMPLETED"
+
+
+async def test_a_shadowed_range_too_big_to_trim_sends_no_summary_request(
+    tmp_path: Path,
+) -> None:
+    """遮蔽范围存在、但那一组往返本身就装不进压力预算：不发摘要请求、不写 `error/model`。
+
+    溢出仍然发生，可它发生的原因是**读数本身超过压力预算**，不是「摘要请求发不出去」——
+    这两件事不该互相冒充（design D4）。措辞也不该说「无可遮蔽的内容」：这一回合有可遮蔽的
+    那一段，只是它本身就装不下。
+    """
+    (tmp_path / "big.md").write_text(UNTRIMMABLE_TEXT, encoding="utf-8")
+    log, outcome = await run_fixture_session(
+        tmp_path,
+        "s-untrimmable",
+        [_read_big_file_turn(), DONE_ENTRY],
+        max_turns=2,
+        window=SMALL_WINDOW,
+        reserve=SMALL_RESERVE,
+    )
+
+    assert _records_of(log.path, "compaction/summary") == []
+    assert _records_of(log.path, "error/model") == []
+    requests = _records_of(log.path, "model/request")
+    assert [record for record in requests if record.payload.get("purpose") == "compaction"] == []
+    error = _records_of(log.path, "error/context")[0]
+    assert error.payload["code"] == "CONTEXT_WINDOW_EXCEEDED"
+    assert error.payload["detail"].startswith("可遮蔽的那一段")
+    assert "压力预算 19900" in error.payload["detail"]
+    assert "触发线 0" in error.payload["detail"]
+    assert outcome.stop_reason == "CONTEXT_WINDOW_EXCEEDED"
+
+
 async def test_an_overflow_closes_the_segment_not_the_session(tmp_path: Path) -> None:
     """溢出是**回合**终止结果：段自己只写到 `segment/end`，会话是否结束归入口（ADR-0011）。
 
     一次性 run 的入口接着写 `session/end` 并映射退出码 4，那条判据在 `tests/test_cli_run.py`。
+
+    窗口 4000 / 预留 500 的压力预算是 3500 个 token：prompt 要 20000 个字符才装不下。
     """
     log, env = build_session_env(
         tmp_path,
@@ -184,7 +276,7 @@ async def test_an_overflow_closes_the_segment_not_the_session(tmp_path: Path) ->
         max_turns=4,
     )
 
-    assert start_session(prompt="任务", entry=ENTRY_RUN, env=env) is None
+    assert start_session(prompt="x" * 20000, entry=ENTRY_RUN, env=env) is None
     segment = await run_turn_segment(
         env=env, segment_id="s1", first_turn_index=1, cancel=asyncio.Event()
     )
@@ -209,11 +301,11 @@ async def test_an_overflow_closes_the_segment_not_the_session(tmp_path: Path) ->
 async def test_one_compaction_then_overflow_when_the_context_still_does_not_fit(
     tmp_path: Path,
 ) -> None:
-    """摘要本身太大：压缩发生了一次，读数仍超线——不试第二次，直接溢出。"""
+    """摘要本身太大：压缩发生了一次，读数仍超压力预算——不试第二次，直接溢出。"""
     log, outcome = await run_fixture_session(
         tmp_path,
         "s-big-summary",
-        [_big_turn(), _summary_entry(BIG_TEXT)],
+        [_big_turn(), _summary_entry(OVERFLOW_TEXT)],
         max_turns=3,
         window=TIGHT_WINDOW,
         reserve=TIGHT_RESERVE,
@@ -238,6 +330,9 @@ async def test_one_compaction_then_overflow_when_the_context_still_does_not_fit(
     # 这一条压缩真的发生过，措辞就该是「压缩之后」。
     overflow_error = _records_of(log.path, "error/context")[0]
     assert overflow_error.payload["detail"].startswith("压缩之后")
+    assert "压力预算 69900" in overflow_error.payload["detail"]
+    assert "触发线 4364" in overflow_error.payload["detail"]
+    assert re.search(r"预算读数 \d+", overflow_error.payload["detail"])
     assert outcome.stop_reason == "CONTEXT_WINDOW_EXCEEDED"
 
 
@@ -307,6 +402,34 @@ async def test_a_provider_reported_overflow_collapses_into_the_same_result(tmp_p
     assert _records_of(log.path, "tool/call") == []
     assert outcome.stop_reason == "CONTEXT_WINDOW_EXCEEDED"
     assert outcome.failure_code == "CONTEXT_WINDOW_EXCEEDED"
+
+
+async def test_a_provider_reported_overflow_detail_carries_the_three_numbers(
+    tmp_path: Path,
+) -> None:
+    """两条触发路径是同一个溢出结果：provider 报出的那条 `detail` 也要给那三个数。"""
+    log, outcome = await run_session_fixture(
+        tmp_path,
+        "s-provider-overflow-numbers",
+        _OverflowProvider(),
+        max_turns=2,
+        registry=ToolRegistry(),
+        window=TIGHT_WINDOW,
+        reserve=TIGHT_RESERVE,
+    )
+    records = read_events(log.path)
+
+    assert [record.type for record in records][-4:] == [
+        "error/context",
+        "turn/end",
+        "segment/end",
+        "session/end",
+    ]
+    assert outcome.stop_reason == "CONTEXT_WINDOW_EXCEEDED"
+    detail = _records_of(log.path, "error/context")[0].payload["detail"]
+    assert "压力预算 69900" in detail
+    assert "触发线 4364" in detail
+    assert re.search(r"预算读数 \d+", detail)
 
 
 class _OverflowOnceProvider:

@@ -470,11 +470,11 @@ def test_an_overflowed_segment_returns_to_the_prompt(tmp_path: Path) -> None:
         "--fixture",
         fixture,
         "--window",
-        "66000",
+        "4000",
         "--reserve",
         "100",
         "--append-system-prompt",
-        "说明" * 1000,
+        "说明" * 10000,
         cwd=tmp_path,
         stdin_text="第一条\n第二条\n",
     )
@@ -510,11 +510,11 @@ def test_an_overflowed_segment_says_so_on_stderr(tmp_path: Path) -> None:
         "--fixture",
         fixture,
         "--window",
-        "66000",
+        "4000",
         "--reserve",
         "100",
         "--append-system-prompt",
-        "说明" * 1000,
+        "说明" * 10000,
         cwd=tmp_path,
         stdin_text="第一条\n第二条\n",
     )
@@ -767,62 +767,14 @@ def test_tool_only_turns_leave_no_blank_lines(tmp_path: Path) -> None:
     assert "\n\n" not in result.stdout
 
 
-def _overflow_entries(tmp_path: Path) -> list[dict[str, Any]]:
-    """照 UAT 复现的形状：三段工具回合，之后一条把预算读数校准到触发线之上的正常回复。
-
-    第二个段一开局就压缩、压缩完仍超线；最后两条给压缩那一次摘要调用与第二个段的正常回复。
-    """
-    (tmp_path / "big.md").write_text("内容" * 30000, encoding="utf-8")
-    entries: list[dict[str, Any]] = [
-        {
-            "content": "",
-            "finish_reason": "tool_calls",
-            "tool_calls": [
-                {"id": f"c{index}", "name": "read", "arguments": {"file_path": "big.md"}}
-            ],
-            "usage": {"input_tokens": 1000, "output_tokens": 10},
-        }
-        for index in range(1, 4)
-    ]
-    entries += [
-        {
-            "content": "第一段收尾。",
-            "finish_reason": "stop",
-            "usage": {"input_tokens": 60000, "output_tokens": 10},
-        },
-        {"content": "压缩用的摘要。", "finish_reason": "stop", "usage": {"input_tokens": 1000}},
-        {"content": "第二段照常回答。", "finish_reason": "stop", "usage": {"input_tokens": 1000}},
-    ]
-    return entries
-
-
 def test_the_overflow_segment_note_carries_the_detail_once(tmp_path: Path) -> None:
-    """seam ⑥ 1.3：溢出那一行不许把停止理由重复两遍——它得带上日志里那条非空 detail。
+    """退休（2026-10-26）：这一条守的「第二段开局压缩、压完仍超线」在压力预算规则下不可达。
 
-    形状照 UAT 复现：三段工具回合之后第一段以正常回复收尾，`usage.input_tokens` 把预算读数校准到
-    触发线之上；第二个段一开局就压缩、压缩完仍超线，那一行说的是「压缩之后仍超线」，不是两遍词表名。
+    它的断言（那一行带非空 detail、不把停止理由重复两遍）已并入
+    `test_an_overflowed_segment_says_so_on_stderr`；场景不可达的理由记在 ADR-0026 与
+    `docs/adr/0002` 的判据欠账里。判据本体保留成 skip，等 M11 重新设计小窗口形状时再判。
     """
-    fixture = _fixture(tmp_path, "overflow.json", _overflow_entries(tmp_path))
-
-    result = _chat("--fixture", fixture, cwd=tmp_path, stdin_text="第一条\n第二条\n")
-
-    assert result.returncode == 0
-    records = _records(tmp_path)
-    overflows = [record for record in records if record["type"] == "error/context"]
-    assert len(overflows) == 1, "第二个段开局溢出一次"
-    detail = str(overflows[0]["payload"]["detail"])
-    assert detail != "", "日志里那条 detail 非空"
-
-    notes = [line for line in result.stderr.splitlines() if "CONTEXT_WINDOW_EXCEEDED" in line]
-    assert len(notes) == 1, "溢出段在 stderr 上只有一行"
-    assert notes[0].count("CONTEXT_WINDOW_EXCEEDED") == 1, "停止理由这个词在那一行里只出现一次"
-    assert detail in notes[0], "那一行带着日志里那条非空 detail，不是把词表名重复两遍"
-    # 默认窗口 128000、预留 8192：规格那条公式给出的触发线是 54272。判据只认这两个数，不认措辞。
-    numbers = [int(match) for match in re.findall(r"\d+", notes[0])]
-    assert 54272 in numbers, "那一行含触发线那个数"
-    assert any(number > 54272 for number in numbers), "那一行含越线的预算读数"
-    assert notes[0] not in result.stdout
-    assert notes[0] not in _log_text(tmp_path)
+    pytest.skip("第二段溢出这个形状在压力预算规则下不可达：压缩总会把对话体压到保留尾部之内")
 
 
 _NOT_WINDOWS_REASON = (
@@ -988,11 +940,11 @@ def test_consecutive_overflows_say_the_session_cannot_come_down(tmp_path: Path) 
         "--fixture",
         fixture,
         "--window",
-        "66000",
+        "4000",
         "--reserve",
         "100",
         "--append-system-prompt",
-        "说明" * 1000,
+        "说明" * 10000,
         cwd=tmp_path,
         stdin_text="第一条\n第二条\n第三条\n",
     )
@@ -1014,17 +966,9 @@ def test_consecutive_overflows_say_the_session_cannot_come_down(tmp_path: Path) 
 
 
 def test_a_single_overflow_does_not_say_the_session_cannot_come_down(tmp_path: Path) -> None:
-    """seam ⑥ 1.8：只有一段溢出（不连续）时不多出那一行。"""
-    fixture = _fixture(tmp_path, "one-overflow.json", _overflow_entries(tmp_path))
+    """退休（2026-10-26）：要的是「只有第二段溢出」这个形状，压力预算规则下不可达。
 
-    result = _chat("--fixture", fixture, cwd=tmp_path, stdin_text="第一条\n第二条\n")
-
-    assert result.returncode == 0
-    segments = [
-        record["payload"] for record in _records(tmp_path) if record["type"] == "segment/end"
-    ]
-    assert [segment["stop_reason"] for segment in segments] == [
-        "MODEL_COMPLETED",
-        "CONTEXT_WINDOW_EXCEEDED",
-    ], "这一跑得只有一段溢出"
-    assert not [line for line in result.stderr.splitlines() if line.startswith("[降不下去]")]
+    「`[降不下去]` 只在连续两段溢出时出现一次」这件事仍由
+    `test_consecutive_overflows_say_the_session_cannot_come_down` 判；不可达的理由记在 ADR-0026。
+    """
+    pytest.skip("第二段溢出这个形状在压力预算规则下不可达：压缩总会把对话体压到保留尾部之内")

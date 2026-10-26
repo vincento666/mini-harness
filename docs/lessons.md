@@ -394,6 +394,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Next use: 断言的一侧必须是常量或另一个来源的值；user-visible 文案的判据判「措辞与日志事实一致」
 - Promotion candidate: 是四规 #4「把任务写成可验证的判据」的收紧，本轮不占额度
 - Status: closed（2026-10-24 `fix-chat-screen-feedback` 收尾消化：那条纪律已是 seam ⑥ 写判据的默认形状——本轮补强的四条判据都从日志记录里取值再判屏幕上的那一行（1.3 取 `error/context` 的 `detail`、围栏那条取 `error/fence` 的 `code`、1.8 判 `[降不下去]` 不在日志里、serve 那条比对 `splitlines()`），没有再出现「待判的值写在两侧」。承载它的是判据本身，不需要常驻收件箱）
+- Status: inbox（家族头：L-036 断言两侧不同源 / L-041 判值不判在 / L-053 投影两半都要判）
 
 ### L-037
 - Date: 2026-10-21
@@ -402,7 +403,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Evidence: `docs/verification/m5-context-budget-compaction-mutation.md` 的「一处存活的变异变成一处真 bug」；补的判据放回变异下确认它红，再还原
 - Next use: 任何时候「修完 bug 全量全绿」都当覆盖缺口处理，补一条能区分对错的判据并确认它在旧实现下红
 - Promotion candidate: 与 AGENTS.md 变异段「存活的算覆盖缺口」同族，本轮不占额度
-- Status: inbox
+- Status: merged into L-039（2026-10-23 消化：「修完全绿」与「绿着到的守卫」是同一族的两个面）
 
 ### L-038
 - Date: 2026-10-21
@@ -420,7 +421,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Evidence: `docs/verification/m5-context-budget-compaction-mutation.md` 变异 6；`test_a_400_with_any_other_error_code_is_still_an_http_status_result`、`test_a_400_with_an_unreadable_body_is_still_an_http_status_result`
 - Next use: 既有行为的守卫照写，提交信息里写明「这条写出来就是绿的，它是防下一步把分类改宽的守卫」
 - Promotion candidate: 与 L-031 同族，本轮不占额度
-- Status: inbox
+- Status: inbox（家族头：L-039 绿着到的守卫 / L-037 修完 bug 全量全绿当缺口 / L-031 跨任务组的红）
 
 ### L-040
 - Date: 2026-10-21
@@ -451,6 +452,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Next use: 写「字段在不在」的判据时同时问一句「值错了这条还红吗」；不红就补判值的断言，或确认同族已有判值的判据
 - Promotion candidate: 与 L-036（断言两侧不能同源）同族
 - Status: inbox（家族头：L-041 判值不判在 / L-053 投影规则的另一半。2026-10-24 收 L-053 进来）
+- Status: merged into L-036（2026-10-23 消化：「值错了这条还红吗」与「断言两侧不能同源」是同一条）
 
 ### L-042
 - Date: 2026-10-21
@@ -468,7 +470,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Evidence: `docs/verification/m9-assembly-and-config-layering-manual.md` 别扭第 1 条；`docs/adr/0018-config-is-three-layer-override.md` 的 Consequences
 - Next use: 读用户会手写的文本输入（配置、导入文件）时，先确认它实际会遇到的编码方言；报错文案要指认编码而不是只抄解析器的话
 - Promotion candidate: 与 L-011 家族（错误消息要指认原因）同族
-- Status: inbox
+- Status: rejected（2026-10-23 关闭：它是 Active Lesson 5「文本文件绝不经 PowerShell 往返」的一个实例；BOM 那一半从 M5 挂到现在没有新证据，要动它得先有人裁决配置文件编码方言）
 
 ### L-044
 - Date: 2026-10-21
@@ -527,7 +529,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Evidence: `docs/verification/m6-chat-repl-mutation.md` 的变异 3 / 5 / 8 与「补的判据」一节（四条新判据，每条在变异下先确认红）
 - Next use: 新入口（M7 的 `serve`、M10 的委派）落地后，把 run 与 chat 各自钉住的事件形状——压缩、溢出、取消、启动期失败——在新入口里各补一条判据；边界判据要含「恰为 0」与「恰为上限」
 - Promotion candidate: 与 L-005 家族（数值与边界）同族，本轮不占额度
-- Status: inbox
+- Status: inbox（家族头：L-048 新入口各补判据 / L-052 跨段至少两条输入）
 
 ### M6 收尾轮的消化记录（2026-10-22，tasks 8.3）
 
@@ -562,6 +564,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Next use: 引入新库或新外部依赖时先写「它失败时怎样」的判据（端口被占、连接被拒、文件读不动），再写正常路径；失败路径没有判据，构造顺序与清理顺序的错误就一路绿到线上
 - Promotion candidate: 与四规 #4「修 bug 先写能复现它的测试」同族，本轮不占 AGENTS.md 额度
 - Status: closed（2026-10-24 `fix-chat-screen-feedback` 收尾消化：`bind()` 的构造与清理顺序已由 `src/mini_harness/cli/serve.py` 的实现与 `test_an_occupied_port_fails_before_the_session_starts` 承载；本 change 没引入新外部依赖，也没有新的失败路径缺口。规则本身是四规 #4，不占额度）
+- Status: rejected（2026-10-23 关闭：规则在四规 #4 与 AGENTS.md 变异段里本来就写着；本轮没有新外部依赖、没有新证据）
 
 ### M7 收尾轮的消化记录（2026-10-22，tasks 10.3）
 
@@ -596,6 +599,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Next use: REPL 类入口（chat、M10 的委派）的 seam ⑥ 判据至少两条输入、跨两个段；任何「每段都重读全量状态」的实现，判据要能区分「重读」与「重报」
 - Promotion candidate: 与 L-048 同族（入口常见的形状 ≠ 入口里从没发生过的那件事），本轮不占额度
 - Status: inbox（2026-10-24 补一条本轮证据，方向相反但同源：**判据的形状比人做的事更狠**。1.6 那条判据为了撞进几毫秒的缝隙「一次 Ctrl-C 之后连送到进程退出为止」（40 次），mock 那一半 5/5 全绿；真实端点那一跑按同样形状 3/3 拿到 `0xC000013A`，而「人按一次 Ctrl-C」的形状 3/3 是退出码 0。连发越过了「会话收尾」这条边界、跑到解释器收尾里去了。真实那一半不只是补模型形状，也量出 mock 判据的形状偏离人的动作多远）
+- Status: merged into L-048（2026-10-23 消化：跨段与跨回合是同一件事——新入口里那个从没发生过的形状）
 
 ### L-053
 - Date: 2026-10-23
@@ -605,6 +609,7 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 - Next use: 写「某一行只出现在屏幕上」这类判据时，把「日志的重放方与折叠方看不见它」一起写成断言；投影规则的两半都要有判据
 - Promotion candidate: 与 L-041 同族（判据要判值对不对，不是判有没有一行），本轮不占额度
 - Status: merged into L-041（2026-10-24 `fix-chat-screen-feedback` 收尾消化：同一件事——「有一行」与「重放方看不见它」都是「判据只判了一半」。本轮的两条 chat 判据把两半一起判（1.7 判 id 不在任何一条记录的 payload 里、1.8 判那句说明不在 stdout 也不在日志），没有新形状）
+- Status: merged into L-036（2026-10-23 消化：投影规则的两半都要判，判的还是「这一行的值对不对」）
 
 ### `fix-compaction-and-context-overflow` 收尾轮的消化记录（2026-10-22，tasks 6.4 与 7.3）
 
@@ -712,6 +717,52 @@ Date / Context / Observation / Evidence / Next use / Promotion candidate / Statu
 **变异轮测量**：9 个变异全杀、0 存活，定向跑；还原之后另跑一次全量确认回到基线（430 passed / 5 skipped / 1 failed——那 1 条是 L-055 的已知偶发，单独复跑绿）。定向与全量在这一轮没有可比的红数差，因为定向跑的判据文件本来就覆盖了九条变异的全部被杀点。
 
 收件箱：15 条（L-005 / L-019 / L-037 / L-039 / L-041 / L-043 / L-045 / L-047 / L-048 / L-049 / L-052 / L-054 / L-055 / L-056 / L-057），**到 15 条上限**：下个 change 收新条之前先消化。
+### `fix-small-window-compaction-dead-zone` 收尾轮的消化记录（2026-10-23，tasks 9.1）
+
+**先消化**（收件箱 15 条 = 上限，收新条之前）：
+
+- **关闭两条**：L-050（规则在四规 #4 与 AGENTS.md 变异段里本来就写着，与 L-042 / L-027 同一理由；本轮没有新外部依赖、没有新证据）；L-043（它是 Active Lesson 5「文本文件绝不经 PowerShell 往返」的一个实例，BOM 那一半从 M5 挂到现在没有新证据，要动它得先有人裁决配置文件的编码方言）。
+- **合并三组**：L-041 与 L-053 并进 L-036——「值错了这条还红吗」「投影规则的两半都要判」判的是同一件事；L-052 并进 L-048——跨段与跨回合是同一件事，都是「新入口里那个从没发生过的形状」；L-037 并进 L-039——「修完 bug 全量全绿」与「绿着到的守卫」是同一族的两个面。
+- 消化后开放 9 条：L-005 / L-019 / L-036 / L-039 / L-045 / L-047 / L-048 / L-049 / L-054。
+
+**补证据六条**：L-019（又踩一次：变异脚本 `git checkout --` 还原之后直接 edit 报「file has not been read」，先 read 才通）；L-039（4.1 与 2.3 两条判据的红不是当场踩的——4.1 把溢出判定临时改回 `reading > line` 才看到 `assert 4 == 0`，2.3 的红只在措辞那一半；两条都写明在 `tasks.md` 与提交信息里）；L-045（计划里三个数值在实现与工具上限下走不到：`--window 60000 --reserve 100` 被旧启动校验挡掉、`--window 100000` 读 `huge.md` 撞不到溢出、`-p` 传不进 24 万字符，逐条写明在 tasks 4.2 与 6.2，没有含糊过去）；L-047（delta 那条「一段都装不下时不发请求」有一半不可达，核对的是 `shadowed_range` 在装配缝上的可达路径清单）；L-049（新实例：venv 的 `minihns.exe` 启动器在 24000 个字符的参数下以 `0xC0000005` 崩、无输出无日志，同一参数走 `python.exe -m mini_harness.cli.main` 正常——判 CLI 行为不能读启动器那一位）；L-054（本轮真实端点三跑都是短会话，「会话进行中」类判据本轮没有，不算空跑也不算通过）。
+
+**新收三条**：L-055（判据晚于实现落地时，用「临时改回旧实现 → 跑 → 确认红 → 还原 → 确认工作树干净」实证它红过）；L-056（写场景时先算每个断言在哪个 seam 上可达，走不到的那一半要么删掉要么在规格里写明「除非」）；L-057（真端点验收与 UAT runbook 的窗口数值按 provider 回报倒推、按 `read` 的行数上限算，撑上下文用「模型读一个大文件」不用巨型 `-p`）。
+
+**AGENTS.md 本轮不晋升**：三条新收的分别与 L-039 家族、L-045、L-049 同族，都是既有家族的新一例，不占额度。
+
+**本 change 的提交纪律欠账**：`cb18701`（task 4.1，**实现提交**）信息里没有门禁行——它跑了红绿循环，缺的是记录不是没跑；`bddd769` 的门禁行写着「这一轮覆盖 4.1 与本提交」，算把那一笔补了一半。`0e4c6bc`（5.2–5.3 + 6.1–6.4）与 `278685c`（5.1 + 8.1）两条没有门禁行，且前者打包六个 task 跨 seam ⑥ 与真实端点文档、没写打包理由。`d952115` 的门禁行记不全（只有 mypy 与 `test_context_budget.py` 20 条，没有覆盖率与 ruff）。另：`d952115`…`bb570ee` 这一串提交到本轮结束仍未推 `origin`。
+
+**两轴之后又补的一轮（tasks 10.1–10.7）**：`code-review` 两轴跑在 `db61a20...HEAD` 之上，查出「两条触发路径共用 `_context_overflow`，可只有估算那一侧的 `detail` 给三个数」——delta 里写着 SHALL，实现只做到一半。10.1 那条判据**当场踩红**（`assert "压力预算 69900" in 'provider 报出上下文超限且无可遮蔽的内容：HTTP 400 上下文超限'`），是本轮唯一一次顺序正确的红，L-055 因此有了反例：判据写在实现之前就不需要「临时改回旧实现」那一套实证。补完 10.1–10.3 之后重跑变异：M2 从 12 红涨到 **28 红**（`trigger_line` 与 `summary_budget` 改调 `pressure_budget` 之后，写歪一处就打歪触发线两条判据与摘要请求预算那一族判据——「一处事实」不是口号，是变异半径），M3 从 3 红涨到 4 红，新增的 M6（provider 出口摘掉那三个数）被新判据一条杀掉，没有存活的变异。**流程欠账连续两轮是同一笔**：变异轮跑在两轴之前，代价连续两轮都是重跑，记在 `docs/adr/0002` 的本 change 两节。
+
+收件箱：12 条（L-005 / L-019 / L-036 / L-039 / L-045 / L-047 / L-048 / L-049 / L-054 / L-055 / L-056 / L-057），空闲 3 条。
+
+### L-055
+- Date: 2026-10-23
+- Context: change `fix-small-window-compaction-dead-zone` 的 tasks 4.1 与 2.3
+- Observation: 判据写在实现之后，红就踩不到了，而「没有红」这件事本身要实证。4.1 那条 seam ⑥ 判据落在 2.2 的绿之后，2.3 的三条数值断言落在 2.1–2.2 之后。4.1 靠把 `turn_loop.py` 那一行临时改回 `if reading > line:` 才看到 `assert 4 == 0`；2.3 的红只有措辞那一半——两条溢出判据都红在 `assert "触发线 4364" in …`，实际 detail 里已经有压力预算那个数。
+- Evidence: `openspec/changes/fix-small-window-compaction-dead-zone/tasks.md` 的 4.1 与 2.3 两条写明红是怎么来的；临时改动还原后 `git status --short -- src/mini_harness/loop/turn_loop.py` 为空。
+- Next use: 判据晚于实现落地时，用「临时改回旧实现 → 跑 → 确认红 → 还原 → 确认工作树干净」实证它红过，并把这一句写进 tasks 与提交信息，不含糊过去。
+- Promotion candidate: 与 L-039 家族（绿着到的守卫）同族，本轮不占 AGENTS.md 额度
+- Status: inbox
+
+### L-056
+- Date: 2026-10-23
+- Context: 同一 change 的 delta 里「一段都装不下时不发请求」那条场景
+- Observation: 一条场景可能有一半走不到。「该回合照常装配」这一半在装配缝上不可达：摘要请求的预算就是压力预算，而被遮蔽的那一段是对话体的子集——那一段单独超过压力预算时，整份读数必然也超过。写判据时只断言了可达的那一半，不可达的那一半留在规格里。
+- Evidence: delta 的措辞已加「除非预算读数本身超过压力预算」；`context/budget.py::shadowed_range` 在装配点上只有一条 `return None` 的可达路径（整段对话体装得进 `retain_line`）。
+- Next use: 写场景时先算一遍它的每个断言在哪个 seam 上可达；走不到的那一半要么删掉，要么在规格里写明「除非」。
+- Promotion candidate: 与 L-045（计划里的枚举值与数值先对齐规格与实现上限）同族，本轮不占额度
+- Status: inbox
+
+### L-057
+- Date: 2026-10-23
+- Context: 同一 change 的真实端点验收 tasks 6.2 与 6.3
+- Observation: 真端点上的窗口数值要按 provider 回报算、按工具的上限算，不能按估算算。三件实测：`--window 4000 --reserve 100` 加 15400 个字符的追加系统提示，估算 3850、端点回报 8700，第一次装配就溢出（中文实测约 1.3 字符一个 token）；`--window 100000` 读一个 405949 字符的文件撞不到溢出，因为 `read` 默认只回 2000 行而那个文件有 3300 行；venv 的 `minihns.exe` 启动器在 24000 个字符的参数下以 `0xC0000005` 崩、无输出无 `session/start`，同一参数走 `python.exe -m mini_harness.cli.main` 正常。
+- Evidence: `docs/verification/fix-small-window-compaction-dead-zone-real-endpoint.md`（会话 `00dfb231b9eb445e95d01be466d1d02a` / `bfe6d7ae75eb422fa370cf088b04c304` / `474d8e4c59b64f8ea97304cdfc0fba73`）。
+- Next use: 真端点验收与 UAT runbook 里「把上下文撑大」一律用「模型读一个大文件」，先数文件行数与 `read` 的行数上限，不用巨型 `-p`；窗口数值按回报倒推，不按 `CHARS_PER_TOKEN = 4` 倒推。
+- Promotion candidate: 与 L-049（工具与环境事实，去处是 runbook 写法与 ADR）同族，本轮不占额度
+- Status: inbox
 
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 - 每个里程碑收尾扫一次，**允许输出 `NO-PROMOTION`**（没有可复用信号就不写条目）。

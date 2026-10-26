@@ -23,7 +23,7 @@ from mini_harness.config import (
     layer_settings,
     load_config,
 )
-from mini_harness.context.budget import CONTEXT_HEADROOM_TOKENS
+from mini_harness.context.budget import pressure_budget
 from mini_harness.events import EventLog, LogReadFailure, LogWriteFailure, read_events
 from mini_harness.events.fold import assembled_payload, assembly_points, fold
 from mini_harness.loop import (
@@ -263,15 +263,13 @@ def _prepare_or_fail(args: argparse.Namespace) -> _Prepared | _Failure:
             return _Failure(
                 "INVALID_ARGUMENT", f"{flag} 至少为 1，收到 {value}", EXIT_INVALID_ARGUMENT
             )
-    # 窗口减去预留与 headroom 之后没有剩余压力预算时触发线是 0：任何非空上下文都越线、
-    # 压缩救不动。照 DSH，这是配置解析期的错误，不是运行期才发现的溢出（ADR-0019）。
-    if layered.window - layered.reserve - CONTEXT_HEADROOM_TOKENS <= 0:
+    # 压力预算 `W - O` 非正时没有任何装得下的上下文：照 DSH 这是配置解析期的错误，
+    # 不是运行期才发现的溢出（ADR-0019）。触发线为 0 不是配置错误——它只意味着每次装配
+    # 都尝试压缩，装得下的读数照样跑完。
+    if pressure_budget(layered.window, layered.reserve) <= 0:
         return _Failure(
             "INVALID_ARGUMENT",
-            (
-                f"--window {layered.window} 减去 --reserve {layered.reserve} 与余量 "
-                f"{CONTEXT_HEADROOM_TOKENS} 之后没有剩余压力预算"
-            ),
+            f"--window {layered.window} 减去 --reserve {layered.reserve} 之后没有压力预算",
             EXIT_INVALID_ARGUMENT,
         )
 

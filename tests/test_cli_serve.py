@@ -281,14 +281,14 @@ def test_an_occupied_port_fails_before_the_session_starts(tmp_path: Path) -> Non
 
 
 def test_serve_window_budget_failure_is_the_same_shape_as_run(tmp_path: Path) -> None:
-    """使触发线为 0 的窗口与预留是参数错误：与 run 同形，且在日志创建之前。"""
+    """没有压力预算的窗口与预留是参数错误：与 run 同形，且在日志创建之前。"""
     result = _cli(
         "serve",
         "--http",
         "-p",
         "任务",
         "--window",
-        "65536",
+        "8192",
         "--reserve",
         "8192",
         "--provider",
@@ -300,6 +300,7 @@ def test_serve_window_budget_failure_is_the_same_shape_as_run(tmp_path: Path) ->
 
     assert result.returncode == 2
     assert "INVALID_ARGUMENT" in result.stderr
+    assert all(number in result.stderr for number in ("8192", "8192"))
     assert _log_files(tmp_path) == []
 
 
@@ -611,13 +612,13 @@ def test_budget_overflow_in_serve_is_a_process_exit(tmp_path: Path) -> None:
         "serve",
         "--http",
         "-p",
-        "任务" * 1000,
+        "任务" * 10000,
         "--provider",
         "mock",
         "--fixture",
         str(HELLO_SCENARIO),
         "--window",
-        "66000",
+        "4000",
         "--reserve",
         "100",
         "--port",

@@ -1,7 +1,7 @@
-"""窗口预算的纯函数：触发线、估算 token、预算读数、遮蔽范围。
+"""窗口预算的纯函数：触发线、压力预算、估算 token、预算读数、遮蔽范围。
 
-规格锚点：`context-budget` 的「触发线由固定公式给出」「预算读数有两个来源」
-「遮蔽范围保留尾部且不拆散配对」。
+规格锚点：`context-budget` 的「触发线由固定公式给出」「溢出判据是压力预算，触发线只决定要不要
+压缩」「预算读数有两个来源」「遮蔽范围保留尾部且不拆散配对」。
 估算不是真 token 数（见 ADR-0016）：harness 只用它决定要不要压缩，终止决策由 provider 的报错兜底。
 """
 
@@ -47,9 +47,18 @@ def trigger_line(window: int, reserve: int) -> int:
     """
     line = min(
         window * TRIGGER_RATIO_NUMERATOR // TRIGGER_RATIO_DENOMINATOR,
-        window - reserve - CONTEXT_HEADROOM_TOKENS,
+        pressure_budget(window, reserve) - CONTEXT_HEADROOM_TOKENS,
     )
     return max(line, 0)
+
+
+def pressure_budget(window: int, reserve: int) -> int:
+    """压力预算 = `W - O`：上下文装不装得下问的是它。
+
+    触发线只决定「这次装配要不要尝试压缩」，MUST NOT 被用作溢出判据：小窗口下触发线可以
+    比保留预算还小，那一段读数既压不动也装得下，拿它判溢出就是在真墙之前自己撞墙。
+    """
+    return window - reserve
 
 
 def _tokens(chars: int) -> int:
