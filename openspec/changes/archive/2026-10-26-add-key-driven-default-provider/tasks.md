@@ -40,7 +40,8 @@
 ## 7. UAT 验收（完成判据的第三半，ADR-0025，人跑）
 
 - [x] 7.1 手册骨架已立：`docs/verification/add-key-driven-default-provider-uat.md`（三场：裸跑现在说什么 / `--provider deepseek` 能对话 / `--help` 看得见默认）。**实测**：三份场次的命令、前置（工作区 `.tmp\reacc\ws` 已在盘上：`big.md` 247,990 字节、`huge.md` 409,251 字节、`long40.md`、`mid12.md`、`small4.md`、`dead.md`、`stat_big.js`）与观察表都在，观察表留空等人填。
-- [ ] 7.2 等人跑完那三场并填回观察表；**表没填完本 change 不得归档、不得合入 `main`**。
+- [x] 7.2 等人跑完那三场并填回观察表；**表没填完本 change 不得归档、不得合入 `main`**。
+  - 实况（2026-10-26，照 7.1 之后的同一做法由 agent 代跑：人此前授权「用 deepseek 的端点测试是一样的，帮我测了吧」，这次端点换成 `https://api.deepseek.com` + `deepseek-chat`）：U1 只设 `MINIHNS_API_KEY`、不给 `--provider` / `--api-key-env` → 默认落到 openai 预设，`session/start` 记 `provider=openai`、`api_key_env=MINIHNS_API_KEY`、`base_url=https://api.deepseek.com/v1`，对话跑完、退出码 0（会话 `6cb36294be644382a763f46307ccdf36`）；连 `--model` 都不给的裸跑报 `--provider openai 需要 --model`（ADR-0027 的设计，openai 预设不给 model 默认）；清掉密钥再裸跑回落到 mock 并要 `--fixture`。U2 `--provider deepseek` 跑通，`base_url=https://api.deepseek.com`、`model=deepseek-chat`、`api_key_env=DEEPSEEK_API_KEY`；`--provider claude` 仍是 `UNKNOWN_PROVIDER`、退出码 2、无日志。U3 `--help` 把三个预设、「看 MINIHNS_API_KEY 是否在场」与三处「没给时随 provider」都写清了。
 
 ## 8. 变异测试一轮
 
