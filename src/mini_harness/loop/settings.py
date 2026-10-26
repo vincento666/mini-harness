@@ -19,14 +19,35 @@ DEFAULT_WINDOW = 128000
 DEFAULT_RESERVE = 8192
 
 # 内置默认只住在这一处：CLI 的 flag 默认是 `None` 哨兵，配置文件也没写时才落到这一份。
+# provider 的内置默认由环境决定（ADR-0027）：`MINIHNS_API_KEY` 已设且非空时是 `openai`，
+# 否则是 `mock`。
 DEFAULT_PROVIDER = "mock"
-DEFAULT_BASE_URL = "https://api.deepseek.com"
-DEFAULT_MODEL = "deepseek-chat"
-DEFAULT_API_KEY_ENV = "DEEPSEEK_API_KEY"
+DEFAULT_PROVIDER_KEY_ENV = "MINIHNS_API_KEY"
 DEFAULT_MAX_TURNS = 8
 DEFAULT_SANDBOX: SandboxLevel = "workspace-write"
 DEFAULT_APPROVAL: ApprovalMode = "ask"
 DEFAULT_APPEND_SYSTEM_PROMPT = ""
+
+# provider 名字是「端点预设名」，不是适配器名（ADR-0027）：`openai` 与 `deepseek` 都由
+# openai 兼容适配器执行，差别只在这三项默认。表里只有环境变量的名字，没有任何密钥的值；
+# `None` 就是「这一项没有默认」，缺它要在 session 开始之前当场失败。
+PROVIDER_NAMES: tuple[str, ...] = ("mock", "openai", "deepseek")
+
+
+@dataclass(frozen=True)
+class ProviderPreset:
+    """一个 provider 名字对应的三项端点默认。"""
+
+    base_url: str | None
+    model: str | None
+    api_key_env: str | None
+
+
+PROVIDER_PRESETS: dict[str, ProviderPreset] = {
+    "mock": ProviderPreset(None, None, None),
+    "openai": ProviderPreset("https://api.openai.com/v1", None, DEFAULT_PROVIDER_KEY_ENV),
+    "deepseek": ProviderPreset("https://api.deepseek.com", "deepseek-chat", "DEEPSEEK_API_KEY"),
+}
 
 
 @dataclass(frozen=True)

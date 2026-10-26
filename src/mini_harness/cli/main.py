@@ -31,6 +31,7 @@ from mini_harness.loop import (
     ENTRY_CHAT,
     ENTRY_RUN,
     ENTRY_SERVE,
+    PROVIDER_NAMES,
     SANDBOX_LEVELS,
     STOP_ABORTED,
     STOP_CONTEXT_WINDOW_EXCEEDED,
@@ -50,6 +51,12 @@ from mini_harness.loop import (
     run_session,
     run_turn_segment,
     start_session,
+)
+from mini_harness.loop.settings import (
+    DEFAULT_MAX_TURNS,
+    DEFAULT_RESERVE,
+    DEFAULT_SANDBOX,
+    DEFAULT_WINDOW,
 )
 from mini_harness.provider import FixtureLoadFailure, load_fixture_provider
 from mini_harness.provider.contract import Provider
@@ -96,19 +103,83 @@ def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
 
     可配字段的 flag 默认值一律是 `None` 哨兵：内置默认只住在 `loop/settings.py`（design D2）。
     """
-    parser.add_argument("--config", default=None)
-    parser.add_argument("--workspace", default=None)
-    parser.add_argument("--session-dir", default=None)
-    parser.add_argument("--provider", default=None)
-    parser.add_argument("--fixture", default=None)
-    parser.add_argument("--base-url", default=None)
-    parser.add_argument("--model", default=None)
-    parser.add_argument("--api-key-env", default=None)
-    parser.add_argument("--max-turns", type=int, default=None)
-    parser.add_argument("--window", type=int, default=None)
-    parser.add_argument("--reserve", type=int, default=None)
-    parser.add_argument("--append-system-prompt", default=None)
-    parser.add_argument("--sandbox", choices=SANDBOX_LEVELS, default=None)
+    parser.add_argument(
+        "--config",
+        default=None,
+        help="配置文件路径。没给时找 workspace 根的那份 mini.config.toml。",
+    )
+    parser.add_argument("--workspace", default=None, help="工作区根。没给时是当前目录。")
+    parser.add_argument(
+        "--session-dir",
+        default=None,
+        help="session 日志目录。没给时是 workspace 下的 sessions。",
+    )
+    parser.add_argument(
+        "--provider",
+        default=None,
+        help=(
+            "端点预设名 mock / openai / deepseek。没给时这一层看环境变量 MINIHNS_API_KEY："
+            "已设且非空就是 openai，否则是 mock。"
+        ),
+    )
+    parser.add_argument(
+        "--fixture",
+        default=None,
+        help="mock provider 的 JSON 数组路径。provider 是 mock 时必需。",
+    )
+    parser.add_argument(
+        "--base-url",
+        default=None,
+        help=(
+            "OpenAI 兼容端点地址。没给时随 provider：openai 是 https://api.openai.com/v1，"
+            "deepseek 是 https://api.deepseek.com，mock 没有端点。"
+        ),
+    )
+    parser.add_argument(
+        "--model",
+        default=None,
+        help=(
+            "模型名。没给时随 provider：deepseek 预设给 deepseek-chat，"
+            "openai 预设不给默认，缺它当场失败。"
+        ),
+    )
+    parser.add_argument(
+        "--api-key-env",
+        default=None,
+        help=(
+            "密钥所在环境变量的名字。没给时随 provider："
+            "openai 读 MINIHNS_API_KEY，deepseek 读 DEEPSEEK_API_KEY。"
+        ),
+    )
+    parser.add_argument(
+        "--max-turns",
+        type=int,
+        default=None,
+        help=f"一个 session 最多跑几个回合。默认 {DEFAULT_MAX_TURNS}。",
+    )
+    parser.add_argument(
+        "--window",
+        type=int,
+        default=None,
+        help=f"上下文窗口预算，单位 token。默认 {DEFAULT_WINDOW}。",
+    )
+    parser.add_argument(
+        "--reserve",
+        type=int,
+        default=None,
+        help=f"窗口里为回复与工具输出预留的 token。默认 {DEFAULT_RESERVE}。",
+    )
+    parser.add_argument(
+        "--append-system-prompt",
+        default=None,
+        help="追加在系统提示末尾的一段文本。默认是空串。",
+    )
+    parser.add_argument(
+        "--sandbox",
+        choices=SANDBOX_LEVELS,
+        default=None,
+        help=f"围栏档位。默认 {DEFAULT_SANDBOX}。",
+    )
     parser.add_argument("--yes", action="store_true")
 
 
@@ -240,10 +311,10 @@ def _prepare_or_fail(args: argparse.Namespace) -> _Prepared | _Failure:
         return _Failure(
             "INVALID_ARGUMENT", f"--max-turns 至少为 1，收到 {max_turns}", EXIT_INVALID_ARGUMENT
         )
-    if provider_name not in ("mock", "openai"):
+    if provider_name not in PROVIDER_NAMES:
         return _Failure(
             "UNKNOWN_PROVIDER",
-            f"--provider 只接受 mock 或 openai，收到 {provider_name}",
+            f"--provider 只接受 {' / '.join(PROVIDER_NAMES)}，收到 {provider_name}",
             EXIT_INVALID_ARGUMENT,
         )
     # 围栏两条轴的取值词表由围栏规定：配置文件写错档位不是「运行期再说」，是参数错误。
@@ -280,31 +351,42 @@ def _prepare_or_fail(args: argparse.Namespace) -> _Prepared | _Failure:
 
     provider: Provider
     endpoint: ProviderEndpoint | None = None
-    if provider_name == "openai":
+    if provider_name != "mock":
         if fixture is not None:
             return _Failure(
                 "INVALID_ARGUMENT",
-                "--provider openai 不使用 --fixture",
+                f"--provider {provider_name} 不使用 --fixture",
                 EXIT_INVALID_ARGUMENT,
             )
         # 密钥只从 --api-key-env 指定的环境变量读：它不进 argv、不进日志、不进 payload。
+        # 另两项由预设表保证非空：词表已判过 provider 名字，非 mock 的预设给这两项。
+        assert layered.base_url is not None
+        assert layered.api_key_env is not None
         invalid = validate_base_url(layered.base_url)
         if invalid is not None:
             return _Failure("INVALID_ARGUMENT", invalid, EXIT_INVALID_ARGUMENT)
         # 端点三条在这里塌成一个对象：payload 那三个字段由它派生，不再各判一遍。
+        # 密钥是装配的必需项：未设或空串都在 session 开始之前当场失败，一个请求都不发。
+        api_key = os.environ.get(layered.api_key_env)
+        if not api_key:
+            return _Failure(
+                "INVALID_ARGUMENT",
+                f"环境变量 {layered.api_key_env} 未设置或为空：--provider {provider_name} 需要密钥",
+                EXIT_INVALID_ARGUMENT,
+            )
+        # 补齐之后还可能缺的只有 model：`openai` 预设不给它默认（ADR-0027）。缺它当场失败，
+        # 不带着空值去发一个注定打不到的请求。
+        if layered.model is None:
+            return _Failure(
+                "INVALID_ARGUMENT",
+                f"--provider {provider_name} 需要 --model：{provider_name} 预设不给 model 默认",
+                EXIT_INVALID_ARGUMENT,
+            )
         endpoint = ProviderEndpoint(
             base_url=layered.base_url,
             model=layered.model,
             api_key_env=layered.api_key_env,
         )
-        # 密钥是装配的必需项：未设或空串都在 session 开始之前当场失败，一个请求都不发。
-        api_key = os.environ.get(endpoint.api_key_env)
-        if not api_key:
-            return _Failure(
-                "INVALID_ARGUMENT",
-                f"环境变量 {endpoint.api_key_env} 未设置或为空：--provider openai 需要密钥",
-                EXIT_INVALID_ARGUMENT,
-            )
         provider = OpenAICompatProvider(
             base_url=endpoint.base_url,
             model=endpoint.model,

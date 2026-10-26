@@ -129,7 +129,7 @@
 - **THEN** 进程退出码为 0，日志里 `error/fence` 在盘上而 `session/end` 的 `stop_reason` 是 `MODEL_COMPLETED`
 
 ### Requirement: provider 选择与密钥是装配的必需项
-系统 SHALL 只接受 `mock` 与 `openai` 两个 provider 取值，其它取值 SHALL 以退出码 2 结束、stderr 含 `UNKNOWN_PROVIDER`，且 MUST NOT 创建 session 日志。`provider` 为 `openai` 时密钥 SHALL 只从 `api_key_env` 指定的环境变量读取（默认 `DEEPSEEK_API_KEY`）；该变量未设或为空时系统 SHALL 以退出码 2 结束、stderr 含 `INVALID_ARGUMENT` 与该变量名，且 MUST NOT 创建 session 日志、MUST NOT 发出任何 HTTP 请求。密钥 MUST NOT 出现在命令行参数、stdout、stderr、session 日志或 `session/start` 的 payload 里。
+系统 SHALL 接受 `mock`、`openai`、`deepseek` 三个 provider 取值，其它取值 SHALL 以退出码 2 结束、stderr 含 `UNKNOWN_PROVIDER`，且 MUST NOT 创建 session 日志。密钥 SHALL 只从 `api_key_env` 指定的环境变量读取；该项未显式给出时默认变量名随预设而变（`openai` 是 `MINIHNS_API_KEY`、`deepseek` 是 `DEEPSEEK_API_KEY`），未设或为空时 SHALL 以退出码 2 结束、stderr 含 `INVALID_ARGUMENT` 与该变量名，且 MUST NOT 创建 session 日志、MUST NOT 发出任何 HTTP 请求。密钥 MUST NOT 出现在命令行参数、stdout、stderr、session 日志或 `session/start` 的 payload 里。
 
 #### Scenario: 未知 provider
 - **WHEN** 执行 `minihns run -p "x" --provider claude`
@@ -142,6 +142,10 @@
 #### Scenario: 密钥只进请求头
 - **WHEN** `--api-key-env` 指向的变量已设，一次 openai run 跑完
 - **THEN** 请求带上了该密钥，而 stdout、stderr 与该 session 的日志里都不含它
+
+#### Scenario: deepseek 预设走自己的默认变量
+- **WHEN** `MINIHNS_API_KEY` 未设、`DEEPSEEK_API_KEY` 已设，执行 `minihns run -p "x" --provider deepseek`
+- **THEN** 装配成功，`session/start` 的 payload 里 `provider` 为 `deepseek`，且请求打到 `https://api.deepseek.com`
 
 ### Requirement: 配置层失败都在 session 开始之前
 配置文件非法、`--config` 指向的路径不存在、工具白名单里的未知名、以及 openai 路径缺失密钥时，系统 SHALL 以退出码 2 结束、往 stderr 写 `INVALID_ARGUMENT`，且 MUST NOT 创建 session 日志、MUST NOT 追加任何事件。这一类失败与既有的参数错误同形，是「每个非零退出都有 `error/*`」的例外之一。
@@ -164,6 +168,7 @@
 #### Scenario: 那一行不是日志的投影
 - **WHEN** 一次性入口以非 0 退出
 - **THEN** stdout 上没有那一行，该会话的日志里也没有为打印它而存在的记录
+
 ### Requirement: 运行平台事实记录进 session/start
 系统 SHALL 在 `session/start` 的 payload 里记录本次运行的平台事实 `platform`：`os`（运行所在操作系统的名字）与 `shell`（`bash` 工具实际用来执行命令的 shell 形态）。`run`、`chat`、`serve` 三个入口 SHALL 都记录。`platform` MUST NOT 是命令行开关或配置文件里的键，也 MUST NOT 记录密钥、环境变量值或用户名。
 
@@ -178,3 +183,18 @@
 #### Scenario: 平台事实不来自可配置性
 - **WHEN** 不给任何命令行开关、也不给配置文件
 - **THEN** `session/start` 的 payload 里 `platform` 仍非空，且 `os` 与 `shell` 都有值
+
+### Requirement: --help 写出设置类 flag 的默认值
+`minihns run --help`、`minihns chat --help` 与 `minihns serve --help` SHALL 在设置类 flag 的说明里写出该项当前的默认，且 MUST NOT 写出任何密钥的值。`--provider` 那一行 SHALL 写明生效规则而不是一个固定词：未给 `--provider` 时按 `MINIHNS_API_KEY` 是否已设且非空选 `openai` 或 `mock`。`--api-key-env` 那一行 SHALL 写明默认变量名随预设而变。
+
+#### Scenario: --provider 那行写着生效规则
+- **WHEN** 执行 `minihns chat --help`
+- **THEN** 输出里 `--provider` 的说明同时含 `mock`、`openai`、`deepseek` 与 `MINIHNS_API_KEY` 这四个词
+
+#### Scenario: 默认值说明里没有密钥值
+- **WHEN** `MINIHNS_API_KEY` 已设且执行任一 `--help`
+- **THEN** 输出里不含该变量的值，只含变量名
+
+#### Scenario: 数值与档位那几行写着内置默认
+- **WHEN** 执行 `minihns run --help`
+- **THEN** `max-turns`、`window`、`reserve`、`sandbox` 四行的说明里各写出该项的内置默认，且写出的值就是内置默认本身，不是 help 里另抄的一份数字

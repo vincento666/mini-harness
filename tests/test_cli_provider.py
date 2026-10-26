@@ -8,6 +8,12 @@ from pathlib import Path
 from typing import Any
 
 from cli_blackbox import _cli, _FakeEndpoint
+from mini_harness.loop.settings import (
+    DEFAULT_MAX_TURNS,
+    DEFAULT_RESERVE,
+    DEFAULT_SANDBOX,
+    DEFAULT_WINDOW,
+)
 from paths import HELLO_SCENARIO
 
 _KEY_ENV = "MINIHNS_TEST_KEY"
@@ -72,6 +78,7 @@ def test_unknown_provider_is_exit_2_and_creates_no_log(tmp_path: Path) -> None:
 
     assert result.returncode == 2
     assert "UNKNOWN_PROVIDER" in result.stderr
+    assert "deepseek" in result.stderr
     assert list(tmp_path.glob("*.jsonl")) == []
 
 
@@ -330,3 +337,183 @@ def test_a_200_without_choices_is_a_schema_error_at_the_cli(tmp_path: Path) -> N
     assert error["payload"]["code"] == "PROVIDER_SCHEMA_INVALID"
     assert records[-1]["type"] == "session/end"
     assert len(endpoint.requests) == 1
+
+
+def _env_without_default_key(**extra: str) -> dict[str, str]:
+    """判默认 provider 的环境：先摘掉本机可能已有的那个变量，再按测试写假值。"""
+    env = dict(os.environ)
+    env.pop("MINIHNS_API_KEY", None)
+    env.update(extra)
+    return env
+
+
+def test_a_bare_run_with_the_key_present_defaults_to_openai(tmp_path: Path) -> None:
+    """delta「有密钥时裸跑的默认 provider 是 openai」：默认不再是 mock 那句 `--fixture`。"""
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--session-dir",
+        str(tmp_path),
+        cwd=tmp_path,
+        env=_env_without_default_key(MINIHNS_API_KEY=_KEY_VALUE),
+    )
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert "--model" in result.stderr
+    assert "--fixture" not in result.stderr
+    assert list(tmp_path.glob("*.jsonl")) == []
+
+
+def test_a_bare_run_without_the_key_still_defaults_to_mock(tmp_path: Path) -> None:
+    """delta「没有密钥时裸跑的默认 provider 仍是 mock」：这一半的形状不许变。"""
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--session-dir",
+        str(tmp_path),
+        cwd=tmp_path,
+        env=_env_without_default_key(),
+    )
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert "--fixture" in result.stderr
+    assert list(tmp_path.glob("*.jsonl")) == []
+
+
+def test_a_config_file_provider_does_not_look_at_the_key_presence(tmp_path: Path) -> None:
+    """delta「配置文件指定的 provider 同样判」：写了 openai 就不看密钥在场，缺了当场失败。"""
+    (tmp_path / "mini.config.toml").write_text('provider = "openai"\n', encoding="utf-8")
+
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--session-dir",
+        str(tmp_path),
+        cwd=tmp_path,
+        env=_env_without_default_key(),
+    )
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert "MINIHNS_API_KEY" in result.stderr
+    assert list(tmp_path.glob("*.jsonl")) == []
+
+
+def test_the_deepseek_name_is_accepted_and_its_preset_is_recorded(tmp_path: Path) -> None:
+    """delta「deepseek 预设走自己的默认变量」：名字进 payload，model 与变量名由预设填。
+
+    「请求打到预设地址」那一半在 seam ② 判（`test_config_presets.py` 断言 `base_url` 就是
+    `https://api.deepseek.com`）与真实端点判（tasks 6.2）：黑盒里要拿 loopback 假 server 就得给
+    `--base-url`，给了就不叫预设。
+    """
+    with _FakeEndpoint(status=200, body=_STOP_BODY) as endpoint:
+        result = _cli(
+            "run",
+            "-p",
+            "任务",
+            "--provider",
+            "deepseek",
+            "--base-url",
+            endpoint.base_url,
+            "--session-dir",
+            str(tmp_path),
+            "--yes",
+            cwd=tmp_path,
+            env=_env_without_default_key(DEEPSEEK_API_KEY=_KEY_VALUE),
+        )
+
+    assert result.returncode == 0, result.stderr
+    payload = _session_records(tmp_path)[0]["payload"]
+    assert payload["provider"] == "deepseek"
+    assert payload["model"] == "deepseek-chat"
+    assert payload["api_key_env"] == "DEEPSEEK_API_KEY"
+
+
+def test_openai_without_a_base_url_does_not_run_on_the_deepseek_default(tmp_path: Path) -> None:
+    """地雷的形状：`--provider openai` 不带 `--base-url` 不再静默连 deepseek 端点。
+
+    黑盒判的是这句话指向哪一项——缺的是 `--model`（openai 预设不给它默认），不是别的东西；
+    生效地址本身在 seam ② 判（`test_the_openai_preset_is_openai_not_deepseek`）。
+    """
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "openai",
+        "--session-dir",
+        str(tmp_path),
+        cwd=tmp_path,
+        env=_env_without_default_key(MINIHNS_API_KEY=_KEY_VALUE),
+    )
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert "--model" in result.stderr
+    assert list(tmp_path.glob("*.jsonl")) == []
+
+
+def test_a_missing_model_fails_before_any_request_is_sent(tmp_path: Path) -> None:
+    """delta「openai 预设缺 model 当场失败」：一个请求都不发，一个文件都不多。"""
+    with _FakeEndpoint(status=200, body=_STOP_BODY) as endpoint:
+        result = _cli(
+            "run",
+            "-p",
+            "任务",
+            "--provider",
+            "openai",
+            "--base-url",
+            endpoint.base_url,
+            "--api-key-env",
+            _KEY_ENV,
+            "--session-dir",
+            str(tmp_path),
+            cwd=tmp_path,
+            env=_env_without_default_key(**{_KEY_ENV: _KEY_VALUE}),
+        )
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert "--model" in result.stderr
+    assert list(tmp_path.glob("*.jsonl")) == []
+    assert len(endpoint.requests) == 0
+
+
+def test_the_help_names_the_builtin_default_of_each_setting_flag(tmp_path: Path) -> None:
+    """delta「--help 写出设置类 flag 的默认值」：数值与档位那几行写的是内置默认本身。
+
+    断言的一侧是 help 输出，另一侧是模块里那四个常量——help 不许自己另写一份数字。
+    """
+    result = _cli("run", "--help", cwd=tmp_path)
+    assert result.returncode == 0, result.stderr
+
+    text = result.stdout
+    for expected in (
+        f"默认 {DEFAULT_MAX_TURNS}",
+        f"默认 {DEFAULT_WINDOW}",
+        f"默认 {DEFAULT_RESERVE}",
+        f"默认 {DEFAULT_SANDBOX}",
+    ):
+        assert expected in text, f"run --help 里没有 {expected}"
+
+
+def test_the_help_names_the_provider_rule_and_both_variable_names(tmp_path: Path) -> None:
+    """delta「--help 写出设置类 flag 的默认值」：三个入口的 `--provider` 那行写规则本身。
+
+    WHEN 要真建立：判据跑的时候把 `MINIHNS_API_KEY` 设成一把假密钥，help 里出现的必须还是
+    两个变量名与三个名字，不是「当前默认是 X」，也不是那把密钥的值。
+    """
+    env = _env_without_default_key(**{"MINIHNS_API_KEY": _KEY_VALUE})
+    for entry in ("run", "chat", "serve"):
+        result = _cli(entry, "--help", cwd=tmp_path, env=env)
+
+        assert result.returncode == 0, result.stderr
+        text = result.stdout
+        for word in ("mock", "openai", "deepseek", "MINIHNS_API_KEY", "DEEPSEEK_API_KEY"):
+            assert word in text, f"{entry} --help 里没有 {word}"
+        assert _KEY_VALUE not in text
