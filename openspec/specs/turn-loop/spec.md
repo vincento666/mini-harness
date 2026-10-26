@@ -25,7 +25,7 @@
 - **THEN** 日志里恰有 3 个不同的 `turn_id`，每个 `turn_id` 恰对应一条 `turn/start` 与一条 `turn/end`
 
 ### Requirement: 停止判定写在 turn/end
-系统 SHALL 在每条 `turn/end` 的 payload 里写 `stop_reason`，取值只允许 `MODEL_COMPLETED`、`TOOL_CALLS`、`MAX_TURNS`、`PROVIDER_ERROR`、`ABORTED`、`FENCE_DENIED`、`CONTEXT_WINDOW_EXCEEDED`。`TOOL_CALLS` 只用于「模型要求调工具、还要继续」的回合；`MODEL_COMPLETED` 只用于「模型不再要求继续」；`FENCE_DENIED` 只用于「本回合因围栏或审批拒绝而终止」；`CONTEXT_WINDOW_EXCEEDED` 只用于「本回合的上下文压缩之后仍然装不下」。`session/end` SHALL 记录整个 session 的最终 `stop_reason` 与回合总数；段级收尾不写 `session/end`，所以下面三条 scenario 里的 `session/end` 只成立于一次性入口（`run` / `serve`；接替见「预算溢出是回合终止结果，会话是否继续由入口决定」）。
+系统 SHALL 在每条 `turn/end` 的 payload 里写 `stop_reason`，取值只允许 `MODEL_COMPLETED`、`TOOL_CALLS`、`MAX_TURNS`、`PROVIDER_ERROR`、`ABORTED`、`FENCE_DENIED`、`CONTEXT_WINDOW_EXCEEDED` 七个词表值，每个值只用于它对应的那一类收尾（见各 scenario）。`session/end` SHALL 记录整个 session 的最终 `stop_reason` 与回合总数；段级收尾不写 `session/end`。
 
 #### Scenario: 模型不请求工具即停止
 - **WHEN** Provider 返回的 `tool_calls` 为空
@@ -44,7 +44,7 @@
 - **THEN** 该回合写一条 `turn/end` 且 `stop_reason` 为 `FENCE_DENIED`，`session/end` 的最终 `stop_reason` 也是 `FENCE_DENIED`
 
 #### Scenario: 预算溢出的回合以 CONTEXT_WINDOW_EXCEEDED 收尾
-- **WHEN** 某回合的装配压缩之后预算读数仍超过触发线
+- **WHEN** 某回合的装配预算读数超过压力预算，压缩之后仍超过它
 - **THEN** 该回合写一条 `turn/end` 且 `stop_reason` 为 `CONTEXT_WINDOW_EXCEEDED`，`session/end` 的最终 `stop_reason` 也是它
 
 ### Requirement: 未注册工具是 UNKNOWN_TOOL 结果
