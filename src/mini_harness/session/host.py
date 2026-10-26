@@ -13,7 +13,14 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from mini_harness.events import EventLog
-from mini_harness.loop import ENTRY_HOST, SessionEnv, SessionSettings, start_session
+from mini_harness.loop import (
+    ENTRY_HOST,
+    STOP_REASONS,
+    SessionEnv,
+    SessionSettings,
+    run_turn_segment,
+    start_session,
+)
 from mini_harness.session.assembly import (
     EXIT_INTERNAL_ERROR,
     EXIT_INVALID_ARGUMENT,
@@ -122,3 +129,60 @@ def create_session(
     handle = HostSession(settings=prepared.settings, log=prepared.log, env=env)
     state.sessions[prepared.log.session_id] = handle
     return handle
+
+
+@dataclass(frozen=True)
+class MessageAccepted:
+    """一次 `POST /messages` 的结果：直接起段时带 `segment_id`，排队时为 `None`。"""
+
+    segment_id: str | None
+    queued: bool
+
+
+def submit_message(handle: HostSession, content: str) -> MessageAccepted | Failure:
+    """空闲时直接起段；段进行中入深度 1 的队列；队列已满是一条 409 的结果。"""
+    if handle.status == SESSION_ENDED:
+        return Failure("SESSION_NOT_FOUND", "会话已经结束", EXIT_INVALID_ARGUMENT)
+    if handle.status == SESSION_RUNNING:
+        if handle.queue:
+            return Failure("SESSION_BUSY", "会话的待跑队列已满", EXIT_INVALID_ARGUMENT)
+        handle.queue.append(content)
+        return MessageAccepted(segment_id=None, queued=True)
+    segment_id = _begin_segment(handle, content)
+    return MessageAccepted(segment_id=segment_id, queued=False)
+
+
+def _begin_segment(handle: HostSession, content: str) -> str:
+    handle.segments += 1
+    segment_id = f"s{handle.segments}"
+    handle.status = SESSION_RUNNING
+    cancel = asyncio.Event()
+    handle.cancel = cancel
+    handle.task = asyncio.create_task(_run_segment(handle, segment_id, content, cancel))
+    return segment_id
+
+
+async def _run_segment(
+    handle: HostSession, segment_id: str, content: str, cancel: asyncio.Event
+) -> None:
+    failed = False
+    try:
+        segment = await run_turn_segment(
+            env=handle.env,
+            segment_id=segment_id,
+            first_turn_index=handle.turns + 1,
+            cancel=cancel,
+            user_message=content,
+        )
+        handle.turns += segment.turns
+        failed = segment.stop_reason not in STOP_REASONS
+    finally:
+        handle.cancel = None
+        handle.task = None
+        if failed:
+            handle.status = SESSION_ENDED
+            handle.queue.clear()
+        else:
+            handle.status = SESSION_IDLE
+            if handle.queue:
+                _begin_segment(handle, handle.queue.popleft())

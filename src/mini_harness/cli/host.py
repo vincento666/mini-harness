@@ -27,7 +27,7 @@ from mini_harness.session.assembly import (
     AssemblyRequest,
     Failure,
 )
-from mini_harness.session.host import HostState, create_session
+from mini_harness.session.host import HostState, create_session, submit_message
 
 HOST_TOKEN_ENV = "MINIHNS_HOST_TOKEN"
 MIN_TOKEN_LENGTH = 32
@@ -96,6 +96,7 @@ class HostServer:
         router.add_get(SESSIONS_PATH, self._list_sessions)
         router.add_post(SESSIONS_PATH, self._create_session)
         router.add_get(f"{SESSIONS_PATH}/{{session_id}}", self._get_session)
+        router.add_post(f"{SESSIONS_PATH}/{{session_id}}/messages", self._post_message)
         self._runner: web.AppRunner | None = None
 
     def _authorized(self, request: web.Request) -> bool:
@@ -158,6 +159,33 @@ class HostServer:
         if handle is None:
             return _error(404, "SESSION_NOT_FOUND", f"没有会话 {session_id}")
         return web.json_response(handle.view())
+
+    async def _post_message(self, request: web.Request) -> web.Response:
+        session_id = request.match_info["session_id"]
+        handle = self._state.sessions.get(session_id)
+        if handle is None:
+            return _error(404, "SESSION_NOT_FOUND", f"没有会话 {session_id}")
+        try:
+            body = await request.json()
+        except (ValueError, TypeError, web.HTTPBadRequest):
+            return _error(400, "INVALID_ARGUMENT", "请求体必须是 JSON 对象")
+        content = body.get("content") if isinstance(body, dict) else None
+        if not isinstance(content, str) or not content.strip():
+            return _error(400, "INVALID_ARGUMENT", "content 必须是非空字符串")
+        accepted = submit_message(handle, content)
+        if isinstance(accepted, Failure):
+            if accepted.code == "SESSION_BUSY":
+                # 消息队列满：spec 的 `/messages` 场景写死 429（DELETE 段中才是 409）。
+                return _error(429, "SESSION_BUSY", accepted.detail)
+            return _error(404, "SESSION_NOT_FOUND", accepted.detail)
+        return web.json_response(
+            {
+                "segment_id": accepted.segment_id,
+                "cursor": handle.last_seq,
+                "queued": accepted.queued,
+            },
+            status=202,
+        )
 
     async def bind(self) -> str | None:
         """绑定并开始接收连接；失败返回 detail（调用方映射成退出码 2）。

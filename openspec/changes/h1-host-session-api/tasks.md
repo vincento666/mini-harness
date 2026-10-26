@@ -22,10 +22,10 @@
 
 ## 4. 消息、段与排队（seam ⑥ 与 ①）
 
-- [ ] 4.1 seam ⑥：红判据 `test_a_message_starts_a_segment`——`POST /messages` 返回 202，日志里 `user/message` 在 `segment/start` 与 `segment/end` 之间，段以 `MODEL_COMPLETED` 收尾、会话回到 `idle`
-- [ ] 4.2 seam ①：红判据 `test_a_second_message_queues_and_runs_after_the_first`——第一段进行中再 POST 一句，第二次 202 且 `queued` 为 true；第一段收尾后第二句开新段；日志里两段的 `segment_id` 连续、MUST NOT 交叉
-- [ ] 4.3 seam ⑥：红判据 `test_a_full_queue_is_rejected`——一段在跑、队列已有一句时第三句 429 `SESSION_BUSY`，不写 `user/message`
-- [ ] 4.4 seam ⑥：红判据 `test_an_empty_message_is_rejected`——空串/纯空白 400 `INVALID_ARGUMENT`，不写记录
+- [x] 4.1 seam ⑥：红判据 `test_a_message_starts_a_segment`——`POST /messages` 返回 202，日志里 `user/message` 在 `segment/start` 与 `segment/end` 之间，段以 `MODEL_COMPLETED` 收尾、会话回到 `idle`
+- [x] 4.2 seam ①：红判据 `test_a_second_message_queues_and_runs_after_the_first`——第一段进行中再 POST 一句，第二次 202 且 `queued` 为 true；第一段收尾后第二句开新段；日志里两段的 `segment_id` 连续、MUST NOT 交叉
+- [x] 4.3 seam ⑥：红判据 `test_a_full_queue_is_rejected`——一段在跑、队列已有一句时第三句 429 `SESSION_BUSY`，不写 `user/message`
+- [x] 4.4 seam ⑥：红判据 `test_an_empty_message_is_rejected`——空串/纯空白 400 `INVALID_ARGUMENT`，不写记录
 
 ## 5. 取消与关闭（seam ⑥ 与 ①）
 

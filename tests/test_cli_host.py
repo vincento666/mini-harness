@@ -96,6 +96,290 @@ def _mock_fixture(tmp_path: Path, name: str = "turns.json") -> Path:
     return fixture
 
 
+def _create_session(
+    client: httpx.Client, workspace: Path, fixture: Path, **overrides: object
+) -> str:
+    response = client.post(
+        "/sessions",
+        headers=_headers(),
+        json={
+            "workspace": str(workspace),
+            "provider": "mock",
+            "fixture": str(fixture),
+            **overrides,
+        },
+    )
+    assert response.status_code == 201, response.text
+    return str(response.json()["session_id"])
+
+
+def _session_state(client: httpx.Client, session_id: str) -> dict[str, object]:
+    response = client.get(f"/sessions/{session_id}", headers=_headers())
+    assert response.status_code == 200, response.text
+    return dict(response.json())
+
+
+def _wait_until_idle(client: httpx.Client, session_id: str, timeout: float = 25.0) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if _session_state(client, session_id)["status"] == "idle":
+            return
+        time.sleep(0.05)
+    pytest.fail("会话没有在超时内回到 idle")
+
+
+def _wait_for_log(log: Path, marker: str, timeout: float = 25.0) -> str:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if log.is_file():
+            text = log.read_text(encoding="utf-8")
+            if marker in text:
+                return text
+        time.sleep(0.05)
+    pytest.fail(f"日志里没有等到 {marker}")
+
+
+def _slow_fixture(workspace: Path, tmp_path: Path) -> Path:
+    (workspace / "slow.py").write_text("import time\n\ntime.sleep(1.0)\n", encoding="utf-8")
+    fixture = tmp_path / "slow.json"
+    fixture.write_text(
+        json.dumps(
+            [
+                {
+                    "content": "跑一条慢命令",
+                    "finish_reason": "tool_calls",
+                    "tool_calls": [
+                        {"id": "c1", "name": "bash", "arguments": {"command": "python slow.py"}}
+                    ],
+                },
+                {"content": "第一段完", "finish_reason": "stop"},
+                {"content": "第二段完", "finish_reason": "stop"},
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    return fixture
+
+
+def test_a_full_queue_is_rejected(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = _slow_fixture(workspace, tmp_path)
+    port = _free_port()
+    process = _start_host(
+        tmp_path,
+        port,
+        HOST_TOKEN,
+        "--session-dir",
+        str(session_dir),
+        "--allow-auto-approval",
+    )
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(
+                client, workspace, fixture, provider="mock", approval="auto"
+            )
+            client.post(
+                f"/sessions/{session_id}/messages",
+                headers=_headers(),
+                json={"content": "第一句"},
+            )
+            log = session_dir / f"{session_id}.jsonl"
+            _wait_for_log(log, '"tool/call"')
+            assert (
+                client.post(
+                    f"/sessions/{session_id}/messages",
+                    headers=_headers(),
+                    json={"content": "第二句"},
+                ).json()["queued"]
+                is True
+            )
+            third = client.post(
+                f"/sessions/{session_id}/messages",
+                headers=_headers(),
+                json={"content": "第三句"},
+            )
+            assert third.status_code == 429
+            assert third.json()["error"]["code"] == "SESSION_BUSY"
+            _wait_until_idle(client, session_id)
+
+        records = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+        messages = [
+            record["payload"]["content"] for record in records if record["type"] == "user/message"
+        ]
+        assert messages == ["第一句", "第二句"]
+    finally:
+        _stop(process)
+
+
+def test_an_empty_message_is_rejected(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = _mock_fixture(tmp_path)
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=5.0
+        ) as client:
+            session_id = _create_session(client, workspace, fixture)
+            for body in ({"content": ""}, {"content": "   "}, {}):
+                response = client.post(
+                    f"/sessions/{session_id}/messages", headers=_headers(), json=body
+                )
+                assert response.status_code == 400
+                assert response.json()["error"]["code"] == "INVALID_ARGUMENT"
+            state = _session_state(client, session_id)
+
+        assert state["status"] == "idle"
+        records = [
+            json.loads(line)
+            for line in (session_dir / f"{session_id}.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()
+        ]
+        assert not any(record["type"] == "user/message" for record in records)
+    finally:
+        _stop(process)
+
+
+def test_a_second_message_queues_and_runs_after_the_first(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "slow.py").write_text("import time\n\ntime.sleep(1.0)\n", encoding="utf-8")
+    fixture = tmp_path / "slow.json"
+    fixture.write_text(
+        json.dumps(
+            [
+                {
+                    "content": "跑一条慢命令",
+                    "finish_reason": "tool_calls",
+                    "tool_calls": [
+                        {"id": "c1", "name": "bash", "arguments": {"command": "python slow.py"}}
+                    ],
+                },
+                {"content": "第一段完", "finish_reason": "stop"},
+                {"content": "第二段完", "finish_reason": "stop"},
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    port = _free_port()
+    process = _start_host(
+        tmp_path,
+        port,
+        HOST_TOKEN,
+        "--session-dir",
+        str(session_dir),
+        "--allow-auto-approval",
+    )
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(
+                client, workspace, fixture, provider="mock", approval="auto"
+            )
+            first = client.post(
+                f"/sessions/{session_id}/messages",
+                headers=_headers(),
+                json={"content": "第一句"},
+            )
+            assert first.status_code == 202
+            assert first.json()["queued"] is False
+            log = session_dir / f"{session_id}.jsonl"
+            _wait_for_log(log, '"tool/call"')
+
+            second = client.post(
+                f"/sessions/{session_id}/messages",
+                headers=_headers(),
+                json={"content": "第二句"},
+            )
+            third = client.post(
+                f"/sessions/{session_id}/messages",
+                headers=_headers(),
+                json={"content": "第三句"},
+            )
+            assert second.status_code == 202
+            assert second.json()["queued"] is True
+            assert third.status_code == 429
+            assert third.json()["error"]["code"] == "SESSION_BUSY"
+            _wait_until_idle(client, session_id)
+
+        records = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+        starts = [
+            record["payload"]["segment_id"]
+            for record in records
+            if record["type"] == "segment/start"
+        ]
+        ends = [
+            record["payload"]["stop_reason"]
+            for record in records
+            if record["type"] == "segment/end"
+        ]
+        messages = [
+            record["payload"]["content"] for record in records if record["type"] == "user/message"
+        ]
+        types = [record["type"] for record in records]
+        first_end = types.index("segment/end")
+        second_start = types.index("segment/start", first_end)
+        assert starts == ["s1", "s2"]
+        assert ends == ["MODEL_COMPLETED", "MODEL_COMPLETED"]
+        assert messages == ["第一句", "第二句"]
+        assert first_end < second_start
+    finally:
+        _stop(process)
+
+
+def test_a_message_starts_a_segment(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = _mock_fixture(tmp_path)
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(client, workspace, fixture)
+            response = client.post(
+                f"/sessions/{session_id}/messages",
+                headers=_headers(),
+                json={"content": "任务"},
+            )
+            assert response.status_code == 202
+            assert response.json()["queued"] is False
+            _wait_until_idle(client, session_id)
+
+        records = [
+            json.loads(line)
+            for line in (session_dir / f"{session_id}.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()
+        ]
+        types = [record["type"] for record in records]
+        start = types.index("segment/start")
+        user = types.index("user/message")
+        end = types.index("segment/end")
+        assert start < user < end
+        assert records[user]["payload"]["content"] == "任务"
+        assert records[end]["payload"]["stop_reason"] == "MODEL_COMPLETED"
+    finally:
+        _stop(process)
+
+
 def test_create_session_writes_the_host_entry(tmp_path: Path) -> None:
     session_dir = tmp_path / "sessions"
     workspace = tmp_path / "workspace"
