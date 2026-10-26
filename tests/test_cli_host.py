@@ -250,6 +250,139 @@ def test_an_empty_message_is_rejected(tmp_path: Path) -> None:
         _stop(process)
 
 
+def test_cancel_ends_only_the_segment(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = _slow_fixture(workspace, tmp_path)
+    port = _free_port()
+    process = _start_host(
+        tmp_path,
+        port,
+        HOST_TOKEN,
+        "--session-dir",
+        str(session_dir),
+        "--allow-auto-approval",
+    )
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(
+                client, workspace, fixture, provider="mock", approval="auto"
+            )
+            log = session_dir / f"{session_id}.jsonl"
+            client.post(
+                f"/sessions/{session_id}/messages",
+                headers=_headers(),
+                json={"content": "第一句"},
+            )
+            _wait_for_log(log, '"tool/call"')
+            queued = client.post(
+                f"/sessions/{session_id}/messages",
+                headers=_headers(),
+                json={"content": "排队句"},
+            )
+            assert queued.json()["queued"] is True
+            cancelled = client.post(f"/sessions/{session_id}/cancel", headers=_headers())
+            assert cancelled.status_code == 202
+            _wait_until_idle(client, session_id)
+
+            again = client.post(
+                f"/sessions/{session_id}/messages",
+                headers=_headers(),
+                json={"content": "第三句"},
+            )
+            assert again.status_code == 202
+            _wait_until_idle(client, session_id)
+
+        records = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+        types = [record["type"] for record in records]
+        ends = [record["payload"] for record in records if record["type"] == "segment/end"]
+        messages = [
+            record["payload"]["content"] for record in records if record["type"] == "user/message"
+        ]
+        assert "error/abort" in types
+        assert [end["stop_reason"] for end in ends] == [
+            "ABORTED",
+            "MODEL_COMPLETED",
+            "MODEL_COMPLETED",
+        ]
+        assert messages == ["第一句", "排队句", "第三句"]
+    finally:
+        _stop(process)
+
+
+def test_cancel_on_an_idle_session_is_a_noop(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = _mock_fixture(tmp_path)
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=5.0
+        ) as client:
+            session_id = _create_session(client, workspace, fixture)
+            log = session_dir / f"{session_id}.jsonl"
+            before = log.read_bytes()
+            response = client.post(f"/sessions/{session_id}/cancel", headers=_headers())
+            after = log.read_bytes()
+
+        assert response.status_code == 200
+        assert after == before
+    finally:
+        _stop(process)
+
+
+def test_delete_closes_only_an_idle_session(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = _slow_fixture(workspace, tmp_path)
+    port = _free_port()
+    process = _start_host(
+        tmp_path,
+        port,
+        HOST_TOKEN,
+        "--session-dir",
+        str(session_dir),
+        "--allow-auto-approval",
+    )
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(
+                client, workspace, fixture, provider="mock", approval="auto"
+            )
+            log = session_dir / f"{session_id}.jsonl"
+            client.post(
+                f"/sessions/{session_id}/messages",
+                headers=_headers(),
+                json={"content": "第一句"},
+            )
+            _wait_for_log(log, '"tool/call"')
+            while_running = client.delete(f"/sessions/{session_id}", headers=_headers())
+            assert while_running.status_code == 409
+            _wait_until_idle(client, session_id)
+
+            closed = client.delete(f"/sessions/{session_id}", headers=_headers())
+            again = client.delete(f"/sessions/{session_id}", headers=_headers())
+
+        assert closed.status_code == 200
+        assert again.status_code == 404
+        records = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+        assert records[-1]["type"] == "session/end"
+        assert records[-1]["payload"]["stop_reason"] == "MODEL_COMPLETED"
+    finally:
+        _stop(process)
+
+
 def test_a_second_message_queues_and_runs_after_the_first(tmp_path: Path) -> None:
     session_dir = tmp_path / "sessions"
     workspace = tmp_path / "workspace"

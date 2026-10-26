@@ -15,9 +15,11 @@ from datetime import UTC, datetime
 from mini_harness.events import EventLog
 from mini_harness.loop import (
     ENTRY_HOST,
+    STOP_MODEL_COMPLETED,
     STOP_REASONS,
     SessionEnv,
     SessionSettings,
+    end_session,
     run_turn_segment,
     start_session,
 )
@@ -186,3 +188,32 @@ async def _run_segment(
             handle.status = SESSION_IDLE
             if handle.queue:
                 _begin_segment(handle, handle.queue.popleft())
+
+
+def cancel_session(handle: HostSession) -> bool:
+    """只取消当前段；没有段在跑返回 False（一条记录都不写）。"""
+    if handle.status != SESSION_RUNNING or handle.cancel is None:
+        return False
+    handle.cancel.set()
+    return True
+
+
+def close_session(handle: HostSession) -> Failure | None:
+    """空闲时写 `session/end`；段在跑与已关闭都交给调用方映射成 409 / 404。"""
+    if handle.status == SESSION_RUNNING:
+        return Failure("SESSION_BUSY", "会话正在跑一个段", EXIT_INVALID_ARGUMENT)
+    if handle.status == SESSION_ENDED:
+        return Failure("SESSION_NOT_FOUND", "会话已经结束", EXIT_INVALID_ARGUMENT)
+    ended = end_session(
+        env=handle.env,
+        stop_reason=STOP_MODEL_COMPLETED,
+        turns=handle.turns,
+    )
+    if ended is not None:
+        return Failure(
+            ended.failure_code or ended.stop_reason,
+            ended.detail,
+            EXIT_INTERNAL_ERROR,
+        )
+    handle.status = SESSION_ENDED
+    return None

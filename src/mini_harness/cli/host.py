@@ -27,7 +27,13 @@ from mini_harness.session.assembly import (
     AssemblyRequest,
     Failure,
 )
-from mini_harness.session.host import HostState, create_session, submit_message
+from mini_harness.session.host import (
+    HostState,
+    cancel_session,
+    close_session,
+    create_session,
+    submit_message,
+)
 
 HOST_TOKEN_ENV = "MINIHNS_HOST_TOKEN"
 MIN_TOKEN_LENGTH = 32
@@ -97,6 +103,8 @@ class HostServer:
         router.add_post(SESSIONS_PATH, self._create_session)
         router.add_get(f"{SESSIONS_PATH}/{{session_id}}", self._get_session)
         router.add_post(f"{SESSIONS_PATH}/{{session_id}}/messages", self._post_message)
+        router.add_post(f"{SESSIONS_PATH}/{{session_id}}/cancel", self._cancel_session)
+        router.add_delete(f"{SESSIONS_PATH}/{{session_id}}", self._delete_session)
         self._runner: web.AppRunner | None = None
 
     def _authorized(self, request: web.Request) -> bool:
@@ -186,6 +194,29 @@ class HostServer:
             },
             status=202,
         )
+
+    async def _cancel_session(self, request: web.Request) -> web.Response:
+        session_id = request.match_info["session_id"]
+        handle = self._state.sessions.get(session_id)
+        if handle is None:
+            return _error(404, "SESSION_NOT_FOUND", f"没有会话 {session_id}")
+        if cancel_session(handle):
+            return web.json_response({"cancelled": True}, status=202)
+        return web.json_response({"cancelled": False}, status=200)
+
+    async def _delete_session(self, request: web.Request) -> web.Response:
+        session_id = request.match_info["session_id"]
+        handle = self._state.sessions.get(session_id)
+        if handle is None:
+            return _error(404, "SESSION_NOT_FOUND", f"没有会话 {session_id}")
+        failure = close_session(handle)
+        if failure is not None:
+            if failure.code == "SESSION_BUSY":
+                return _error(409, "SESSION_BUSY", failure.detail)
+            if failure.code == "SESSION_NOT_FOUND":
+                return _error(404, "SESSION_NOT_FOUND", failure.detail)
+            return _error(500, "INTERNAL", failure.detail)
+        return web.json_response(handle.view(), status=200)
 
     async def bind(self) -> str | None:
         """绑定并开始接收连接；失败返回 detail（调用方映射成退出码 2）。

@@ -29,9 +29,9 @@
 
 ## 5. 取消与关闭（seam ⑥ 与 ①）
 
-- [ ] 5.1 seam ①：红判据 `test_cancel_ends_only_the_segment`——段进行中 `POST /cancel` 后日志有 `error/abort` / `turn/end(ABORTED)` / `segment/end(ABORTED)`、会话仍 `idle`；再 POST 一句能正常跑完；预先排队的那条在取消后照常开新段（队列不被清空）
-- [ ] 5.2 seam ⑥：红判据 `test_cancel_on_an_idle_session_is_a_noop`——空闲时 cancel 返回 200，日志字节不变
-- [ ] 5.3 seam ⑥：红判据 `test_delete_closes_only_an_idle_session`——空闲 DELETE 返回 200、最后一条是 `session/end(MODEL_COMPLETED)`；段进行中 DELETE 409；重复 DELETE 404
+- [x] 5.1 seam ①：红判据 `test_cancel_ends_only_the_segment`——段进行中 `POST /cancel` 后日志有 `error/abort` / `turn/end(ABORTED)` / `segment/end(ABORTED)`、会话仍 `idle`；再 POST 一句能正常跑完；预先排队的那条在取消后照常开新段（队列不被清空）
+- [x] 5.2 seam ⑥：红判据 `test_cancel_on_an_idle_session_is_a_noop`——空闲时 cancel 返回 200，日志字节不变
+- [x] 5.3 seam ⑥：红判据 `test_delete_closes_only_an_idle_session`——空闲 DELETE 返回 200、最后一条是 `session/end(MODEL_COMPLETED)`；段进行中 DELETE 409；重复 DELETE 404
 
 ## 6. 审批走 HTTP 回程（seam ② 与 ⑥）
 
