@@ -5,7 +5,7 @@
 ## 现在
 
 - `main` = **`9b3a5bf`**（merge `add-key-driven-default-provider`），tag `m1`–`m9` 都在。
-- **进行中**：`change/h1-host-session-api`（tip `e7202b2`）。H1 的 tasks **39/40 已勾**；只剩 10.4 UAT（人跑，ADR-0025），合并仍需人批。
+- **进行中**：`change/h1-host-session-api`（tip `ad60a9d`）。H1 的 tasks **39/40 已勾**；只剩 10.4 UAT（人跑，ADR-0025），合并仍需人批。GLOSSARY / roadmap / stage-map 的 K/R/S 分层口径已从 `docs-krs-glossary` cherry-pick 进来（`9af5d3d`、`ad60a9d`）。
 - **唯一未合并的修复分支**：`change/fix-post-compaction-budget-reading`（从 `fix-small-window-compaction-dead-zone` 的 tip 起，20 个 task 全未勾，只有 proposal / design / spec / tasks）。
 - 已合并但分支还没删的：`change/fix-small-window-compaction-dead-zone`、`change/add-key-driven-default-provider`、`change/fix-chat-screen-feedback`、`change/add-platform-facts-to-protected-header`、`change/fix-compaction-and-context-overflow`。
 - `openspec validate --all --strict`：**12 份主规格 + 1 个活动 change（`h1-host-session-api`）0 失败**（2026-10-27 实测，13/13）。
