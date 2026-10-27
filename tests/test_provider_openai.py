@@ -1,4 +1,4 @@
-"""seam ⑤：OpenAI 兼容适配器。HTTP 层由测试注入，判据不跑网络。"""
+﻿"""seam ⑤：OpenAI 兼容适配器。HTTP 层由测试注入，判据不跑网络。"""
 
 from __future__ import annotations
 
@@ -350,6 +350,27 @@ async def test_stream_options_falls_back_when_rejected() -> None:
     assert "stream_options" in seen_bodies[0]
     assert "stream_options" not in seen_bodies[1]
     assert len(seen_bodies) == 2
+
+
+async def test_a_stream_that_breaks_before_done_is_a_result() -> None:
+    async def sink(text: str) -> None:
+        return None
+
+    stream = (
+        'data: {"choices":[{"delta":{"content":"你"},"finish_reason":null}]}\n\n'
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'
+    )
+    provider, _ = _provider(
+        handler=lambda request: httpx.Response(
+            200, text=stream, headers={"content-type": "text/event-stream"}
+        )
+    )
+
+    outcome = await provider.generate([], [], asyncio.Event(), on_delta=sink)
+
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_TRANSPORT"
+    assert "[DONE]" in outcome.detail
 
 
 async def test_the_request_posts_to_the_chat_completions_url() -> None:
@@ -771,3 +792,4 @@ async def test_the_provider_still_accepts_no_key_and_sends_no_header() -> None:
         "signal",
         "on_delta",
     ]
+

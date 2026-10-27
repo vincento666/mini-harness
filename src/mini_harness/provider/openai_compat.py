@@ -412,6 +412,7 @@ class OpenAICompatProvider:
                 finish_reason: str | None = None
                 usage = Usage()
                 tool_call_parts: dict[int, dict[str, str]] = {}
+                saw_done = False
                 async for line in response.aiter_lines():
                     if signal.is_set():
                         return ProviderFailure(
@@ -423,6 +424,7 @@ class OpenAICompatProvider:
                         continue
                     data = line[len("data:") :].strip()
                     if data == "[DONE]":
+                        saw_done = True
                         break
                     try:
                         payload = json.loads(data)
@@ -481,6 +483,12 @@ class OpenAICompatProvider:
             )
         except httpx.HTTPError as error:
             return ProviderFailure(code="PROVIDER_TRANSPORT", detail=str(error), attempts=attempts)
+        if not saw_done:
+            return ProviderFailure(
+                code="PROVIDER_TRANSPORT",
+                detail="流在 [DONE] 之前结束",
+                attempts=attempts,
+            )
         if finish_reason is None:
             return _schema_failure("流式响应没有 finish_reason", attempts)
         tool_calls = _stream_tool_calls(tool_call_parts, attempts)
