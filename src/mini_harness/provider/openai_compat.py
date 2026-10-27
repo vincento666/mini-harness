@@ -372,13 +372,36 @@ class OpenAICompatProvider:
         attempts: list[ProviderAttempt],
         signal: asyncio.Event,
         on_delta: DeltaSink,
+        *,
+        include_usage: bool = True,
     ) -> AssistantTurn | ProviderFailure:
         """流式正文：增量只交给 sink；最终 `AssistantTurn.content` 是拼接结果。"""
-        body = {**body, "stream": True}
+        stream_body = {**body, "stream": True}
+        if include_usage:
+            stream_body["stream_options"] = {"include_usage": True}
         try:
             async with client.stream(
-                "POST", f"{self._base_url}/chat/completions", json=body, headers=headers
+                "POST", f"{self._base_url}/chat/completions", json=stream_body, headers=headers
             ) as response:
+                if response.status_code == 400 and include_usage:
+                    # 兼容端点可能不认 `stream_options`：丢掉它再试一次；这不是 provider 重试，
+                    # 不写 `model/retry`，也不改变 usage 可缺的语义。
+                    await response.aread()
+                    if signal.is_set():
+                        return ProviderFailure(
+                            code="PROVIDER_ABORTED",
+                            detail="流式回退前取消信号已置位",
+                            attempts=attempts,
+                        )
+                    return await self._stream_generate(
+                        client,
+                        body,
+                        headers,
+                        attempts,
+                        signal,
+                        on_delta,
+                        include_usage=False,
+                    )
                 if response.status_code >= 400:
                     await response.aread()
                     failure = _status_failure(response, attempts)

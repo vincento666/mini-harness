@@ -298,6 +298,60 @@ async def test_openai_stream_tool_calls_are_assembled_by_index() -> None:
     assert turn.finish_reason == "tool_calls"
 
 
+async def test_openai_stream_usage_may_be_missing() -> None:
+    async def sink(text: str) -> None:
+        return None
+
+    stream = (
+        'data: {"choices":[{"delta":{"content":"好"},"finish_reason":null}]}\n\n'
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'
+        "data: [DONE]\n\n"
+    )
+    provider, _ = _provider(
+        handler=lambda request: httpx.Response(
+            200, text=stream, headers={"content-type": "text/event-stream"}
+        )
+    )
+
+    turn = await provider.generate([], [], asyncio.Event(), on_delta=sink)
+
+    assert isinstance(turn, AssistantTurn)
+    assert turn.usage.input_tokens == 0
+    assert turn.usage.output_tokens == 0
+
+
+async def test_stream_options_falls_back_when_rejected() -> None:
+    seen_bodies: list[dict[str, Any]] = []
+    stream = (
+        'data: {"choices":[{"delta":{"content":"好"},"finish_reason":null}]}\n\n'
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'
+        "data: [DONE]\n\n"
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = _body(request)
+        seen_bodies.append(body)
+        if len(seen_bodies) == 1:
+            return httpx.Response(
+                400,
+                json={"error": {"message": "unknown field: stream_options"}},
+            )
+        return httpx.Response(200, text=stream, headers={"content-type": "text/event-stream"})
+
+    async def sink(text: str) -> None:
+        return None
+
+    provider, _ = _provider(handler=handler)
+
+    turn = await provider.generate([], [], asyncio.Event(), on_delta=sink)
+
+    assert isinstance(turn, AssistantTurn)
+    assert turn.content == "好"
+    assert "stream_options" in seen_bodies[0]
+    assert "stream_options" not in seen_bodies[1]
+    assert len(seen_bodies) == 2
+
+
 async def test_the_request_posts_to_the_chat_completions_url() -> None:
     provider, seen = _provider(handler=lambda request: httpx.Response(200, json=_OK_BODY))
 
