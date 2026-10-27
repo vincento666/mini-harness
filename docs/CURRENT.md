@@ -44,6 +44,7 @@
 - M14 的技能 / 斜杠命令底稿：`docs/reference/skills-and-commands.md`
 - MEM1 / MEM2 的记忆底稿：`docs/reference/memory.md`
 - M12 的子代理与并发底稿：`docs/reference/subagents.md`
+- 四层 / 段与回合 / 控制面说明：`docs/reference/runtime-layers-and-control-plane.md`
 - E2 组件接缝规划：`docs/reference/e2-component-seams.md`
 - G 轨服务化运行时：`docs/reference/g-track-service-runtime.md`
 - DSH 逐支柱对照：`docs/dsh-alignment.md`（基线 `m3`，形状仍有效）
