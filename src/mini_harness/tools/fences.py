@@ -103,7 +103,9 @@ class ApprovalGate(Protocol):
     必须能被中断，否则取消只能等人先答完。
     """
 
-    async def request(self, *, tool_name: str, detail: str) -> ApprovalDecision: ...
+    async def request(
+        self, *, tool_call_id: str, tool_name: str, detail: str
+    ) -> ApprovalDecision: ...
 
 
 def _settle(target: asyncio.Future[str], text: str) -> None:
@@ -151,7 +153,7 @@ class StdinApprovalGate:
         self._stream = stream
         self._prompt_stream = prompt_stream
 
-    async def request(self, *, tool_name: str, detail: str) -> ApprovalDecision:
+    async def request(self, *, tool_call_id: str, tool_name: str, detail: str) -> ApprovalDecision:
         answers = sys.stdin if self._stream is None else self._stream
         if not answers.isatty():
             return "UNAVAILABLE"

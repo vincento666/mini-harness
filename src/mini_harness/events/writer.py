@@ -29,6 +29,11 @@ class EventLog:
         self.session_id = session_id
         self._next_seq = 0
 
+    @property
+    def last_seq(self) -> int:
+        """已经写出的最后一条记录的 `seq`；还没写过是 -1。"""
+        return self._next_seq - 1
+
     @classmethod
     def start(cls, session_dir: Path) -> EventLog | LogWriteFailure:
         """为新 session 生成唯一 session id 并打开它的日志。"""

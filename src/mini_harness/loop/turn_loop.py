@@ -62,11 +62,12 @@ STOP_FENCE_DENIED = "FENCE_DENIED"
 STOP_CONTEXT_WINDOW_EXCEEDED = "CONTEXT_WINDOW_EXCEEDED"
 STOP_REASONS: frozenset[str] = frozenset(get_args(StopReason))
 
-# 哪个入口开的这个会话：`session/start.payload.entry` 只有这三个值（design D1，M7 加 `serve`）。
-SessionEntry = Literal["run", "chat", "serve"]
+# 哪个入口开的这个会话：`session/start.payload.entry` 只有这四个值（design D1；H1 加 `host`）。
+SessionEntry = Literal["run", "chat", "serve", "host"]
 ENTRY_RUN: SessionEntry = "run"
 ENTRY_CHAT: SessionEntry = "chat"
 ENTRY_SERVE: SessionEntry = "serve"
+ENTRY_HOST: SessionEntry = "host"
 
 # provider 失败码里只有这一种触发请求级压缩与一次重试（ADR-0019）。
 PROVIDER_CONTEXT_OVERFLOW = "PROVIDER_CONTEXT_OVERFLOW"

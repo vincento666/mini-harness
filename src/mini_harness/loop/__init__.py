@@ -11,6 +11,7 @@ from mini_harness.loop.settings import (
 )
 from mini_harness.loop.turn_loop import (
     ENTRY_CHAT,
+    ENTRY_HOST,
     ENTRY_RUN,
     ENTRY_SERVE,
     STOP_ABORTED,
@@ -36,6 +37,7 @@ __all__ = [
     "DEFAULT_RESERVE",
     "DEFAULT_WINDOW",
     "ENTRY_CHAT",
+    "ENTRY_HOST",
     "ENTRY_RUN",
     "ENTRY_SERVE",
     "PROVIDER_NAMES",

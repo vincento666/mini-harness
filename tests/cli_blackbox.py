@@ -133,11 +133,18 @@ def _cli(
     )
 
 
-def _cli_process(*args: str, cwd: Path, keep_stdin_open: bool = False) -> subprocess.Popen[str]:
+def _cli_process(
+    *args: str,
+    cwd: Path,
+    keep_stdin_open: bool = False,
+    env: dict[str, str] | None = None,
+    creationflags: int = 0,
+) -> subprocess.Popen[str]:
     """同一条命令，但以 `Popen` 起：用来在 session 进行中给它发信号。
 
     `keep_stdin_open` 给 `chat` 用：REPL 的 stdin 是一根一直开着的管道，测试往里写行、写完再关。
-    默认那条路径仍是「非 tty 且立刻 EOF」。
+    默认那条路径仍是「非 tty 且立刻 EOF」。`env` 给 host 用：token 只走环境变量。
+    `creationflags` 给 host 用：Windows 上要 `CREATE_NEW_PROCESS_GROUP` 才能发 Ctrl-Break。
     """
     return subprocess.Popen(
         _command(*args),
@@ -146,8 +153,9 @@ def _cli_process(*args: str, cwd: Path, keep_stdin_open: bool = False) -> subpro
         stderr=subprocess.PIPE,
         text=True,
         encoding="utf-8",
-        env=_child_env(None),
+        env=_child_env(env),
         stdin=subprocess.PIPE if keep_stdin_open else subprocess.DEVNULL,
+        creationflags=creationflags,
     )
 
 

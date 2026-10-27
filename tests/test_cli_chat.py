@@ -860,8 +860,8 @@ def test_ctrl_c_at_the_prompt_ends_the_session_without_traceback(tmp_path: Path)
 
     管道上的阻塞读不会被 Ctrl-C 打断（Windows 的 Ctrl-C 只在解释器回到字节码边界时才被消费），
     所以信号之后给 stdin 一个 EOF 让解释器回到边界上。收尾那一段缝隙里再连着送几次：
-    落进缝隙里没人接，就是 design D7 要堵的那个洞。送不到（进程已经退出）不算失败。
-    """
+    落进缝隙里没人接，就是 design D7 要堵的那个洞。`session/end` 一落盘就停止送。"""
+
     fixture = _fixture(tmp_path, "unused.json", [{"content": "不该出现", "finish_reason": "stop"}])
     process = _cli_console_process(
         "chat",
@@ -876,10 +876,11 @@ def test_ctrl_c_at_the_prompt_ends_the_session_without_traceback(tmp_path: Path)
     _send_ctrl_c(process.pid)
     assert process.stdin is not None
     process.stdin.close()
-    # 连着送，直到进程自己退出：收尾那一段只有几毫秒，一次送进缝隙里的概率不够高。
-    # 送不到（进程已经退出）不算失败——那条缝隙已经走完了。
+    # 连着送，直到 `session/end` 落盘或进程退出：收尾那一段只有几毫秒，一次送进缝隙里的概率不够高。
+    # `session/end` 之后 MUST NOT 再送——那时 `main` 正在返回，再落一次控制台事件会把已经收好的
+    # 会话按 Ctrl-C 的默认处置杀掉（退出码 0xC000013A），判据就看不见 `session/end` 这个事实了。
     for _ in range(40):
-        if process.poll() is not None:
+        if process.poll() is not None or '"session/end"' in _log_text(tmp_path):
             break
         try:
             _send_ctrl_c(process.pid)

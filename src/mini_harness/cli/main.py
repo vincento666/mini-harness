@@ -13,25 +13,16 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import FrameType
-from typing import Any, NoReturn
+from typing import NoReturn
 
+from mini_harness.cli.host import DEFAULT_HOST_PORT, host_main
 from mini_harness.cli.serve import DEFAULT_HOST, DEFAULT_PORT, SERVE_HOSTS, BindFailure, ServeServer
-from mini_harness.config import (
-    ConfigFailure,
-    build_registry,
-    discover_config,
-    layer_settings,
-    load_config,
-)
-from mini_harness.context.budget import pressure_budget
-from mini_harness.events import EventLog, LogReadFailure, LogWriteFailure, read_events
+from mini_harness.events import EventLog, LogReadFailure, read_events
 from mini_harness.events.fold import assembled_payload, assembly_points, fold
 from mini_harness.loop import (
-    APPROVAL_MODES,
     ENTRY_CHAT,
     ENTRY_RUN,
     ENTRY_SERVE,
-    PROVIDER_NAMES,
     SANDBOX_LEVELS,
     STOP_ABORTED,
     STOP_CONTEXT_WINDOW_EXCEEDED,
@@ -41,7 +32,6 @@ from mini_harness.loop import (
     STOP_PROVIDER_ERROR,
     STOP_REASONS,
     STOP_TOOL_CALLS,
-    ProviderEndpoint,
     RunOutcome,
     SegmentOutcome,
     SessionEntry,
@@ -58,15 +48,19 @@ from mini_harness.loop.settings import (
     DEFAULT_SANDBOX,
     DEFAULT_WINDOW,
 )
-from mini_harness.provider import FixtureLoadFailure, load_fixture_provider
 from mini_harness.provider.contract import Provider
-from mini_harness.provider.openai_compat import OpenAICompatProvider, validate_base_url
+from mini_harness.session.assembly import (
+    EXIT_INTERNAL_ERROR,
+    EXIT_INVALID_ARGUMENT,
+    AssemblyRequest,
+    Failure,
+    Prepared,
+    assemble,
+    request_from_args,
+)
 from mini_harness.tools import ToolRegistry
-from mini_harness.tools.bash_tools import platform_facts
 
 EXIT_OK = 0
-EXIT_INTERNAL_ERROR = 1
-EXIT_INVALID_ARGUMENT = 2
 EXIT_FENCE_DENIED = 3
 EXIT_CONTEXT_WINDOW_EXCEEDED = 4
 EXIT_ABORTED = 5
@@ -205,6 +199,15 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--port", type=int, default=DEFAULT_PORT)
     serve.add_argument("--host", default=DEFAULT_HOST)
 
+    # `host` 是常驻多会话入口，不是 `serve` 的模式开关（ADR-0031）：`--http` 同样是装饰。
+    # 服务器级许可只在这里给：请求体不能自己给自己放行 `danger-full-access` / `auto`。
+    host = subcommands.add_parser("host", help="常驻多会话宿主服务（HTTP + SSE）", parents=[shared])
+    host.add_argument("--http", action="store_true")
+    host.add_argument("--port", type=int, default=DEFAULT_HOST_PORT)
+    host.add_argument("--host", default=DEFAULT_HOST)
+    host.add_argument("--allow-danger-full-access", action="store_true")
+    host.add_argument("--allow-auto-approval", action="store_true")
+
     # `chat` 没有 `-p/--prompt`，也没有 `--events`：一个会话的人话从 stdin 按行进来，
     # stdout 上只有模型回复正文与提示符（chat-repl 规格）。
     subcommands.add_parser("chat", help="跑一个连续会话的 REPL", parents=[shared])
@@ -264,163 +267,14 @@ async def _await_session(
         signal.signal(signal.SIGINT, previous)
 
 
-@dataclass(frozen=True)
-class _Prepared:
-    """装配好的会话材料：`run` 与 `chat` 共用同一条装配路（design D1）。"""
-
-    provider: Provider
-    settings: SessionSettings
-    log: EventLog
-    registry: ToolRegistry
+def _assembly_request(args: argparse.Namespace) -> AssemblyRequest:
+    """CLI 的 argv 到装配请求：字段搬运只有一份，住在装配层。"""
+    return request_from_args(args, auto_approve=args.yes)
 
 
-@dataclass(frozen=True)
-class _Failure:
-    """装配路上的失败：码、面向人的 detail、退出码。
-
-    失败是结果不是异常（不变量 B）：`_prepare_or_fail` 自己不打 stderr，调用方拿到码再打，
-    三处入口都能说出「装配在哪一步失败」。
-    """
-
-    code: str
-    detail: str
-    exit_code: int
-
-
-def _prepare_or_fail(args: argparse.Namespace) -> _Prepared | _Failure:
-    """参数校验 → 配置层叠 → 装配 → 开日志：`run` 与 `chat` 走同一条路。
-
-    失败当场打成 stderr 并返回退出码；所有失败都在 session 日志创建之前（cli 规格）。
-    """
-    fixture: str | None = args.fixture
-    # 配置文件发现用的工作区是「`--workspace` 或当前目录」这一层，不来自配置文件（design D7）。
-    discovery_workspace = Path(args.workspace) if args.workspace is not None else Path.cwd()
-    config: dict[str, Any] = {}
-    config_path = discover_config(discovery_workspace, args.config)
-    if config_path is not None:
-        loaded_config = load_config(config_path)
-        if isinstance(loaded_config, ConfigFailure):
-            # 配置层失败与参数错误同形：退出码 2，且在日志创建之前。
-            return _Failure("INVALID_ARGUMENT", loaded_config.detail, EXIT_INVALID_ARGUMENT)
-        config = loaded_config
-    # 三层塌成一份有效设置：之后的校验与装配只认这一份。
-    layered = layer_settings(args, config)
-    max_turns = layered.max_turns
-    provider_name = layered.provider
-    if max_turns < 1:
-        return _Failure(
-            "INVALID_ARGUMENT", f"--max-turns 至少为 1，收到 {max_turns}", EXIT_INVALID_ARGUMENT
-        )
-    if provider_name not in PROVIDER_NAMES:
-        return _Failure(
-            "UNKNOWN_PROVIDER",
-            f"--provider 只接受 {' / '.join(PROVIDER_NAMES)}，收到 {provider_name}",
-            EXIT_INVALID_ARGUMENT,
-        )
-    # 围栏两条轴的取值词表由围栏规定：配置文件写错档位不是「运行期再说」，是参数错误。
-    for key, level, allowed in (
-        ("sandbox", layered.sandbox, SANDBOX_LEVELS),
-        ("approval", layered.approval, APPROVAL_MODES),
-    ):
-        if level not in allowed:
-            return _Failure(
-                "INVALID_ARGUMENT",
-                f"{key} 只接受 {' / '.join(allowed)}，收到 {level}",
-                EXIT_INVALID_ARGUMENT,
-            )
-    # 窗口预算的两个参数在 session 开始之前判掉：非法取值不产生日志（context-budget 规格）。
-    for flag, value in (("--window", layered.window), ("--reserve", layered.reserve)):
-        if value < 1:
-            return _Failure(
-                "INVALID_ARGUMENT", f"{flag} 至少为 1，收到 {value}", EXIT_INVALID_ARGUMENT
-            )
-    # 压力预算 `W - O` 非正时没有任何装得下的上下文：照 DSH 这是配置解析期的错误，
-    # 不是运行期才发现的溢出（ADR-0019）。触发线为 0 不是配置错误——它只意味着每次装配
-    # 都尝试压缩，装得下的读数照样跑完。
-    if pressure_budget(layered.window, layered.reserve) <= 0:
-        return _Failure(
-            "INVALID_ARGUMENT",
-            f"--window {layered.window} 减去 --reserve {layered.reserve} 之后没有压力预算",
-            EXIT_INVALID_ARGUMENT,
-        )
-
-    # 工具表从装配来：内置六定义按配置的白名单筛，未知名与别的配置失败同形。
-    registry = build_registry(layered.tools)
-    if isinstance(registry, ConfigFailure):
-        return _Failure("INVALID_ARGUMENT", registry.detail, EXIT_INVALID_ARGUMENT)
-
-    provider: Provider
-    endpoint: ProviderEndpoint | None = None
-    if provider_name != "mock":
-        if fixture is not None:
-            return _Failure(
-                "INVALID_ARGUMENT",
-                f"--provider {provider_name} 不使用 --fixture",
-                EXIT_INVALID_ARGUMENT,
-            )
-        # 密钥只从 --api-key-env 指定的环境变量读：它不进 argv、不进日志、不进 payload。
-        # 另两项由预设表保证非空：词表已判过 provider 名字，非 mock 的预设给这两项。
-        assert layered.base_url is not None
-        assert layered.api_key_env is not None
-        invalid = validate_base_url(layered.base_url)
-        if invalid is not None:
-            return _Failure("INVALID_ARGUMENT", invalid, EXIT_INVALID_ARGUMENT)
-        # 端点三条在这里塌成一个对象：payload 那三个字段由它派生，不再各判一遍。
-        # 密钥是装配的必需项：未设或空串都在 session 开始之前当场失败，一个请求都不发。
-        api_key = os.environ.get(layered.api_key_env)
-        if not api_key:
-            return _Failure(
-                "INVALID_ARGUMENT",
-                f"环境变量 {layered.api_key_env} 未设置或为空：--provider {provider_name} 需要密钥",
-                EXIT_INVALID_ARGUMENT,
-            )
-        # 补齐之后还可能缺的只有 model：`openai` 预设不给它默认（ADR-0027）。缺它当场失败，
-        # 不带着空值去发一个注定打不到的请求。
-        if layered.model is None:
-            return _Failure(
-                "INVALID_ARGUMENT",
-                f"--provider {provider_name} 需要 --model：{provider_name} 预设不给 model 默认",
-                EXIT_INVALID_ARGUMENT,
-            )
-        endpoint = ProviderEndpoint(
-            base_url=layered.base_url,
-            model=layered.model,
-            api_key_env=layered.api_key_env,
-        )
-        provider = OpenAICompatProvider(
-            base_url=endpoint.base_url,
-            model=endpoint.model,
-            api_key=api_key,
-        )
-    else:
-        if fixture is None:
-            return _Failure(
-                "INVALID_ARGUMENT",
-                "--provider mock 需要 --fixture 指向 JSON 数组",
-                EXIT_INVALID_ARGUMENT,
-            )
-        loaded = load_fixture_provider(Path(fixture))
-        if isinstance(loaded, FixtureLoadFailure):
-            return _Failure(loaded.code, loaded.detail, EXIT_INVALID_ARGUMENT)
-        provider = loaded
-
-    log = EventLog.start(_session_dir(layered.session_dir))
-    if isinstance(log, LogWriteFailure):
-        return _Failure(log.code, log.detail, EXIT_INTERNAL_ERROR)
-
-    settings = SessionSettings(
-        workspace=Path(layered.workspace) if layered.workspace is not None else Path.cwd(),
-        provider_name=provider_name,
-        max_turns=max_turns,
-        sandbox=layered.sandbox,
-        approval="auto" if args.yes else layered.approval,
-        append_system_prompt=layered.append_system_prompt,
-        window=layered.window,
-        reserve=layered.reserve,
-        endpoint=endpoint,
-        platform=platform_facts(),
-    )
-    return _Prepared(provider=provider, settings=settings, log=log, registry=registry)
+def _prepare_or_fail(args: argparse.Namespace) -> Prepared | Failure:
+    """`run` / `chat` / `serve` 共用的装配路；失败在建日志之前（cli 规格）。"""
+    return assemble(_assembly_request(args), os.environ)
 
 
 def _run(args: argparse.Namespace) -> int:
@@ -429,7 +283,7 @@ def _run(args: argparse.Namespace) -> int:
     if prompt is None or prompt == "":
         return _report_failure("INVALID_ARGUMENT", "-p/--prompt 必填且非空", EXIT_INVALID_ARGUMENT)
     prepared = _prepare_or_fail(args)
-    if isinstance(prepared, _Failure):
+    if isinstance(prepared, Failure):
         return _report_failure(prepared.code, prepared.detail, prepared.exit_code)
 
     outcome = asyncio.run(
@@ -502,7 +356,7 @@ async def _serve_session(*, args: argparse.Namespace, prompt: str) -> int:
     sys.stderr.write(f"serve 监听 http://{server.host}:{server.port}\n")
 
     prepared = _prepare_or_fail(args)
-    if isinstance(prepared, _Failure):
+    if isinstance(prepared, Failure):
         await server.close()
         return _report_failure(prepared.code, prepared.detail, prepared.exit_code)
 
@@ -640,7 +494,7 @@ def _print_shadow_feedback(log: EventLog, through: int) -> tuple[int, LogReadFai
     return latest, None
 
 
-async def _chat_session(prepared: _Prepared, signals: _ChatSignals) -> int:
+async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
     """读一行、开一个段、回到提示符；EOF 或提示符上的 Ctrl-C 收尾整个会话。
 
     SIGINT 处理器由 `_chat` 装（design D7）：会话收尾也在它的覆盖范围里，
@@ -757,7 +611,7 @@ async def _chat_session(prepared: _Prepared, signals: _ChatSignals) -> int:
 def _chat(args: argparse.Namespace) -> int:
     """一个会话的 REPL：装配与 run 同一条路，之后只多「读行」这一件事。"""
     prepared = _prepare_or_fail(args)
-    if isinstance(prepared, _Failure):
+    if isinstance(prepared, Failure):
         return _report_failure(prepared.code, prepared.detail, prepared.exit_code)
     signals = _ChatSignals()
     signal.signal(signal.SIGINT, _chat_sigint_handler(signals))
@@ -823,6 +677,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _serve(args)
     if args.command == "chat":
         return _chat(args)
+    if args.command == "host":
+        return host_main(args)
     return _replay(args)
 
 

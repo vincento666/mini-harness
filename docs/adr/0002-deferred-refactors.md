@@ -705,3 +705,40 @@ Spec 轴查出的判据缺口，六条已在 seam ⑥ 补上（2026-10-24）：
 - **一个提交打包四个 task 没写理由**：`5a17fa2` 覆盖 5.1–5.4。规则允许「同一 seam 上相邻 3 个 task」，5.3 与 5.4 是验证命令不是红绿切片——这是减轻情节，不是满足。另 `7cc41cd`（1.1–1.3）把组 4 的「缺 model 当场失败」提前落地，信息里写明了，算如实标注。
 - **被引用的决策晚于引用它的代码**：`settings.py`、`layering.py`、`cli/main.py` 的注释从 `7cc41cd` 起就写「ADR-0027」，而那份 ADR 到 9.2 才提交——中间四个提交里，「密钥先于 model 那一处顺序」只存在于提交信息。同样地，`AGENTS.md` 技术选型那句「默认 `DEEPSEEK_API_KEY`」在 HEAD 上与代码矛盾，到 9.2 才改。
 - **已提交的 `tasks.md` 三处引用本分支不存在的编号**：写的是「按 L-055 实证」，本分支的 `docs/lessons.md` 最高到 L-054（L-055 在并行分支 `fix-small-window-compaction-dead-zone` 上）。Spec/Standards 两轴各查出一次，10.4 更正。两条分支都从 `01573b4` 分叉、都动 `docs/lessons.md` 与 `docs/CURRENT.md`，合并时编号不重排——编号预留比事后重编号便宜。
+
+## 2026-10-26 分流：M10 拆成 H1 / M10 / M11
+
+本文件里写着「处理时点：**M10**」的 19 条，原先都挤在同一个里程碑上；2026-10-26 的 roadmap 把 M10 拆成 **H1 宿主会话 API**、**M10 工具管线 / 并发 / 上下文经济**、**M11 存储与恢复** 三个 change。下面是初步分流，**不改写原条目的处理时点**，立对应 change 时逐条确认：
+
+| 条目 | 主题 | 新归属 |
+|---|---|---|
+| 31、53 | 单条工具结果的剪枝 / 输出 spill | M10（管线的内容收尾） |
+| 37、47 | `PROVIDER_ABORTED` 未决 / 取消事件住在段 | M10（管线加段与派生信号） |
+| 64、65 | 估算偏差 / 摘要请求装不下时丢弃最旧 | M10（上下文经济） |
+| 39、51、56、57、60 | 装配与设置重叠 / `SegmentOutcome` / 失败出口重复 / 失败类型 / `ServeServer` 出生顺序 | H1（装配抽库 + 宿主） |
+| 48、54、55、61、62、67 | stdin 两条流 / 慢 SSE / 溢出在流上的形状 / serve 边界 / 空正文 / 遮蔽反馈整读 | H1（宿主与事件回显） |
+| 52、58、59、66 | `_compact_if_over_line` 的 `None` / `LogTail` 重复 / 命名 / 保护类型两份 | M11（预算模块与读方整理） |
+| 63 | 溢出在 REPL 屏幕不可见 + 一次溢出后每段都溢出 | 前半已由 `fix-chat-screen-feedback` 修掉；后半在 `fix-post-compaction-budget-reading` 的未合分支里；剩余归 H1 的 UI 反馈 |
+
+分流后的口径：H1 不碰工具派发与预算；M10 不碰宿主与 HTTP；M11 不碰审批与流式。三条 change 各自只带自己那一堆，避免 M10 再一次变成大杂烩。
+
+## H1 收尾逐条核对（2026-10-27，`change/h1-host-session-api`）
+
+表里分给 H1 的 12 条逐条核对；**没处理的改判到后面某个 change 并写原因，不整堆勾掉**。
+
+| 条目 | 结论 |
+|---|---|
+| 39 装配 / 设置重叠 | **部分处理（H1）**：`_Prepared` 移出 CLI 成 `session/assembly.Prepared`，失败变成 `Failure`；它与 `SessionEnv` 的字段重叠没合并 → **M11**（会话生命周期整理时一起看）。 |
+| 41 装配的词条与代码分叉 | **已处理（H1）**：装配移到 `session/assembly.py::assemble`，`run` / `chat` / `serve` / `host` 共用；`GLOSSARY.md` 的「装配」已按此更新。 |
+| 48 stdin 两条流 | **部分处理（H1）**：`ApprovalGate` 带 `tool_call_id`，host 的门不读 stdin；CLI 的 stdin 竞争未动 → **M10**（与取消落点一起判）。 |
+| 50 `_prepare_or_fail` 打 stderr 又返回退出码 | **已处理（H1）**：`assemble` 返回 `Prepared | Failure`，自己不打 stderr；CLI 与 host 各自映射。 |
+| 51 `SegmentOutcome` 兼任会话失败 | **未处理** → **M11**：host 仍用 `segment.stop_reason not in STOP_REASONS` 判失败；会话生命周期在 M11 整理。 |
+| 54 慢 SSE 读者拖退出 | **部分处理（H1）**：host 的流每轮写前查 `transport`，关停先关监听；「慢读拖多久退出」仍无判据 → **H2**（传输层与流式一起判）。 |
+| 55 溢出在事件流上的形状 | **已处理（H1）**：`snapshot` 帧给晚连客户端折叠后的 `messages`，durable 帧就是日志逐行；溢出不需要单独形状。 |
+| 56 失败出口写三遍 | **部分处理（H1）**：host 把 `Failure` 映射 400/429/500；CLI 的三处收尾重复未动 → **M10**。 |
+| 57 `(code, detail)` 四个失败类型 | **部分处理（H1）**：装配的 `Failure` 已公开；`ConfigFailure` / `BindFailure` / `LogReadFailure` 未合并 → **M11**（失败类型统一时）。 |
+| 60 `ServeServer` 的 `assert` 收口 | **未处理** → **M10**：H1 另立 `HostServer`，没有改 `serve`；`serve` 的出生顺序仍等带回程时重设计。 |
+| 61 三条边界判据 | **部分处理（H1）**：host 判了 `0.0.0.0` 真绑定与 `--port` 0 / 70000；`65535` 上界与「日志读不动时流结束」仍无判据 → **H2**（事件流）。 |
+| 62 空正文在 chat stdout 打空行 | **未处理** → **M10**（屏幕形状）。 |
+| 63 溢出在 REPL 不可见 + 一次溢出后每段都溢出 | **未处理**：后半在未合的 `fix-post-compaction-budget-reading`（P0）；前半的屏幕反馈 → **M10**。 |
+| 67 遮蔽反馈每段整读日志 | **未处理** → **M10**（与第 16 条全量重读一起判）。 |

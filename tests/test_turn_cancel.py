@@ -256,7 +256,7 @@ class _DenyAndCancelGate:
     def __init__(self, cancel: asyncio.Event) -> None:
         self._cancel = cancel
 
-    async def request(self, *, tool_name: str, detail: str) -> ApprovalDecision:
+    async def request(self, *, tool_call_id: str, tool_name: str, detail: str) -> ApprovalDecision:
         self._cancel.set()
         return "DENIED"
 
@@ -375,7 +375,7 @@ class _CancelWhileAskingGate:
         self._cancel = cancel
         self.asked: list[str] = []
 
-    async def request(self, *, tool_name: str, detail: str) -> ApprovalDecision:
+    async def request(self, *, tool_call_id: str, tool_name: str, detail: str) -> ApprovalDecision:
         self.asked.append(tool_name)
         self._cancel.set()
         await asyncio.sleep(30)
