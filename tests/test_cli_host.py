@@ -13,6 +13,7 @@ import socket
 import subprocess
 import sys
 import time
+from collections.abc import Iterable
 from pathlib import Path
 
 import httpx
@@ -246,6 +247,238 @@ def test_an_empty_message_is_rejected(tmp_path: Path) -> None:
             .splitlines()
         ]
         assert not any(record["type"] == "user/message" for record in records)
+    finally:
+        _stop(process)
+
+
+def _read_frames(response: httpx.Response, count: int) -> list[dict[str, str]]:
+    frames: list[dict[str, str]] = []
+    fields: dict[str, str] = {}
+    for line in response.iter_lines():
+        if line == "":
+            if fields:
+                frames.append(fields)
+                fields = {}
+                if len(frames) >= count:
+                    break
+        elif line.startswith("id: "):
+            fields["id"] = line[len("id: ") :]
+        elif line.startswith("event: "):
+            fields["event"] = line[len("event: ") :]
+        elif line.startswith("data: "):
+            fields["data"] = line[len("data: ") :]
+    return frames
+
+
+def test_host_frames_equal_the_log(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = _mock_fixture(tmp_path)
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(client, workspace, fixture)
+            client.post(
+                f"/sessions/{session_id}/messages",
+                headers=_headers(),
+                json={"content": "任务"},
+            )
+            _wait_until_idle(client, session_id)
+            log = session_dir / f"{session_id}.jsonl"
+            records = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+            with client.stream(
+                "GET", f"/sessions/{session_id}/events", headers=_headers()
+            ) as response:
+                assert response.status_code == 200
+                frames = _read_frames(response, len(records))
+
+        assert len(frames) == len(records)
+        for frame, record in zip(frames, records, strict=True):
+            assert frame["event"] == record["type"]
+            assert frame["id"] == str(record["seq"])
+            assert json.loads(frame["data"]) == record
+    finally:
+        _stop(process)
+
+
+def test_a_cursor_resumes_without_gaps(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = _mock_fixture(tmp_path)
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(client, workspace, fixture)
+            client.post(
+                f"/sessions/{session_id}/messages",
+                headers=_headers(),
+                json={"content": "任务"},
+            )
+            _wait_until_idle(client, session_id)
+
+            for path, headers in (
+                (f"/sessions/{session_id}/events?from=3", _headers()),
+                (
+                    f"/sessions/{session_id}/events",
+                    {**_headers(), "Last-Event-ID": "3"},
+                ),
+            ):
+                with client.stream("GET", path, headers=headers) as response:
+                    frames = _read_frames(response, 1)
+                assert frames[0]["id"] == "4"
+
+            with client.stream(
+                "GET", f"/sessions/{session_id}/events?from=0", headers=_headers()
+            ) as response:
+                frames = _read_frames(response, 1)
+            assert frames[0]["id"] == "1"
+
+            negative = client.get(f"/sessions/{session_id}/events?from=-1", headers=_headers())
+            not_a_number = client.get(f"/sessions/{session_id}/events?from=abc", headers=_headers())
+            still_there = _session_state(client, session_id)
+
+        assert negative.status_code == 400
+        assert negative.json()["error"]["code"] == "INVALID_ARGUMENT"
+        assert not_a_number.status_code == 400
+        assert still_there["status"] == "idle"
+    finally:
+        _stop(process)
+
+
+def _next_frame(lines: Iterable[str]) -> dict[str, str]:
+    fields: dict[str, str] = {}
+    for line in lines:
+        text = str(line)
+        if text == "":
+            if fields:
+                return fields
+        elif text.startswith("id: "):
+            fields["id"] = text[len("id: ") :]
+        elif text.startswith("event: "):
+            fields["event"] = text[len("event: ") :]
+        elif text.startswith("data: "):
+            fields["data"] = text[len("data: ") :]
+    raise AssertionError("事件流提前结束")
+
+
+def test_snapshot_precedes_only_new_frames(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = tmp_path / "three.json"
+    fixture.write_text(
+        json.dumps(
+            [
+                {"content": "一", "finish_reason": "stop"},
+                {"content": "二", "finish_reason": "stop"},
+                {"content": "三", "finish_reason": "stop"},
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(client, workspace, fixture)
+            for content in ("第一句", "第二句"):
+                client.post(
+                    f"/sessions/{session_id}/messages",
+                    headers=_headers(),
+                    json={"content": content},
+                )
+                _wait_until_idle(client, session_id)
+            log = session_dir / f"{session_id}.jsonl"
+            records = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+            expected_last = records[-1]["seq"]
+
+            with client.stream(
+                "GET",
+                f"/sessions/{session_id}/events?snapshot=1",
+                headers=_headers(),
+            ) as response:
+                lines = response.iter_lines()
+                first = _next_frame(lines)
+                assert first["event"] == "snapshot"
+                snapshot = json.loads(first["data"])
+                assert snapshot["session_id"] == session_id
+                assert snapshot["last_seq"] == expected_last
+                assert isinstance(snapshot["messages"], list)
+
+                client.post(
+                    f"/sessions/{session_id}/messages",
+                    headers=_headers(),
+                    json={"content": "第三句"},
+                )
+                new_frame = _next_frame(lines)
+
+        assert int(new_frame["id"]) == expected_last + 1
+        assert json.loads(new_frame["data"])["type"] == "segment/start"
+    finally:
+        _stop(process)
+
+
+def _normalized_log(path: Path) -> list[dict[str, object]]:
+    records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    return [
+        {key: value for key, value in record.items() if key not in {"ts", "session_id"}}
+        for record in records
+    ]
+
+
+def test_a_disconnect_does_not_change_the_session(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = _mock_fixture(tmp_path)
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            baseline = _create_session(client, workspace, fixture)
+            client.post(
+                f"/sessions/{baseline}/messages",
+                headers=_headers(),
+                json={"content": "任务"},
+            )
+            _wait_until_idle(client, baseline)
+
+            watched = _create_session(client, workspace, fixture)
+            with client.stream(
+                "GET", f"/sessions/{watched}/events", headers=_headers()
+            ) as response:
+                lines = response.iter_lines()
+                _next_frame(lines)
+                client.post(
+                    f"/sessions/{watched}/messages",
+                    headers=_headers(),
+                    json={"content": "任务"},
+                )
+                _next_frame(lines)
+            _wait_until_idle(client, watched)
+            state = _session_state(client, watched)
+
+        assert state["status"] == "idle"
+        baseline_log = session_dir / f"{baseline}.jsonl"
+        watched_log = session_dir / f"{watched}.jsonl"
+        assert _normalized_log(watched_log) == _normalized_log(baseline_log)
     finally:
         _stop(process)
 

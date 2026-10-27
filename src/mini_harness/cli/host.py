@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import hmac
+import json
 import os
 import re
 import signal
@@ -20,7 +21,9 @@ from typing import Any
 
 from aiohttp import web
 
-from mini_harness.cli.serve import SERVE_HOSTS
+from mini_harness.cli.serve import SERVE_HOSTS, _sse_frame
+from mini_harness.events import LogReadFailure, LogTail, read_events
+from mini_harness.events.fold import fold
 from mini_harness.session.assembly import (
     EXIT_INTERNAL_ERROR,
     EXIT_INVALID_ARGUMENT,
@@ -45,6 +48,10 @@ HEALTH_PATH = "/health"
 SESSIONS_PATH = "/sessions"
 SESSION_ID_PATTERN = r"[0-9a-f]{32}"
 _SESSION_PATH = re.compile(r"^/sessions/([^/]+)")
+_CURSOR_DIGITS = re.compile(r"[0-9]+")
+# 事件流跟日志的方式与 `serve` 同一条：轮询偏移（design D8）。
+EVENTS_POLL_SECONDS = 0.02
+NO_CURSOR = -1
 
 # 请求体只接受这些设置；`session_dir` 与 `config` 是服务器路径，不接受客户端给
 # （H1 spec：日志路径由 id 派生，MUST NOT 接受客户端给路径）。
@@ -89,6 +96,22 @@ def _origin_allowed(request: web.Request) -> bool:
     return origin == f"http://{request.host}"
 
 
+def _cursor(request: web.Request) -> int | None:
+    """`?from=` 覆盖 `Last-Event-ID`；没有游标时从第一条开始。非整数是 `None`（调用方回 400）。"""
+    raw = request.query.get("from")
+    if raw is None:
+        raw = request.headers.get("Last-Event-ID")
+    if raw is None:
+        return NO_CURSOR
+    if _CURSOR_DIGITS.fullmatch(raw) is None:
+        return None
+    return int(raw)
+
+
+def _snapshot_frame(payload: dict[str, object]) -> bytes:
+    return f"event: snapshot\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
+
+
 class HostServer:
     """一个 aiohttp 应用 + 一个绑定：鉴权与来源在中间件里，路由只关心会话。"""
 
@@ -110,6 +133,7 @@ class HostServer:
             f"{SESSIONS_PATH}/{{session_id}}/approvals/{{tool_call_id}}",
             self._post_approval,
         )
+        router.add_get(f"{SESSIONS_PATH}/{{session_id}}/events", self._events)
         self._runner: web.AppRunner | None = None
 
     def _authorized(self, request: web.Request) -> bool:
@@ -239,6 +263,54 @@ class HostServer:
         if not resolve_approval(handle, tool_call_id, approve=decision == "approve"):
             return _error(404, "SESSION_NOT_FOUND", f"没有待决的审批：{tool_call_id}")
         return web.json_response({"resolved": True}, status=200)
+
+    async def _events(self, request: web.Request) -> web.StreamResponse:
+        session_id = request.match_info["session_id"]
+        handle = self._state.sessions.get(session_id)
+        if handle is None:
+            return _error(404, "SESSION_NOT_FOUND", f"没有会话 {session_id}")
+        cursor = _cursor(request)
+        if cursor is None:
+            return _error(400, "INVALID_ARGUMENT", "游标必须是非负整数")
+        snapshot = request.query.get("snapshot") == "1"
+        response = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
+        after = cursor
+        if snapshot:
+            records = read_events(handle.log.path)
+            if isinstance(records, LogReadFailure):
+                return _error(500, "INTERNAL", records.detail)
+            last_seq = records[-1].seq if records else -1
+            context = fold(records)
+            await response.prepare(request)
+            await response.write(
+                _snapshot_frame(
+                    {
+                        "session_id": session_id,
+                        "status": handle.status,
+                        "last_seq": last_seq,
+                        "messages": [
+                            message.model_dump(mode="json") for message in context.messages
+                        ],
+                    }
+                )
+            )
+            after = last_seq
+        else:
+            await response.prepare(request)
+        tail = LogTail(handle.log.path, after=after)
+        while True:
+            transport = request.transport
+            if transport is None or transport.is_closing():
+                return response
+            records = tail.read_new()
+            if isinstance(records, LogReadFailure):
+                return response
+            try:
+                for record in records:
+                    await response.write(_sse_frame(record))
+            except ConnectionResetError:
+                return response
+            await asyncio.sleep(EVENTS_POLL_SECONDS)
 
     async def bind(self) -> str | None:
         """绑定并开始接收连接；失败返回 detail（调用方映射成退出码 2）。

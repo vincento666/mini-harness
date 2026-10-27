@@ -43,10 +43,10 @@
 
 ## 7. 事件流与 snapshot（seam ⑥ 与 ④）
 
-- [ ] 7.1 seam ⑥：红判据 `test_host_frames_equal_the_log`——会话跑完后从 0 读 SSE，帧数等于日志行数，逐帧 `data` 与记录相等
-- [ ] 7.2 seam ④：红判据 `test_a_cursor_resumes_without_gaps`——`?from=3` 与 `Last-Event-ID: 3` 都从 `seq=4` 起；`0` 合法；负数与非整数 400 且会话不受影响
-- [ ] 7.3 seam ⑥：红判据 `test_snapshot_precedes_only_new_frames`——已有 10 条记录时 `?snapshot=1` 的第一帧是 `snapshot`、`last_seq` 为 9，之后只送 `seq > 9`
-- [ ] 7.4 seam ⑥：红判据 `test_a_disconnect_does_not_change_the_session`——读几帧就断开，会话继续跑完，日志与没有客户端时逐字节相同
+- [x] 7.1 seam ⑥：红判据 `test_host_frames_equal_the_log`——会话跑完后从 0 读 SSE，帧数等于日志行数，逐帧 `data` 与记录相等
+- [x] 7.2 seam ④：红判据 `test_a_cursor_resumes_without_gaps`——`?from=3` 与 `Last-Event-ID: 3` 都从 `seq=4` 起；`0` 合法；负数与非整数 400 且会话不受影响
+- [x] 7.3 seam ⑥：红判据 `test_snapshot_precedes_only_new_frames`——已有 10 条记录时 `?snapshot=1` 的第一帧是 `snapshot`、`last_seq` 为 9，之后只送 `seq > 9`
+- [x] 7.4 seam ⑥：红判据 `test_a_disconnect_does_not_change_the_session`——读几帧就断开，会话继续跑完，日志与没有客户端时逐字节相同
 
 ## 8. 生命周期与退出（seam ⑥）
 
