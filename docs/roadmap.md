@@ -45,6 +45,7 @@ H1 / H2 是新增的宿主轨，不占用 M10–M15 的决策编号；M 编号�
 ### H1 宿主会话 API（宿主轨）
 
 - **change**：`h1-host-session-api`
+- **状态**：✅ **2026-10-27 已归档**（`openspec/changes/archive/2026-10-27-h1-host-session-api`）：40/40 task；四道门禁 `492 passed / 8 skipped`、覆盖率 95%；真实 deepseek 端点、UAT（agent 代跑经用户确认）、变异五条全杀、Learning Gate 完成。主规格新建 `host-api`，`cli` / `fences` delta 已 sync；**合并到 `main` 仍待人批**。
 - **层**：宿主（组合层的运行时那一半）
 - **内容**：新增 `minihns host --http`——常驻、多会话、服务比会话活得久。装配从 `cli/main.py::_prepare_or_fail` 抽成 `session/assembly.py::assemble(...)`；端点 `POST /sessions`、`POST /sessions/{id}/messages`、`POST /sessions/{id}/cancel`、`POST /sessions/{id}/approvals/{tool_call_id}`、`GET /sessions`、`GET /sessions/{id}`、`DELETE /sessions/{id}`、`GET /sessions/{id}/events`（`snapshot` 帧 + `seq` 游标）；Bearer token 鉴权；session id 校验；会话上限；可插拔 approval 门（stdin 不再是唯一实现）；事件回显。
 - **完成判据**：一个黑盒 HTTP 客户端开会话 → 发两句话（第二句在段进行中排队，202）→ 批准一次写 → 取消一回合 → 带游标重连，帧与日志逐字段相等；无 token 401；`../` 之类的 session id 是 400；超过会话上限是 429；`session/start.entry` 是 `host`；`serve` 的 one-shot 行为不变。
