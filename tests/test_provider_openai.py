@@ -75,6 +75,193 @@ def _body(request: httpx.Request) -> dict[str, Any]:
     return json.loads(request.content.decode("utf-8"))
 
 
+async def test_openai_stream_content_deltas() -> None:
+    seen_text: list[str] = []
+
+    async def sink(text: str) -> None:
+        seen_text.append(text)
+
+    stream = (
+        'data: {"choices":[{"delta":{"content":"你"},"finish_reason":null}]}\n\n'
+        'data: {"choices":[{"delta":{"content":"好"},"finish_reason":null}]}\n\n'
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'
+        "data: [DONE]\n\n"
+    )
+    provider, seen = _provider(
+        handler=lambda request: httpx.Response(
+            200, text=stream, headers={"content-type": "text/event-stream"}
+        )
+    )
+
+    turn = await provider.generate([], [], asyncio.Event(), on_delta=sink)
+
+    assert isinstance(turn, AssistantTurn)
+    assert seen_text == ["你", "好"]
+    assert turn.content == "你好"
+    assert turn.finish_reason == "stop"
+    assert _body(seen[0])["stream"] is True
+
+
+async def test_a_stream_http_error_is_a_provider_failure() -> None:
+    async def sink(text: str) -> None:
+        raise AssertionError("不会走到这里")
+
+    provider, _ = _provider(
+        handler=lambda request: httpx.Response(
+            400,
+            json={"error": {"message": "bad request"}},
+            headers={"content-type": "application/json"},
+        )
+    )
+
+    outcome = await provider.generate([], [], asyncio.Event(), on_delta=sink)
+
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_HTTP_STATUS"
+
+
+async def test_a_stream_with_invalid_json_is_a_schema_failure() -> None:
+    async def sink(text: str) -> None:
+        raise AssertionError("不会走到这里")
+
+    provider, _ = _provider(
+        handler=lambda request: httpx.Response(
+            200, text="data: not-json\n\n", headers={"content-type": "text/event-stream"}
+        )
+    )
+
+    outcome = await provider.generate([], [], asyncio.Event(), on_delta=sink)
+
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_SCHEMA_INVALID"
+
+
+async def test_a_stream_with_a_non_object_data_is_a_schema_failure() -> None:
+    async def sink(text: str) -> None:
+        raise AssertionError("不会走到这里")
+
+    provider, _ = _provider(
+        handler=lambda request: httpx.Response(
+            200, text="data: []\n\n", headers={"content-type": "text/event-stream"}
+        )
+    )
+
+    outcome = await provider.generate([], [], asyncio.Event(), on_delta=sink)
+
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_SCHEMA_INVALID"
+
+
+async def test_a_stream_without_finish_reason_is_a_schema_failure() -> None:
+    async def sink(text: str) -> None:
+        return None
+
+    provider, _ = _provider(
+        handler=lambda request: httpx.Response(
+            200,
+            text='data: {"choices":[{"delta":{"content":"你"}}]}\n\ndata: [DONE]\n\n',
+            headers={"content-type": "text/event-stream"},
+        )
+    )
+
+    outcome = await provider.generate([], [], asyncio.Event(), on_delta=sink)
+
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_SCHEMA_INVALID"
+
+
+async def test_a_stream_usage_chunk_with_empty_choices_is_accepted() -> None:
+    async def sink(text: str) -> None:
+        return None
+
+    stream = (
+        'data: {"choices":[{"delta":{"content":"好"},"finish_reason":null}]}\n\n'
+        'data: {"choices":[],"usage":{"prompt_tokens":7,"completion_tokens":2}}\n\n'
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'
+        "data: [DONE]\n\n"
+    )
+    provider, _ = _provider(
+        handler=lambda request: httpx.Response(
+            200, text=stream, headers={"content-type": "text/event-stream"}
+        )
+    )
+
+    turn = await provider.generate([], [], asyncio.Event(), on_delta=sink)
+
+    assert isinstance(turn, AssistantTurn)
+    assert turn.usage.input_tokens == 7
+    assert turn.usage.output_tokens == 2
+
+
+async def test_a_stream_with_a_non_object_choice_is_a_schema_failure() -> None:
+    async def sink(text: str) -> None:
+        return None
+
+    provider, _ = _provider(
+        handler=lambda request: httpx.Response(
+            200,
+            text='data: {"choices":[1]}\n\n',
+            headers={"content-type": "text/event-stream"},
+        )
+    )
+
+    outcome = await provider.generate([], [], asyncio.Event(), on_delta=sink)
+
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_SCHEMA_INVALID"
+
+
+async def test_a_cancel_during_stream_is_provider_aborted() -> None:
+    signal = asyncio.Event()
+
+    async def sink(text: str) -> None:
+        signal.set()
+
+    stream = (
+        'data: {"choices":[{"delta":{"content":"你"},"finish_reason":null}]}\n\ndata: [DONE]\n\n'
+    )
+    provider, _ = _provider(
+        handler=lambda request: httpx.Response(
+            200, text=stream, headers={"content-type": "text/event-stream"}
+        )
+    )
+
+    outcome = await provider.generate([], [], signal, on_delta=sink)
+
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_ABORTED"
+
+
+async def test_a_stream_transport_error_is_a_failure() -> None:
+    async def sink(text: str) -> None:
+        return None
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("boom", request=request)
+
+    provider, _ = _provider(handler=handler)
+
+    outcome = await provider.generate([], [], asyncio.Event(), on_delta=sink)
+
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_TRANSPORT"
+
+
+async def test_a_stream_timeout_is_a_failure() -> None:
+    async def sink(text: str) -> None:
+        return None
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("slow", request=request)
+
+    provider, _ = _provider(handler=handler)
+
+    outcome = await provider.generate([], [], asyncio.Event(), on_delta=sink)
+
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_TIMEOUT"
+
+
 async def test_the_request_posts_to_the_chat_completions_url() -> None:
     provider, seen = _provider(handler=lambda request: httpx.Response(200, json=_OK_BODY))
 

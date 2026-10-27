@@ -244,6 +244,27 @@ def _parse_response(
     )
 
 
+def _status_failure(
+    response: httpx.Response, attempts: Sequence[ProviderAttempt]
+) -> ProviderFailure | None:
+    """HTTP 错误状态 → 失败结果；2xx 返回 `None`。"""
+    if response.status_code < 400:
+        return None
+    # 塌成溢出只发生在不可重试的 4xx：429 与 5xx 说的是服务端那一刻接不住，
+    # 它们的正文里恰好出现短语表里的话时仍走 `PROVIDER_HTTP_STATUS`（ADR-0023）。
+    if not _retryable(response.status_code) and _reports_context_overflow(response):
+        return ProviderFailure(
+            code="PROVIDER_CONTEXT_OVERFLOW",
+            detail=_failure_detail(response),
+            attempts=attempts,
+        )
+    return ProviderFailure(
+        code="PROVIDER_HTTP_STATUS",
+        detail=_failure_detail(response),
+        attempts=attempts,
+    )
+
+
 class OpenAICompatProvider:
     """模型层的第二个实现：与 mock 同一个 `generate` 契约，回合循环不得因 provider 而改变。"""
 
@@ -291,6 +312,10 @@ class OpenAICompatProvider:
         async with httpx.AsyncClient(
             transport=self._transport, timeout=self._timeout_s, trust_env=False
         ) as client:
+            if on_delta is not None:
+                return await self._stream_generate(
+                    client, body, headers, attempts, signal, on_delta
+                )
             first = await _post(client, self._base_url, body, headers, attempts)
             if isinstance(first, ProviderFailure):
                 return first
@@ -316,17 +341,85 @@ class OpenAICompatProvider:
                     )
 
         if response.status_code >= 400:
-            # 塌成溢出只发生在不可重试的 4xx：429 与 5xx 说的是服务端那一刻接不住，
-            # 它们的正文里恰好出现短语表里的话时仍走 `PROVIDER_HTTP_STATUS`（ADR-0023）。
-            if not _retryable(response.status_code) and _reports_context_overflow(response):
-                return ProviderFailure(
-                    code="PROVIDER_CONTEXT_OVERFLOW",
-                    detail=_failure_detail(response),
-                    attempts=attempts,
-                )
-            return ProviderFailure(
-                code="PROVIDER_HTTP_STATUS",
-                detail=_failure_detail(response),
-                attempts=attempts,
-            )
+            failure = _status_failure(response, attempts)
+            assert failure is not None
+            return failure
         return _parse_response(response, attempts)
+
+    async def _stream_generate(
+        self,
+        client: httpx.AsyncClient,
+        body: dict[str, Any],
+        headers: dict[str, str],
+        attempts: list[ProviderAttempt],
+        signal: asyncio.Event,
+        on_delta: DeltaSink,
+    ) -> AssistantTurn | ProviderFailure:
+        """流式正文：增量只交给 sink；最终 `AssistantTurn.content` 是拼接结果。"""
+        body = {**body, "stream": True}
+        try:
+            async with client.stream(
+                "POST", f"{self._base_url}/chat/completions", json=body, headers=headers
+            ) as response:
+                if response.status_code >= 400:
+                    await response.aread()
+                    failure = _status_failure(response, attempts)
+                    assert failure is not None
+                    return failure
+
+                content: list[str] = []
+                finish_reason: str | None = None
+                usage = Usage()
+                async for line in response.aiter_lines():
+                    if signal.is_set():
+                        return ProviderFailure(
+                            code="PROVIDER_ABORTED",
+                            detail="流式读取期间取消",
+                            attempts=attempts,
+                        )
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[len("data:") :].strip()
+                    if data == "[DONE]":
+                        break
+                    try:
+                        payload = json.loads(data)
+                    except json.JSONDecodeError:
+                        return _schema_failure("流式 data 不是合法 JSON", attempts)
+                    if not isinstance(payload, dict):
+                        return _schema_failure("流式 data 不是对象", attempts)
+                    raw_usage = payload.get("usage")
+                    if isinstance(raw_usage, dict):
+                        usage = Usage(
+                            input_tokens=int(raw_usage.get("prompt_tokens", 0) or 0),
+                            output_tokens=int(raw_usage.get("completion_tokens", 0) or 0),
+                        )
+                    choices = payload.get("choices")
+                    if not isinstance(choices, list) or not choices:
+                        continue
+                    first = choices[0]
+                    if not isinstance(first, dict):
+                        return _schema_failure("流式 choices[0] 不是对象", attempts)
+                    delta = first.get("delta")
+                    if isinstance(delta, dict):
+                        text = delta.get("content")
+                        if isinstance(text, str) and text:
+                            content.append(text)
+                            await on_delta(text)
+                    raw_finish = first.get("finish_reason")
+                    if isinstance(raw_finish, str):
+                        finish_reason = raw_finish
+        except httpx.TimeoutException:
+            return ProviderFailure(
+                code="PROVIDER_TIMEOUT", detail=f"{self._base_url} 超时", attempts=attempts
+            )
+        except httpx.HTTPError as error:
+            return ProviderFailure(code="PROVIDER_TRANSPORT", detail=str(error), attempts=attempts)
+        if finish_reason is None:
+            return _schema_failure("流式响应没有 finish_reason", attempts)
+        return AssistantTurn(
+            content="".join(content),
+            finish_reason=finish_reason,
+            usage=usage,
+            attempts=list(attempts),
+        )
