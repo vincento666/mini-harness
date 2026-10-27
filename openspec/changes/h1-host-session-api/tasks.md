@@ -65,7 +65,7 @@
 
 - [x] 10.1 seam ⑥：完成判据——一条黑盒脚本：创建会话 → 发两句话（第二句排队）→ 批准一次写 → 取消一回合 → `?snapshot=1` 重连，帧与日志逐字段相等、`session/start.entry` 为 `host`
 - [x] 10.2 文档：用 `domain-modeling` 写 ADR-0031（常驻多会话 HTTP + SSE + token 的取舍与代价），把 `host` / `snapshot` / `approval 门` 三个词写进 `GLOSSARY.md`；ADR-0002 的 H1 那一堆逐条核对——已处理的写「已处理（H1）」，没处理的改判到 H2 / M11 并写原因，不许整堆勾掉
-- [ ] 10.3 真实端点验收：用真实端点跑 10.1 的脚本（写一个文件、批准一次、取消一次），观察记进 `docs/verification/h1-host-session-api-real-endpoint.md`
+- [x] 10.3 真实端点验收：用真实端点跑 10.1 的脚本（写一个文件、批准一次、取消一次），观察记进 `docs/verification/h1-host-session-api-real-endpoint.md`
 - [ ] 10.4 UAT 验收（人跑）：按 `docs/verification/h1-host-session-api-uat.md` 的场次，人坐在终端/浏览器前拿它办一件真事，填完观察表；tty 场次 agent 不得代跑（ADR-0025）
 - [x] 10.5 变异测试一轮：改坏 host 的实现（鉴权跳过、队列不排队、审批默认批准、snapshot 的 `last_seq` 错、DELETE 允许 running 各一处），跑全量，把「变异 / 改法 / 哪些测试变红」记进 `docs/verification/h1-host-session-api-mutation.md`，还原前先看 `git status`
 - [x] 10.6 Learning Gate：扫本轮证据，把可复用教训写进 `docs/lessons.md` 收件箱；无可复用信号就写 `NO-PROMOTION`
