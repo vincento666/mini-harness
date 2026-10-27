@@ -488,4 +488,9 @@ async def test_the_provider_still_accepts_no_key_and_sends_no_header() -> None:
     assert len(seen) == 1
     assert seen[0].headers.get("authorization") is None
     assert not isinstance(outcome, ProviderFailure)
-    assert list(inspect.signature(provider.generate).parameters) == ["messages", "tools", "signal"]
+    assert list(inspect.signature(provider.generate).parameters) == [
+        "messages",
+        "tools",
+        "signal",
+        "on_delta",
+    ]

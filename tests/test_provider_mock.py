@@ -14,7 +14,7 @@ from mini_harness.provider import (
 from paths import HELLO_SCENARIO
 
 
-async def test_mock_provider_exposes_only_generate_with_three_parameters() -> None:
+async def test_mock_provider_exposes_only_generate_with_optional_delta_sink() -> None:
     provider = load_fixture_provider(HELLO_SCENARIO)
 
     methods = [
@@ -23,7 +23,73 @@ async def test_mock_provider_exposes_only_generate_with_three_parameters() -> No
         if not name.startswith("_") and callable(getattr(provider, name))
     ]
     assert methods == ["generate"]
-    assert list(inspect.signature(provider.generate).parameters) == ["messages", "tools", "signal"]
+    assert list(inspect.signature(provider.generate).parameters) == [
+        "messages",
+        "tools",
+        "signal",
+        "on_delta",
+    ]
+
+
+async def test_generate_without_a_sink_is_unchanged() -> None:
+    provider = FixtureProvider(entries=[{"content": "ok", "finish_reason": "stop"}])
+
+    turn = await provider.generate([], [], asyncio.Event(), on_delta=None)
+
+    assert isinstance(turn, AssistantTurn)
+    assert turn.content == "ok"
+
+
+async def test_mock_emits_fixture_deltas() -> None:
+    seen: list[str] = []
+
+    async def sink(text: str) -> None:
+        seen.append(text)
+
+    provider = FixtureProvider(
+        entries=[
+            {
+                "content": "你好",
+                "deltas": ["你", "好"],
+                "finish_reason": "stop",
+            }
+        ]
+    )
+
+    turn = await provider.generate([], [], asyncio.Event(), on_delta=sink)
+
+    assert isinstance(turn, AssistantTurn)
+    assert seen == ["你", "好"]
+    assert turn.content == "你好"
+
+
+async def test_a_fixture_without_deltas_emits_nothing() -> None:
+    seen: list[str] = []
+
+    async def sink(text: str) -> None:
+        seen.append(text)
+
+    provider = FixtureProvider(entries=[{"content": "旧 fixture", "finish_reason": "stop"}])
+
+    turn = await provider.generate([], [], asyncio.Event(), on_delta=sink)
+
+    assert isinstance(turn, AssistantTurn)
+    assert turn.content == "旧 fixture"
+    assert seen == []
+
+
+async def test_a_non_string_delta_is_a_schema_failure() -> None:
+    async def sink(text: str) -> None:
+        raise AssertionError("不会走到这里")
+
+    provider = FixtureProvider(
+        entries=[{"content": "x", "deltas": ["ok", 3], "finish_reason": "stop"}]
+    )
+
+    outcome = await provider.generate([], [], asyncio.Event(), on_delta=sink)
+
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_SCHEMA_INVALID"
 
 
 async def test_generate_returns_an_assistant_turn() -> None:

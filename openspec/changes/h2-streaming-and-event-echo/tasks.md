@@ -2,9 +2,9 @@
 
 ## 1. Provider 契约与 mock 增量
 
-- [ ] 1.1 seam ⑤：红判据 `test_generate_without_a_sink_is_unchanged`——同一 fixture 带/不带 `on_delta` 跑，`model/response`/`tool/*` 序列逐点相同，且不带 sink 时没有 delta；实现 `Provider.generate(..., on_delta=None)`，无 sink 走原路径
-- [ ] 1.2 seam ⑤：红判据 `test_mock_emits_fixture_deltas`——fixture 条目声明 `deltas: ["你","好"]`，sink 依次收到两段、最终 `content` 为 `你好`；实现 mock 的可选 `deltas`
-- [ ] 1.3 seam ⑤：守卫判据——旧 fixture（没有 `deltas`）不产生任何增量，既有 mock 判据全绿
+- [x] 1.1 seam ⑤：红判据 `test_generate_without_a_sink_is_unchanged`——同一 fixture 带/不带 `on_delta` 跑，`model/response`/`tool/*` 序列逐点相同，且不带 sink 时没有 delta；实现 `Provider.generate(..., on_delta=None)`，无 sink 走原路径
+- [x] 1.2 seam ⑤：红判据 `test_mock_emits_fixture_deltas`——fixture 条目声明 `deltas: ["你","好"]`，sink 依次收到两段、最终 `content` 为 `你好`；实现 mock 的可选 `deltas`
+- [x] 1.3 seam ⑤：守卫判据——旧 fixture（没有 `deltas`）不产生任何增量，既有 mock 判据全绿
 
 ## 2. OpenAI 兼容适配器的流式解析
 

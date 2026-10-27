@@ -18,6 +18,7 @@ import httpx
 from mini_harness.events.fold import Message
 from mini_harness.provider.contract import (
     AssistantTurn,
+    DeltaSink,
     ProviderAttempt,
     ProviderFailure,
     ToolCall,
@@ -266,6 +267,7 @@ class OpenAICompatProvider:
         messages: Sequence[Message],
         tools: Sequence[ToolSpec],
         signal: asyncio.Event,
+        on_delta: DeltaSink | None = None,
     ) -> AssistantTurn | ProviderFailure:
         if signal.is_set():
             return ProviderFailure(code="PROVIDER_ABORTED", detail="取消信号已置位，未发出请求")
