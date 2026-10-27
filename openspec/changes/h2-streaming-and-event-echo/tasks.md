@@ -9,7 +9,7 @@
 ## 2. OpenAI 兼容适配器的流式解析
 
 - [x] 2.1 seam ⑤：红判据 `test_openai_stream_content_deltas`——假端点发 `data: {"choices":[{"delta":{"content":"你"}}]}` 等，sink 收到增量、`AssistantTurn.content` 是拼接结果；实现 `stream: true` 与 `data:` / `[DONE]` 解析
-- [ ] 2.2 seam ⑤：红判据 `test_openai_stream_tool_calls_are_assembled_by_index`——分片给两个 `tool_calls` 的 id/name/arguments，最终 `tool_calls` 是两条完整调用，工具参数片段不进正文 sink
+- [x] 2.2 seam ⑤：红判据 `test_openai_stream_tool_calls_are_assembled_by_index`——分片给两个 `tool_calls` 的 id/name/arguments，最终 `tool_calls` 是两条完整调用，工具参数片段不进正文 sink
 - [ ] 2.3 seam ⑤：红判据 `test_openai_stream_usage_may_be_missing`——没有 usage 块时 `Usage` 为零值、不失败；`stream_options` 被端点拒绝时退回不带它
 - [ ] 2.4 seam ⑤：红判据 `test_a_stream_that_breaks_before_done_is_a_result`——首 delta 后连接中断返回 `PROVIDER_ERROR`，不抛未捕获异常、不产生半条 `model/response`
 

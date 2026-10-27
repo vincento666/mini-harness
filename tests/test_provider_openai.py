@@ -262,6 +262,42 @@ async def test_a_stream_timeout_is_a_failure() -> None:
     assert outcome.code == "PROVIDER_TIMEOUT"
 
 
+async def test_openai_stream_tool_calls_are_assembled_by_index() -> None:
+    seen_text: list[str] = []
+
+    async def sink(text: str) -> None:
+        seen_text.append(text)
+
+    stream = (
+        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1",'
+        '"function":{"name":"read","arguments":"{\\"file_path\\":"}}]},'
+        '"finish_reason":null}]}\n\n'
+        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,'
+        '"function":{"arguments":"\\"a.md\\"}"}}]},'
+        '"finish_reason":null}]}\n\n'
+        'data: {"choices":[{"delta":{"tool_calls":[{"index":1,"id":"c2",'
+        '"function":{"name":"bash","arguments":"{\\"command\\":\\"echo hi\\"}"}}]},'
+        '"finish_reason":null}]}\n\n'
+        'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}\n\n'
+        "data: [DONE]\n\n"
+    )
+    provider, _ = _provider(
+        handler=lambda request: httpx.Response(
+            200, text=stream, headers={"content-type": "text/event-stream"}
+        )
+    )
+
+    turn = await provider.generate([], [], asyncio.Event(), on_delta=sink)
+
+    assert isinstance(turn, AssistantTurn)
+    assert [(call.id, call.name, call.arguments) for call in turn.tool_calls] == [
+        ("c1", "read", {"file_path": "a.md"}),
+        ("c2", "bash", {"command": "echo hi"}),
+    ]
+    assert seen_text == []
+    assert turn.finish_reason == "tool_calls"
+
+
 async def test_the_request_posts_to_the_chat_completions_url() -> None:
     provider, seen = _provider(handler=lambda request: httpx.Response(200, json=_OK_BODY))
 

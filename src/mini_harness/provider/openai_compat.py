@@ -265,6 +265,24 @@ def _status_failure(
     )
 
 
+def _stream_tool_calls(
+    parts: dict[int, dict[str, str]], attempts: Sequence[ProviderAttempt]
+) -> list[ToolCall] | ProviderFailure:
+    """把按 index 聚合的流式片段拼成完整调用；参数片段只拼装，不交给正文 sink。"""
+    calls: list[ToolCall] = []
+    for index in sorted(parts):
+        part = parts[index]
+        arguments = part["arguments"] or "{}"
+        try:
+            parsed = json.loads(arguments)
+        except json.JSONDecodeError:
+            return _schema_failure("流式 tool_calls 的 arguments 不是合法 JSON", attempts)
+        if not isinstance(parsed, dict):
+            return _schema_failure("流式 tool_calls 的 arguments 不是对象", attempts)
+        calls.append(ToolCall(id=part["id"], name=part["name"], arguments=parsed))
+    return calls
+
+
 class OpenAICompatProvider:
     """模型层的第二个实现：与 mock 同一个 `generate` 契约，回合循环不得因 provider 而改变。"""
 
@@ -370,6 +388,7 @@ class OpenAICompatProvider:
                 content: list[str] = []
                 finish_reason: str | None = None
                 usage = Usage()
+                tool_call_parts: dict[int, dict[str, str]] = {}
                 async for line in response.aiter_lines():
                     if signal.is_set():
                         return ProviderFailure(
@@ -406,6 +425,30 @@ class OpenAICompatProvider:
                         if isinstance(text, str) and text:
                             content.append(text)
                             await on_delta(text)
+                        raw_calls = delta.get("tool_calls")
+                        if isinstance(raw_calls, list):
+                            for raw_call in raw_calls:
+                                if not isinstance(raw_call, dict):
+                                    return _schema_failure(
+                                        "流式 tool_calls 里有一条不是对象", attempts
+                                    )
+                                index = raw_call.get("index")
+                                if not isinstance(index, int):
+                                    return _schema_failure("流式 tool_calls 缺少 index", attempts)
+                                part = tool_call_parts.setdefault(
+                                    index, {"id": "", "name": "", "arguments": ""}
+                                )
+                                raw_id = raw_call.get("id")
+                                if isinstance(raw_id, str):
+                                    part["id"] = raw_id
+                                function = raw_call.get("function")
+                                if isinstance(function, dict):
+                                    name = function.get("name")
+                                    if isinstance(name, str):
+                                        part["name"] = name
+                                    arguments = function.get("arguments")
+                                    if isinstance(arguments, str):
+                                        part["arguments"] += arguments
                     raw_finish = first.get("finish_reason")
                     if isinstance(raw_finish, str):
                         finish_reason = raw_finish
@@ -417,9 +460,13 @@ class OpenAICompatProvider:
             return ProviderFailure(code="PROVIDER_TRANSPORT", detail=str(error), attempts=attempts)
         if finish_reason is None:
             return _schema_failure("流式响应没有 finish_reason", attempts)
+        tool_calls = _stream_tool_calls(tool_call_parts, attempts)
+        if isinstance(tool_calls, ProviderFailure):
+            return tool_calls
         return AssistantTurn(
             content="".join(content),
             finish_reason=finish_reason,
+            tool_calls=tool_calls,
             usage=usage,
             attempts=list(attempts),
         )
