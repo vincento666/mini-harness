@@ -50,9 +50,9 @@
 
 ## 8. 生命周期与退出（seam ⑥）
 
-- [ ] 8.1 seam ⑥：红判据 `test_host_outlives_a_session`——一个会话收尾后 `GET /health` 仍 200、`GET /sessions` 仍列出它
-- [ ] 8.2 seam ⑥：红判据 `test_sigint_cancels_all_segments_and_writes_session_end`——段进行中发 SIGINT，日志有 `error/abort` / `turn/end(ABORTED)` / `segment/end(ABORTED)` / `session/end`，进程退出码 0（Windows 上 `skipif`，Linux 跑）
-- [ ] 8.3 seam ⑥：红判据 `test_shutdown_leaves_no_orphan_session`——两个会话同时在跑时 SIGINT，两份日志都以 `session/end` 收尾，没有半条记录
+- [x] 8.1 seam ⑥：红判据 `test_host_outlives_a_session`——一个会话收尾后 `GET /health` 仍 200、`GET /sessions` 仍列出它
+- [x] 8.2 seam ⑥：红判据 `test_sigint_cancels_all_segments_and_writes_session_end`——段进行中发 SIGINT，日志有 `error/abort` / `turn/end(ABORTED)` / `segment/end(ABORTED)` / `session/end`，进程退出码 0（Windows 上 `skipif`，Linux 跑）
+- [x] 8.3 seam ⑥：红判据 `test_shutdown_leaves_no_orphan_session`——两个会话同时在跑时 SIGINT，两份日志都以 `session/end` 收尾，没有半条记录
 
 ## 9. 安全与错误信封（seam ⑥）
 

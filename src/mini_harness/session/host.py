@@ -56,6 +56,7 @@ class HostSession:
     cancel: asyncio.Event | None = None
     approvals: dict[str, asyncio.Future[bool]] = field(default_factory=dict)
     task: asyncio.Task[None] | None = None
+    stopping: bool = False
     segments: int = 0
     turns: int = 0
 
@@ -158,6 +159,8 @@ class HostApprovalGate:
             return "UNAVAILABLE"
         finally:
             self._handle.approvals.pop(tool_call_id, None)
+        if self._handle.stopping:
+            return "UNAVAILABLE"
         return "APPROVED" if approved else "DENIED"
 
 
@@ -223,8 +226,10 @@ async def _run_segment(
             handle.queue.clear()
         else:
             handle.status = SESSION_IDLE
-            if handle.queue:
+            if not handle.stopping and handle.queue:
                 _begin_segment(handle, handle.queue.popleft())
+            elif handle.stopping:
+                handle.queue.clear()
 
 
 def cancel_session(handle: HostSession) -> bool:
@@ -254,3 +259,24 @@ def close_session(handle: HostSession) -> Failure | None:
         )
     handle.status = SESSION_ENDED
     return None
+
+
+async def shutdown(state: HostState) -> None:
+    """服务退出：取消所有段、等它们写完收尾记录，再为每个会话写 `session/end`。"""
+    handles = list(state.sessions.values())
+    for handle in handles:
+        handle.stopping = True
+        if handle.cancel is not None:
+            handle.cancel.set()
+        for answer in handle.approvals.values():
+            if not answer.done():
+                answer.set_result(False)
+    tasks = [handle.task for handle in handles if handle.task is not None]
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+    for handle in handles:
+        if handle.status == SESSION_RUNNING:
+            # 段没有在取消后收尾（极端情况）：不让它留成半条，直接补 `session/end`。
+            handle.status = SESSION_IDLE
+        if handle.status == SESSION_IDLE:
+            close_session(handle)

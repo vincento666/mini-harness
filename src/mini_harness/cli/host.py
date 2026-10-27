@@ -36,6 +36,7 @@ from mini_harness.session.host import (
     close_session,
     create_session,
     resolve_approval,
+    shutdown,
     submit_message,
 )
 
@@ -444,6 +445,7 @@ async def _serve(args: argparse.Namespace, token: str) -> int:
     finally:
         _restore_stop_handlers(previous)
         await server.close()
+        await shutdown(state)
     return 0
 
 

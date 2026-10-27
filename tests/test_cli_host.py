@@ -65,23 +65,22 @@ def _wait_for_health(port: int, timeout: float = 25.0) -> httpx.Response:
     pytest.fail("host 没有在超时内响应 /health")
 
 
-def _stop(process: subprocess.Popen[str]) -> None:
+def _stop(process: subprocess.Popen[str]) -> int:
     """优雅收掉 host：Windows 发 Ctrl-Break（进程组已建好），POSIX 发 SIGTERM。
 
     硬杀会让 `coverage run` 来不及写 partial，host 那一半就看不见了；收尾必须走信号。
     """
     if process.poll() is not None:
-        process.wait(timeout=10)
-        return
+        return process.wait(timeout=10)
     if sys.platform == "win32":
         process.send_signal(signal.CTRL_BREAK_EVENT)
     else:
         process.terminate()
     try:
-        process.wait(timeout=10)
+        return process.wait(timeout=15)
     except subprocess.TimeoutExpired:
         process.kill()
-        process.wait(timeout=10)
+        return process.wait(timeout=10)
 
 
 def _headers() -> dict[str, str]:
@@ -479,6 +478,124 @@ def test_a_disconnect_does_not_change_the_session(tmp_path: Path) -> None:
         baseline_log = session_dir / f"{baseline}.jsonl"
         watched_log = session_dir / f"{watched}.jsonl"
         assert _normalized_log(watched_log) == _normalized_log(baseline_log)
+    finally:
+        _stop(process)
+
+
+def test_host_outlives_a_session(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = _mock_fixture(tmp_path)
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(client, workspace, fixture)
+            client.post(
+                f"/sessions/{session_id}/messages",
+                headers=_headers(),
+                json={"content": "任务"},
+            )
+            _wait_until_idle(client, session_id)
+            health = client.get("/health")
+            listed = client.get("/sessions", headers=_headers())
+
+        assert health.status_code == 200
+        assert health.json()["sessions"] == 1
+        assert [item["session_id"] for item in listed.json()["sessions"]] == [session_id]
+    finally:
+        _stop(process)
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="SIGINT 子进程判据在 Linux runner 上跑（与 M7 一致）"
+)
+def test_sigint_cancels_all_segments_and_writes_session_end(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = _slow_fixture(workspace, tmp_path)
+    port = _free_port()
+    process = _start_host(
+        tmp_path,
+        port,
+        HOST_TOKEN,
+        "--session-dir",
+        str(session_dir),
+        "--allow-auto-approval",
+    )
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(
+                client, workspace, fixture, provider="mock", approval="auto"
+            )
+            client.post(
+                f"/sessions/{session_id}/messages",
+                headers=_headers(),
+                json={"content": "任务"},
+            )
+            log = session_dir / f"{session_id}.jsonl"
+            _wait_for_log(log, '"tool/call"')
+            process.send_signal(signal.SIGINT)
+            code = process.wait(timeout=20)
+
+        assert code == 0
+        records = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+        types = [record["type"] for record in records]
+        ends = [record["payload"] for record in records if record["type"] == "segment/end"]
+        assert "error/abort" in types
+        assert ends[-1]["stop_reason"] == "ABORTED"
+        assert types[-1] == "session/end"
+    finally:
+        _stop(process)
+
+
+def test_shutdown_leaves_no_orphan_session(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = _slow_fixture(workspace, tmp_path)
+    port = _free_port()
+    process = _start_host(
+        tmp_path,
+        port,
+        HOST_TOKEN,
+        "--session-dir",
+        str(session_dir),
+        "--allow-auto-approval",
+    )
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_ids = [
+                _create_session(client, workspace, fixture, provider="mock", approval="auto")
+                for _ in range(2)
+            ]
+            for session_id in session_ids:
+                client.post(
+                    f"/sessions/{session_id}/messages",
+                    headers=_headers(),
+                    json={"content": "任务"},
+                )
+            for session_id in session_ids:
+                _wait_for_log(session_dir / f"{session_id}.jsonl", '"tool/call"')
+            code = _stop(process)
+
+        assert code == 0
+        for session_id in session_ids:
+            log = session_dir / f"{session_id}.jsonl"
+            records = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+            assert records[-1]["type"] == "session/end"
+            assert records[-1]["payload"]["stop_reason"] == "MODEL_COMPLETED"
     finally:
         _stop(process)
 
