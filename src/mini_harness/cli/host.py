@@ -32,6 +32,7 @@ from mini_harness.session.host import (
     cancel_session,
     close_session,
     create_session,
+    resolve_approval,
     submit_message,
 )
 
@@ -105,6 +106,10 @@ class HostServer:
         router.add_post(f"{SESSIONS_PATH}/{{session_id}}/messages", self._post_message)
         router.add_post(f"{SESSIONS_PATH}/{{session_id}}/cancel", self._cancel_session)
         router.add_delete(f"{SESSIONS_PATH}/{{session_id}}", self._delete_session)
+        router.add_post(
+            f"{SESSIONS_PATH}/{{session_id}}/approvals/{{tool_call_id}}",
+            self._post_approval,
+        )
         self._runner: web.AppRunner | None = None
 
     def _authorized(self, request: web.Request) -> bool:
@@ -217,6 +222,23 @@ class HostServer:
                 return _error(404, "SESSION_NOT_FOUND", failure.detail)
             return _error(500, "INTERNAL", failure.detail)
         return web.json_response(handle.view(), status=200)
+
+    async def _post_approval(self, request: web.Request) -> web.Response:
+        session_id = request.match_info["session_id"]
+        handle = self._state.sessions.get(session_id)
+        if handle is None:
+            return _error(404, "SESSION_NOT_FOUND", f"没有会话 {session_id}")
+        try:
+            body = await request.json()
+        except (ValueError, TypeError, web.HTTPBadRequest):
+            return _error(400, "INVALID_ARGUMENT", "请求体必须是 JSON 对象")
+        decision = body.get("decision") if isinstance(body, dict) else None
+        if decision not in {"approve", "deny"}:
+            return _error(400, "INVALID_ARGUMENT", 'decision 只接受 "approve" 或 "deny"')
+        tool_call_id = request.match_info["tool_call_id"]
+        if not resolve_approval(handle, tool_call_id, approve=decision == "approve"):
+            return _error(404, "SESSION_NOT_FOUND", f"没有待决的审批：{tool_call_id}")
+        return web.json_response({"resolved": True}, status=200)
 
     async def bind(self) -> str | None:
         """绑定并开始接收连接；失败返回 detail（调用方映射成退出码 2）。

@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 
 from mini_harness.events import EventLog
@@ -30,6 +30,7 @@ from mini_harness.session.assembly import (
     Failure,
     assemble,
 )
+from mini_harness.tools.fences import ApprovalDecision
 
 # 同时在跑的会话上限（H1 spec：默认 4）。
 MAX_SESSIONS = 4
@@ -129,8 +130,44 @@ def create_session(
             EXIT_INTERNAL_ERROR,
         )
     handle = HostSession(settings=prepared.settings, log=prepared.log, env=env)
+    handle.env = replace(env, approval_gate=HostApprovalGate(handle))
     state.sessions[prepared.log.session_id] = handle
     return handle
+
+
+class HostApprovalGate:
+    """host 的 approval 门：把 `tool_call_id` 登记成 future，等 HTTP 回程。
+
+    它 MUST NOT 读 stdin：没有 HTTP 应答时只等超时，超时塌成 `UNAVAILABLE`，不默认批准。
+    """
+
+    def __init__(self, handle: HostSession, *, timeout: float = APPROVAL_TIMEOUT_SECONDS) -> None:
+        self._handle = handle
+        self._timeout = timeout
+
+    async def request(self, *, tool_call_id: str, tool_name: str, detail: str) -> ApprovalDecision:
+        if tool_call_id in self._handle.approvals:
+            return "UNAVAILABLE"
+        loop = asyncio.get_running_loop()
+        answer: asyncio.Future[bool] = loop.create_future()
+        self._handle.approvals[tool_call_id] = answer
+        try:
+            async with asyncio.timeout(self._timeout):
+                approved = await answer
+        except TimeoutError:
+            return "UNAVAILABLE"
+        finally:
+            self._handle.approvals.pop(tool_call_id, None)
+        return "APPROVED" if approved else "DENIED"
+
+
+def resolve_approval(handle: HostSession, tool_call_id: str, *, approve: bool) -> bool:
+    """把一次 HTTP 应答交给正在等待的门；未知或已失效的 id 返回 False。"""
+    answer = handle.approvals.get(tool_call_id)
+    if answer is None or answer.done():
+        return False
+    answer.set_result(approve)
+    return True
 
 
 @dataclass(frozen=True)

@@ -35,11 +35,11 @@
 
 ## 6. 审批走 HTTP 回程（seam ② 与 ⑥）
 
-- [ ] 6.1 seam ②：红判据 `test_the_approval_gate_receives_the_tool_call_id`——`ApprovalGate.request` 收到 `tool_call_id`；`StdinApprovalGate` 行为不变；host 门在测试里用 future 实现
-- [ ] 6.2 seam ⑥：红判据 `test_host_approves_a_write_over_http`——段因 `write` 停住，`POST /approvals/{tool_call_id}`（approve）返回 200，日志写 `approval/response(APPROVED)`、`tool/result` 为 `OK`，段收尾
-- [ ] 6.3 seam ⑥：红判据 `test_host_denies_a_write_over_http`——同一形状 deny 后 `approval/response(DENIED)`、该调用 `DENIED_BY_APPROVAL`、段 `FENCE_DENIED`、会话 `idle`
-- [ ] 6.4 seam ②：红判据 `test_an_unknown_or_expired_approval_is_a_result`——未知 `tool_call_id` 返回 404；超时（测试注入 0.1 s）塌成 `UNAVAILABLE`、写 `approval/response(UNAVAILABLE)`，不默认批准
-- [ ] 6.5 seam ②：红判据 `test_the_host_gate_never_reads_stdin`——stdin 是可读的 tty 替身、没有任何 HTTP 应答时，门只等 future，不消费 stdin
+- [x] 6.1 seam ②：红判据 `test_the_approval_gate_receives_the_tool_call_id`——`ApprovalGate.request` 收到 `tool_call_id`；`StdinApprovalGate` 行为不变；host 门在测试里用 future 实现
+- [x] 6.2 seam ⑥：红判据 `test_host_approves_a_write_over_http`——段因 `write` 停住，`POST /approvals/{tool_call_id}`（approve）返回 200，日志写 `approval/response(APPROVED)`、`tool/result` 为 `OK`，段收尾
+- [x] 6.3 seam ⑥：红判据 `test_host_denies_a_write_over_http`——同一形状 deny 后 `approval/response(DENIED)`、该调用 `DENIED_BY_APPROVAL`、段 `FENCE_DENIED`、会话 `idle`
+- [x] 6.4 seam ②：红判据 `test_an_unknown_or_expired_approval_is_a_result`——未知 `tool_call_id` 返回 404；超时（测试注入 0.1 s）塌成 `UNAVAILABLE`、写 `approval/response(UNAVAILABLE)`，不默认批准
+- [x] 6.5 seam ②：红判据 `test_the_host_gate_never_reads_stdin`——stdin 是可读的 tty 替身、没有任何 HTTP 应答时，门只等 future，不消费 stdin
 
 ## 7. 事件流与 snapshot（seam ⑥ 与 ④）
 

@@ -250,6 +250,134 @@ def test_an_empty_message_is_rejected(tmp_path: Path) -> None:
         _stop(process)
 
 
+def _write_fixture(tmp_path: Path) -> Path:
+    fixture = tmp_path / "write.json"
+    fixture.write_text(
+        json.dumps(
+            [
+                {
+                    "content": "写一个文件",
+                    "finish_reason": "tool_calls",
+                    "tool_calls": [
+                        {
+                            "id": "call-1",
+                            "name": "write",
+                            "arguments": {"file_path": "notes.md", "content": "hello\n"},
+                        }
+                    ],
+                },
+                {"content": "写完了", "finish_reason": "stop"},
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    return fixture
+
+
+def _wait_for_approval(log: Path) -> str:
+    text = _wait_for_log(log, '"approval/request"')
+    records = [json.loads(line) for line in text.splitlines()]
+    request = next(record for record in records if record["type"] == "approval/request")
+    return str(request["payload"]["tool_call_id"])
+
+
+def _resolve_approval(
+    client: httpx.Client, session_id: str, tool_call_id: str, decision: str
+) -> httpx.Response:
+    deadline = time.monotonic() + 10.0
+    while time.monotonic() < deadline:
+        response = client.post(
+            f"/sessions/{session_id}/approvals/{tool_call_id}",
+            headers=_headers(),
+            json={"decision": decision},
+        )
+        if response.status_code != 404:
+            return response
+        time.sleep(0.05)
+    pytest.fail(f"审批 {tool_call_id} 一直没有登记")
+
+
+def test_host_approves_a_write_over_http(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = _write_fixture(tmp_path)
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(client, workspace, fixture)
+            client.post(
+                f"/sessions/{session_id}/messages",
+                headers=_headers(),
+                json={"content": "写"},
+            )
+            log = session_dir / f"{session_id}.jsonl"
+            tool_call_id = _wait_for_approval(log)
+            response = _resolve_approval(client, session_id, tool_call_id, "approve")
+            assert response.status_code == 200
+            _wait_until_idle(client, session_id)
+
+        records = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+        responses = [
+            record["payload"] for record in records if record["type"] == "approval/response"
+        ]
+        results = [record["payload"] for record in records if record["type"] == "tool/result"]
+        assert responses[-1]["decision"] == "APPROVED"
+        assert results[-1]["outcome"] == "OK"
+        assert (workspace / "notes.md").read_text(encoding="utf-8") == "hello\n"
+    finally:
+        _stop(process)
+
+
+def test_host_denies_a_write_over_http(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = _write_fixture(tmp_path)
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(client, workspace, fixture)
+            client.post(
+                f"/sessions/{session_id}/messages",
+                headers=_headers(),
+                json={"content": "写"},
+            )
+            log = session_dir / f"{session_id}.jsonl"
+            tool_call_id = _wait_for_approval(log)
+            response = _resolve_approval(client, session_id, tool_call_id, "deny")
+            assert response.status_code == 200
+            _wait_until_idle(client, session_id)
+            unknown = client.post(
+                f"/sessions/{session_id}/approvals/not-a-call",
+                headers=_headers(),
+                json={"decision": "approve"},
+            )
+            assert unknown.status_code == 404
+
+        records = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+        responses = [
+            record["payload"] for record in records if record["type"] == "approval/response"
+        ]
+        results = [record["payload"] for record in records if record["type"] == "tool/result"]
+        ends = [record["payload"] for record in records if record["type"] == "segment/end"]
+        assert responses[-1]["decision"] == "DENIED"
+        assert results[-1]["outcome"] == "DENIED_BY_APPROVAL"
+        assert ends[-1]["stop_reason"] == "FENCE_DENIED"
+        assert not (workspace / "notes.md").exists()
+    finally:
+        _stop(process)
+
+
 def test_cancel_ends_only_the_segment(tmp_path: Path) -> None:
     session_dir = tmp_path / "sessions"
     workspace = tmp_path / "workspace"

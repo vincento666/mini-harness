@@ -35,9 +35,11 @@ class _Gate:
     def __init__(self, decision: ApprovalDecision) -> None:
         self.decision = decision
         self.asked: list[str] = []
+        self.call_ids: list[str] = []
 
-    async def request(self, *, tool_name: str, detail: str) -> ApprovalDecision:
+    async def request(self, *, tool_call_id: str, tool_name: str, detail: str) -> ApprovalDecision:
         self.asked.append(tool_name)
+        self.call_ids.append(tool_call_id)
         return self.decision
 
 
@@ -124,6 +126,16 @@ async def test_each_approved_write_asks_once_and_then_succeeds(tmp_path: Path) -
     ]
     assert gate.asked == ["write", "write"]
     assert (tmp_path / "a.md").read_text(encoding="utf-8") == "A\n"
+
+
+async def test_the_approval_gate_receives_the_tool_call_id(tmp_path: Path) -> None:
+    """门拿到的 id 必须足以把 HTTP 应答对回那条 `approval/request`（H1 task 6.1）。"""
+    gate = _Gate("APPROVED")
+    registry, entries = _registry_and_entries(mutates=True, files=("a.md",))
+
+    await _run(tmp_path, "s-call-id", registry, entries, gate)
+
+    assert gate.call_ids == ["c1"]
 
 
 async def test_an_approved_call_keeps_its_relative_order_when_the_batch_interleaves(
@@ -241,7 +253,7 @@ class _LogWatchingGate:
         self._log_path = log_path
         self.requested: list[bool] = []
 
-    async def request(self, *, tool_name: str, detail: str) -> ApprovalDecision:
+    async def request(self, *, tool_call_id: str, tool_name: str, detail: str) -> ApprovalDecision:
         self.requested.append(
             any(record.type == "approval/request" for record in read_events(self._log_path))
         )
@@ -296,7 +308,7 @@ class _Stream:
 
 async def _ask(tty: bool, answer: str) -> ApprovalDecision:
     return await StdinApprovalGate(stream=_Stream(tty=tty, answer=answer)).request(
-        tool_name="write", detail="a.md"
+        tool_call_id="c1", tool_name="write", detail="a.md"
     )
 
 
@@ -315,7 +327,7 @@ async def test_the_three_approval_decisions_are_each_reachable_through_the_real_
     stream = _Stream(tty=True, answer="y\n")
     prompt = _Stream(tty=True)
     await StdinApprovalGate(stream=stream, prompt_stream=prompt).request(
-        tool_name="write", detail="C:\\ws\\a.md"
+        tool_call_id="c1", tool_name="write", detail="C:\\ws\\a.md"
     )
     assert "write" in prompt.written[0]
     assert "a.md" in prompt.written[0]
@@ -327,7 +339,10 @@ async def test_the_default_gate_asks_on_stderr_and_leaves_stdout_empty(
 ) -> None:
     gate = StdinApprovalGate(stream=_Stream(tty=True, answer="y\n"))
 
-    assert await gate.request(tool_name="write", detail="notes/plan.md") == "APPROVED"
+    assert (
+        await gate.request(tool_call_id="c1", tool_name="write", detail="notes/plan.md")
+        == "APPROVED"
+    )
 
     captured = capsys.readouterr()
     assert "write" in captured.err
@@ -349,7 +364,7 @@ async def test_a_broken_answer_stream_reads_as_no_one_is_answering() -> None:
     """挂在 daemon 线程里的 `readline()` 抛异常时不能把等待者钉住：结论是 `UNAVAILABLE`。"""
     gate = StdinApprovalGate(stream=_BrokenStream(), prompt_stream=_Stream(tty=True))
 
-    assert await gate.request(tool_name="write", detail="a.md") == "UNAVAILABLE"
+    assert await gate.request(tool_call_id="c1", tool_name="write", detail="a.md") == "UNAVAILABLE"
 
 
 class _BlockingStream:

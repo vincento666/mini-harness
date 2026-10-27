@@ -34,7 +34,7 @@ class _StubArgs(ToolArgs):
 
 
 class _ApprovingGate:
-    async def request(self, *, tool_name: str, detail: str) -> ApprovalDecision:
+    async def request(self, *, tool_call_id: str, tool_name: str, detail: str) -> ApprovalDecision:
         return "APPROVED"
 
 
@@ -155,7 +155,7 @@ def _raising_registry(run: Any) -> ToolRegistry:
 
 
 class _DenyingGate:
-    async def request(self, *, tool_name: str, detail: str) -> ApprovalDecision:
+    async def request(self, *, tool_call_id: str, tool_name: str, detail: str) -> ApprovalDecision:
         return "DENIED"
 
 
