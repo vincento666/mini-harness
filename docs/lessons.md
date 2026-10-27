@@ -813,8 +813,7 @@ Active Lesson 1、L-045、L-049 家族下面，都不够独立到值得挤掉现
 之前（连续第三轮）；`settings.py` / `layering.py` / `cli/main.py` 的注释从 `7cc41cd` 起引用 ADR-0027，而那份
 ADR 到 9.2 才提交；已提交的 `tasks.md` 三处引用本分支不存在的 L-055。都在 `docs/adr/0002` 的本 change 两节。
 
-收件箱：12 条（L-005 / L-019 / L-036 / L-039 / L-045 / L-047 / L-048 / L-049 / L-054 / L-058 / L-059 / L-060），
-空闲 3 条。
+收件箱：15 条（L-005 / L-019 / L-036 / L-039 / L-045 / L-047 / L-048 / L-049 / L-054 / L-058 / L-059 / L-060 / L-061 / L-062 / L-063），**到 15 条上限**：下个 change 收新条之前先消化。
 
 ### L-058
 - Date: 2026-10-23
@@ -841,6 +840,33 @@ ADR 到 9.2 才提交；已提交的 `tasks.md` 三处引用本分支不存在�
 - Evidence: `docs/verification/add-key-driven-default-provider-mutation.md` 的代价一节；`.tmp/mutB/results2.json`
 - Next use: 变异轮之前先扫一遍「哪些判据的 argv 里没有端点地址」，把出网代价写进 mutation 文档；CI 无网络时这类变异可能因连接超时而不是因断言失败被杀，那是假阳性，要在记录里写明它被杀的方式
 - Promotion candidate: 与 L-049 家族（本机环境伪装成缺陷）同族，本轮不占 AGENTS.md 额度
+- Status: inbox
+
+### L-061
+- Date: 2026-10-27
+- Context: `h1-host-session-api` 两轴审查——SSE 的 CORS 头
+- Observation: 中间件在 `await handler(request)` 返回之后才 `response.headers.update(...)`；`_events` 在 handler 内部就 `prepare` 并发流了，头早已发出去。带 `Origin: null` 的浏览器因此拿不到 `Access-Control-Allow-Origin`，而同一份中间件对普通 JSON 响应是对的。**流式响应必须在 `prepare` 之前自己把该加的头加好；中间件的事后处理只覆盖非流响应**
+- Evidence: `cli/host.py::_events` 在 `prepare` 前 `_cors_headers`，中间件改成 `if origin is not None and not response.prepared`；判据 `test_the_event_stream_carries_cors_headers`；两轴审查的 Spec 轴原文
+- Next use: 任何 SSE / 长连接端点，先列出「谁在什么时候发头」；跨域、缓存、内容类型这些头都在 prepare 前设置，不要留给中间件事后补
+- Promotion candidate: 与「流式响应的生命周期」同族，等 H2 再判是否占 AGENTS.md 额度
+- Status: inbox
+
+### L-062
+- Date: 2026-10-27
+- Context: 同一 change 的「段等在审批上时取消」
+- Observation: `Future[bool]` 表达不了第三种结论 `UNAVAILABLE`。取消时把 pending future `set_result(False)`，门只能回 `DENIED`，日志写 `approval/response(DENIED)`——把「没人回答」冒充成「人拒绝了」。改成 `Future[bool | None]`、`None` 表示不可问人，取消/关停都送 `None`，门再按 `stopping` 兜一层
+- Evidence: `HostApprovalGate` / `cancel_session` / `shutdown`；判据 `test_cancel_while_waiting_for_approval_is_unavailable` 与 `tests/test_host_approval.py` 的超时/不读 stdin 两条；变异 M3（门立刻批准）红 5 条
+- Next use: 只要接口的取值域里有「不可用/不知道」，就不要用 bool 或 `None` 兼表两种原因；先定三态，再写分支
+- Promotion candidate: 与 L-052（`None` 兼表两种原因）同族，本轮不占 AGENTS.md 额度
+- Status: inbox
+
+### L-063
+- Date: 2026-10-27
+- Context: 同一 change 的 `_run_segment` 失败判定
+- Observation: 两轴审查建议把 `failed = stop_reason not in STOP_REASONS` 改成 `failure_code is not None`，理由是 design D6 说「内核失败看 `failure_code`」。但 `FENCE_DENIED` / `CONTEXT_WINDOW_EXCEEDED` 也带 `failure_code`，它们只停段、会话仍然 `idle`；照审查改，审批被拒的会话会被标成 `ended`，`_wait_until_idle` 当场超时。内核失败的正确判据仍是停止理由词表，`failure_code` 只是「这个段带了失败细节」
+- Evidence: `test_cancel_while_waiting_for_approval_is_unavailable` 在错误改法下超时；还原后 34 passed / 1 skipped
+- Next use: 审查意见也要拿判据验；把可空字段当失败谓词之前，先找出它的每一个生产者（`_segment_failure` 会给围栏与溢出也写 `failure_code`）
+- Promotion candidate: 与 L-045（判据的前置条件先核实）同族，本轮不占 AGENTS.md 额度
 - Status: inbox
 
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
