@@ -40,6 +40,14 @@
 
 ## 4. 上下文经济（M10 要落成的形状）
 
+**第一个切片：压缩参数可配置**（先于并发与结果剪枝，单独一个红绿循环）：
+
+- 把 DSH `dsh-compaction-basic` 的可调键对应成 mini 的配置：`compaction_threshold_ratio`（对应 `thresholdRatio`，默认 0.8）、`compaction_headroom_tokens`（`headroomTokens`，默认 65536）、`compaction_retain_ratio`（`retainRatio`，默认 0.16）、`compaction_retain_tokens`（`retainTokens`，默认 0 = 用 ratio；>0 时它优先）。
+- 默认值必须让现有行为逐点不变；配置只在**新会话**生效。
+- 有效值 SHALL 进 `session/start.payload`；`replay` 必须从 payload 取回当时的参数，否则改过配置的日志会 `REPLAY_MISMATCH`。
+- 校验：`0 < threshold_ratio <= 1`、`0 < retain_ratio <= 1`、`headroom_tokens >= 0`、`retain_tokens >= 0`；压力预算仍要为正。
+- 判据：seam ④ 的公式与边界；seam ① 的 `shadowed_range` 跟着 `retain` 走（`retain_tokens` 覆盖 ratio）；seam ⑥ 的配置层叠、payload 与 replay 相等。
+
 **单条结果的预算**（不进配置，先进规格常量；E1 量到再谈）：
 
 - `read`：已有 `offset` / `limit`（默认 2000 行）；补**字节上限**（例如 32 KiB，取行数与字节先到者），单行超长时截断并留 marker；超出部分落 spill 文件，结果里留 `[已截断；完整内容：<path>]`。
