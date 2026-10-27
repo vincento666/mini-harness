@@ -15,7 +15,7 @@
 
 ## 3. 重试边界与取消
 
-- [ ] 3.1 seam ⑤：红判据 `test_retry_only_before_the_first_delta`——首 delta 前 429 仍重试一次并写 `model/retry`；首 delta 后再 429/5xx 不重试、不写 `model/retry`、塌成 `PROVIDER_ERROR`
+- [x] 3.1 seam ⑤：红判据 `test_retry_only_before_the_first_delta`——首 delta 前 429 仍重试一次并写 `model/retry`；首 delta 后再 429/5xx 不重试、不写 `model/retry`、塌成 `PROVIDER_ERROR`
 - [ ] 3.2 seam ①：红判据 `test_cancel_during_stream_aborts_without_a_response`——流式读取中置位取消，回合以 `ABORTED` 收尾，不写 `model/response`，已发 delta 不回滚
 
 ## 4. 宿主侧 delta 广播

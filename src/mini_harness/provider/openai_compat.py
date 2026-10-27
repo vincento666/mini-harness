@@ -404,6 +404,22 @@ class OpenAICompatProvider:
                     )
                 if response.status_code >= 400:
                     await response.aread()
+                    if _retryable(response.status_code) and not attempts:
+                        if signal.is_set():
+                            return ProviderFailure(
+                                code="PROVIDER_ABORTED",
+                                detail="取消信号已置位，重试未发出",
+                                attempts=attempts,
+                            )
+                        return await self._stream_generate(
+                            client,
+                            body,
+                            headers,
+                            [*attempts, ProviderAttempt(attempt=1, status=response.status_code)],
+                            signal,
+                            on_delta,
+                            include_usage=include_usage,
+                        )
                     failure = _status_failure(response, attempts)
                     assert failure is not None
                     return failure

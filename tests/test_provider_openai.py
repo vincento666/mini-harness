@@ -1,4 +1,4 @@
-﻿"""seam ⑤：OpenAI 兼容适配器。HTTP 层由测试注入，判据不跑网络。"""
+"""seam ⑤：OpenAI 兼容适配器。HTTP 层由测试注入，判据不跑网络。"""
 
 from __future__ import annotations
 
@@ -371,6 +371,53 @@ async def test_a_stream_that_breaks_before_done_is_a_result() -> None:
     assert isinstance(outcome, ProviderFailure)
     assert outcome.code == "PROVIDER_TRANSPORT"
     assert "[DONE]" in outcome.detail
+
+
+async def test_stream_retries_429_before_first_delta() -> None:
+    seen: list[int] = []
+    stream = (
+        'data: {"choices":[{"delta":{"content":"好"},"finish_reason":null}]}\n\n'
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'
+        "data: [DONE]\n\n"
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(1)
+        if len(seen) == 1:
+            return httpx.Response(429, json={"error": "slow down"})
+        return httpx.Response(200, text=stream, headers={"content-type": "text/event-stream"})
+
+    async def sink(text: str) -> None:
+        return None
+
+    provider, _ = _provider(handler=handler)
+
+    turn = await provider.generate([], [], asyncio.Event(), on_delta=sink)
+
+    assert isinstance(turn, AssistantTurn)
+    assert len(seen) == 2
+    assert [(item.attempt, item.status) for item in turn.attempts] == [(1, 429)]
+
+
+async def test_stream_does_not_retry_after_a_delta() -> None:
+    seen: list[int] = []
+    stream = 'data: {"choices":[{"delta":{"content":"你"},"finish_reason":null}]}\n\n'
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(1)
+        return httpx.Response(200, text=stream, headers={"content-type": "text/event-stream"})
+
+    async def sink(text: str) -> None:
+        return None
+
+    provider, _ = _provider(handler=handler)
+
+    outcome = await provider.generate([], [], asyncio.Event(), on_delta=sink)
+
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_TRANSPORT"
+    assert outcome.attempts == []
+    assert len(seen) == 1
 
 
 async def test_the_request_posts_to_the_chat_completions_url() -> None:
@@ -792,4 +839,3 @@ async def test_the_provider_still_accepts_no_key_and_sends_no_header() -> None:
         "signal",
         "on_delta",
     ]
-
