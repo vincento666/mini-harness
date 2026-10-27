@@ -56,10 +56,10 @@
 
 ## 9. 安全与错误信封（seam ⑥）
 
-- [ ] 9.1 seam ⑥：红判据 `test_every_host_error_uses_the_envelope`——401 / 403 / 404 / 409 / 429 各返回对应状态与 `code`，`detail` 不含 token、密钥或完整日志行
-- [ ] 9.2 seam ⑥：红判据 `test_danger_full_access_needs_the_server_flag`——请求体要 `danger-full-access` 而服务器未给 `--allow-danger-full-access` 时 400，不建日志；给了之后允许
-- [ ] 9.3 seam ⑥：红判据 `test_the_token_never_reaches_the_log`——创建/发消息/审批各一次后，整份日志里搜不到 token 的前 8 个字符
-- [ ] 9.4 seam ⑥：红判据 `test_auto_approval_needs_the_server_flag`——请求体 `approval: "auto"` 而服务器未给 `--allow-auto-approval` 时 400、不建日志；给了之后 `write` 直接 `OK` 且日志没有 `approval/*`
+- [x] 9.1 seam ⑥：红判据 `test_every_host_error_uses_the_envelope`——401 / 403 / 404 / 409 / 429 各返回对应状态与 `code`，`detail` 不含 token、密钥或完整日志行
+- [x] 9.2 seam ⑥：红判据 `test_danger_full_access_needs_the_server_flag`——请求体要 `danger-full-access` 而服务器未给 `--allow-danger-full-access` 时 400，不建日志；给了之后允许
+- [x] 9.3 seam ⑥：红判据 `test_the_token_never_reaches_the_log`——创建/发消息/审批各一次后，整份日志里搜不到 token 的前 8 个字符
+- [x] 9.4 seam ⑥：红判据 `test_auto_approval_needs_the_server_flag`——请求体 `approval: "auto"` 而服务器未给 `--allow-auto-approval` 时 400、不建日志；给了之后 `write` 直接 `OK` 且日志没有 `approval/*`
 
 ## 10. 完成判据、文档与收尾
 

@@ -600,6 +600,222 @@ def test_shutdown_leaves_no_orphan_session(tmp_path: Path) -> None:
         _stop(process)
 
 
+def test_every_host_error_uses_the_envelope(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = _slow_fixture(workspace, tmp_path)
+    port = _free_port()
+    process = _start_host(
+        tmp_path,
+        port,
+        HOST_TOKEN,
+        "--session-dir",
+        str(session_dir),
+        "--allow-auto-approval",
+    )
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(
+                client, workspace, fixture, provider="mock", approval="auto"
+            )
+            client.post(
+                f"/sessions/{session_id}/messages",
+                headers=_headers(),
+                json={"content": "第一句"},
+            )
+            _wait_for_log(session_dir / f"{session_id}.jsonl", '"tool/call"')
+            client.post(
+                f"/sessions/{session_id}/messages",
+                headers=_headers(),
+                json={"content": "第二句"},
+            )
+            third = client.post(
+                f"/sessions/{session_id}/messages",
+                headers=_headers(),
+                json={"content": "第三句"},
+            )
+            running_delete = client.delete(f"/sessions/{session_id}", headers=_headers())
+            unknown = client.get("/sessions/" + "0" * 32, headers=_headers())
+
+            responses = {
+                401: client.get("/sessions"),
+                403: client.get(
+                    "/sessions",
+                    headers={**_headers(), "Origin": "https://example.com"},
+                ),
+                404: unknown,
+                409: running_delete,
+                429: third,
+            }
+            _wait_until_idle(client, session_id)
+
+        expected_codes = {
+            401: "UNAUTHORIZED",
+            403: "FORBIDDEN",
+            404: "SESSION_NOT_FOUND",
+            409: "SESSION_BUSY",
+            429: "SESSION_BUSY",
+        }
+        for status, response in responses.items():
+            assert response.status_code == status
+            envelope = response.json()
+            assert envelope["error"]["code"] == expected_codes[status]
+            detail = str(envelope["error"]["detail"])
+            assert HOST_TOKEN[:8] not in detail
+            assert "Traceback" not in detail
+    finally:
+        _stop(process)
+
+
+def test_the_token_never_reaches_the_log(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = _write_fixture(tmp_path)
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(client, workspace, fixture)
+            client.post(
+                f"/sessions/{session_id}/messages",
+                headers=_headers(),
+                json={"content": "写"},
+            )
+            log = session_dir / f"{session_id}.jsonl"
+            tool_call_id = _wait_for_approval(log)
+            _resolve_approval(client, session_id, tool_call_id, "approve")
+            _wait_until_idle(client, session_id)
+
+        assert HOST_TOKEN[:8] not in log.read_text(encoding="utf-8")
+    finally:
+        _stop(process)
+
+
+def test_danger_full_access_needs_the_server_flag(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = _mock_fixture(tmp_path)
+    body = {
+        "workspace": str(workspace),
+        "provider": "mock",
+        "fixture": str(fixture),
+        "sandbox": "danger-full-access",
+    }
+
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=5.0
+        ) as client:
+            rejected = client.post("/sessions", headers=_headers(), json=body)
+        assert rejected.status_code == 400
+        assert rejected.json()["error"]["code"] == "INVALID_ARGUMENT"
+    finally:
+        _stop(process)
+
+    port = _free_port()
+    process = _start_host(
+        tmp_path,
+        port,
+        HOST_TOKEN,
+        "--session-dir",
+        str(session_dir),
+        "--allow-danger-full-access",
+    )
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=5.0
+        ) as client:
+            allowed = client.post("/sessions", headers=_headers(), json=body)
+        assert allowed.status_code == 201
+        session_id = allowed.json()["session_id"]
+        records = [
+            json.loads(line)
+            for line in (session_dir / f"{session_id}.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()
+        ]
+        started = next(record["payload"] for record in records if record["type"] == "session/start")
+        assert started["sandbox"] == "danger-full-access"
+    finally:
+        _stop(process)
+
+
+def test_auto_approval_needs_the_server_flag(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = _write_fixture(tmp_path)
+    body = {
+        "workspace": str(workspace),
+        "provider": "mock",
+        "fixture": str(fixture),
+        "approval": "auto",
+    }
+
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=5.0
+        ) as client:
+            rejected = client.post("/sessions", headers=_headers(), json=body)
+        assert rejected.status_code == 400
+        assert rejected.json()["error"]["code"] == "INVALID_ARGUMENT"
+    finally:
+        _stop(process)
+
+    port = _free_port()
+    process = _start_host(
+        tmp_path,
+        port,
+        HOST_TOKEN,
+        "--session-dir",
+        str(session_dir),
+        "--allow-auto-approval",
+    )
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            created = client.post("/sessions", headers=_headers(), json=body)
+            assert created.status_code == 201
+            session_id = created.json()["session_id"]
+            client.post(
+                f"/sessions/{session_id}/messages",
+                headers=_headers(),
+                json={"content": "写"},
+            )
+            _wait_until_idle(client, session_id)
+
+        records = [
+            json.loads(line)
+            for line in (session_dir / f"{session_id}.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()
+        ]
+        types = [record["type"] for record in records]
+        results = [record["payload"] for record in records if record["type"] == "tool/result"]
+        assert results[-1]["outcome"] == "OK"
+        assert not any(event_type.startswith("approval/") for event_type in types)
+    finally:
+        _stop(process)
+
+
 def _write_fixture(tmp_path: Path) -> Path:
     fixture = tmp_path / "write.json"
     fixture.write_text(
