@@ -21,14 +21,14 @@ from typing import Any
 
 from aiohttp import web
 
-from mini_harness.cli.serve import SERVE_HOSTS, _sse_frame
+from mini_harness.cli.serve import SERVE_HOSTS, sse_frame
 from mini_harness.events import LogReadFailure, LogTail, read_events
 from mini_harness.events.fold import fold
 from mini_harness.session.assembly import (
-    EXIT_INTERNAL_ERROR,
     EXIT_INVALID_ARGUMENT,
     AssemblyRequest,
     Failure,
+    request_from_args,
 )
 from mini_harness.session.host import (
     HostState,
@@ -78,6 +78,21 @@ _RequestHandler = Callable[[web.Request], Awaitable[web.StreamResponse]]
 def _error(status: int, code: str, detail: str) -> web.Response:
     """宿主错误信封：`{"error": {"code": ..., "detail": ...}}`；detail 不含密钥。"""
     return web.json_response({"error": {"code": code, "detail": detail}}, status=status)
+
+
+# 宿主层只读 `Failure.code`，不读 `exit_code`（那是 CLI 的映射）。
+_FAILURE_TABLE: dict[str, tuple[int, str]] = {
+    "TOO_MANY_SESSIONS": (429, "TOO_MANY_SESSIONS"),
+    "SESSION_BUSY": (409, "SESSION_BUSY"),
+    "SESSION_NOT_FOUND": (404, "SESSION_NOT_FOUND"),
+    "LOG_WRITE_FAILED": (500, "INTERNAL"),
+    "INTERNAL": (500, "INTERNAL"),
+}
+
+
+def _failure_response(failure: Failure) -> web.Response:
+    status, code = _FAILURE_TABLE.get(failure.code, (400, "INVALID_ARGUMENT"))
+    return _error(status, code, failure.detail)
 
 
 def _cors_headers(origin: str) -> dict[str, str]:
@@ -157,7 +172,7 @@ class HostServer:
             if match is not None and re.fullmatch(SESSION_ID_PATTERN, match.group(1)) is None:
                 return _error(400, "INVALID_ARGUMENT", "session_id 只接受 32 位小写十六进制")
             response = await handler(request)
-        if origin is not None:
+        if origin is not None and not response.prepared:
             response.headers.update(_cors_headers(origin))
         return response
 
@@ -177,15 +192,11 @@ class HostServer:
         except (ValueError, TypeError, web.HTTPBadRequest):
             return _error(400, "INVALID_ARGUMENT", "请求体必须是 JSON 对象")
         parsed = _session_request(self._state.defaults, body)
-        if isinstance(parsed, str):
-            return _error(400, "INVALID_ARGUMENT", parsed)
+        if isinstance(parsed, Failure):
+            return _failure_response(parsed)
         created = create_session(self._state, parsed, os.environ)
         if isinstance(created, Failure):
-            if created.code == "TOO_MANY_SESSIONS":
-                return _error(429, "TOO_MANY_SESSIONS", created.detail)
-            if created.exit_code == EXIT_INTERNAL_ERROR:
-                return _error(500, "INTERNAL", created.detail)
-            return _error(400, "INVALID_ARGUMENT", created.detail)
+            return _failure_response(created)
         return web.json_response(
             {"session_id": created.log.session_id, "cursor": created.last_seq},
             status=201,
@@ -241,11 +252,7 @@ class HostServer:
             return _error(404, "SESSION_NOT_FOUND", f"没有会话 {session_id}")
         failure = close_session(handle)
         if failure is not None:
-            if failure.code == "SESSION_BUSY":
-                return _error(409, "SESSION_BUSY", failure.detail)
-            if failure.code == "SESSION_NOT_FOUND":
-                return _error(404, "SESSION_NOT_FOUND", failure.detail)
-            return _error(500, "INTERNAL", failure.detail)
+            return _failure_response(failure)
         return web.json_response(handle.view(), status=200)
 
     async def _post_approval(self, request: web.Request) -> web.Response:
@@ -275,6 +282,11 @@ class HostServer:
             return _error(400, "INVALID_ARGUMENT", "游标必须是非负整数")
         snapshot = request.query.get("snapshot") == "1"
         response = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
+        origin = request.headers.get("Origin")
+        if origin is not None:
+            # 中间件在 handler 返回之后才加头，而这里已经 prepare 并发流了；SSE 的 CORS
+            # 头必须在 prepare 之前就位，否则浏览器读不到。
+            response.headers.update(_cors_headers(origin))
         after = cursor
         if snapshot:
             records = read_events(handle.log.path)
@@ -308,7 +320,7 @@ class HostServer:
                 return response
             try:
                 for record in records:
-                    await response.write(_sse_frame(record))
+                    await response.write(sse_frame(record))
             except ConnectionResetError:
                 return response
             await asyncio.sleep(EVENTS_POLL_SECONDS)
@@ -328,50 +340,29 @@ class HostServer:
         self._runner = runner
         return None
 
-    async def run(self, stop: asyncio.Event) -> None:
-        """常驻：直到进程收到停止信号。"""
-        await stop.wait()
-
     async def close(self) -> None:
         if self._runner is not None:
             await self._runner.cleanup()
             self._runner = None
 
 
-def _session_request(defaults: AssemblyRequest, body: object) -> AssemblyRequest | str:
+def _session_request(defaults: AssemblyRequest, body: object) -> AssemblyRequest | Failure:
     """请求体覆盖服务器默认设置；不认识的键与错类型都是 INVALID_ARGUMENT 的 detail。"""
+
+    def bad(detail: str) -> Failure:
+        return Failure("INVALID_ARGUMENT", detail, EXIT_INVALID_ARGUMENT)
+
     if not isinstance(body, dict):
-        return "请求体必须是 JSON 对象"
+        return bad("请求体必须是 JSON 对象")
     unknown = set(body) - _SESSION_FIELDS
     if unknown:
-        return f"请求体里有不认识的设置：{' / '.join(sorted(str(key) for key in unknown))}"
+        return bad(f"请求体里有不认识的设置：{' / '.join(sorted(str(key) for key in unknown))}")
     for key, value in body.items():
         if key in _SESSION_STRING_FIELDS and not isinstance(value, str):
-            return f"设置 {key} 必须是字符串"
+            return bad(f"设置 {key} 必须是字符串")
         if key in _SESSION_INT_FIELDS and (not isinstance(value, int) or isinstance(value, bool)):
-            return f"设置 {key} 必须是整数"
+            return bad(f"设置 {key} 必须是整数")
     return replace(defaults, **body)
-
-
-def _request_defaults(args: argparse.Namespace) -> AssemblyRequest:
-    """服务器级默认设置：`POST /sessions` 的请求体只覆盖它给了的那几项。"""
-    return AssemblyRequest(
-        workspace=args.workspace,
-        config=args.config,
-        session_dir=args.session_dir,
-        provider=args.provider,
-        fixture=args.fixture,
-        base_url=args.base_url,
-        model=args.model,
-        api_key_env=args.api_key_env,
-        max_turns=args.max_turns,
-        window=args.window,
-        reserve=args.reserve,
-        append_system_prompt=args.append_system_prompt,
-        sandbox=args.sandbox,
-        approval=None,
-        auto_approve=False,
-    )
 
 
 def _report_failure(code: str, detail: str, exit_code: int) -> int:
@@ -419,7 +410,7 @@ def _restore_stop_handlers(previous: Mapping[int, Any]) -> None:
 
 async def _serve(args: argparse.Namespace, token: str) -> int:
     state = HostState(
-        defaults=_request_defaults(args),
+        defaults=request_from_args(args),
         allow_danger_full_access=args.allow_danger_full_access,
         allow_auto_approval=args.allow_auto_approval,
     )
@@ -441,7 +432,7 @@ async def _serve(args: argparse.Namespace, token: str) -> int:
     loop = asyncio.get_running_loop()
     previous = _install_stop_handlers(stop, loop)
     try:
-        await server.run(stop)
+        await stop.wait()
     finally:
         _restore_stop_handlers(previous)
         await server.close()

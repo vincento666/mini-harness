@@ -26,8 +26,12 @@ _Avoid_: 回合（那是段里的一个往返）；轮次（那是回合的编�
 从开始到结束的一次完整过程，对应一份独立日志。
 
 **入口（entry）**：
-开这个会话的是哪个外壳：`run` 还是 `chat`。它记在 `session/start` 里，决定「一段跑完之后回到哪儿」。
+开这个会话的是哪个外壳：`run`、`chat`、`serve` 或 `host`。它记在 `session/start` 里，决定「一段跑完之后回到哪儿」。
 _Avoid_: 把它读成内核的能力——内核只有一种循环，不知道入口是谁
+
+**宿主（host）**：
+`minihns host --http` 起的常驻多会话服务：服务比会话活得久，写操作走 unary POST，事件走 SSE。它不是 `serve` 的模式开关——`serve` 仍是一进程一会话、会话收尾即退出。
+_Avoid_: 把它读成 `serve --http` 的别名；把它读成内核的一部分（宿主只做会话生命周期与 HTTP 边界）
 
 ### 日志与折叠
 
@@ -83,12 +87,16 @@ _Avoid_: 把它读成日志损坏或写日志失败；去日志里找它——�
 ### 事件流
 
 **事件流（event stream）**：
-`minihns serve --http` 的 `GET /events`：一条 SSE，日志每追加一行就一帧。它是日志的**单向读**，不是第二条真源——流上没有日志里没有的事实。
+`minihns serve --http` 的 `GET /events` 与 `minihns host --http` 的 `GET /sessions/{id}/events`：一条 SSE，日志每追加一行就一帧。它是日志的**单向读**，不是第二条真源——流上没有日志里没有的事实。
 _Avoid_: 把它读成第二个事件系统（它不产生事件）；把它读成 DSH 的 `/api/remote.mux`（那条是 WebSocket multiplex，带 27 条转发与回程）
 
 **帧（frame）**：
 一条日志记录在流上的那个形状：`id` 是记录的 `seq`、`event` 是事件类型、`data` 是整行记录的 JSON。一帧对一条记录，不多不少。
-_Avoid_: 把帧读成「一次模型输出」（provider 的逐字帧不在 M7，归 M11）；把 `data` 读成 payload（它是整行记录，含 `type` 与 `payload`）
+_Avoid_: 把帧读成「一次模型输出」（provider 的逐字帧归 H2 的 ephemeral 帧，不是 durable 帧）；把 `data` 读成 payload（它是整行记录，含 `type` 与 `payload`）
+
+**snapshot 帧**：
+host 的 `GET /sessions/{id}/events?snapshot=1` 先送的那一帧：`event: snapshot`，`data` 里是 `session_id`、当前 `status`、`last_seq` 与折叠后的 `messages`。它没有 `id`，不是日志记录；之后的 durable 帧只送 `seq > last_seq`。
+_Avoid_: 把它读成日志里的一条记录（它不在日志里）；把它读成 delta 帧（逐字增量是 H2 的 ephemeral 帧，断线不补）
 
 **游标（cursor）**：
 「读到哪儿了」的那个数字，**就是日志的 `seq`**：客户端带 `Last-Event-ID` 或 `?from=`，流从那条之后续读。`0` 合法（日志的第一条 `seq` 是 0），负数与非整数是 400。
@@ -106,6 +114,10 @@ _Avoid_: 写工具、危险工具
 **缝（seam）**：
 测试落点的公开边界。一条缝上有两个实现才算真缝。
 
+**审批门（approval gate）**：
+`ask` 档位问人的那个可替换接口：入口提供实现，内核只拿 `APPROVED` / `DENIED` / `UNAVAILABLE`。CLI 的门读 stdin；host 的门等一次 HTTP 应答 `POST /sessions/{id}/approvals/{tool_call_id}`。门拿到 `tool_call_id`，才足以把应答对回那条 `approval/request`。
+_Avoid_: 把它读成 stdin 的一个别名；把它读成内核的一部分（内核只认接口，不知道入口怎么问人）
+
 ### 取消
 
 **取消（abort）**：
@@ -119,8 +131,8 @@ _Avoid_: 终止（终止是会话级、由外壳决定的那一层）
 
 **装配（assembly）**：
 把「这次运行用什么」决定出来的那一段：发现并读取配置、层叠、建工具表、选 provider、建设置。它在缝 ② 与缝 ⑥ 判，不新增缝。
-它住在 CLI 层：`run` / `chat` / `serve` 三个入口共用同一条装配路，失败是一条结果（码、detail、退出码），不是异常。`config/` 只装工具表与层叠。
-_Avoid_: 把装配读成 `config/` 那个模块
+它住在 `session/assembly.py::assemble(request, environ)`：`run` / `chat` / `serve` / `host` 四个入口共用同一条装配路，输入是「请求 + 环境变量」而不是 `argparse.Namespace`，失败是一条 `Failure`（码、detail、退出码），不是异常。`config/` 只装工具表与层叠。
+_Avoid_: 把装配读成 `config/` 那个模块；把它读成 CLI 私有函数（H1 起它是库）
 
 **层叠（layering）**：
 内置默认 < 工作区根配置文件 < 命令行 flag 的**逐键**覆盖。后一层只覆盖键，不合并文件、不继承上一份。

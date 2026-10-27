@@ -269,6 +269,67 @@ def _read_frames(response: httpx.Response, count: int) -> list[dict[str, str]]:
     return frames
 
 
+def test_cancel_while_waiting_for_approval_is_unavailable(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = _write_fixture(tmp_path)
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(client, workspace, fixture)
+            client.post(
+                f"/sessions/{session_id}/messages",
+                headers=_headers(),
+                json={"content": "写"},
+            )
+            log = session_dir / f"{session_id}.jsonl"
+            _wait_for_approval(log)
+            cancelled = client.post(f"/sessions/{session_id}/cancel", headers=_headers())
+            assert cancelled.status_code == 202
+            _wait_until_idle(client, session_id)
+
+        records = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+        responses = [
+            record["payload"] for record in records if record["type"] == "approval/response"
+        ]
+        ends = [record["payload"] for record in records if record["type"] == "segment/end"]
+        assert responses[-1]["decision"] == "UNAVAILABLE"
+        assert ends[-1]["stop_reason"] == "ABORTED"
+        assert not (workspace / "notes.md").exists()
+    finally:
+        _stop(process)
+
+
+def test_the_event_stream_carries_cors_headers(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = _mock_fixture(tmp_path)
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(client, workspace, fixture)
+            with client.stream(
+                "GET",
+                f"/sessions/{session_id}/events",
+                headers={**_headers(), "Origin": "null"},
+            ) as response:
+                assert response.status_code == 200
+                assert response.headers["Access-Control-Allow-Origin"] == "null"
+                _next_frame(response.iter_lines())
+    finally:
+        _stop(process)
+
+
 def test_host_frames_equal_the_log(tmp_path: Path) -> None:
     session_dir = tmp_path / "sessions"
     workspace = tmp_path / "workspace"
@@ -816,6 +877,134 @@ def test_auto_approval_needs_the_server_flag(tmp_path: Path) -> None:
         _stop(process)
 
 
+def _wait_for_approvals(log: Path, count: int) -> list[str]:
+    deadline = time.monotonic() + 25.0
+    while time.monotonic() < deadline:
+        if log.is_file():
+            records = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+            ids = [
+                str(record["payload"]["tool_call_id"])
+                for record in records
+                if record["type"] == "approval/request"
+            ]
+            if len(ids) >= count:
+                return ids
+        time.sleep(0.05)
+    pytest.fail(f"没有等到第 {count} 条 approval/request")
+
+
+def _completion_fixture(workspace: Path, tmp_path: Path) -> Path:
+    (workspace / "slow.py").write_text("import time\n\ntime.sleep(1.0)\n", encoding="utf-8")
+    fixture = tmp_path / "completion.json"
+    fixture.write_text(
+        json.dumps(
+            [
+                {
+                    "content": "写一个文件",
+                    "finish_reason": "tool_calls",
+                    "tool_calls": [
+                        {
+                            "id": "call-1",
+                            "name": "write",
+                            "arguments": {"file_path": "notes.md", "content": "hello\n"},
+                        }
+                    ],
+                },
+                {"content": "第一段完", "finish_reason": "stop"},
+                {
+                    "content": "跑一条慢命令",
+                    "finish_reason": "tool_calls",
+                    "tool_calls": [
+                        {"id": "call-2", "name": "bash", "arguments": {"command": "python slow.py"}}
+                    ],
+                },
+                {"content": "取消后", "finish_reason": "stop"},
+                {"content": "第三段完", "finish_reason": "stop"},
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    return fixture
+
+
+def test_the_host_completion_script(tmp_path: Path) -> None:
+    """H1 完成判据：两句话排队、批准一次写、取消一段、snapshot 重连，帧与日志相等。"""
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = _completion_fixture(workspace, tmp_path)
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=15.0
+        ) as client:
+            session_id = _create_session(client, workspace, fixture)
+            log = session_dir / f"{session_id}.jsonl"
+            first = client.post(
+                f"/sessions/{session_id}/messages",
+                headers=_headers(),
+                json={"content": "第一句"},
+            )
+            assert first.status_code == 202
+            call_ids = _wait_for_approvals(log, 1)
+            second = client.post(
+                f"/sessions/{session_id}/messages",
+                headers=_headers(),
+                json={"content": "第二句"},
+            )
+            assert second.json()["queued"] is True
+            _resolve_approval(client, session_id, call_ids[0], "approve")
+
+            call_ids = _wait_for_approvals(log, 2)
+            _resolve_approval(client, session_id, call_ids[1], "approve")
+            time.sleep(0.2)
+            cancelled = client.post(f"/sessions/{session_id}/cancel", headers=_headers())
+            assert cancelled.status_code == 202
+            _wait_until_idle(client, session_id)
+
+            third = client.post(
+                f"/sessions/{session_id}/messages",
+                headers=_headers(),
+                json={"content": "第三句"},
+            )
+            assert third.status_code == 202
+            _wait_until_idle(client, session_id)
+
+            records = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+            with client.stream(
+                "GET",
+                f"/sessions/{session_id}/events?snapshot=1",
+                headers=_headers(),
+            ) as response:
+                snapshot = json.loads(_next_frame(response.iter_lines())["data"])
+            with client.stream(
+                "GET", f"/sessions/{session_id}/events", headers=_headers()
+            ) as response:
+                frames = _read_frames(response, len(records))
+
+        assert snapshot["last_seq"] == records[-1]["seq"]
+        assert isinstance(snapshot["messages"], list)
+        assert len(frames) == len(records)
+        for frame, record in zip(frames, records, strict=True):
+            assert json.loads(frame["data"]) == record
+        types = [record["type"] for record in records]
+        ends = [
+            record["payload"]["stop_reason"]
+            for record in records
+            if record["type"] == "segment/end"
+        ]
+        assert types[0] == "session/start"
+        assert records[0]["payload"]["entry"] == "host"
+        assert ends == ["MODEL_COMPLETED", "ABORTED", "MODEL_COMPLETED"]
+        assert "error/abort" in types
+        assert (workspace / "notes.md").read_text(encoding="utf-8") == "hello\n"
+    finally:
+        _stop(process)
+
+
 def _write_fixture(tmp_path: Path) -> Path:
     fixture = tmp_path / "write.json"
     fixture.write_text(
@@ -1067,9 +1256,13 @@ def test_delete_closes_only_an_idle_session(tmp_path: Path) -> None:
 
             closed = client.delete(f"/sessions/{session_id}", headers=_headers())
             again = client.delete(f"/sessions/{session_id}", headers=_headers())
+            replacement = _create_session(
+                client, workspace, fixture, provider="mock", approval="auto"
+            )
 
         assert closed.status_code == 200
         assert again.status_code == 404
+        assert replacement != session_id
         records = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
         assert records[-1]["type"] == "session/end"
         assert records[-1]["payload"]["stop_reason"] == "MODEL_COMPLETED"

@@ -44,7 +44,7 @@ class BindFailure:
     detail: str
 
 
-def _sse_frame(record: EventRecord) -> bytes:
+def sse_frame(record: EventRecord) -> bytes:
     """一条记录一帧：`id` 是 `seq`、`event` 是事件类型、`data` 是那一行的 JSON。"""
     return (
         f"id: {record.seq}\n"
@@ -119,7 +119,7 @@ class ServeServer:
                 return response
             try:
                 for record in records:
-                    await response.write(_sse_frame(record))
+                    await response.write(sse_frame(record))
             except ConnectionResetError:
                 # 客户端挂断：这条连接到此结束，会话不受影响，也不产生任何事件。
                 return response

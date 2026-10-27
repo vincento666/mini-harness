@@ -56,6 +56,7 @@ from mini_harness.session.assembly import (
     Failure,
     Prepared,
     assemble,
+    request_from_args,
 )
 from mini_harness.tools import ToolRegistry
 
@@ -267,24 +268,8 @@ async def _await_session(
 
 
 def _assembly_request(args: argparse.Namespace) -> AssemblyRequest:
-    """CLI 的 argv 到装配请求：只搬字段，不做判断（判断都在 `assemble`）。"""
-    return AssemblyRequest(
-        workspace=args.workspace,
-        config=args.config,
-        session_dir=args.session_dir,
-        provider=args.provider,
-        fixture=args.fixture,
-        base_url=args.base_url,
-        model=args.model,
-        api_key_env=args.api_key_env,
-        max_turns=args.max_turns,
-        window=args.window,
-        reserve=args.reserve,
-        append_system_prompt=args.append_system_prompt,
-        sandbox=args.sandbox,
-        approval=None,
-        auto_approve=args.yes,
-    )
+    """CLI 的 argv 到装配请求：字段搬运只有一份，住在装配层。"""
+    return request_from_args(args, auto_approve=args.yes)
 
 
 def _prepare_or_fail(args: argparse.Namespace) -> Prepared | Failure:

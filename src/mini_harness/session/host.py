@@ -11,6 +11,7 @@ from collections import deque
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
+from typing import Literal
 
 from mini_harness.events import EventLog
 from mini_harness.loop import (
@@ -38,9 +39,10 @@ MAX_SESSIONS = 4
 APPROVAL_TIMEOUT_SECONDS = 300.0
 
 # 会话状态：只有这三个值（H1 spec）。
-SESSION_IDLE = "idle"
-SESSION_RUNNING = "running"
-SESSION_ENDED = "ended"
+SessionStatus = Literal["idle", "running", "ended"]
+SESSION_IDLE: SessionStatus = "idle"
+SESSION_RUNNING: SessionStatus = "running"
+SESSION_ENDED: SessionStatus = "ended"
 
 
 @dataclass
@@ -51,12 +53,13 @@ class HostSession:
     log: EventLog
     env: SessionEnv
     created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
-    status: str = SESSION_IDLE
+    status: SessionStatus = SESSION_IDLE
     queue: deque[str] = field(default_factory=deque)
     cancel: asyncio.Event | None = None
-    approvals: dict[str, asyncio.Future[bool]] = field(default_factory=dict)
+    approvals: dict[str, asyncio.Future[bool | None]] = field(default_factory=dict)
     task: asyncio.Task[None] | None = None
     stopping: bool = False
+    ended_by_failure: bool = False
     segments: int = 0
     turns: int = 0
 
@@ -85,16 +88,18 @@ class HostState:
         defaults: AssemblyRequest,
         allow_danger_full_access: bool = False,
         allow_auto_approval: bool = False,
-        max_sessions: int = MAX_SESSIONS,
     ) -> None:
         self.defaults = defaults
         self.allow_danger_full_access = allow_danger_full_access
         self.allow_auto_approval = allow_auto_approval
-        self.max_sessions = max_sessions
         self.sessions: dict[str, HostSession] = {}
 
     def session_count(self) -> int:
         return len(self.sessions)
+
+    def active_session_count(self) -> int:
+        """上限只数还在跑的会话；`ended` 留着给列表读，不占额度。"""
+        return sum(1 for handle in self.sessions.values() if handle.status != SESSION_ENDED)
 
 
 def create_session(
@@ -103,10 +108,10 @@ def create_session(
     environ: Mapping[str, str],
 ) -> HostSession | Failure:
     """装配并开一个空闲会话：写 `session/start`（`entry=host`、`prompt=""`），不跑段。"""
-    if state.session_count() >= state.max_sessions:
+    if state.active_session_count() >= MAX_SESSIONS:
         return Failure(
             "TOO_MANY_SESSIONS",
-            f"同时在跑的会话上限是 {state.max_sessions}",
+            f"同时在跑的会话上限是 {MAX_SESSIONS}",
             EXIT_INVALID_ARGUMENT,
         )
     prepared = assemble(
@@ -147,10 +152,12 @@ class HostApprovalGate:
         self._timeout = timeout
 
     async def request(self, *, tool_call_id: str, tool_name: str, detail: str) -> ApprovalDecision:
+        # 同一会话同一时刻只可能有一个待审批项（design D7）；撞上重复登记说明调用方坏了，
+        # 门只能回 UNAVAILABLE，不能覆盖掉正在等的那个 future。
         if tool_call_id in self._handle.approvals:
             return "UNAVAILABLE"
         loop = asyncio.get_running_loop()
-        answer: asyncio.Future[bool] = loop.create_future()
+        answer: asyncio.Future[bool | None] = loop.create_future()
         self._handle.approvals[tool_call_id] = answer
         try:
             async with asyncio.timeout(self._timeout):
@@ -159,7 +166,7 @@ class HostApprovalGate:
             return "UNAVAILABLE"
         finally:
             self._handle.approvals.pop(tool_call_id, None)
-        if self._handle.stopping:
+        if approved is None or self._handle.stopping:
             return "UNAVAILABLE"
         return "APPROVED" if approved else "DENIED"
 
@@ -217,12 +224,15 @@ async def _run_segment(
             user_message=content,
         )
         handle.turns += segment.turns
+        # 词表外才是内核失败；FENCE_DENIED / CONTEXT_WINDOW_EXCEEDED 也带 failure_code，
+        # 但它们只停段、会话仍可用（ADR-0019 / design D6）。
         failed = segment.stop_reason not in STOP_REASONS
     finally:
         handle.cancel = None
         handle.task = None
         if failed:
             handle.status = SESSION_ENDED
+            handle.ended_by_failure = True
             handle.queue.clear()
         else:
             handle.status = SESSION_IDLE
@@ -233,10 +243,16 @@ async def _run_segment(
 
 
 def cancel_session(handle: HostSession) -> bool:
-    """只取消当前段；没有段在跑返回 False（一条记录都不写）。"""
+    """只取消当前段；没有段在跑返回 False（一条记录都不写）。
+
+    段如果停在 approval 上，未决的 future 塌成 `UNAVAILABLE`（design D7），门不默认批准。
+    """
     if handle.status != SESSION_RUNNING or handle.cancel is None:
         return False
     handle.cancel.set()
+    for answer in handle.approvals.values():
+        if not answer.done():
+            answer.set_result(None)
     return True
 
 
@@ -270,7 +286,7 @@ async def shutdown(state: HostState) -> None:
             handle.cancel.set()
         for answer in handle.approvals.values():
             if not answer.done():
-                answer.set_result(False)
+                answer.set_result(None)
     tasks = [handle.task for handle in handles if handle.task is not None]
     if tasks:
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -278,5 +294,13 @@ async def shutdown(state: HostState) -> None:
         if handle.status == SESSION_RUNNING:
             # 段没有在取消后收尾（极端情况）：不让它留成半条，直接补 `session/end`。
             handle.status = SESSION_IDLE
-        if handle.status == SESSION_IDLE:
+        if handle.ended_by_failure:
+            # 内核失败把会话标成 ended，但 spec 要求退出时为每个会话写 `session/end`。
+            end_session(
+                env=handle.env,
+                stop_reason=STOP_MODEL_COMPLETED,
+                turns=handle.turns,
+            )
+            handle.ended_by_failure = False
+        elif handle.status == SESSION_IDLE:
             close_session(handle)

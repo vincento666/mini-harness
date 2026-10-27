@@ -65,6 +65,30 @@ class AssemblyRequest:
     auto_approve: bool = False
 
 
+def request_from_args(args: Namespace, *, auto_approve: bool = False) -> AssemblyRequest:
+    """CLI 与 host 的 argparse 命名空间到装配请求：只搬字段，不做判断。
+
+    `auto_approve` 只给 CLI 的 `--yes`；host 用请求体的 `approval: "auto"`，不从这里放行。
+    """
+    return AssemblyRequest(
+        workspace=args.workspace,
+        config=args.config,
+        session_dir=args.session_dir,
+        provider=args.provider,
+        fixture=args.fixture,
+        base_url=args.base_url,
+        model=args.model,
+        api_key_env=args.api_key_env,
+        max_turns=args.max_turns,
+        window=args.window,
+        reserve=args.reserve,
+        append_system_prompt=args.append_system_prompt,
+        sandbox=args.sandbox,
+        approval=None,
+        auto_approve=auto_approve,
+    )
+
+
 @dataclass(frozen=True)
 class Prepared:
     """装配好的会话材料：provider、有效设置、日志、工具表。"""
