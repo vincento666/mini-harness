@@ -5,7 +5,7 @@
 ## 现在
 
 - `main` = **`9b3a5bf`**（merge `add-key-driven-default-provider`），tag `m1`–`m9` 都在。
-- **进行中**：`change/h1-host-session-api`（tip `ad60a9d`）。H1 的 tasks **39/40 已勾**；只剩 10.4 UAT（人跑，ADR-0025），合并仍需人批。GLOSSARY / roadmap / stage-map 的 K/R/S 分层口径已从 `docs-krs-glossary` cherry-pick 进来（`9af5d3d`、`ad60a9d`）。
+- **进行中**：`change/h1-host-session-api`（tip `df4b6b2`）。H1 的 tasks **39/40 已勾**；10.4 UAT 已由 agent 代跑（用户要求）并全过，ADR-0025 的人跑签字待用户确认；合并仍需人批。GLOSSARY / roadmap / stage-map 的 K/R/S 分层口径已从 `docs-krs-glossary` cherry-pick 进来（`9af5d3d`、`ad60a9d`）。
 - **唯一未合并的修复分支**：`change/fix-post-compaction-budget-reading`（从 `fix-small-window-compaction-dead-zone` 的 tip 起，20 个 task 全未勾，只有 proposal / design / spec / tasks）。
 - 已合并但分支还没删的：`change/fix-small-window-compaction-dead-zone`、`change/add-key-driven-default-provider`、`change/fix-chat-screen-feedback`、`change/add-platform-facts-to-protected-header`、`change/fix-compaction-and-context-overflow`。
 - `openspec validate --all --strict`：**12 份主规格 + 1 个活动 change（`h1-host-session-api`）0 失败**（2026-10-27 实测，13/13）。
@@ -21,7 +21,7 @@
 ## 开放缺口（按严重度）
 
 - **压缩后读数降不下来**：`budget_reading` 的校准被保留尾部里最新那条 `usage` 钉住，真端点上「一次溢出后每段都溢出」。修复分支未合（见上）。
-- **H1 的 UAT 未完**：10.4（ADR-0025）；这张表没填完 H1 不得归档、不得合入 `main`。
+- **H1 的 UAT 已 agent 代跑全过**：U1–U5 在真实 deepseek 端点上全通过（`docs/verification/h1-host-session-api-uat.md`，日志 `.tmp/h1-uat-1793069816/`）；ADR-0025 要求的人跑签字仍待用户确认，确认后才勾 10.4、归档。
 - **`SESSION_BUSY` 的状态码自相矛盾（H1 spec）**：错误表写 409，`/messages` 队满的场景与 task 4.3 写 429；实现按 429，等归档前由人裁决是否收窄错误表（本 change 不改已审 spec）。
 - **没有 resume / 格式迁移 / session index**：M11。
 - **没有流式**：provider 非流式；H2（已定为 H1 之后的下一项）。
