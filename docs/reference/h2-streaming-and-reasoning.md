@@ -409,9 +409,44 @@ assistant/message.content:
 要点：
 
 - **只有把 reasoning 放进 assistant message 的块里，并让 provider 在后续请求回传，模型才真正“看到自己之前的思考”**；只把 reasoning 写进日志、不给模型，不算进入上下文。
-- **这并不强制“行动前先思考”**：它是模型能力 + 历史回传；模型仍可能直接调工具。若要在 harness 层强制“先写计划再行动”，需要的是计划工具 / 计划状态，不是 reasoning 字段。
-- **“边思考边行动”** 依赖 provider 是否允许 reasoning 与 tool-call 交错、以及历史是否保留这种顺序。DSH 用内容块保留了顺序；mini 若只加一个 `reasoning` 字符串，只能表达“思考在回答之前”，不能表达任意交错。
+- **这并不强制“行动前先思考”**：它是模型能力 + 历史回传；模型仍可能直接调工具。若要在 harness 层强制“先写计划再行动”，需要的是计划工具 / 计划状态，不是 reasoning 块。
+- **“边思考边行动”** 依赖 provider 是否允许 reasoning 与 tool-call 交错、以及历史是否保留这种顺序。DSH 用内容块保留了顺序；mini 的目标 blocks 也能表达交错，但单加一个 `reasoning` 字符串只能表达“思考在回答之前”，不能表达任意交错。
 - **协议不同不能直接照搬**：DSH 的 DeepSeek 适配器走 Messages 的 thinking block；mini 的 deepseek 走 OpenAI 兼容 chat completions，字段与回传规则要按该协议验证。把 reasoning 当普通文本塞回 messages，可能被模型忽略或改变行为。
+
+### 7.1 「先思考后行动 / 边思考边行动」成立到什么程度
+
+| 说法 | 是否成立 | 依赖 |
+|---|---|---|
+| 单次模型调用内先生成 reasoning、再生成 content/tool-call | **模型行为**，不是 harness 强制 | provider 的 reasoner 能力 |
+| 工具结果之后的下一回合仍看到上一轮 reasoning | **成立**（数据路径） | reasoning 进 assistant message blocks + fold + provider 回传 |
+| 思考与工具调用在 assistant message 里交错、顺序可重放 | **数据模型成立** | 有序 blocks；单字符串不够 |
+| 思考与工具执行“同时进行” | **不成立** | 工具在模型响应结束后执行；不是并行协程 |
+| harness 强制“必须先计划再行动” | **不成立** | 需要计划工具/计划状态，不是 reasoning |
+
+```text
+第 1 个回合：
+  model/request
+    → reasoning block
+    → tool-call block
+  tool/result
+  turn/end
+
+第 2 个回合：
+  model/request
+    历史 assistant message = [reasoning, tool-call, ...]
+    + 上一轮 tool/result
+    → 模型看到“我上一轮为什么调这个工具”
+    → 继续 reasoning / 回答
+```
+
+所以准确的表述是：
+
+- **跨回合的思考连续性**：reasoning 进 blocks + 回传后成立；
+- **单次调用内的先想后答**：是模型自身行为；
+- **思考和工具执行同时发生**：不是这个机制；
+- **强制先计划**：是另一层能力，不能用 reasoning 块替代。
+
+DSH 也是这个结构：`assistant/message.content` 保留 reasoning / text / tool-call 的顺序，适配器回传历史 reasoning；它没有把 reasoning 变成“工具执行期间的并发思考”。
 
 ---
 
@@ -465,4 +500,4 @@ DSH（`re/verified/dsh/node_modules/@deepseek-ai/...`）：
 
 **思考要真正进入模型行动前的上下文，必须多走一步：reasoning 进入 assistant message 的内容块，`fold` 重建，provider 在下一请求回传。只加日志或只加 UI 都不算。**
 
-**DSH 已经把这一步做成 typed 的 `reasoning` 内容块 + 实时 `assistant-stream` + durable `assistant/message`；mini 目前只有正文流，思考帧与历史回传还没有。**
+**DSH 已经把这一步做成 typed 的 `reasoning` 内容块 + 实时 `assistant-stream` + durable `assistant/message`；mini 目前只有正文流，思考帧与历史回传还没有。即便补上，它提供的是跨回合的思考连续性，不是“强制先计划”或“思考与工具同时执行”。**
