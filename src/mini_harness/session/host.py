@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from collections import deque
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
@@ -37,6 +38,8 @@ from mini_harness.tools.fences import ApprovalDecision
 MAX_SESSIONS = 4
 # 审批等待上限（H1 spec：默认 300 s）；超时塌成 UNAVAILABLE，不默认批准。
 APPROVAL_TIMEOUT_SECONDS = 300.0
+# 每个 SSE 连接的 delta 队列上限；满了丢最旧，ephemeral 可丢（H2 design D3）。
+DELTA_QUEUE_MAX = 256
 
 # 会话状态：只有这三个值（H1 spec）。
 SessionStatus = Literal["idle", "running", "ended"]
@@ -57,6 +60,8 @@ class HostSession:
     queue: deque[str] = field(default_factory=deque)
     cancel: asyncio.Event | None = None
     approvals: dict[str, asyncio.Future[bool | None]] = field(default_factory=dict)
+    subscribers: set[asyncio.Queue[dict[str, object]]] = field(default_factory=set)
+    delta_indexes: dict[str, int] = field(default_factory=dict)
     task: asyncio.Task[None] | None = None
     stopping: bool = False
     ended_by_failure: bool = False
@@ -66,6 +71,27 @@ class HostSession:
     @property
     def last_seq(self) -> int:
         return self.log.last_seq
+
+    def subscribe_deltas(self) -> asyncio.Queue[dict[str, object]]:
+        """一个 SSE 连接一个队列；返回后由调用方在断开时退订。"""
+        queue: asyncio.Queue[dict[str, object]] = asyncio.Queue(maxsize=DELTA_QUEUE_MAX)
+        self.subscribers.add(queue)
+        return queue
+
+    def unsubscribe_deltas(self, queue: asyncio.Queue[dict[str, object]]) -> None:
+        self.subscribers.discard(queue)
+
+    async def publish_delta(self, turn_id: str, text: str) -> None:
+        """把一个正文增量广播给当前所有订阅者；慢读者丢最旧，不反压 provider。"""
+        index = self.delta_indexes.get(turn_id, 0)
+        self.delta_indexes[turn_id] = index + 1
+        frame: dict[str, object] = {"turn_id": turn_id, "index": index, "text": text}
+        for queue in list(self.subscribers):
+            if queue.full():
+                with contextlib.suppress(asyncio.QueueEmpty):
+                    queue.get_nowait()
+            with contextlib.suppress(asyncio.QueueFull):
+                queue.put_nowait(frame)
 
     def view(self) -> dict[str, object]:
         """`GET /sessions` / `GET /sessions/{id}` 的一条：不返回密钥或 Authorization。"""
@@ -136,7 +162,11 @@ def create_session(
             EXIT_INTERNAL_ERROR,
         )
     handle = HostSession(settings=prepared.settings, log=prepared.log, env=env)
-    handle.env = replace(env, approval_gate=HostApprovalGate(handle))
+    handle.env = replace(
+        env,
+        approval_gate=HostApprovalGate(handle),
+        on_delta=handle.publish_delta,
+    )
     state.sessions[prepared.log.session_id] = handle
     return handle
 

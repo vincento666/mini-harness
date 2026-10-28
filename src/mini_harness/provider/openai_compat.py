@@ -18,6 +18,7 @@ import httpx
 from mini_harness.events.fold import Message
 from mini_harness.provider.contract import (
     AssistantTurn,
+    DeltaSink,
     ProviderAttempt,
     ProviderFailure,
     ToolCall,
@@ -243,6 +244,45 @@ def _parse_response(
     )
 
 
+def _status_failure(
+    response: httpx.Response, attempts: Sequence[ProviderAttempt]
+) -> ProviderFailure | None:
+    """HTTP 错误状态 → 失败结果；2xx 返回 `None`。"""
+    if response.status_code < 400:
+        return None
+    # 塌成溢出只发生在不可重试的 4xx：429 与 5xx 说的是服务端那一刻接不住，
+    # 它们的正文里恰好出现短语表里的话时仍走 `PROVIDER_HTTP_STATUS`（ADR-0023）。
+    if not _retryable(response.status_code) and _reports_context_overflow(response):
+        return ProviderFailure(
+            code="PROVIDER_CONTEXT_OVERFLOW",
+            detail=_failure_detail(response),
+            attempts=attempts,
+        )
+    return ProviderFailure(
+        code="PROVIDER_HTTP_STATUS",
+        detail=_failure_detail(response),
+        attempts=attempts,
+    )
+
+
+def _stream_tool_calls(
+    parts: dict[int, dict[str, str]], attempts: Sequence[ProviderAttempt]
+) -> list[ToolCall] | ProviderFailure:
+    """把按 index 聚合的流式片段拼成完整调用；参数片段只拼装，不交给正文 sink。"""
+    calls: list[ToolCall] = []
+    for index in sorted(parts):
+        part = parts[index]
+        arguments = part["arguments"] or "{}"
+        try:
+            parsed = json.loads(arguments)
+        except json.JSONDecodeError:
+            return _schema_failure("流式 tool_calls 的 arguments 不是合法 JSON", attempts)
+        if not isinstance(parsed, dict):
+            return _schema_failure("流式 tool_calls 的 arguments 不是对象", attempts)
+        calls.append(ToolCall(id=part["id"], name=part["name"], arguments=parsed))
+    return calls
+
+
 class OpenAICompatProvider:
     """模型层的第二个实现：与 mock 同一个 `generate` 契约，回合循环不得因 provider 而改变。"""
 
@@ -266,6 +306,7 @@ class OpenAICompatProvider:
         messages: Sequence[Message],
         tools: Sequence[ToolSpec],
         signal: asyncio.Event,
+        on_delta: DeltaSink | None = None,
     ) -> AssistantTurn | ProviderFailure:
         if signal.is_set():
             return ProviderFailure(code="PROVIDER_ABORTED", detail="取消信号已置位，未发出请求")
@@ -289,6 +330,10 @@ class OpenAICompatProvider:
         async with httpx.AsyncClient(
             transport=self._transport, timeout=self._timeout_s, trust_env=False
         ) as client:
+            if on_delta is not None:
+                return await self._stream_generate(
+                    client, body, headers, attempts, signal, on_delta
+                )
             first = await _post(client, self._base_url, body, headers, attempts)
             if isinstance(first, ProviderFailure):
                 return first
@@ -314,17 +359,161 @@ class OpenAICompatProvider:
                     )
 
         if response.status_code >= 400:
-            # 塌成溢出只发生在不可重试的 4xx：429 与 5xx 说的是服务端那一刻接不住，
-            # 它们的正文里恰好出现短语表里的话时仍走 `PROVIDER_HTTP_STATUS`（ADR-0023）。
-            if not _retryable(response.status_code) and _reports_context_overflow(response):
-                return ProviderFailure(
-                    code="PROVIDER_CONTEXT_OVERFLOW",
-                    detail=_failure_detail(response),
-                    attempts=attempts,
-                )
+            failure = _status_failure(response, attempts)
+            assert failure is not None
+            return failure
+        return _parse_response(response, attempts)
+
+    async def _stream_generate(
+        self,
+        client: httpx.AsyncClient,
+        body: dict[str, Any],
+        headers: dict[str, str],
+        attempts: list[ProviderAttempt],
+        signal: asyncio.Event,
+        on_delta: DeltaSink,
+        *,
+        include_usage: bool = True,
+    ) -> AssistantTurn | ProviderFailure:
+        """流式正文：增量只交给 sink；最终 `AssistantTurn.content` 是拼接结果。"""
+        stream_body = {**body, "stream": True}
+        if include_usage:
+            stream_body["stream_options"] = {"include_usage": True}
+        try:
+            async with client.stream(
+                "POST", f"{self._base_url}/chat/completions", json=stream_body, headers=headers
+            ) as response:
+                if response.status_code == 400 and include_usage:
+                    # 兼容端点可能不认 `stream_options`：丢掉它再试一次；这不是 provider 重试，
+                    # 不写 `model/retry`，也不改变 usage 可缺的语义。
+                    await response.aread()
+                    if signal.is_set():
+                        return ProviderFailure(
+                            code="PROVIDER_ABORTED",
+                            detail="流式回退前取消信号已置位",
+                            attempts=attempts,
+                        )
+                    return await self._stream_generate(
+                        client,
+                        body,
+                        headers,
+                        attempts,
+                        signal,
+                        on_delta,
+                        include_usage=False,
+                    )
+                if response.status_code >= 400:
+                    await response.aread()
+                    if _retryable(response.status_code) and not attempts:
+                        if signal.is_set():
+                            return ProviderFailure(
+                                code="PROVIDER_ABORTED",
+                                detail="取消信号已置位，重试未发出",
+                                attempts=attempts,
+                            )
+                        return await self._stream_generate(
+                            client,
+                            body,
+                            headers,
+                            [*attempts, ProviderAttempt(attempt=1, status=response.status_code)],
+                            signal,
+                            on_delta,
+                            include_usage=include_usage,
+                        )
+                    failure = _status_failure(response, attempts)
+                    assert failure is not None
+                    return failure
+
+                content: list[str] = []
+                finish_reason: str | None = None
+                usage = Usage()
+                tool_call_parts: dict[int, dict[str, str]] = {}
+                saw_done = False
+                async for line in response.aiter_lines():
+                    if signal.is_set():
+                        return ProviderFailure(
+                            code="PROVIDER_ABORTED",
+                            detail="流式读取期间取消",
+                            attempts=attempts,
+                        )
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[len("data:") :].strip()
+                    if data == "[DONE]":
+                        saw_done = True
+                        break
+                    try:
+                        payload = json.loads(data)
+                    except json.JSONDecodeError:
+                        return _schema_failure("流式 data 不是合法 JSON", attempts)
+                    if not isinstance(payload, dict):
+                        return _schema_failure("流式 data 不是对象", attempts)
+                    raw_usage = payload.get("usage")
+                    if isinstance(raw_usage, dict):
+                        usage = Usage(
+                            input_tokens=int(raw_usage.get("prompt_tokens", 0) or 0),
+                            output_tokens=int(raw_usage.get("completion_tokens", 0) or 0),
+                        )
+                    choices = payload.get("choices")
+                    if not isinstance(choices, list) or not choices:
+                        continue
+                    first = choices[0]
+                    if not isinstance(first, dict):
+                        return _schema_failure("流式 choices[0] 不是对象", attempts)
+                    delta = first.get("delta")
+                    if isinstance(delta, dict):
+                        text = delta.get("content")
+                        if isinstance(text, str) and text:
+                            content.append(text)
+                            await on_delta(text)
+                        raw_calls = delta.get("tool_calls")
+                        if isinstance(raw_calls, list):
+                            for raw_call in raw_calls:
+                                if not isinstance(raw_call, dict):
+                                    return _schema_failure(
+                                        "流式 tool_calls 里有一条不是对象", attempts
+                                    )
+                                index = raw_call.get("index")
+                                if not isinstance(index, int):
+                                    return _schema_failure("流式 tool_calls 缺少 index", attempts)
+                                part = tool_call_parts.setdefault(
+                                    index, {"id": "", "name": "", "arguments": ""}
+                                )
+                                raw_id = raw_call.get("id")
+                                if isinstance(raw_id, str):
+                                    part["id"] = raw_id
+                                function = raw_call.get("function")
+                                if isinstance(function, dict):
+                                    name = function.get("name")
+                                    if isinstance(name, str):
+                                        part["name"] = name
+                                    arguments = function.get("arguments")
+                                    if isinstance(arguments, str):
+                                        part["arguments"] += arguments
+                    raw_finish = first.get("finish_reason")
+                    if isinstance(raw_finish, str):
+                        finish_reason = raw_finish
+        except httpx.TimeoutException:
             return ProviderFailure(
-                code="PROVIDER_HTTP_STATUS",
-                detail=_failure_detail(response),
+                code="PROVIDER_TIMEOUT", detail=f"{self._base_url} 超时", attempts=attempts
+            )
+        except httpx.HTTPError as error:
+            return ProviderFailure(code="PROVIDER_TRANSPORT", detail=str(error), attempts=attempts)
+        if not saw_done:
+            return ProviderFailure(
+                code="PROVIDER_TRANSPORT",
+                detail="流在 [DONE] 之前结束",
                 attempts=attempts,
             )
-        return _parse_response(response, attempts)
+        if finish_reason is None:
+            return _schema_failure("流式响应没有 finish_reason", attempts)
+        tool_calls = _stream_tool_calls(tool_call_parts, attempts)
+        if isinstance(tool_calls, ProviderFailure):
+            return tool_calls
+        return AssistantTurn(
+            content="".join(content),
+            finish_reason=finish_reason,
+            tool_calls=tool_calls,
+            usage=usage,
+            attempts=list(attempts),
+        )

@@ -75,6 +75,351 @@ def _body(request: httpx.Request) -> dict[str, Any]:
     return json.loads(request.content.decode("utf-8"))
 
 
+async def test_openai_stream_content_deltas() -> None:
+    seen_text: list[str] = []
+
+    async def sink(text: str) -> None:
+        seen_text.append(text)
+
+    stream = (
+        'data: {"choices":[{"delta":{"content":"你"},"finish_reason":null}]}\n\n'
+        'data: {"choices":[{"delta":{"content":"好"},"finish_reason":null}]}\n\n'
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'
+        "data: [DONE]\n\n"
+    )
+    provider, seen = _provider(
+        handler=lambda request: httpx.Response(
+            200, text=stream, headers={"content-type": "text/event-stream"}
+        )
+    )
+
+    turn = await provider.generate([], [], asyncio.Event(), on_delta=sink)
+
+    assert isinstance(turn, AssistantTurn)
+    assert seen_text == ["你", "好"]
+    assert turn.content == "你好"
+    assert turn.finish_reason == "stop"
+    assert _body(seen[0])["stream"] is True
+
+
+async def test_a_stream_http_error_is_a_provider_failure() -> None:
+    async def sink(text: str) -> None:
+        raise AssertionError("不会走到这里")
+
+    provider, _ = _provider(
+        handler=lambda request: httpx.Response(
+            400,
+            json={"error": {"message": "bad request"}},
+            headers={"content-type": "application/json"},
+        )
+    )
+
+    outcome = await provider.generate([], [], asyncio.Event(), on_delta=sink)
+
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_HTTP_STATUS"
+
+
+async def test_a_stream_with_invalid_json_is_a_schema_failure() -> None:
+    async def sink(text: str) -> None:
+        raise AssertionError("不会走到这里")
+
+    provider, _ = _provider(
+        handler=lambda request: httpx.Response(
+            200, text="data: not-json\n\n", headers={"content-type": "text/event-stream"}
+        )
+    )
+
+    outcome = await provider.generate([], [], asyncio.Event(), on_delta=sink)
+
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_SCHEMA_INVALID"
+
+
+async def test_a_stream_with_a_non_object_data_is_a_schema_failure() -> None:
+    async def sink(text: str) -> None:
+        raise AssertionError("不会走到这里")
+
+    provider, _ = _provider(
+        handler=lambda request: httpx.Response(
+            200, text="data: []\n\n", headers={"content-type": "text/event-stream"}
+        )
+    )
+
+    outcome = await provider.generate([], [], asyncio.Event(), on_delta=sink)
+
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_SCHEMA_INVALID"
+
+
+async def test_a_stream_without_finish_reason_is_a_schema_failure() -> None:
+    async def sink(text: str) -> None:
+        return None
+
+    provider, _ = _provider(
+        handler=lambda request: httpx.Response(
+            200,
+            text='data: {"choices":[{"delta":{"content":"你"}}]}\n\ndata: [DONE]\n\n',
+            headers={"content-type": "text/event-stream"},
+        )
+    )
+
+    outcome = await provider.generate([], [], asyncio.Event(), on_delta=sink)
+
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_SCHEMA_INVALID"
+
+
+async def test_a_stream_usage_chunk_with_empty_choices_is_accepted() -> None:
+    async def sink(text: str) -> None:
+        return None
+
+    stream = (
+        'data: {"choices":[{"delta":{"content":"好"},"finish_reason":null}]}\n\n'
+        'data: {"choices":[],"usage":{"prompt_tokens":7,"completion_tokens":2}}\n\n'
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'
+        "data: [DONE]\n\n"
+    )
+    provider, _ = _provider(
+        handler=lambda request: httpx.Response(
+            200, text=stream, headers={"content-type": "text/event-stream"}
+        )
+    )
+
+    turn = await provider.generate([], [], asyncio.Event(), on_delta=sink)
+
+    assert isinstance(turn, AssistantTurn)
+    assert turn.usage.input_tokens == 7
+    assert turn.usage.output_tokens == 2
+
+
+async def test_a_stream_with_a_non_object_choice_is_a_schema_failure() -> None:
+    async def sink(text: str) -> None:
+        return None
+
+    provider, _ = _provider(
+        handler=lambda request: httpx.Response(
+            200,
+            text='data: {"choices":[1]}\n\n',
+            headers={"content-type": "text/event-stream"},
+        )
+    )
+
+    outcome = await provider.generate([], [], asyncio.Event(), on_delta=sink)
+
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_SCHEMA_INVALID"
+
+
+async def test_a_cancel_during_stream_is_provider_aborted() -> None:
+    signal = asyncio.Event()
+
+    async def sink(text: str) -> None:
+        signal.set()
+
+    stream = (
+        'data: {"choices":[{"delta":{"content":"你"},"finish_reason":null}]}\n\ndata: [DONE]\n\n'
+    )
+    provider, _ = _provider(
+        handler=lambda request: httpx.Response(
+            200, text=stream, headers={"content-type": "text/event-stream"}
+        )
+    )
+
+    outcome = await provider.generate([], [], signal, on_delta=sink)
+
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_ABORTED"
+
+
+async def test_a_stream_transport_error_is_a_failure() -> None:
+    async def sink(text: str) -> None:
+        return None
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("boom", request=request)
+
+    provider, _ = _provider(handler=handler)
+
+    outcome = await provider.generate([], [], asyncio.Event(), on_delta=sink)
+
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_TRANSPORT"
+
+
+async def test_a_stream_timeout_is_a_failure() -> None:
+    async def sink(text: str) -> None:
+        return None
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("slow", request=request)
+
+    provider, _ = _provider(handler=handler)
+
+    outcome = await provider.generate([], [], asyncio.Event(), on_delta=sink)
+
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_TIMEOUT"
+
+
+async def test_openai_stream_tool_calls_are_assembled_by_index() -> None:
+    seen_text: list[str] = []
+
+    async def sink(text: str) -> None:
+        seen_text.append(text)
+
+    stream = (
+        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1",'
+        '"function":{"name":"read","arguments":"{\\"file_path\\":"}}]},'
+        '"finish_reason":null}]}\n\n'
+        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,'
+        '"function":{"arguments":"\\"a.md\\"}"}}]},'
+        '"finish_reason":null}]}\n\n'
+        'data: {"choices":[{"delta":{"tool_calls":[{"index":1,"id":"c2",'
+        '"function":{"name":"bash","arguments":"{\\"command\\":\\"echo hi\\"}"}}]},'
+        '"finish_reason":null}]}\n\n'
+        'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}\n\n'
+        "data: [DONE]\n\n"
+    )
+    provider, _ = _provider(
+        handler=lambda request: httpx.Response(
+            200, text=stream, headers={"content-type": "text/event-stream"}
+        )
+    )
+
+    turn = await provider.generate([], [], asyncio.Event(), on_delta=sink)
+
+    assert isinstance(turn, AssistantTurn)
+    assert [(call.id, call.name, call.arguments) for call in turn.tool_calls] == [
+        ("c1", "read", {"file_path": "a.md"}),
+        ("c2", "bash", {"command": "echo hi"}),
+    ]
+    assert seen_text == []
+    assert turn.finish_reason == "tool_calls"
+
+
+async def test_openai_stream_usage_may_be_missing() -> None:
+    async def sink(text: str) -> None:
+        return None
+
+    stream = (
+        'data: {"choices":[{"delta":{"content":"好"},"finish_reason":null}]}\n\n'
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'
+        "data: [DONE]\n\n"
+    )
+    provider, _ = _provider(
+        handler=lambda request: httpx.Response(
+            200, text=stream, headers={"content-type": "text/event-stream"}
+        )
+    )
+
+    turn = await provider.generate([], [], asyncio.Event(), on_delta=sink)
+
+    assert isinstance(turn, AssistantTurn)
+    assert turn.usage.input_tokens == 0
+    assert turn.usage.output_tokens == 0
+
+
+async def test_stream_options_falls_back_when_rejected() -> None:
+    seen_bodies: list[dict[str, Any]] = []
+    stream = (
+        'data: {"choices":[{"delta":{"content":"好"},"finish_reason":null}]}\n\n'
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'
+        "data: [DONE]\n\n"
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = _body(request)
+        seen_bodies.append(body)
+        if len(seen_bodies) == 1:
+            return httpx.Response(
+                400,
+                json={"error": {"message": "unknown field: stream_options"}},
+            )
+        return httpx.Response(200, text=stream, headers={"content-type": "text/event-stream"})
+
+    async def sink(text: str) -> None:
+        return None
+
+    provider, _ = _provider(handler=handler)
+
+    turn = await provider.generate([], [], asyncio.Event(), on_delta=sink)
+
+    assert isinstance(turn, AssistantTurn)
+    assert turn.content == "好"
+    assert "stream_options" in seen_bodies[0]
+    assert "stream_options" not in seen_bodies[1]
+    assert len(seen_bodies) == 2
+
+
+async def test_a_stream_that_breaks_before_done_is_a_result() -> None:
+    async def sink(text: str) -> None:
+        return None
+
+    stream = (
+        'data: {"choices":[{"delta":{"content":"你"},"finish_reason":null}]}\n\n'
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'
+    )
+    provider, _ = _provider(
+        handler=lambda request: httpx.Response(
+            200, text=stream, headers={"content-type": "text/event-stream"}
+        )
+    )
+
+    outcome = await provider.generate([], [], asyncio.Event(), on_delta=sink)
+
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_TRANSPORT"
+    assert "[DONE]" in outcome.detail
+
+
+async def test_stream_retries_429_before_first_delta() -> None:
+    seen: list[int] = []
+    stream = (
+        'data: {"choices":[{"delta":{"content":"好"},"finish_reason":null}]}\n\n'
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'
+        "data: [DONE]\n\n"
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(1)
+        if len(seen) == 1:
+            return httpx.Response(429, json={"error": "slow down"})
+        return httpx.Response(200, text=stream, headers={"content-type": "text/event-stream"})
+
+    async def sink(text: str) -> None:
+        return None
+
+    provider, _ = _provider(handler=handler)
+
+    turn = await provider.generate([], [], asyncio.Event(), on_delta=sink)
+
+    assert isinstance(turn, AssistantTurn)
+    assert len(seen) == 2
+    assert [(item.attempt, item.status) for item in turn.attempts] == [(1, 429)]
+
+
+async def test_stream_does_not_retry_after_a_delta() -> None:
+    seen: list[int] = []
+    stream = 'data: {"choices":[{"delta":{"content":"你"},"finish_reason":null}]}\n\n'
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(1)
+        return httpx.Response(200, text=stream, headers={"content-type": "text/event-stream"})
+
+    async def sink(text: str) -> None:
+        return None
+
+    provider, _ = _provider(handler=handler)
+
+    outcome = await provider.generate([], [], asyncio.Event(), on_delta=sink)
+
+    assert isinstance(outcome, ProviderFailure)
+    assert outcome.code == "PROVIDER_TRANSPORT"
+    assert outcome.attempts == []
+    assert len(seen) == 1
+
+
 async def test_the_request_posts_to_the_chat_completions_url() -> None:
     provider, seen = _provider(handler=lambda request: httpx.Response(200, json=_OK_BODY))
 
@@ -488,4 +833,9 @@ async def test_the_provider_still_accepts_no_key_and_sends_no_header() -> None:
     assert len(seen) == 1
     assert seen[0].headers.get("authorization") is None
     assert not isinstance(outcome, ProviderFailure)
-    assert list(inspect.signature(provider.generate).parameters) == ["messages", "tools", "signal"]
+    assert list(inspect.signature(provider.generate).parameters) == [
+        "messages",
+        "tools",
+        "signal",
+        "on_delta",
+    ]

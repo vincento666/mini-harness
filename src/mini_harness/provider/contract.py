@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
 from mini_harness.events.fold import Message
+
+DeltaSink = Callable[[str], Awaitable[None]]
+TurnDeltaSink = Callable[[str, str], Awaitable[None]]
 
 
 class ToolCall(BaseModel):
@@ -75,4 +78,5 @@ class Provider(Protocol):
         messages: Sequence[Message],
         tools: Sequence[ToolSpec],
         signal: asyncio.Event,
+        on_delta: DeltaSink | None = None,
     ) -> AssistantTurn | ProviderFailure: ...

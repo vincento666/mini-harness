@@ -12,3 +12,5 @@ M4 接真实模型时，mini 版相对 DSH 故意把 provider 层塌缩成最小
 Considered options（第 1 条）：照 DSH 做 provider 注册表 + 路由（否：MVP 不做多模型路由，且没有第二个 provider 之前注册表是空抽象）；用 stdlib `urllib` 省掉 httpx 依赖（人裁决否掉，选了加依赖——理由是 `MockTransport` 让 seam ⑤ 的判据不必真发网络请求）。
 
 覆盖的范围：`src/mini_harness/provider/`、`openspec/changes/m4-real-provider/specs/provider/spec.md` 的「适配器不继承代理环境变量」那条 Requirement。
+
+**H2 修订（2026-10-28）**：第 1 条的「非流式」收窄为「默认非流式；调用方给 delta sink 时可选流式」。流式仍是一个适配器、最多重试一次（且只在首 delta 之前），没有多模型路由；逐字帧只走 ephemeral `model/delta`、不落日志，取舍见 ADR-0032。其余五条不变。

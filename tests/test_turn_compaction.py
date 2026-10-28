@@ -78,6 +78,7 @@ class _OverflowProvider:
         messages: object,
         tools: object,
         signal: asyncio.Event,
+        on_delta: object = None,
     ) -> ProviderFailure:
         return ProviderFailure(code="PROVIDER_CONTEXT_OVERFLOW", detail="HTTP 400 上下文超限")
 
@@ -445,7 +446,9 @@ class _OverflowOnceProvider:
         self._fail_plain_calls = fail_plain_calls
         self._plain_calls = 0
 
-    async def generate(self, messages: object, tools: object, signal: asyncio.Event) -> object:
+    async def generate(
+        self, messages: object, tools: object, signal: asyncio.Event, on_delta: object = None
+    ) -> object:
         if tools:
             self._plain_calls += 1
             if self._plain_calls in self._fail_plain_calls:
@@ -558,9 +561,10 @@ class _RecordingProvider:
         messages: Sequence[Message],
         tools: Sequence[ToolSpec],
         signal: asyncio.Event,
+        on_delta: object = None,
     ) -> AssistantTurn | ProviderFailure:
         self.calls.append((list(messages), list(tools)))
-        return await self._inner.generate(messages, tools, signal)
+        return await self._inner.generate(messages, tools, signal, on_delta=on_delta)
 
 
 # 折叠会产出消息的记录类型：判「请求里装的是哪些记录」按它们取内容。

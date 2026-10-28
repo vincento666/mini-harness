@@ -650,7 +650,7 @@ class _SigintSpyProvider:
         self.seen_handlers: list[object] = []
 
     async def generate(
-        self, messages: object, tools: object, signal_event: asyncio.Event
+        self, messages: object, tools: object, signal_event: asyncio.Event, on_delta: object = None
     ) -> AssistantTurn:
         self.seen_handlers.append(signal.getsignal(signal.SIGINT))
         return AssistantTurn(content="done", finish_reason="stop")

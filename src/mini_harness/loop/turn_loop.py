@@ -29,9 +29,11 @@ from mini_harness.events.writer import EventLog, LogWriteFailure
 from mini_harness.loop.settings import SessionSettings
 from mini_harness.provider.contract import (
     AssistantTurn,
+    DeltaSink,
     Provider,
     ProviderFailure,
     ToolCall,
+    TurnDeltaSink,
 )
 from mini_harness.tools.dispatch import ApprovalAsked, DispatchOutcome, dispatch_tool_call
 from mini_harness.tools.fences import (
@@ -102,6 +104,7 @@ class SessionEnv:
     registry: ToolRegistry
     settings: SessionSettings
     approval_gate: ApprovalGate = STDIN_APPROVAL_GATE
+    on_delta: TurnDeltaSink | None = None
 
 
 @dataclass(frozen=True)
@@ -466,6 +469,31 @@ def _retry_events(
     ]
 
 
+def _forward_delta(sink: TurnDeltaSink | None, turn_id: str) -> DeltaSink | None:
+    """把宿主的 `(turn_id, text)` sink 包成 provider 只认 `text` 的回调。"""
+    if sink is None:
+        return None
+
+    async def forward(text: str) -> None:
+        await sink(turn_id, text)
+
+    return forward
+
+
+def _abort_turn(log: EventLog, turn_id: str, turns: int) -> SegmentOutcome:
+    """流式取消的收尾：不写半条 `model/response`，只写 `error/abort` 与 ABORTED。"""
+    failure = _append_all(
+        log,
+        [
+            ("error/abort", {"turn_id": turn_id, "code": STOP_ABORTED, "detail": "取消被置位"}),
+            ("turn/end", {"turn_id": turn_id, "stop_reason": STOP_ABORTED}),
+        ],
+    )
+    if failure is not None:
+        return _segment_failure(failure, turns)
+    return SegmentOutcome(stop_reason=STOP_ABORTED, turns=turns)
+
+
 async def _provider_error(
     log: EventLog,
     turn_id: str,
@@ -562,6 +590,7 @@ async def _recover_overflowed_request(
     context: AssembledContext,
     failure: ProviderFailure,
     retry_events: Sequence[tuple[str, dict[str, Any]]],
+    on_delta: DeltaSink | None = None,
 ) -> _RetriedRequest | SegmentOutcome:
     """provider 报出上下文超限时先压一次、再重试一次，上限 1 次（ADR-0019）。
 
@@ -616,7 +645,9 @@ async def _recover_overflowed_request(
     if written is not None:
         return _segment_failure(written, turns)
 
-    generated = await provider.generate(folded.messages, registry.specs(), cancel)
+    generated = await provider.generate(
+        folded.messages, registry.specs(), cancel, on_delta=on_delta
+    )
     attempts = _retry_events(turn_id, generated)
     if isinstance(generated, ProviderFailure):
         if generated.code == PROVIDER_CONTEXT_OVERFLOW:
@@ -833,6 +864,7 @@ async def _run_turns(
         turns = offset + 1
         turn_id = f"t{turn_index}"
         tool_names = [spec.name for spec in registry.specs()]
+        text_sink = _forward_delta(env.on_delta, turn_id)
 
         failure = _append_all(log, [("turn/start", {"turn_id": turn_id})])
         if failure is not None:
@@ -891,7 +923,9 @@ async def _run_turns(
         if failure is not None:
             return _segment_failure(failure, turns)
 
-        generated = await provider.generate(context.messages, registry.specs(), cancel)
+        generated = await provider.generate(
+            context.messages, registry.specs(), cancel, on_delta=text_sink
+        )
         # 重试事实由 provider 带回、由循环写进日志：provider 不碰日志（不变量 A）。
         retry_events = _retry_events(turn_id, generated)
         if isinstance(generated, ProviderFailure):
@@ -910,12 +944,23 @@ async def _run_turns(
                     context=context,
                     failure=generated,
                     retry_events=retry_events,
+                    on_delta=text_sink,
                 )
                 if isinstance(recovered, SegmentOutcome):
                     return recovered
                 generated, retry_events = recovered.generated, recovered.retry_events
             if isinstance(generated, ProviderFailure):
+                if (
+                    generated.code == "PROVIDER_ABORTED"
+                    and env.on_delta is not None
+                    and cancel.is_set()
+                ):
+                    return _abort_turn(log, turn_id, turns)
                 return await _provider_error(log, turn_id, generated, turns, retry_events)
+
+        if cancel.is_set() and env.on_delta is not None:
+            # 流式读取中途取消：已经显示的增量不补，但不把半条回复写成 durable 真相。
+            return _abort_turn(log, turn_id, turns)
 
         failure = _append_all(
             log,
@@ -1014,6 +1059,7 @@ async def run_session(
     settings: SessionSettings,
     cancel: asyncio.Event,
     approval_gate: ApprovalGate = STDIN_APPROVAL_GATE,
+    on_delta: TurnDeltaSink | None = None,
 ) -> RunOutcome:
     """一次性入口（`run` / `serve`）：开始会话、恰一个段、结束会话。
 
@@ -1025,6 +1071,7 @@ async def run_session(
         registry=registry,
         settings=settings,
         approval_gate=approval_gate,
+        on_delta=on_delta,
     )
     started = start_session(prompt=prompt, entry=entry, env=env)
     if started is not None:

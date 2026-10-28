@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>H2 UAT · 最小流式客户端</title>
+<style>
+  body { font: 14px/1.45 system-ui, sans-serif; margin: 24px; max-width: 1100px; color: #17202a; }
+  h1 { font-size: 20px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+  input[type=text], input[type=password] { padding: 6px 8px; border: 1px solid #aab; border-radius: 4px; }
+  input[type=text] { width: 520px; }
+  button { padding: 6px 10px; border: 1px solid #789; background: #eef3f8; border-radius: 4px; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  #messages { border: 1px solid #ccd; border-radius: 6px; min-height: 260px; padding: 10px; margin: 10px 0; }
+  .msg { margin: 6px 0; white-space: pre-wrap; }
+  .msg.user { color: #145; }
+  .msg.assistant { color: #111; }
+  .msg.system { color: #666; font-style: italic; }
+  #live { color: #0a5; min-height: 20px; white-space: pre-wrap; border-left: 3px solid #0a5; padding-left: 8px; margin: 8px 0; }
+  #events { background: #101820; color: #d8e2ea; border-radius: 6px; padding: 10px; height: 220px; overflow: auto; white-space: pre-wrap; font: 12px/1.35 ui-monospace, monospace; }
+  .hint { color: #666; }
+  table { border-collapse: collapse; } td { padding: 2px 8px 2px 0; vertical-align: top; }
+</style>
+</head>
+<body>
+<h1>H2 UAT · 最小流式客户端</h1>
+<p class="hint">只用于验收：浏览器的 <code>fetch</code> 读 SSE；不依赖任何前端构建。Token 只存本页内存，不写 localStorage。</p>
+
+<div class="row">
+  <label>Base URL <input id="base" type="text" value="http://127.0.0.1:19410"></label>
+  <label>Host token <input id="token" type="password" size="38" placeholder="MINIHNS_HOST_TOKEN"></label>
+  <button id="create">创建会话</button>
+  <button id="disconnect" disabled>断开 SSE</button>
+  <button id="reconnect" disabled>snapshot 重连</button>
+</div>
+<div id="session" class="hint">尚未创建会话。</div>
+
+<div id="messages"></div>
+<div id="live"></div>
+<form id="send" class="row">
+  <input id="text" type="text" placeholder="输入一句话；工具场可写：必须调用 read 工具读取 note.md，然后告诉我内容">
+  <button id="sendButton" disabled>发送</button>
+</form>
+
+<h2 style="font-size:15px">durable 事件回显</h2>
+<div id="events"></div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const base = () => $("base").value.replace(/\/+$/, "");
+  const token = () => $("token").value;
+  let sessionId = null;
+  let controller = null;
+  let live = "";
+  let currentTurn = null;
+  let sendStartedAt = 0;
+  let firstDeltaLogged = false;
+
+  function log(line) {
+    const box = $("events");
+    box.textContent += line + "\n";
+    box.scrollTop = box.scrollHeight;
+  }
+
+  function addMessage(role, content) {
+    if (!content) return;
+    const div = document.createElement("div");
+    div.className = "msg " + role;
+    div.textContent = (role === "user" ? "你： " : role === "assistant" ? "助手： " : "") + content;
+    $("messages").appendChild(div);
+    $("messages").scrollTop = $("messages").scrollHeight;
+  }
+
+  async function api(path, options = {}) {
+    const response = await fetch(base() + path, {
+      ...options,
+      headers: {
+        "Authorization": "Bearer " + token(),
+        ...(options.headers || {}),
+      },
+    });
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`${response.status} ${path}: ${body}`);
+    }
+    return response;
+  }
+
+  async function createSession() {
+    try {
+      const response = await api("/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = await response.json();
+      sessionId = data.session_id;
+      $("session").textContent = "会话 " + sessionId + "（cursor=" + data.cursor + "）";
+      $("create").disabled = true;
+      $("sendButton").disabled = false;
+      $("disconnect").disabled = false;
+      $("reconnect").disabled = false;
+      $("messages").replaceChildren();
+      $("events").textContent = "";
+      await connect(true);
+    } catch (error) {
+      log("创建失败：" + error.message);
+      alert(error.message);
+    }
+  }
+
+  function parseBlock(block) {
+    const frame = {};
+    for (const line of block.split("\n")) {
+      if (line.startsWith("id: ")) frame.id = line.slice(4);
+      else if (line.startsWith("event: ")) frame.event = line.slice(7);
+      else if (line.startsWith("data: ")) frame.data = line.slice(6);
+    }
+    return frame;
+  }
+
+  function onFrame(frame) {
+    if (!frame.event) return;
+    if (frame.event === "snapshot") {
+      const snap = JSON.parse(frame.data);
+      // snapshot 是 durable 高水位：旧 delta 不补，live 区必须清空，否则会留下重连前的半段。
+      live = "";
+      currentTurn = null;
+      $("live").textContent = "";
+      $("messages").replaceChildren();
+      for (const message of snap.messages) {
+        if (message.role === "user" || message.role === "assistant") {
+          addMessage(message.role, message.content);
+        }
+      }
+      log(`[snapshot] last_seq=${snap.last_seq} status=${snap.status} messages=${snap.messages.length}`);
+      return;
+    }
+    if (frame.event === "model/delta") {
+      const delta = JSON.parse(frame.data);
+      currentTurn = delta.turn_id;
+      if (!firstDeltaLogged && sendStartedAt) {
+        firstDeltaLogged = true;
+        log(`[first delta] ${Math.round(performance.now() - sendStartedAt)} ms after send`);
+      }
+      live += String(delta.text || "");
+      $("live").textContent = "▍ " + live;
+      return;
+    }
+    const data = frame.data ? JSON.parse(frame.data) : {};
+    if (frame.id) log(`[${frame.id}] ${frame.event}`);
+    else log(`[ephemeral] ${frame.event}`);
+
+    if (frame.event === "model/request" && data.payload) {
+      live = "";
+      $("live").textContent = "";
+    } else if (frame.event === "model/response" && data.payload) {
+      const content = String(data.payload.content || "");
+      const calls = data.payload.tool_calls || [];
+      if (content) addMessage("assistant", content);
+      if (calls.length) addMessage("system", "工具调用：" + calls.map((c) => c.name + "(" + JSON.stringify(c.arguments) + ")").join("，"));
+      live = "";
+      $("live").textContent = "";
+    } else if (frame.event === "tool/call" && data.payload) {
+      addMessage("system", "tool/call " + data.payload.name);
+    } else if (frame.event === "tool/result" && data.payload) {
+      addMessage("system", "tool/result " + (data.payload.outcome || ""));
+    } else if (frame.event === "segment/end" && data.payload) {
+      addMessage("system", "段结束：" + (data.payload.stop_reason || ""));
+    }
+  }
+
+  async function connect(snapshot) {
+    if (!sessionId) return;
+    if (controller) controller.abort();
+    controller = new AbortController();
+    const suffix = snapshot ? "?snapshot=1" : "";
+    try {
+      const response = await api(`/sessions/${sessionId}/events${suffix}`, { signal: controller.signal });
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let index;
+        while ((index = buffer.indexOf("\n\n")) >= 0) {
+          const block = buffer.slice(0, index);
+          buffer = buffer.slice(index + 2);
+          onFrame(parseBlock(block));
+        }
+      }
+      log("[stream closed]");
+    } catch (error) {
+      if (error.name === "AbortError") log("[stream aborted by user]");
+      else log("[stream error] " + error.message);
+    }
+  }
+
+  async function send(event) {
+    event.preventDefault();
+    const text = $("text").value.trim();
+    if (!text || !sessionId) return;
+    $("text").value = "";
+    addMessage("user", text);
+    sendStartedAt = performance.now();
+    firstDeltaLogged = false;
+    try {
+      const response = await api(`/sessions/${sessionId}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: text }),
+      });
+      const data = await response.json();
+      log(`[messages] segment=${data.segment_id || "queued"} queued=${data.queued}`);
+    } catch (error) {
+      addMessage("system", "发送失败：" + error.message);
+      log("[messages error] " + error.message);
+    }
+  }
+
+  $("create").addEventListener("click", createSession);
+  $("send").addEventListener("submit", send);
+  $("disconnect").addEventListener("click", () => {
+    if (controller) controller.abort();
+    log("[user disconnected SSE]");
+  });
+  $("reconnect").addEventListener("click", () => connect(true));
+})();
+</script>
+</body>
+</html>

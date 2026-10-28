@@ -12,7 +12,13 @@ from pathlib import Path
 import pytest
 
 from mini_harness.session.assembly import AssemblyRequest
-from mini_harness.session.host import HostApprovalGate, HostSession, HostState, create_session
+from mini_harness.session.host import (
+    DELTA_QUEUE_MAX,
+    HostApprovalGate,
+    HostSession,
+    HostState,
+    create_session,
+)
 
 
 def _handle(tmp_path: Path) -> HostSession:
@@ -31,6 +37,35 @@ def _handle(tmp_path: Path) -> HostSession:
     handle = create_session(state, state.defaults, {})
     assert isinstance(handle, HostSession)
     return handle
+
+
+async def test_host_session_broadcasts_deltas_to_subscribers(tmp_path: Path) -> None:
+    handle = _handle(tmp_path)
+    # 没有订阅者时 publish 也不该影响回合。
+    await handle.publish_delta("t0", "先")
+
+    queue = handle.subscribe_deltas()
+    await handle.publish_delta("t1", "你")
+    await handle.publish_delta("t1", "好")
+
+    assert queue.get_nowait() == {"turn_id": "t1", "index": 0, "text": "你"}
+    assert queue.get_nowait() == {"turn_id": "t1", "index": 1, "text": "好"}
+    assert queue.empty()
+
+    handle.unsubscribe_deltas(queue)
+    await handle.publish_delta("t1", "退订之后")
+    assert queue.empty()
+
+
+async def test_a_slow_delta_subscriber_drops_old_deltas(tmp_path: Path) -> None:
+    handle = _handle(tmp_path)
+    queue = handle.subscribe_deltas()
+
+    for number in range(DELTA_QUEUE_MAX + 5):
+        await handle.publish_delta("t1", str(number))
+
+    assert queue.qsize() == DELTA_QUEUE_MAX
+    assert queue.get_nowait()["index"] == 5
 
 
 async def test_an_expired_approval_is_unavailable(tmp_path: Path) -> None:

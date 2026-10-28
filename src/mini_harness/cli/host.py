@@ -128,6 +128,11 @@ def _snapshot_frame(payload: dict[str, object]) -> bytes:
     return f"event: snapshot\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
 
 
+def _delta_frame(payload: dict[str, object]) -> bytes:
+    """ephemeral 帧：不带 `id`，不参与 `Last-Event-ID`，也不落日志。"""
+    return f"event: model/delta\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
+
+
 class HostServer:
     """一个 aiohttp 应用 + 一个绑定：鉴权与来源在中间件里，路由只关心会话。"""
 
@@ -178,7 +183,11 @@ class HostServer:
 
     async def _health(self, request: web.Request) -> web.Response:
         return web.json_response(
-            {"protocol": PROTOCOL_VERSION, "sessions": self._state.session_count()}
+            {
+                "protocol": PROTOCOL_VERSION,
+                "sessions": self._state.session_count(),
+                "features": ["delta"],
+            }
         )
 
     async def _list_sessions(self, request: web.Request) -> web.Response:
@@ -311,19 +320,31 @@ class HostServer:
         else:
             await response.prepare(request)
         tail = LogTail(handle.log.path, after=after)
-        while True:
-            transport = request.transport
-            if transport is None or transport.is_closing():
-                return response
-            records = tail.read_new()
-            if isinstance(records, LogReadFailure):
-                return response
-            try:
-                for record in records:
-                    await response.write(sse_frame(record))
-            except ConnectionResetError:
-                return response
-            await asyncio.sleep(EVENTS_POLL_SECONDS)
+        deltas = handle.subscribe_deltas()
+        try:
+            while True:
+                transport = request.transport
+                if transport is None or transport.is_closing():
+                    return response
+                records = tail.read_new()
+                if isinstance(records, LogReadFailure):
+                    return response
+                try:
+                    # 先把这一批 durable 记录按顺序写出去；遇到 `model/response` 时
+                    # 先排空它之前的 delta——provider 在落 response 前已经发过所有片段。
+                    for record in records:
+                        if record.type == "model/response":
+                            while not deltas.empty():
+                                await response.write(_delta_frame(deltas.get_nowait()))
+                        await response.write(sse_frame(record))
+                    # 还没有 response 时也要把已到的增量送出去，不能等整段结束。
+                    while not deltas.empty():
+                        await response.write(_delta_frame(deltas.get_nowait()))
+                except ConnectionResetError:
+                    return response
+                await asyncio.sleep(EVENTS_POLL_SECONDS)
+        finally:
+            handle.unsubscribe_deltas(deltas)
 
     async def bind(self) -> str | None:
         """绑定并开始接收连接；失败返回 detail（调用方映射成退出码 2）。
