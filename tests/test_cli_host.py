@@ -500,6 +500,61 @@ def _normalized_log(path: Path) -> list[dict[str, object]]:
     ]
 
 
+def test_the_event_stream_mixes_durable_and_delta_frames(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = tmp_path / "delta.json"
+    fixture.write_text(
+        json.dumps(
+            [{"content": "你好", "deltas": ["你", "好"], "finish_reason": "stop"}],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(client, workspace, fixture)
+            with client.stream(
+                "GET", f"/sessions/{session_id}/events", headers=_headers()
+            ) as response:
+                lines = response.iter_lines()
+                first = _next_frame(lines)
+                assert first["event"] == "session/start"
+                client.post(
+                    f"/sessions/{session_id}/messages",
+                    headers=_headers(),
+                    json={"content": "任务"},
+                )
+                frames: list[dict[str, str]] = []
+                while True:
+                    frame = _next_frame(lines)
+                    frames.append(frame)
+                    if frame["event"] == "model/response":
+                        break
+
+        events = [frame["event"] for frame in frames]
+        assert "model/request" in events
+        assert events.count("model/delta") == 2
+        assert events.index("model/request") < events.index("model/delta")
+        deltas = [json.loads(frame["data"]) for frame in frames if frame["event"] == "model/delta"]
+        assert all("id" not in frame for frame in frames if frame["event"] == "model/delta")
+        assert [delta["text"] for delta in deltas] == ["你", "好"]
+        response_payload = json.loads(
+            next(frame["data"] for frame in frames if frame["event"] == "model/response")
+        )
+        assert response_payload["payload"]["content"] == "".join(delta["text"] for delta in deltas)
+        log = session_dir / f"{session_id}.jsonl"
+        assert "model/delta" not in log.read_text(encoding="utf-8")
+    finally:
+        _stop(process)
+
+
 def test_a_disconnect_does_not_change_the_session(tmp_path: Path) -> None:
     session_dir = tmp_path / "sessions"
     workspace = tmp_path / "workspace"
@@ -1667,6 +1722,6 @@ def test_host_starts_and_health_is_public(tmp_path: Path) -> None:
         response = _wait_for_health(port)
 
         assert response.status_code == 200
-        assert response.json() == {"protocol": 1, "sessions": 0}
+        assert response.json() == {"protocol": 1, "sessions": 0, "features": ["delta"]}
     finally:
         _stop(process)

@@ -26,10 +26,10 @@
 
 ## 5. SSE 合流与协议
 
-- [ ] 5.1 seam ⑥：红判据 `test_the_event_stream_mixes_durable_and_delta_frames`——真实子进程 + httpx：`model/request`（durable）→ 若干无 `id` 的 `model/delta` → `model/response`（durable）；日志里没有 delta
+- [x] 5.1 seam ⑥：红判据 `test_the_event_stream_mixes_durable_and_delta_frames`——真实子进程 + httpx：`model/request`（durable）→ 若干无 `id` 的 `model/delta` → `model/response`（durable）；日志里没有 delta
 - [ ] 5.2 seam ⑥：红判据 `test_a_delta_does_not_move_the_cursor`——`model/delta` 不参与 `Last-Event-ID`/`?from=`；snapshot 的 `last_seq` 只由 durable 记录推进
 - [ ] 5.3 seam ⑥：红判据 `test_reconnect_does_not_replay_lost_deltas`——中途断开再带 `snapshot=1` 重连，丢掉的 delta 不补，最终 `model/response` 只出现一次
-- [ ] 5.4 seam ⑥：红判据 `test_health_advertises_delta`——`GET /health` 返回 `protocol: 1` 与 `features: ["delta"]`
+- [x] 5.4 seam ⑥：红判据 `test_health_advertises_delta`——`GET /health` 返回 `protocol: 1` 与 `features: ["delta"]`
 - [ ] 5.5 seam ⑥：红判据 `test_a_disconnected_delta_reader_does_not_stop_the_segment`——delta 读者断开后段继续跑完，日志与没有客户端时逐字节相同
 
 ## 6. Replay 与既有行为守卫
