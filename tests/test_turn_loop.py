@@ -345,10 +345,10 @@ class _DeltaProvider:
 
 
 async def test_the_turn_loop_passes_a_delta_sink_to_the_provider(tmp_path: Path) -> None:
-    seen: list[str] = []
+    seen: list[tuple[str, str]] = []
 
-    async def sink(text: str) -> None:
-        seen.append(text)
+    async def sink(turn_id: str, text: str) -> None:
+        seen.append((turn_id, text))
 
     provider = _DeltaProvider()
     log, _ = await run_session_fixture(
@@ -360,8 +360,8 @@ async def test_the_turn_loop_passes_a_delta_sink_to_the_provider(tmp_path: Path)
     )
 
     types = [record.type for record in read_events(log.path)]
-    assert provider.sink is sink
-    assert seen == ["x"]
+    assert provider.sink is not None
+    assert seen == [("t1", "x")]
     assert "model/delta" not in types
 
 
@@ -386,10 +386,10 @@ class _AbortStreamProvider:
 
 async def test_a_provider_aborted_stream_turn_ends_aborted(tmp_path: Path) -> None:
     cancel = asyncio.Event()
-    seen: list[str] = []
+    seen: list[tuple[str, str]] = []
 
-    async def sink(text: str) -> None:
-        seen.append(text)
+    async def sink(turn_id: str, text: str) -> None:
+        seen.append((turn_id, text))
 
     log, outcome = await run_session_fixture(
         tmp_path,
@@ -402,7 +402,7 @@ async def test_a_provider_aborted_stream_turn_ends_aborted(tmp_path: Path) -> No
     )
 
     types = [record.type for record in read_events(log.path)]
-    assert seen == ["半"]
+    assert seen == [("t1", "半")]
     assert "model/response" not in types
     assert "error/model" not in types
     assert "error/abort" in types
@@ -474,10 +474,10 @@ async def test_a_cancelled_turn_writes_an_error_abort_event(tmp_path: Path) -> N
 
 async def test_a_cancel_during_stream_aborts_without_a_model_response(tmp_path: Path) -> None:
     cancel = asyncio.Event()
-    seen: list[str] = []
+    seen: list[tuple[str, str]] = []
 
-    async def sink(text: str) -> None:
-        seen.append(text)
+    async def sink(turn_id: str, text: str) -> None:
+        seen.append((turn_id, text))
 
     log, outcome = await run_session_fixture(
         tmp_path,
@@ -490,7 +490,7 @@ async def test_a_cancel_during_stream_aborts_without_a_model_response(tmp_path: 
     )
 
     types = [record.type for record in read_events(log.path)]
-    assert seen == ["半"]
+    assert seen == [("t1", "半")]
     assert "model/response" not in types
     assert "error/abort" in types
     assert outcome.stop_reason == "ABORTED"

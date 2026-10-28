@@ -33,6 +33,7 @@ from mini_harness.provider.contract import (
     Provider,
     ProviderFailure,
     ToolCall,
+    TurnDeltaSink,
 )
 from mini_harness.tools.dispatch import ApprovalAsked, DispatchOutcome, dispatch_tool_call
 from mini_harness.tools.fences import (
@@ -103,7 +104,7 @@ class SessionEnv:
     registry: ToolRegistry
     settings: SessionSettings
     approval_gate: ApprovalGate = STDIN_APPROVAL_GATE
-    on_delta: DeltaSink | None = None
+    on_delta: TurnDeltaSink | None = None
 
 
 @dataclass(frozen=True)
@@ -466,6 +467,17 @@ def _retry_events(
         ("model/retry", {"turn_id": turn_id, "attempt": attempt.attempt, "status": attempt.status})
         for attempt in turn.attempts
     ]
+
+
+def _forward_delta(sink: TurnDeltaSink | None, turn_id: str) -> DeltaSink | None:
+    """把宿主的 `(turn_id, text)` sink 包成 provider 只认 `text` 的回调。"""
+    if sink is None:
+        return None
+
+    async def forward(text: str) -> None:
+        await sink(turn_id, text)
+
+    return forward
 
 
 def _abort_turn(log: EventLog, turn_id: str, turns: int) -> SegmentOutcome:
@@ -852,6 +864,7 @@ async def _run_turns(
         turns = offset + 1
         turn_id = f"t{turn_index}"
         tool_names = [spec.name for spec in registry.specs()]
+        text_sink = _forward_delta(env.on_delta, turn_id)
 
         failure = _append_all(log, [("turn/start", {"turn_id": turn_id})])
         if failure is not None:
@@ -911,7 +924,7 @@ async def _run_turns(
             return _segment_failure(failure, turns)
 
         generated = await provider.generate(
-            context.messages, registry.specs(), cancel, on_delta=env.on_delta
+            context.messages, registry.specs(), cancel, on_delta=text_sink
         )
         # 重试事实由 provider 带回、由循环写进日志：provider 不碰日志（不变量 A）。
         retry_events = _retry_events(turn_id, generated)
@@ -931,7 +944,7 @@ async def _run_turns(
                     context=context,
                     failure=generated,
                     retry_events=retry_events,
-                    on_delta=env.on_delta,
+                    on_delta=text_sink,
                 )
                 if isinstance(recovered, SegmentOutcome):
                     return recovered
@@ -1046,7 +1059,7 @@ async def run_session(
     settings: SessionSettings,
     cancel: asyncio.Event,
     approval_gate: ApprovalGate = STDIN_APPROVAL_GATE,
-    on_delta: DeltaSink | None = None,
+    on_delta: TurnDeltaSink | None = None,
 ) -> RunOutcome:
     """一次性入口（`run` / `serve`）：开始会话、恰一个段、结束会话。
 
