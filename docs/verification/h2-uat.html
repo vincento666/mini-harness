@@ -124,6 +124,10 @@
     if (!frame.event) return;
     if (frame.event === "snapshot") {
       const snap = JSON.parse(frame.data);
+      // snapshot 是 durable 高水位：旧 delta 不补，live 区必须清空，否则会留下重连前的半段。
+      live = "";
+      currentTurn = null;
+      $("live").textContent = "";
       $("messages").replaceChildren();
       for (const message of snap.messages) {
         if (message.role === "user" || message.role === "assistant") {

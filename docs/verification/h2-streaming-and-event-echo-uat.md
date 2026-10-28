@@ -113,6 +113,8 @@ uv run minihns replay <host-session-id> --session-dir .tmp\h2-uat\sessions-mock
 uv run minihns replay <cli-session-id> --session-dir .tmp\h2-uat\sessions-cli
 ```
 
+> **别把两个 session-dir 串了**：`minihns run` stdout 打出的 id 只在 `sessions-cli`；第二个 host 页面上的 id 只在 `sessions-mock`。拿 CLI id 去 `sessions-mock` 找，就会得到 `SESSION_NOT_FOUND`（这是 2026-10-28 人跑时实际踩到的坑）。
+
 **预期**：两次 replay 都退出码 0、没有 `REPLAY_MISMATCH`；两份 `model/response.content` 都是 `你好`。`session/start.entry` 会不同（`host` / `run`），这是入口事实，不是流式差异；逐点相等的自动判据是 `test_replay_is_equal_with_and_without_streaming`。
 
 ## 观察表
