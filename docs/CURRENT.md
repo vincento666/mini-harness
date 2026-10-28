@@ -22,9 +22,10 @@
 ## 开放缺口（按严重度）
 
 - **P0 预算读数未复现**：`budget_reading` 仍无「摘要之后」的 seq 界，代码路径在；但 2026-10-27 的 W1/W2 真实端点诊断没有复现「遮蔽后 tokens 后 > 前」，W2 也没触发溢出。先不按旧 20 task apply；要么补稳定复现样本，要么降级为未复现的历史缺陷。诊断见 `docs/verification/p0-budget-reading-diagnostic-2026-10-27.md`。
+- **UI 服务端 allowlist / 投影暂缓**：H2 保持日志逐行镜像 + 客户端过滤；公网/多客户端/事件词表变大时再按 ADR-0002 的最小 MVP 判，现在不实现。
 - **`SESSION_BUSY` 的状态码自相矛盾（H1 spec）**：错误表写 409，`/messages` 队满的场景与 task 4.3 写 429；实现按 429 归档，spec 表仍写 409，留到 H2 或后续 spec 修正时裁决。
+- **H2 流式进行中**：tasks 1.1–3.1 已绿；provider 的 `on_delta` 路径已接 OpenAI SSE，宿主 SSE 合流与回合循环传 sink 还没接。
 - **没有 resume / 格式迁移 / session index**：M11。
-- **流式已 propose**：H2 的 proposal/specs/design/tasks 已立；provider 仍是默认非流式，等 apply 后打开。
 - **没有技能 / 斜杠命令 / 渐进披露**：M14；CLI 与 host 要同一份命令面。
 - **没有工作区契约 / 结果剪枝计量 / 助理 UX 工具**：M14a / M14b / M14c；非核心，但缺了个人助理不像。
 - **没有记忆**：MEM1（项目/用户 `MEMORY.md` + `memory` 工具）；MEM2 定时巩固在壳后。

@@ -59,7 +59,7 @@ H1 / H2 是新增的宿主轨，不占用 M10–M15 的决策编号；M 编号�
 - **内容**：provider 走 `stream: true`（OpenAI 兼容 SSE）；`model/delta` 是**宿主流上的 ephemeral 帧**，不落日志；最终 `model/response` 仍是唯一 durable 真相；只有首 delta 之前才允许重试；流式 `tool_calls` 的拼装；mock 也能发 delta；`GET /events` 的 snapshot、断线续读与协议版本。设计底稿在 `docs/reference/host-streaming.md`。
 - **完成判据**：首帧在 1 s 内（真端点）；拼接 delta 等于最终 `content`；工具调用流式拼装正确；断线重连从 durable `seq` 续读、最终回复不重复；`replay` 与不流式逐点相等；真实端点一次。
 - **依赖**：H1；ADR-0006 修订。
-- **明确不做**：多模型路由、逐字帧落日志、WebSocket。
+- **明确不做**：多模型路由、逐字帧落日志、WebSocket、服务端事件 allowlist / UI 投影（先按日志镜像 + 客户端过滤；触发条件与最小 MVP 记在 ADR-0002「UI 事件 allowlist / 服务端投影（暂缓）」）。
 
 ### M10 工具管线 / 并发 / 上下文经济
 
