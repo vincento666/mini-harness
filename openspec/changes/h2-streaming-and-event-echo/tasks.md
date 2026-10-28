@@ -16,11 +16,11 @@
 ## 3. 重试边界与取消
 
 - [x] 3.1 seam ⑤：红判据 `test_retry_only_before_the_first_delta`——首 delta 前 429 仍重试一次并写 `model/retry`；首 delta 后再 429/5xx 不重试、不写 `model/retry`、塌成 `PROVIDER_ERROR`
-- [ ] 3.2 seam ①：红判据 `test_cancel_during_stream_aborts_without_a_response`——流式读取中置位取消，回合以 `ABORTED` 收尾，不写 `model/response`，已发 delta 不回滚
+- [x] 3.2 seam ①：红判据 `test_cancel_during_stream_aborts_without_a_response`——流式读取中置位取消，回合以 `ABORTED` 收尾，不写 `model/response`，已发 delta 不回滚
 
 ## 4. 宿主侧 delta 广播
 
-- [ ] 4.1 seam ①：红判据 `test_the_turn_loop_passes_a_delta_sink_to_the_provider`——`SessionEnv` 带 sink 时 provider 收到同一个回调；sink 收到的文本不写日志
+- [x] 4.1 seam ①：红判据 `test_the_turn_loop_passes_a_delta_sink_to_the_provider`——`SessionEnv` 带 sink 时 provider 收到同一个回调；sink 收到的文本不写日志
 - [ ] 4.2 seam ①：红判据 `test_host_session_broadcasts_deltas_to_subscribers`——`HostSession` 的订阅者队列按顺序收到 `{turn_id,index,text}`；没有订阅者时不影响回合
 - [ ] 4.3 seam ⑥：红判据 `test_a_slow_delta_subscriber_drops_old_deltas`——有界队列满时丢最旧 delta，不阻塞 provider；durable 帧不受影响
 

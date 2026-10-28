@@ -23,7 +23,7 @@ from mini_harness.loop import (
     run_turn_segment,
     start_session,
 )
-from mini_harness.provider import AssistantTurn, FixtureProvider, Provider
+from mini_harness.provider import AssistantTurn, FixtureProvider, Provider, ProviderFailure
 from mini_harness.provider.openai_compat import OpenAICompatProvider
 from mini_harness.tools import ToolArgs, ToolDefinition, ToolRegistry, ToolResult
 from mini_harness.tools.fences import DispatchContext, path_key
@@ -325,6 +325,90 @@ async def test_turn_that_requests_tool_calls_closes_with_tool_calls(tmp_path: Pa
     assert outcome.stop_reason == "MODEL_COMPLETED"
 
 
+class _DeltaProvider:
+    """记录循环传下来的 delta sink，并吐一段正文。"""
+
+    def __init__(self) -> None:
+        self.sink: object = None
+
+    async def generate(
+        self,
+        messages: object,
+        tools: object,
+        signal: asyncio.Event,
+        on_delta: object = None,
+    ) -> AssistantTurn:
+        self.sink = on_delta
+        if callable(on_delta):
+            await on_delta("x")
+        return AssistantTurn(content="x", finish_reason="stop")
+
+
+async def test_the_turn_loop_passes_a_delta_sink_to_the_provider(tmp_path: Path) -> None:
+    seen: list[str] = []
+
+    async def sink(text: str) -> None:
+        seen.append(text)
+
+    provider = _DeltaProvider()
+    log, _ = await run_session_fixture(
+        tmp_path,
+        "s-delta",
+        provider,
+        on_delta=sink,
+        max_turns=8,
+    )
+
+    types = [record.type for record in read_events(log.path)]
+    assert provider.sink is sink
+    assert seen == ["x"]
+    assert "model/delta" not in types
+
+
+class _AbortStreamProvider:
+    """适配器在流式读取中取消：先吐半段，再返回 `PROVIDER_ABORTED`。"""
+
+    def __init__(self, cancel: asyncio.Event) -> None:
+        self._cancel = cancel
+
+    async def generate(
+        self,
+        messages: object,
+        tools: object,
+        signal: asyncio.Event,
+        on_delta: object = None,
+    ) -> ProviderFailure:
+        if callable(on_delta):
+            await on_delta("半")
+        self._cancel.set()
+        return ProviderFailure("PROVIDER_ABORTED", "取消")
+
+
+async def test_a_provider_aborted_stream_turn_ends_aborted(tmp_path: Path) -> None:
+    cancel = asyncio.Event()
+    seen: list[str] = []
+
+    async def sink(text: str) -> None:
+        seen.append(text)
+
+    log, outcome = await run_session_fixture(
+        tmp_path,
+        "s-provider-abort",
+        _AbortStreamProvider(cancel),
+        registry=ToolRegistry(),
+        cancel=cancel,
+        on_delta=sink,
+        max_turns=8,
+    )
+
+    types = [record.type for record in read_events(log.path)]
+    assert seen == ["半"]
+    assert "model/response" not in types
+    assert "error/model" not in types
+    assert "error/abort" in types
+    assert outcome.stop_reason == "ABORTED"
+
+
 class _CancelDuringGenerate:
     """模拟回合中途取消：`generate` 期间把取消信号置起。"""
 
@@ -336,7 +420,10 @@ class _CancelDuringGenerate:
         messages: object,
         tools: object,
         signal: asyncio.Event,
+        on_delta: object = None,
     ) -> AssistantTurn:
+        if callable(on_delta):
+            await on_delta("半")
         self._cancel.set()
         return AssistantTurn(content="部分回复", finish_reason="stop")
 
@@ -385,6 +472,30 @@ async def test_a_cancelled_turn_writes_an_error_abort_event(tmp_path: Path) -> N
     assert outcome.stop_reason == "ABORTED"
 
 
+async def test_a_cancel_during_stream_aborts_without_a_model_response(tmp_path: Path) -> None:
+    cancel = asyncio.Event()
+    seen: list[str] = []
+
+    async def sink(text: str) -> None:
+        seen.append(text)
+
+    log, outcome = await run_session_fixture(
+        tmp_path,
+        "s-stream-abort",
+        _CancelDuringGenerate(cancel),
+        registry=ToolRegistry(),
+        cancel=cancel,
+        on_delta=sink,
+        max_turns=8,
+    )
+
+    types = [record.type for record in read_events(log.path)]
+    assert seen == ["半"]
+    assert "model/response" not in types
+    assert "error/abort" in types
+    assert outcome.stop_reason == "ABORTED"
+
+
 async def test_provider_failure_is_recorded_as_error_model_and_provider_error(
     tmp_path: Path,
 ) -> None:
@@ -411,11 +522,11 @@ class _SpyProvider:
     """记录循环对 Provider 的每一次调用。"""
 
     def __init__(self) -> None:
-        self.calls: list[tuple[str, int]] = []
+        self.calls: list[tuple[str, int, tuple[str, ...]]] = []
         self.signals: list[object] = []
 
     async def generate(self, *args: object, **kwargs: object) -> AssistantTurn:
-        self.calls.append(("generate", len(args) + len(kwargs)))
+        self.calls.append(("generate", len(args), tuple(kwargs)))
         self.signals.append(args[2] if len(args) == 3 else None)
         return AssistantTurn(content="done", finish_reason="stop")
 
@@ -432,7 +543,7 @@ async def test_loop_only_calls_generate_with_three_positional_parameters(tmp_pat
         max_turns=8,
     )
 
-    assert spy.calls == [("generate", 3)]
+    assert spy.calls == [("generate", 3, ("on_delta",))]
     assert spy.signals[0] is cancel
 
 
