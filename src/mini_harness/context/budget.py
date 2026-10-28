@@ -39,15 +39,21 @@ RETAIN_RATIO_NUMERATOR = 16
 RETAIN_RATIO_DENOMINATOR = 100
 
 
-def trigger_line(window: int, reserve: int) -> int:
-    """触发线 = `floor(min(W * 0.8, W - O - 65536))`，负值取 0。
+def trigger_line(
+    window: int,
+    reserve: int,
+    *,
+    threshold_ratio: float = 0.8,
+    headroom_tokens: int = CONTEXT_HEADROOM_TOKENS,
+) -> int:
+    """触发线 = `floor(min(W * threshold_ratio, W - O - headroom_tokens))`，负值取 0。
 
-    默认参数（128000 / 8192）下是 54272：`W - O - 65536` 这一支比 `W * 0.8` 小。
-    整数运算，不用浮点，`floor` 由整除给出。
+    默认参数（128000 / 8192 / 0.8 / 65536）下是 54272：`W - O - 65536` 这一支更小。
+    浮点只用在比例乘法上；`int()` 向零取整，窗口与参数为正时就是 floor。
     """
     line = min(
-        window * TRIGGER_RATIO_NUMERATOR // TRIGGER_RATIO_DENOMINATOR,
-        pressure_budget(window, reserve) - CONTEXT_HEADROOM_TOKENS,
+        int(window * threshold_ratio),
+        pressure_budget(window, reserve) - headroom_tokens,
     )
     return max(line, 0)
 
@@ -106,9 +112,16 @@ def budget_reading(events: Sequence[EventRecord], messages: Sequence[Message]) -
     return max(estimate_tokens(messages), reported)
 
 
-def retain_line(window: int) -> int:
-    """保留尾部预算 = `floor(W * 0.16)`。"""
-    return window * RETAIN_RATIO_NUMERATOR // RETAIN_RATIO_DENOMINATOR
+def retain_line(
+    window: int,
+    *,
+    retain_ratio: float = 0.16,
+    retain_tokens: int = 0,
+) -> int:
+    """保留尾部预算：`retain_tokens > 0` 时用它，否则 `floor(W * retain_ratio)`。"""
+    if retain_tokens > 0:
+        return retain_tokens
+    return int(window * retain_ratio)
 
 
 def _record_chars(event: EventRecord) -> int:
@@ -181,13 +194,20 @@ def _round_end(events: Sequence[EventRecord], owner: dict[str, int], seq: int) -
     return max(members) + 1
 
 
-def shadowed_range(events: Sequence[EventRecord], window: int) -> dict[str, int] | None:
+def shadowed_range(
+    events: Sequence[EventRecord],
+    window: int,
+    *,
+    retain_ratio: float = 0.16,
+    retain_tokens: int = 0,
+) -> dict[str, int] | None:
     """这次压缩遮蔽哪一段：`{start, end}` 是 seq 闭区间，`None` 表示没有可遮蔽的内容。
 
-    从对话体末尾往前累计估算 token 选出保留尾部（预算 `floor(W * 0.16)`），遮蔽它之前那段。
-    `session/start` 与既有的 `compaction/summary` 不进范围；切点落在一组工具往返里时整组一起遮蔽。
+    从对话体末尾往前累计估算 token 选出保留尾部（默认 `floor(W * 0.16)`；`retain_tokens > 0`
+    时用绝对值），遮蔽它之前那段。`session/start` 与既有的 `compaction/summary` 不进范围；
+    切点落在一组工具往返里时整组一起遮蔽。
     """
-    retain = retain_line(window)
+    retain = retain_line(window, retain_ratio=retain_ratio, retain_tokens=retain_tokens)
     protected_after = max(
         (event.seq for event in events if event.type in PROTECTED_EVENT_TYPES),
         default=-1,

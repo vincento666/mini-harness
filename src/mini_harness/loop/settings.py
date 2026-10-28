@@ -17,6 +17,10 @@ APPROVAL_MODES: tuple[ApprovalMode, ...] = ("ask", "auto")
 # 窗口预算的默认值只写在这里：CLI 的 `--window` / `--reserve` 默认值取自同一份。
 DEFAULT_WINDOW = 128000
 DEFAULT_RESERVE = 8192
+DEFAULT_COMPACTION_THRESHOLD_RATIO = 0.8
+DEFAULT_COMPACTION_HEADROOM_TOKENS = 65536
+DEFAULT_COMPACTION_RETAIN_RATIO = 0.16
+DEFAULT_COMPACTION_RETAIN_TOKENS = 0
 
 # 内置默认只住在这一处：CLI 的 flag 默认是 `None` 哨兵，配置文件也没写时才落到这一份。
 # provider 的内置默认由环境决定（ADR-0027）：`MINIHNS_API_KEY` 已设且非空时是 `openai`，
@@ -75,6 +79,11 @@ class SessionSettings:
     # 窗口预算的两个参数（不变量 D）：`--window` 与 `--reserve`。
     window: int = DEFAULT_WINDOW
     reserve: int = DEFAULT_RESERVE
+    # 压缩参数：默认值保持 DSH 的形状；ratio/tokens 由配置给出。
+    compaction_threshold_ratio: float = DEFAULT_COMPACTION_THRESHOLD_RATIO
+    compaction_headroom_tokens: int = DEFAULT_COMPACTION_HEADROOM_TOKENS
+    compaction_retain_ratio: float = DEFAULT_COMPACTION_RETAIN_RATIO
+    compaction_retain_tokens: int = DEFAULT_COMPACTION_RETAIN_TOKENS
     # 端点三条结伴出现：payload 里那三个字段由这一个对象派生。
     endpoint: ProviderEndpoint | None = None
     # 平台事实（ADR-0029）：由入口填，`session/start` 原样写下去；`None` 就是「这次没有这份事实」。

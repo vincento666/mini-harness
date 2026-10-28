@@ -52,6 +52,23 @@ def _response(seq: int, *, usage: dict[str, int], purpose: str | None = None) ->
     return _rec(seq, "model/response", payload)
 
 
+def test_trigger_line_accepts_custom_ratio_and_headroom() -> None:
+    assert (
+        trigger_line(
+            100000,
+            1000,
+            threshold_ratio=0.5,
+            headroom_tokens=1000,
+        )
+        == 50000
+    )
+
+
+def test_retain_line_prefers_tokens_and_falls_back_to_ratio() -> None:
+    assert retain_line(100000, retain_ratio=0.10, retain_tokens=3000) == 3000
+    assert retain_line(100000, retain_ratio=0.10, retain_tokens=0) == 10000
+
+
 def test_the_trigger_line_is_the_formula_with_the_locked_constants() -> None:
     """默认参数下触发线是 54272：`W - O - 65536` 这一支比 `W * 0.8` 小。"""
     assert trigger_line(DEFAULT_WINDOW, DEFAULT_RESERVE) == 54272
@@ -226,6 +243,13 @@ def test_a_shadowed_measurement_stops_calibrating() -> None:
 def test_the_retain_budget_is_sixteen_percent_of_the_window() -> None:
     assert retain_line(DEFAULT_WINDOW) == 20480
     assert retain_line(1000) == 160
+
+
+def test_shadowed_range_follows_retain_tokens() -> None:
+    events = [_start(), _big(1, 100000), _big(2, 4000)]
+
+    assert shadowed_range(events, 100000) == {"start": 1, "end": 1}
+    assert shadowed_range(events, 100000, retain_tokens=30000) is None
 
 
 def test_the_shadowed_range_covers_the_oldest_body_and_keeps_the_tail() -> None:

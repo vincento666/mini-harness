@@ -6,15 +6,36 @@ seam ⑥ 的黑盒判据分不开「禁用的键」与「未知的键」：两�
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 
 from mini_harness.config import (
     CONFIG_CODES,
     ConfigFailure,
     build_registry,
+    layer_settings,
     load_config,
     validate_config,
 )
+
+
+def test_compaction_ratio_accepts_float_and_int() -> None:
+    assert validate_config({"compaction_retain_ratio": 0.10}) is None
+    assert validate_config({"compaction_retain_ratio": 1}) is None
+
+
+def test_compaction_bool_is_not_a_number() -> None:
+    failure = validate_config({"compaction_retain_tokens": True})
+
+    assert isinstance(failure, ConfigFailure)
+    assert failure.code == "CONFIG_INVALID_VALUE"
+
+
+def test_an_old_config_without_compaction_keys_is_still_valid() -> None:
+    assert validate_config({"window": 70000, "reserve": 100}) is None
+    assert validate_config({"mode": "yolo"}) == ConfigFailure(
+        "CONFIG_UNKNOWN_KEY", "配置文件里有未知的键：mode"
+    )
 
 
 def test_a_prompt_is_forbidden_not_merely_unknown() -> None:
@@ -49,6 +70,17 @@ def test_a_wrong_typed_value_is_a_distinct_failure() -> None:
 
 def test_a_settings_shaped_config_validates() -> None:
     assert validate_config({"max_turns": 3, "tools": ["read", "bash"]}) is None
+
+
+def test_an_integer_ratio_is_normalized_to_float() -> None:
+    effective = layer_settings(
+        argparse.Namespace(),
+        {"compaction_retain_ratio": 1, "compaction_threshold_ratio": 1},
+        {},
+    )
+
+    assert isinstance(effective.compaction_retain_ratio, float)
+    assert isinstance(effective.compaction_threshold_ratio, float)
 
 
 def test_every_config_failure_code_is_reachable(tmp_path: Path) -> None:

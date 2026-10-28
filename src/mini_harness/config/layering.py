@@ -15,6 +15,10 @@ from typing import Any
 from mini_harness.loop.settings import (
     DEFAULT_APPEND_SYSTEM_PROMPT,
     DEFAULT_APPROVAL,
+    DEFAULT_COMPACTION_HEADROOM_TOKENS,
+    DEFAULT_COMPACTION_RETAIN_RATIO,
+    DEFAULT_COMPACTION_RETAIN_TOKENS,
+    DEFAULT_COMPACTION_THRESHOLD_RATIO,
     DEFAULT_MAX_TURNS,
     DEFAULT_PROVIDER,
     DEFAULT_PROVIDER_KEY_ENV,
@@ -33,6 +37,10 @@ BUILTIN_DEFAULTS: dict[str, Any] = {
     "max_turns": DEFAULT_MAX_TURNS,
     "window": DEFAULT_WINDOW,
     "reserve": DEFAULT_RESERVE,
+    "compaction_threshold_ratio": DEFAULT_COMPACTION_THRESHOLD_RATIO,
+    "compaction_headroom_tokens": DEFAULT_COMPACTION_HEADROOM_TOKENS,
+    "compaction_retain_ratio": DEFAULT_COMPACTION_RETAIN_RATIO,
+    "compaction_retain_tokens": DEFAULT_COMPACTION_RETAIN_TOKENS,
     "append_system_prompt": DEFAULT_APPEND_SYSTEM_PROMPT,
     "sandbox": DEFAULT_SANDBOX,
     "approval": DEFAULT_APPROVAL,
@@ -61,6 +69,10 @@ class EffectiveSettings:
     max_turns: int
     window: int
     reserve: int
+    compaction_threshold_ratio: float
+    compaction_headroom_tokens: int
+    compaction_retain_ratio: float
+    compaction_retain_tokens: int
     append_system_prompt: str
     sandbox: SandboxLevel
     approval: ApprovalMode
@@ -101,6 +113,9 @@ def layer_settings(
         # 没有对应 flag 的字段（`tools` 与 `approval`）在 CLI 层就是「没给」。
         from_layer = _from_layers(args, config, name)
         values[name] = builtin if from_layer is None else from_layer
+    # ratio 的配置值可能是 TOML 的 int（例如 1）；有效设置统一成 float。
+    for name in ("compaction_threshold_ratio", "compaction_retain_ratio"):
+        values[name] = float(values[name])
 
     provider = _provider_of(args, config, source_env)
     values["provider"] = provider

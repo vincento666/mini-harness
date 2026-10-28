@@ -268,6 +268,57 @@ def test_a_one_shot_run_writes_exactly_one_segment(tmp_path: Path) -> None:
     }
 
 
+def test_compaction_ratio_out_of_range_fails_before_a_session(tmp_path: Path) -> None:
+    (tmp_path / "mini.config.toml").write_text("compaction_retain_ratio = 0\n", encoding="utf-8")
+
+    result = _cli(
+        "run", "-p", "任务", "--provider", "mock", "--fixture", str(HELLO_SCENARIO), cwd=tmp_path
+    )
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert _log_files(tmp_path) == []
+
+
+def test_compaction_negative_tokens_fail_before_a_session(tmp_path: Path) -> None:
+    (tmp_path / "mini.config.toml").write_text(
+        "compaction_headroom_tokens = -1\n", encoding="utf-8"
+    )
+
+    result = _cli(
+        "run", "-p", "任务", "--provider", "mock", "--fixture", str(HELLO_SCENARIO), cwd=tmp_path
+    )
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert _log_files(tmp_path) == []
+
+
+def test_compaction_config_reaches_the_session_start_payload(tmp_path: Path) -> None:
+    (tmp_path / "mini.config.toml").write_text(
+        "compaction_threshold_ratio = 0.5\n"
+        "compaction_headroom_tokens = 1000\n"
+        "compaction_retain_ratio = 0.10\n"
+        "compaction_retain_tokens = 3000\n",
+        encoding="utf-8",
+    )
+
+    result = _cli(
+        "run", "-p", "任务", "--provider", "mock", "--fixture", str(HELLO_SCENARIO), cwd=tmp_path
+    )
+
+    records = [
+        json.loads(line)
+        for line in _log_files(tmp_path)[0].read_text(encoding="utf-8").splitlines()
+    ]
+    payload = next(record["payload"] for record in records if record["type"] == "session/start")
+    assert result.returncode == 0
+    assert payload["compaction_threshold_ratio"] == 0.5
+    assert payload["compaction_headroom_tokens"] == 1000
+    assert payload["compaction_retain_ratio"] == 0.10
+    assert payload["compaction_retain_tokens"] == 3000
+
+
 def test_events_jsonl_stdout_matches_the_log_line_by_line(tmp_path: Path) -> None:
     result = _cli(
         "run",
@@ -821,6 +872,10 @@ def test_the_three_entries_still_write_the_same_payload(tmp_path: Path) -> None:
         "approval",
         "window",
         "reserve",
+        "compaction_threshold_ratio",
+        "compaction_headroom_tokens",
+        "compaction_retain_ratio",
+        "compaction_retain_tokens",
         "tools",
         "platform",
     }
