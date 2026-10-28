@@ -121,12 +121,12 @@ uv run minihns replay <cli-session-id> --session-dir .tmp\h2-uat\sessions-cli
 
 | 场次 | 动作 | 预期 | 实际观察（命令 / 日志 / 截图） | 结论 | 别扭在哪 |
 |---|---|---|---|---|---|
-| S1 | 长回复首帧 | <1 s / 无 id | | | |
-| S2 | delta 拼接 | 等于最终 content | | | |
-| S3 | 工具调用 | tool_calls 完整 | | | |
-| S4 | 断线 + snapshot | 不补 delta / 最终只一次 | | | |
-| S5 | replay 对比 | 退出码 0 / 逐条相等 | | | |
+| S1 | 长回复首帧 | <1 s / 无 id | 第一次 `[first delta] 781 ms`；S4 重跑 `488 ms`；`▍` 先出字 | 通过 | 无 |
+| S2 | delta 拼接 | 等于最终 content | 最终回复与流式累积一致；`Select-String ... 'model/delta'` 无输出 | 通过 | 无 |
+| S3 | 工具调用 | tool_calls 完整 | `read({"file_path":"note.md"})`；`tool/call read`、`tool/result OK`；回答 `alpha`/`beta` | 通过 | 无 |
+| S4 | 断线 + snapshot | 不补 delta / 最终只一次 | `[snapshot] last_seq=8 status=idle messages=3`；日志只有 1 条 `model/response`；刷新页面后最终回复只出现一次 | 通过 | 首次重连时 live 区残留半段（验收页 bug，已修 `ea1bbbb`） |
+| S5 | replay 对比 | 退出码 0 / 逐条相等 | CLI `ed0deac1...`：`verified seq=3: OK`；host `b6096c52...`：`verified seq=4: OK`；两份都无 `REPLAY_MISMATCH`，内容 `你好` | 通过 | 一开始把 CLI id 指到 `sessions-mock`，且 mock host 只建会话没发消息；修正后通过 |
 
-**至少一条「用起来别扭」**（没有就写「这一版意外地顺」）：_
+**至少一条「用起来别扭」**：S4 的 snapshot 重连会让旧 live 区残留半段文字；已修验收页。S5 的 `sessions-cli` / `sessions-mock` 容易串，且 mock host 只建会话不发消息会让 replay 报 `no_context_assembled`。
 
-**结论**：通过 / 不通过（不通过要写清哪一场、哪条预期没成立、日志 session id）：_
+**结论**：通过。S1–S5 均成立；H2 的 UAT 这一半完成。
