@@ -97,7 +97,7 @@ uv run minihns host --http --port 19411 `
   --provider mock --fixture $fixture
 ```
 
-3. 打开第二个 HTML 标签页，Base URL 填 `http://127.0.0.1:19411`，token 填上面的 `h2-uat-yyy...`；创建会话、发 `任务`。记下 session id（host 流式那一份）。
+3. 打开第二个 HTML 标签页，Base URL 填 `http://127.0.0.1:19411`，token 填上面的 `h2-uat-yyy...`；创建会话、**必须发送一条「任务」**，否则日志只有 `session/start`，replay 会报 `no_context_assembled`。记下 session id（host 流式那一份）。
 4. 同一个 fixture 跑 CLI 非流式（另开终端）：
 
 ```powershell
