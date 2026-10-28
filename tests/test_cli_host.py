@@ -555,6 +555,146 @@ def test_the_event_stream_mixes_durable_and_delta_frames(tmp_path: Path) -> None
         _stop(process)
 
 
+def test_a_delta_does_not_move_the_cursor(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = tmp_path / "delta-cursor.json"
+    fixture.write_text(
+        json.dumps(
+            [{"content": "你好", "deltas": ["你", "好"], "finish_reason": "stop"}],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(client, workspace, fixture)
+            client.post(
+                f"/sessions/{session_id}/messages",
+                headers=_headers(),
+                json={"content": "任务"},
+            )
+            _wait_until_idle(client, session_id)
+            log = session_dir / f"{session_id}.jsonl"
+            records = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+            last_seq = records[-1]["seq"]
+
+            with client.stream(
+                "GET",
+                f"/sessions/{session_id}/events?snapshot=1",
+                headers=_headers(),
+            ) as response:
+                snapshot = json.loads(_next_frame(response.iter_lines())["data"])
+
+        assert snapshot["last_seq"] == last_seq
+        assert snapshot["messages"][-1]["content"] == "你好"
+        assert "model/delta" not in log.read_text(encoding="utf-8")
+    finally:
+        _stop(process)
+
+
+def test_reconnect_does_not_replay_lost_deltas(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = tmp_path / "delta-reconnect.json"
+    fixture.write_text(
+        json.dumps(
+            [{"content": "你好", "deltas": ["你", "好"], "finish_reason": "stop"}],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(client, workspace, fixture)
+            with client.stream(
+                "GET", f"/sessions/{session_id}/events", headers=_headers()
+            ) as response:
+                lines = response.iter_lines()
+                assert _next_frame(lines)["event"] == "session/start"
+                client.post(
+                    f"/sessions/{session_id}/messages",
+                    headers=_headers(),
+                    json={"content": "任务"},
+                )
+                while _next_frame(lines)["event"] != "model/delta":
+                    pass
+            _wait_until_idle(client, session_id)
+
+            with client.stream(
+                "GET",
+                f"/sessions/{session_id}/events?snapshot=1",
+                headers=_headers(),
+            ) as response:
+                snapshot = json.loads(_next_frame(response.iter_lines())["data"])
+
+            log = session_dir / f"{session_id}.jsonl"
+            text = log.read_text(encoding="utf-8")
+        assert snapshot["messages"][-1]["content"] == "你好"
+        assert "model/delta" not in text
+        assert text.count('"type": "model/response"') == 1
+    finally:
+        _stop(process)
+
+
+def test_a_disconnected_delta_reader_does_not_stop_the_segment(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = tmp_path / "delta-disconnect.json"
+    fixture.write_text(
+        json.dumps(
+            [{"content": "你好", "deltas": ["你", "好"], "finish_reason": "stop"}],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            baseline = _create_session(client, workspace, fixture)
+            client.post(
+                f"/sessions/{baseline}/messages",
+                headers=_headers(),
+                json={"content": "任务"},
+            )
+            _wait_until_idle(client, baseline)
+
+            watched = _create_session(client, workspace, fixture)
+            with client.stream(
+                "GET", f"/sessions/{watched}/events", headers=_headers()
+            ) as response:
+                _next_frame(response.iter_lines())
+                client.post(
+                    f"/sessions/{watched}/messages",
+                    headers=_headers(),
+                    json={"content": "任务"},
+                )
+            _wait_until_idle(client, watched)
+
+        assert _normalized_log(session_dir / f"{watched}.jsonl") == _normalized_log(
+            session_dir / f"{baseline}.jsonl"
+        )
+    finally:
+        _stop(process)
+
+
 def test_a_disconnect_does_not_change_the_session(tmp_path: Path) -> None:
     session_dir = tmp_path / "sessions"
     workspace = tmp_path / "workspace"
