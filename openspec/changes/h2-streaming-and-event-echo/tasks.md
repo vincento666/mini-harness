@@ -44,7 +44,7 @@
 
 ## 8. 收尾四项
 
-- [ ] 8.1 真实端点验收：真实 deepseek 跑 S1/S2/S3/S4，记录进 `docs/verification/h2-streaming-and-event-echo-real-endpoint.md`
+- [x] 8.1 真实端点验收：真实 deepseek 跑 S1/S2/S3/S4，记录进 `docs/verification/h2-streaming-and-event-echo-real-endpoint.md`
 - [ ] 8.2 UAT 验收（人跑）：按 `docs/verification/h2-streaming-and-event-echo-uat.md` 填观察表；tty/浏览器场次 agent 不得代跑（ADR-0025）
 - [ ] 8.3 变异测试一轮：至少改坏「首 delta 前/后重试边界」「delta 是否写日志」「snapshot 后是否补 delta」各一处，记进 `docs/verification/h2-streaming-and-event-echo-mutation.md`
 - [ ] 8.4 Learning Gate：扫本轮证据写进 `docs/lessons.md` 收件箱；无可复用信号写 `NO-PROMOTION`
