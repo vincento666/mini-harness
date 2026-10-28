@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
+from decimal import ROUND_FLOOR, Decimal
 
 from mini_harness.events.fold import PURPOSE_COMPACTION, Message, shadowed_seqs
 from mini_harness.events.record import EventRecord
@@ -38,13 +39,27 @@ TOOL_ROUND_EVENT_TYPES: frozenset[str] = frozenset({"tool/call", "tool/result"})
 RETAIN_RATIO_NUMERATOR = 16
 RETAIN_RATIO_DENOMINATOR = 100
 
+# 这四个默认值的唯一来源：settings / layering 从这里取，budget 的默认参数也用它。
+DEFAULT_COMPACTION_THRESHOLD_RATIO = TRIGGER_RATIO_NUMERATOR / TRIGGER_RATIO_DENOMINATOR
+DEFAULT_COMPACTION_HEADROOM_TOKENS = CONTEXT_HEADROOM_TOKENS
+DEFAULT_COMPACTION_RETAIN_RATIO = RETAIN_RATIO_NUMERATOR / RETAIN_RATIO_DENOMINATOR
+DEFAULT_COMPACTION_RETAIN_TOKENS = 0
+
+
+def _floor_ratio(window: int, ratio: float) -> int:
+    """按十进制字面值取 `floor(W * ratio)`，避免 0.7 的二进制 double 少 1。
+
+    `Decimal(str(ratio))` 把配置/默认值的十进制写法当精确值；窗口是整数，乘积可精确算。
+    """
+    return int((Decimal(window) * Decimal(str(ratio))).to_integral_value(rounding=ROUND_FLOOR))
+
 
 def trigger_line(
     window: int,
     reserve: int,
     *,
-    threshold_ratio: float = 0.8,
-    headroom_tokens: int = CONTEXT_HEADROOM_TOKENS,
+    threshold_ratio: float = DEFAULT_COMPACTION_THRESHOLD_RATIO,
+    headroom_tokens: int = DEFAULT_COMPACTION_HEADROOM_TOKENS,
 ) -> int:
     """触发线 = `floor(min(W * threshold_ratio, W - O - headroom_tokens))`，负值取 0。
 
@@ -52,7 +67,7 @@ def trigger_line(
     浮点只用在比例乘法上；`int()` 向零取整，窗口与参数为正时就是 floor。
     """
     line = min(
-        int(window * threshold_ratio),
+        _floor_ratio(window, threshold_ratio),
         pressure_budget(window, reserve) - headroom_tokens,
     )
     return max(line, 0)
@@ -115,13 +130,13 @@ def budget_reading(events: Sequence[EventRecord], messages: Sequence[Message]) -
 def retain_line(
     window: int,
     *,
-    retain_ratio: float = 0.16,
-    retain_tokens: int = 0,
+    retain_ratio: float = DEFAULT_COMPACTION_RETAIN_RATIO,
+    retain_tokens: int = DEFAULT_COMPACTION_RETAIN_TOKENS,
 ) -> int:
     """保留尾部预算：`retain_tokens > 0` 时用它，否则 `floor(W * retain_ratio)`。"""
     if retain_tokens > 0:
         return retain_tokens
-    return int(window * retain_ratio)
+    return _floor_ratio(window, retain_ratio)
 
 
 def _record_chars(event: EventRecord) -> int:
@@ -198,8 +213,8 @@ def shadowed_range(
     events: Sequence[EventRecord],
     window: int,
     *,
-    retain_ratio: float = 0.16,
-    retain_tokens: int = 0,
+    retain_ratio: float = DEFAULT_COMPACTION_RETAIN_RATIO,
+    retain_tokens: int = DEFAULT_COMPACTION_RETAIN_TOKENS,
 ) -> dict[str, int] | None:
     """这次压缩遮蔽哪一段：`{start, end}` 是 seq 闭区间，`None` 表示没有可遮蔽的内容。
 

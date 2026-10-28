@@ -64,6 +64,11 @@ def test_trigger_line_accepts_custom_ratio_and_headroom() -> None:
     )
 
 
+def test_floors_a_decimal_ratio_without_binary_drift() -> None:
+    assert trigger_line(100, 0, threshold_ratio=0.7, headroom_tokens=0) == 70
+    assert retain_line(1000, retain_ratio=0.7) == 700
+
+
 def test_retain_line_prefers_tokens_and_falls_back_to_ratio() -> None:
     assert retain_line(100000, retain_ratio=0.10, retain_tokens=3000) == 3000
     assert retain_line(100000, retain_ratio=0.10, retain_tokens=0) == 10000

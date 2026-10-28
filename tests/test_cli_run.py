@@ -269,29 +269,74 @@ def test_a_one_shot_run_writes_exactly_one_segment(tmp_path: Path) -> None:
 
 
 def test_compaction_ratio_out_of_range_fails_before_a_session(tmp_path: Path) -> None:
-    (tmp_path / "mini.config.toml").write_text("compaction_retain_ratio = 0\n", encoding="utf-8")
+    for config in (
+        "compaction_retain_ratio = 0\n",
+        "compaction_threshold_ratio = 1.1\n",
+    ):
+        (tmp_path / "mini.config.toml").write_text(config, encoding="utf-8")
 
-    result = _cli(
-        "run", "-p", "任务", "--provider", "mock", "--fixture", str(HELLO_SCENARIO), cwd=tmp_path
-    )
+        result = _cli(
+            "run",
+            "-p",
+            "任务",
+            "--provider",
+            "mock",
+            "--fixture",
+            str(HELLO_SCENARIO),
+            cwd=tmp_path,
+        )
 
-    assert result.returncode == 2
-    assert "INVALID_ARGUMENT" in result.stderr
-    assert _log_files(tmp_path) == []
+        assert result.returncode == 2
+        assert "INVALID_ARGUMENT" in result.stderr
+        assert _log_files(tmp_path) == []
 
 
 def test_compaction_negative_tokens_fail_before_a_session(tmp_path: Path) -> None:
+    for config in (
+        "compaction_headroom_tokens = -1\n",
+        "compaction_retain_tokens = -1\n",
+    ):
+        (tmp_path / "mini.config.toml").write_text(config, encoding="utf-8")
+
+        result = _cli(
+            "run",
+            "-p",
+            "任务",
+            "--provider",
+            "mock",
+            "--fixture",
+            str(HELLO_SCENARIO),
+            cwd=tmp_path,
+        )
+
+        assert result.returncode == 2
+        assert "INVALID_ARGUMENT" in result.stderr
+        assert _log_files(tmp_path) == []
+
+
+def test_compaction_boundary_values_are_accepted(tmp_path: Path) -> None:
     (tmp_path / "mini.config.toml").write_text(
-        "compaction_headroom_tokens = -1\n", encoding="utf-8"
+        "compaction_threshold_ratio = 1\n"
+        "compaction_retain_ratio = 1\n"
+        "compaction_headroom_tokens = 0\n"
+        "compaction_retain_tokens = 0\n",
+        encoding="utf-8",
     )
 
     result = _cli(
         "run", "-p", "任务", "--provider", "mock", "--fixture", str(HELLO_SCENARIO), cwd=tmp_path
     )
 
-    assert result.returncode == 2
-    assert "INVALID_ARGUMENT" in result.stderr
-    assert _log_files(tmp_path) == []
+    assert result.returncode == 0, result.stderr
+    records = [
+        json.loads(line)
+        for line in _log_files(tmp_path)[0].read_text(encoding="utf-8").splitlines()
+    ]
+    payload = next(record["payload"] for record in records if record["type"] == "session/start")
+    assert payload["compaction_threshold_ratio"] == 1.0
+    assert payload["compaction_retain_ratio"] == 1.0
+    assert payload["compaction_headroom_tokens"] == 0
+    assert payload["compaction_retain_tokens"] == 0
 
 
 def test_compaction_config_reaches_the_session_start_payload(tmp_path: Path) -> None:

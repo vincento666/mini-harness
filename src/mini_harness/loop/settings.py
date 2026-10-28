@@ -6,6 +6,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from mini_harness.context import budget as context_budget
+
+DEFAULT_COMPACTION_THRESHOLD_RATIO = context_budget.DEFAULT_COMPACTION_THRESHOLD_RATIO
+DEFAULT_COMPACTION_HEADROOM_TOKENS = context_budget.DEFAULT_COMPACTION_HEADROOM_TOKENS
+DEFAULT_COMPACTION_RETAIN_RATIO = context_budget.DEFAULT_COMPACTION_RETAIN_RATIO
+DEFAULT_COMPACTION_RETAIN_TOKENS = context_budget.DEFAULT_COMPACTION_RETAIN_TOKENS
+
 # 围栏的两条独立轴：设置对象带着它们，围栏模块消费它们。
 SandboxLevel = Literal["read-only", "workspace-write", "danger-full-access"]
 ApprovalMode = Literal["ask", "auto"]
@@ -17,10 +24,6 @@ APPROVAL_MODES: tuple[ApprovalMode, ...] = ("ask", "auto")
 # 窗口预算的默认值只写在这里：CLI 的 `--window` / `--reserve` 默认值取自同一份。
 DEFAULT_WINDOW = 128000
 DEFAULT_RESERVE = 8192
-DEFAULT_COMPACTION_THRESHOLD_RATIO = 0.8
-DEFAULT_COMPACTION_HEADROOM_TOKENS = 65536
-DEFAULT_COMPACTION_RETAIN_RATIO = 0.16
-DEFAULT_COMPACTION_RETAIN_TOKENS = 0
 
 # 内置默认只住在这一处：CLI 的 flag 默认是 `None` 哨兵，配置文件也没写时才落到这一份。
 # provider 的内置默认由环境决定（ADR-0027）：`MINIHNS_API_KEY` 已设且非空时是 `openai`，

@@ -54,6 +54,8 @@ compaction_retain_ratio = 0.16
 compaction_retain_tokens = 0   # >0 时覆盖 ratio
 ```
 
+完整示例文件见 `docs/reference/mini.config.example.toml`。
+
 - 默认值必须让现有行为逐点不变；配置只在**新会话**生效。
 - 有效值 SHALL 进 `session/start.payload`，供审计；当前 `replay` 只重算 `context/assembled`，不读这四个字段（它们不参与折叠）。
 - 校验：`0 < threshold_ratio <= 1`、`0 < retain_ratio <= 1`、`headroom_tokens >= 0`、`retain_tokens >= 0`；压力预算仍要为正。
