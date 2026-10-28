@@ -16,7 +16,7 @@
 ## 下一步
 
 1. **M10**：立 `m10-tool-pipeline-and-concurrency`，第一个切片是**压缩参数可配置**（`threshold/headroom/retain_ratio/retain_tokens`，默认行为不变、进 `session/start`、replay 取回），再做六段管线、并发与结果剪枝。
-2. **思考模式与预算**：M10 之后、M11/M12 之前立 `reasoning-mode-and-budget`；durable `model/response` 带 reasoning、实时 `reasoning/delta` ephemeral、reasoning tokens 属 output 不重复计；DSH 对照与暂缓项见 `docs/reference/reasoning-mode.md`。
+2. **思考模式与预算**：M10 之后、M11/M12 之前立 `reasoning-mode-and-budget`；durable `model/response` 用有序 content blocks（reasoning/text/tool-call）而不是单字段、实时 `reasoning/delta` ephemeral、reasoning tokens 属 output 不重复计；DSH 对照与暂缓项见 `docs/reference/reasoning-mode.md`。
 3. **P0**：`fix-post-compaction-budget-reading` 先不 apply——诊断（W1/W2）没有复现「遮蔽后 tokens 后 > 前」；要么补一次能稳定触发溢出的真实端点样本再决定是否修，要么把它降级为未复现的历史缺陷并记账。
 4. **M11 / M12 / M13 / M14 / M14a / M14b / M14c / M15a / MEM1**：按 `docs/roadmap.md` 的顺序；M14 含 CLI 与 host 的斜杠命令、技能清单注入与正文按需加载；M14a–c 是 M14 之后的三小步（工作区契约 / 上下文经济与计量 / 个人助理 UX 工具）；M15a 是无人值守壳的硬前置；MEM1 是最小记忆。
 

@@ -304,9 +304,12 @@ finish_reason
 
 durable：
   model/response {
-    content: "最终回答",
-    reasoning: "最终思考文本",
-    tool_calls: [...],
+    blocks: [
+      {type:"reasoning", text:"先看 note.md"},
+      {type:"tool-call", id:"c1", name:"read", arguments:{file_path:"note.md"}},
+      {type:"reasoning", text:"读到了 alpha/beta"},
+      {type:"text", text:"note.md 里是 alpha 和 beta。"}
+    ],
     usage: {..., reasoning_tokens: 30},
     finish_reason
   }
@@ -314,7 +317,8 @@ durable：
 
 - 思考与回答是两条实时流，不能混进同一个 `model/delta`；
 - 只写一条 durable `model/response`，不按 delta 写日志；
-- `fold` 把 `reasoning` 放回 `Message`，后续请求可回传；
+- `fold` 保留 block 顺序；`content` / `tool_calls` 若保留，只能是 blocks 的派生投影，不能双写真源；
+- 后续请求按协议回传 blocks；只加一个 `reasoning` 字符串不能表达 reasoning/text/tool-call 的交错；
 - `reasoning_tokens` 是 `output_tokens` 的子集，不重复计。
 
 ### 6.3 DSH 的完整流程

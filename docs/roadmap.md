@@ -75,10 +75,10 @@ H1 / H2 是新增的宿主轨，不占用 M10–M15 的决策编号；M 编号�
 
 - **change**：`reasoning-mode-and-budget`（**M10 完成后才 propose**；不占 M 编号）
 - **层**：模型 + 宿主 + 日志 + 壳前协议
-- **内容**：provider 支持 reasoning（DeepSeek/兼容适配器的 `reasoning_content` 或 thinking block）；`off|low|high|max` 档位与有效值记录；实时 `reasoning/delta` 是独立 ephemeral 帧，不落日志；一条 durable `model/response` 同时带最终 `content` 与 `reasoning`（**不按 delta 写日志**）；`fold` 能重建 `Message.reasoning` 并回传；usage 的 `reasoning_tokens` 是 output 的子集、不重复计；UI 思考区折叠、回答区独立。设计底稿在 `docs/reference/reasoning-mode.md`。
-- **完成判据**：真实 reasoner 一次长回复的 reasoning delta 与最终 reasoning 一致；日志只有一条 `model/response`、没有 delta 记录；`replay` 逐点相等；unsupported effort 在网络 I/O 前失败；reasoning tokens 不重复计；UI 能分开折叠/回答；无 reasoning 的模型行为逐点不变；真实端点一次；UAT（人跑）观察表填完。
+- **内容**：provider 支持 reasoning（DeepSeek/兼容适配器的 `reasoning_content` 或 thinking block）；`off|low|high|max` 档位与有效值记录；实时 `reasoning/delta` 是独立 ephemeral 帧，不落日志；一条 durable `model/response` 用**有序 content blocks**（`reasoning` / `text` / `tool-call`）表达最终结果（**不按 delta 写日志**）；`fold` 保留块顺序并回传；usage 的 `reasoning_tokens` 是 output 的子集、不重复计；UI 思考区折叠、回答区独立。只加 `reasoning` 字符串不足以对齐 DSH 的交错形状，不作为目标。设计底稿在 `docs/reference/reasoning-mode.md`。
+- **完成判据**：真实 reasoner 一次长回复的 reasoning delta 与最终 blocks 一致；日志只有一条 `model/response`、没有 delta 记录；`reasoning → tool-call → reasoning → text` 的顺序可重放；`replay` 逐点相等；unsupported effort 在网络 I/O 前失败；reasoning tokens 不重复计；UI 能分开折叠/回答；无 reasoning 的模型行为逐点不变；真实端点一次；UAT（人跑）观察表填完。
 - **依赖**：M10；H2 的 SSE。**顺序**：M10 → 本 change → M11/M12；这样 M12 子代理能继承档位。
-- **明确不做**：完整 plan-mode 状态机（M14c 的 plan/todo 是另一层）、紧凑带时间 stream、单独 `assistant/attempt` 事件、完整 content-block 重构、DSH 式 active attempt baseline（先记着，后做）。
+- **明确不做**：完整 plan-mode 状态机（M14c 的 plan/todo 是另一层）、紧凑带时间 stream、单独 `assistant/attempt` 事件、DSH 式 active attempt baseline（先记着，后做）。
 
 ### M11 存储、恢复与投影缓存
 
