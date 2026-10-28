@@ -55,6 +55,7 @@ H1 / H2 是新增的宿主轨，不占用 M10–M15 的决策编号；M 编号�
 ### H2 流式与事件回显（宿主轨）
 
 - **change**：`h2-streaming-and-event-echo`
+- **状态**：✅ **2026-10-28 已归档**（`openspec/changes/archive/2026-10-28-h2-streaming-and-event-echo`）：真实端点 S1–S4、UAT S1–S5（人跑）、变异四条、Learning Gate 全过；主规格 `provider` / `host-api` 已 sync。**合并到 `main` 仍待人批**。
 - **层**：模型 + 宿主
 - **内容**：provider 走 `stream: true`（OpenAI 兼容 SSE）；`model/delta` 是**宿主流上的 ephemeral 帧**，不落日志；最终 `model/response` 仍是唯一 durable 真相；只有首 delta 之前才允许重试；流式 `tool_calls` 的拼装；mock 也能发 delta；`GET /events` 的 snapshot、断线续读与协议版本。设计底稿在 `docs/reference/host-streaming.md`。
 - **完成判据**：首帧在 1 s 内（真端点）；拼接 delta 等于最终 `content`；工具调用流式拼装正确；断线重连从 durable `seq` 续读、最终回复不重复；`replay` 与不流式逐点相等；真实端点一次。
