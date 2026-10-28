@@ -1,10 +1,10 @@
-# 当前状态
+﻿# 当前状态
 
 **更新：2026-10-27**。以 `git status --short` 与 `git log --oneline -3` 为准；本文件只写「现在」，历史在 `docs/verification/` 与 `openspec/changes/archive/`。
 
 ## 现在
 
-- `main` = **`46ce2d2`**（merge `change/h2-streaming-and-event-echo`），tag `m1`–`m9` 都在；H1 / H2 分支已删除。
+- `main` = **`af8b633`**（merge H2 `46ce2d2` + 状态文档），tag `m1`–`m9` 都在；H1 / H2 分支已删除。
 - **H1 已合入并归档**：40/40 task；归档在 `openspec/changes/archive/2026-10-27-h1-host-session-api`。主规格新建 `host-api`，`cli` / `fences` delta 已 sync。GLOSSARY / roadmap / stage-map 的 K/R/S 分层口径已 cherry-pick（`9af5d3d`、`ad60a9d`）。
 - **H2 已合入并归档**：全部 task 勾完；真实端点 S1–S4、人跑 UAT S1–S5、变异四条、Learning Gate 全过。归档在 `openspec/changes/archive/2026-10-28-h2-streaming-and-event-echo`；主规格 `provider` / `host-api` 已 sync。
 - **P0 诊断完成**：`docs/verification/p0-budget-reading-diagnostic-2026-10-27.md`。当前 main 的 W1 四次遮蔽均下降、W2 未触发溢出；**不按旧 20 个 task 原样 apply**，需重新确认是否还有可复现症状。
@@ -52,4 +52,5 @@
 - 延后重构账：`docs/adr/0002-deferred-refactors.md`（末尾有 2026-10-26 的 M10 分流）
 - 每 change 的验收：`docs/verification/<change-id>-{manual,real-endpoint,uat,mutation}.md`
 - 本轮的决策：ADR-0031（宿主）、0032（流式 ephemeral）、0033（并发策略）、0034（评测支撑轨）、0035（fork / 插件容器范围）
+
 
