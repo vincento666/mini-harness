@@ -53,6 +53,47 @@ def _printed_context(stdout: str) -> dict[str, object]:
     return json.loads(lines[-1][len(_PREFIX) :])
 
 
+async def test_replay_is_equal_with_and_without_streaming(tmp_path: Path) -> None:
+    entries = [{"content": "你好", "deltas": ["你", "好"], "finish_reason": "stop"}]
+    plain_log, _ = await run_session_fixture(
+        tmp_path,
+        "s-plain",
+        FixtureProvider(entries=entries),
+        session_dir=tmp_path / "plain-sessions",
+        max_turns=8,
+    )
+    seen: list[str] = []
+
+    async def sink(turn_id: str, text: str) -> None:
+        seen.append(text)
+
+    stream_log, _ = await run_session_fixture(
+        tmp_path,
+        "s-stream",
+        FixtureProvider(entries=entries),
+        session_dir=tmp_path / "stream-sessions",
+        on_delta=sink,
+        max_turns=8,
+    )
+
+    def normalized(log_path: Path) -> list[tuple[str, dict[str, object]]]:
+        return [(record.type, record.payload) for record in read_events(log_path)]
+
+    assert normalized(stream_log.path) == normalized(plain_log.path)
+    assert seen == ["你", "好"]
+
+    for session_id, log_path in (("s-plain", plain_log.path), ("s-stream", stream_log.path)):
+        replay = _cli(
+            "replay",
+            session_id,
+            "--session-dir",
+            str(log_path.parent),
+            cwd=tmp_path,
+        )
+        assert replay.returncode == 0, replay.stderr
+        assert "REPLAY_MISMATCH" not in replay.stderr
+
+
 def test_replay_final_context_matches_the_recorded_context_assembled(tmp_path: Path) -> None:
     session_id, log_path = _run_once(tmp_path)
     recorded = _recorded_contexts(log_path)[-1]

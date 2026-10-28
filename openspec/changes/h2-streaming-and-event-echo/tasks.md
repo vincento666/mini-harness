@@ -34,13 +34,13 @@
 
 ## 6. Replay 与既有行为守卫
 
-- [ ] 6.1 seam ④：红判据 `test_replay_is_equal_with_and_without_streaming`——同一 fixture 的流式/非流式两份日志，`replay` 都退出码 0，`model/response`/`tool/*`/`turn/*` 逐点相等
-- [ ] 6.2 seam ⑥：守卫判据——既有 `serve`/`run`/`chat` 的非流式判据全绿；`session/start` payload 不变
+- [x] 6.1 seam ④：红判据 `test_replay_is_equal_with_and_without_streaming`——同一 fixture 的流式/非流式两份日志，`replay` 都退出码 0，`model/response`/`tool/*`/`turn/*` 逐点相等
+- [x] 6.2 seam ⑥：守卫判据——既有 `serve`/`run`/`chat` 的非流式判据全绿；`session/start` payload 不变
 
 ## 7. 文档与 UAT
 
-- [ ] 7.1 文档：修订 ADR-0006 的「非流式」收窄为「默认非流式、H2 起可选流式」；把 `model/delta` / ephemeral 的取舍写进 ADR-0032 的后果或补记
-- [ ] 7.2 UAT 骨架已在 propose 时立好 `docs/verification/h2-streaming-and-event-echo-uat.md`；跑完由人填观察表
+- [x] 7.1 文档：修订 ADR-0006 的「非流式」收窄为「默认非流式、H2 起可选流式」；把 `model/delta` / ephemeral 的取舍写进 ADR-0032 的后果或补记
+- [x] 7.2 UAT 骨架已在 propose 时立好 `docs/verification/h2-streaming-and-event-echo-uat.md`；跑完由人填观察表
 
 ## 8. 收尾四项
 
