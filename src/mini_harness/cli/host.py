@@ -337,6 +337,9 @@ class HostServer:
                             while not deltas.empty():
                                 await response.write(_delta_frame(deltas.get_nowait()))
                         await response.write(sse_frame(record))
+                    # 还没有 response 时也要把已到的增量送出去，不能等整段结束。
+                    while not deltas.empty():
+                        await response.write(_delta_frame(deltas.get_nowait()))
                 except ConnectionResetError:
                     return response
                 await asyncio.sleep(EVENTS_POLL_SECONDS)
