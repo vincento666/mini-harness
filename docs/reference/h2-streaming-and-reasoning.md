@@ -13,49 +13,74 @@
 
 ---
 
-## 0. 总图：外部 API、日志、两种帧
+## 0. 总图：Client / Web、Host、Kernel、Provider、Log
 
 ```text
-外部模型 API（OpenAI 兼容 /chat/completions，stream=true）
-   │  HTTP POST + Bearer key（key 只从环境变量名解析，不进日志）
-   │  SSE: data: {...}\n\n ... data: [DONE]
-   ▼
-┌──────────────── Provider 适配器（httpx stream）────────────────┐
-│ 解析 data / [DONE]；tool_calls 按 index 拼装；usage 可选        │
-│ 正文片段 → DeltaSink(text)                                      │
-│ 最终 → AssistantTurn(content, tool_calls, usage, finish_reason) │
-└───────────────────────────────┬─────────────────────────────────┘
-                                │ final turn / delta
-┌───────────────────────────────▼─────────────────────────────────┐
-│ Kernel（turn_loop）                                              │
-│ 装配 → provider.generate(..., on_delta=forward)                 │
-│ forward(text) → env.on_delta(turn_id, text)                     │
-│ 最终写 model/request、model/response 到日志                     │
-└───────────────┬───────────────────────────────┬─────────────────┘
-                │ append                         │ TurnDeltaSink
-                ▼                                ▼
-        ┌───────────────┐              ┌──────────────────────────┐
-        │ 日志 JSONL     │              │ Host                     │
-        │ durable 真相   │              │ 每 SSE 连接一个 delta 队列│
-        └───────┬───────┘              └──────────┬───────────────┘
-                │ fold / LogTail                   │
-                ▼                                  ▼
-        ┌───────────────┐              ┌──────────────────────────┐
-        │ 表层 messages │              │ SSE 合流                  │
-        │ 模型上下文     │              │ durable 帧 + model/delta  │
-        └───────────────┘              └──────────┬───────────────┘
-                                                  ▼
-                                        ┌──────────────────┐
-                                        │ Shell / UI       │
-                                        │ 正文区 + 事件回显 │
-                                        └──────────────────┘
+┌────────────────────────── Client / Web ───────────────────────────────┐
+│ 浏览器 / 壳：fetch + ReadableStream 读 SSE                              │
+│ 展示：正文区、思考折叠区（未来）、事件回显、审批提示、会话列表           │
+│ 发出：POST messages / cancel / approvals；GET events                    │
+└───────────────────────────────▲──────────────────┬────────────────────┘
+                                │ HTTP / SSE        │ 人的选择
+                                │ durable + delta   │
+┌───────────────────────────────┴──────────────────▼────────────────────┐
+│ Host（宿主服务层）                                                     │
+│ 鉴权 / 来源 / 会话表 / 段队列 / 取消 / approval future / 退出收尾       │
+│ SSE 合流：LogTail（durable）+ 每连接 delta 队列（ephemeral）            │
+│ 不解释围栏枚举、不执行工具、不写日志                                     │
+└───────────────────────────────▲──────────────────┬────────────────────┘
+                                │ TurnDeltaSink     │ 段 / 回合 / 工具
+                                │                   │ append
+┌───────────────────────────────┴──────────────────▼────────────────────┐
+│ Kernel（内核层）                                                       │
+│ turn_loop：装配 → provider.generate(..., on_delta) → tool batch → 停止  │
+│ 把最终 model/request / model/response / tool/* / turn/* 写成 durable    │
+└───────────────────────────────▲──────────────────┬────────────────────┘
+                                │ final turn        │ chunks
+                                │                   │
+┌───────────────────────────────┴──────────────────▼────────────────────┐
+│ Provider 适配器（模型层）                                              │
+│ OpenAI 兼容 SSE / DeepSeek / mock；正文 delta、tool_calls、usage       │
+│ 只把正文交给 DeltaSink；最终返回 AssistantTurn                         │
+└───────────────────────────────▲───────────────────────────────────────┘
+                                │ HTTPS + SSE
+                     ┌──────────┴──────────┐
+                     │ 外部模型 API        │
+                     │ /chat/completions   │
+                     └─────────────────────┘
+
+           ┌──────────────────────── Log（durable 层）──────────────────────┐
+           │ JSONL，append-only，seq 单点分配；会话/回合/工具/审批/错误事实  │
+           │ 不是 SSE 的第二份拷贝；SSE 的 durable 帧是它的逐行镜像          │
+           └───────────────▲──────────────────────────────┬───────────────┘
+                           │ append（Kernel）              │ LogTail（Host）
+                           │                              │ fold（Kernel 装配）
+                           │                              ▼
+                           │                    ┌──────────────────────┐
+                           └────────────────────│ Surface / messages   │
+                                                │ fold(日志前缀)       │
+                                                │ 模型唯一能感知的上下文│
+                                                └──────────────────────┘
 ```
+
+**分层不是“从上到下单向调用”**，而是：
+
+| 层 | 拥有 | 不拥有 |
+|---|---|---|
+| **Client / Web** | SSE 解析、正文/思考/事件/审批的显示、人的选择 | 解释枚举、执行工具、写日志、fence 判定 |
+| **Host** | 会话生命周期、队列、取消、approval future 桥、SSE 合流、鉴权/来源/上限 | 内核决策、工具执行、durable 落账 |
+| **Kernel** | `turn_loop`、装配、围栏解释、工具派发、durable 落账、停止理由 | UI、HTTP、人的选择 |
+| **Provider** | 外部 API 协议、SSE 解析、tool_calls 拼装、usage | 会话、日志、工具执行、UI |
+| **Log** | 所有 durable 事实；`seq` 与只追加 | 产生决策；不是 UI 状态层 |
+| **Surface** | `fold(日志前缀)` 给模型的 messages | 不是独立真源；不能绕过日志 |
 
 三条独立事实：
 
 1. **日志**记 durable 事实（请求、完整响应、工具、边界、错误）；
 2. **表层**是 `fold(日志前缀)` 给模型的上下文；
 3. **SSE** 是日志镜像 + 当前正在发生的 ephemeral 增量，不是第二份日志。
+
+Client/Web 与 Host 之间的 `model/delta` 是 ephemeral；Host 与 Log 之间的 durable 帧是逐行镜像。两者的汇合点是 Host 的 SSE 输出，不是日志。
 
 ---
 
