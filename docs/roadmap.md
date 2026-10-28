@@ -64,7 +64,7 @@ H1 / H2 是新增的宿主轨，不占用 M10–M15 的决策编号；M 编号�
 
 ### M10 工具管线 / 并发 / 上下文经济
 
-- **change**：`m10-tool-pipeline-and-concurrency`
+- **change**：`m10-compaction-parameters`（第一切片）→ `m10-tool-pipeline-and-concurrency`（余下）
 - **层**：能力 + 围栏 + 性能
 - **内容**：**第一个切片：压缩参数可配置**——`compaction_threshold_ratio` / `compaction_headroom_tokens` / `compaction_retain_ratio` / `compaction_retain_tokens`（对应 DSH `dsh-compaction-basic` 的 `thresholdRatio` / `headroomTokens` / `retainRatio` / `retainTokens`；默认值保持现状，有效值进 `session/start`、replay 取回）。然后六段管线（`pre-execute → guard → execute → post-execute → finalizeContent → tools/result`）；`CommandRunner` 缝（win32 / posix 两个 adapter）；`FenceCode.SANDBOX_UNAVAILABLE`；工具并发类别（`parallel` / `exclusive`）+ 上限 + mutation barrier；结果在产生时落盘；单条结果的输出预算与 spill 文件；`read` 的字节上限（行数已有）、`grep` / `glob` 的字节上限；前缀复用。并发与上下文的设计底稿在 `docs/reference/tool-concurrency-and-context-economy.md`。
 - **完成判据**：压缩参数可配且默认行为不变、`session/start` 记录、replay 用记录值逐点相等；注入「runner 不可用」的桩 → `error/fence(code: SANDBOX_UNAVAILABLE)` + 退出码 3；并行只读批次的 wall-clock 小于串行基线（E1 记录）；同一时刻在跑 ≤ 8；改动调用两侧的 barrier 成立；一条超大 `read` / `bash` 结果被截断、带固定 marker + spill，折叠读到的一致；工具体观察派生信号后自己停；真实端点一次。
