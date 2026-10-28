@@ -869,6 +869,15 @@ ADR 到 9.2 才提交；已提交的 `tasks.md` 三处引用本分支不存在�
 - Promotion candidate: 与 L-045（判据的前置条件先核实）同族，本轮不占 AGENTS.md 额度
 - Status: inbox
 
+### L-064
+- Date: 2026-10-28
+- Context: H2 5.1 的 SSE 合流与 8.1 真实端点
+- Observation: `test_the_event_stream_mixes_durable_and_delta_frames` 只断言了 delta 在 `model/request` 之后、`model/response` 之前，**顺序正确但延迟到整段结束**；host 只在遇到 `model/response` 时排空 delta 队列，真实端点首帧因此 1.2 s，直到 S1 计时才暴露。另一个无效变异（把 `model/delta` 写进日志）在 `/health` 前就起不来，杀它的是启动失败而不是判据
+- Evidence: 修复提交 `f4b60a2`；真实端点修复前 `first_delta_s=1.219/1.078`，修复后 `0.734/0.406`；变异记录 `docs/verification/h2-streaming-and-event-echo-mutation.md`
+- Next use: 流式判据要分开「顺序」与「到达时机」；排序测试全绿不代表没有缓冲。变异必须让目标行为在**运行中**可观察，启动期就崩的改法不算杀死
+- Promotion candidate: 与 L-003（写下即绿是危险信号）同族，本轮不占 AGENTS.md 额度
+- Status: inbox
+
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 - 每个里程碑收尾扫一次，**允许输出 `NO-PROMOTION`**（没有可复用信号就不写条目）。
 - 收件箱条目超过 **15 条**必须先消化再收新的：合并同类、把已被代码或规格自证的条目删掉。
