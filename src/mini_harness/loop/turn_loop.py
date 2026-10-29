@@ -555,6 +555,28 @@ async def _context_overflow(
     )
 
 
+def _trigger_line(settings: SessionSettings) -> int:
+    """从冻结设置算触发线：四个压缩参数只在装配时取一次。"""
+    return trigger_line(
+        settings.window,
+        settings.reserve,
+        threshold_ratio=settings.compaction_threshold_ratio,
+        headroom_tokens=settings.compaction_headroom_tokens,
+    )
+
+
+def _shadowed_range(
+    events: Sequence[EventRecord], settings: SessionSettings
+) -> dict[str, int] | None:
+    """从冻结设置算遮蔽范围；`retain_tokens > 0` 时覆盖 ratio。"""
+    return shadowed_range(
+        events,
+        settings.window,
+        retain_ratio=settings.compaction_retain_ratio,
+        retain_tokens=settings.compaction_retain_tokens,
+    )
+
+
 def _budget_triple(
     settings: SessionSettings, events: Sequence[EventRecord], messages: Sequence[Message]
 ) -> str:
@@ -565,7 +587,7 @@ def _budget_triple(
     """
     reading = budget_reading(events, messages)
     pressure = pressure_budget(settings.window, settings.reserve)
-    line = trigger_line(settings.window, settings.reserve)
+    line = _trigger_line(settings)
     return f"预算读数 {reading}、压力预算 {pressure}、触发线 {line}"
 
 
@@ -696,7 +718,7 @@ async def _compact_if_over_line(
     没有可遮蔽的内容、或那段裁到最小仍装不进窗口时什么都不写、返回 `None`：调用方重新读数，
     那条路通向溢出。
     """
-    rng = shadowed_range(events, settings.window)
+    rng = _shadowed_range(events, settings)
     if rng is None:
         return None
     tokens_before = budget_reading(events, context.messages)
@@ -779,6 +801,10 @@ def start_session(*, prompt: str, entry: SessionEntry, env: SessionEnv) -> Segme
         "approval": settings.approval,
         "window": settings.window,
         "reserve": settings.reserve,
+        "compaction_threshold_ratio": settings.compaction_threshold_ratio,
+        "compaction_headroom_tokens": settings.compaction_headroom_tokens,
+        "compaction_retain_ratio": settings.compaction_retain_ratio,
+        "compaction_retain_tokens": settings.compaction_retain_tokens,
         "tools": [spec.name for spec in env.registry.specs()],
     }
     if settings.platform is not None:
@@ -875,7 +901,7 @@ async def _run_turns(
             return _segment_failure(events, turns)
         context = fold(events)
         # 装配之内的一次压缩（design D5）：越线才压缩，一次装配最多一次，取消在场时不压缩。
-        line = trigger_line(settings.window, settings.reserve)
+        line = _trigger_line(settings)
         if budget_reading(events, context.messages) > line and not cancel.is_set():
             compacted = await _compact_if_over_line(
                 log=log,
@@ -907,7 +933,7 @@ async def _run_turns(
                 )
                 if compacted_here:
                     head = f"压缩之后预算读数 {reading} 仍超过压力预算 {pressure}"
-                elif shadowed_range(events, settings.window) is None:
+                elif _shadowed_range(events, settings) is None:
                     head = f"无可遮蔽的内容，预算读数 {reading} 已超过压力预算 {pressure}"
                 else:
                     head = f"可遮蔽的那一段本身就装不下，预算读数 {reading} 超过压力预算 {pressure}"

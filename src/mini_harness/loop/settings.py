@@ -6,6 +6,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from mini_harness.context import budget as context_budget
+
+DEFAULT_COMPACTION_THRESHOLD_RATIO = context_budget.DEFAULT_COMPACTION_THRESHOLD_RATIO
+DEFAULT_COMPACTION_HEADROOM_TOKENS = context_budget.DEFAULT_COMPACTION_HEADROOM_TOKENS
+DEFAULT_COMPACTION_RETAIN_RATIO = context_budget.DEFAULT_COMPACTION_RETAIN_RATIO
+DEFAULT_COMPACTION_RETAIN_TOKENS = context_budget.DEFAULT_COMPACTION_RETAIN_TOKENS
+
 # 围栏的两条独立轴：设置对象带着它们，围栏模块消费它们。
 SandboxLevel = Literal["read-only", "workspace-write", "danger-full-access"]
 ApprovalMode = Literal["ask", "auto"]
@@ -75,6 +82,11 @@ class SessionSettings:
     # 窗口预算的两个参数（不变量 D）：`--window` 与 `--reserve`。
     window: int = DEFAULT_WINDOW
     reserve: int = DEFAULT_RESERVE
+    # 压缩参数：默认值保持 DSH 的形状；ratio/tokens 由配置给出。
+    compaction_threshold_ratio: float = DEFAULT_COMPACTION_THRESHOLD_RATIO
+    compaction_headroom_tokens: int = DEFAULT_COMPACTION_HEADROOM_TOKENS
+    compaction_retain_ratio: float = DEFAULT_COMPACTION_RETAIN_RATIO
+    compaction_retain_tokens: int = DEFAULT_COMPACTION_RETAIN_TOKENS
     # 端点三条结伴出现：payload 里那三个字段由这一个对象派生。
     endpoint: ProviderEndpoint | None = None
     # 平台事实（ADR-0029）：由入口填，`session/start` 原样写下去；`None` 就是「这次没有这份事实」。

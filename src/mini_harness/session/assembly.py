@@ -148,6 +148,25 @@ def assemble(
         return Failure(
             "INVALID_ARGUMENT", f"--max-turns 至少为 1，收到 {max_turns}", EXIT_INVALID_ARGUMENT
         )
+    # 压缩参数的取值域在 session 开始之前判掉（context-budget）。
+    for name, value in (
+        ("compaction_threshold_ratio", layered.compaction_threshold_ratio),
+        ("compaction_retain_ratio", layered.compaction_retain_ratio),
+    ):
+        if not (0 < value <= 1):
+            return Failure(
+                "INVALID_ARGUMENT",
+                f"{name} 必须在 (0, 1] 内，收到 {value}",
+                EXIT_INVALID_ARGUMENT,
+            )
+    for name, value in (
+        ("compaction_headroom_tokens", layered.compaction_headroom_tokens),
+        ("compaction_retain_tokens", layered.compaction_retain_tokens),
+    ):
+        if value < 0:
+            return Failure(
+                "INVALID_ARGUMENT", f"{name} 至少为 0，收到 {value}", EXIT_INVALID_ARGUMENT
+            )
     if provider_name not in PROVIDER_NAMES:
         return Failure(
             "UNKNOWN_PROVIDER",
@@ -268,6 +287,10 @@ def assemble(
         append_system_prompt=layered.append_system_prompt,
         window=layered.window,
         reserve=layered.reserve,
+        compaction_threshold_ratio=layered.compaction_threshold_ratio,
+        compaction_headroom_tokens=layered.compaction_headroom_tokens,
+        compaction_retain_ratio=layered.compaction_retain_ratio,
+        compaction_retain_tokens=layered.compaction_retain_tokens,
         endpoint=endpoint,
         platform=platform_facts(),
     )

@@ -1,0 +1,11 @@
+# mini-harness 配置示例（放在工作区根，文件名必须是 mini.config.toml）
+# 三层优先级：内置默认 < 本文件 < 命令行 flag（本切片只加压缩参数，未加 flag）。
+
+window = 128000
+reserve = 8192
+
+# 压缩参数（DSH dsh-compaction-basic 的对应项）
+compaction_threshold_ratio = 0.8      # thresholdRatio：触发线里的窗口比例
+compaction_headroom_tokens = 65536    # headroomTokens：触发线给“还没产出的内容”留的余量
+compaction_retain_ratio = 0.16        # retainRatio：保留尾部占窗口的比例
+compaction_retain_tokens = 0          # retainTokens：>0 时覆盖 ratio；0 表示用 ratio

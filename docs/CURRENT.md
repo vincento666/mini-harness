@@ -10,12 +10,12 @@
 - **P0 诊断完成**：`docs/verification/p0-budget-reading-diagnostic-2026-10-27.md`。当前 main 的 W1 四次遮蔽均下降、W2 未触发溢出；**不按旧 20 个 task 原样 apply**，需重新确认是否还有可复现症状。
 - **唯一未实现的修复分支**：`change/fix-post-compaction-budget-reading`（20 个 task 全未勾，只有 proposal / design / spec / tasks；不实现、不归档）。
 - 已合并但分支还没删的：`change/fix-small-window-compaction-dead-zone`、`change/add-key-driven-default-provider`、`change/fix-chat-screen-feedback`、`change/add-platform-facts-to-protected-header`、`change/fix-compaction-and-context-overflow`。
-- `openspec validate --all --strict`：**13 份主规格、0 个活动 change，0 失败**（2026-10-28 H2 归档后实测）。
-- 门禁（H2 合并到 `main` 后实测）：`522 passed / 8 skipped`、`TOTAL 2696 语句 / 138 未覆盖 / 95%`；ruff / mypy 全绿。
+- `openspec validate --all --strict`：**13 份主规格、0 个活动 change，0 失败**（2026-10-29 M10 第一切片归档后实测）。
+- 门禁（M10 第一切片）：`534 passed / 8 skipped`、`TOTAL 2730 语句 / 139 未覆盖 / 95%`；ruff / mypy 全绿。
 
 ## 下一步
 
-1. **M10**：立 `m10-tool-pipeline-and-concurrency`，第一个切片是**压缩参数可配置**（`threshold/headroom/retain_ratio/retain_tokens`，默认行为不变、进 `session/start`、replay 取回），再做六段管线、并发与结果剪枝。
+1. **M10 第一切片已归档**：`m10-compaction-parameters` 18/18 task；压缩参数四键可配、默认行为不变、进 `session/start`；真实端点、agent 代跑 UAT、变异 3 条、Learning Gate 全过。归档在 `openspec/changes/archive/2026-10-29-m10-compaction-parameters`；**尚未合入 `main`**。余下另立 `m10-tool-pipeline-and-concurrency`。
 2. **思考模式与预算**：M10 之后、M11/M12 之前立 `reasoning-mode-and-budget`；durable `model/response` 用有序 content blocks（reasoning/text/tool-call）而不是单字段、实时 `reasoning/delta` ephemeral、reasoning tokens 属 output 不重复计；DSH 对照与暂缓项见 `docs/reference/reasoning-mode.md`。
 3. **P0**：`fix-post-compaction-budget-reading` 先不 apply——诊断（W1/W2）没有复现「遮蔽后 tokens 后 > 前」；要么补一次能稳定触发溢出的真实端点样本再决定是否修，要么把它降级为未复现的历史缺陷并记账。
 4. **M11 / M12 / M13 / M14 / M14a / M14b / M14c / M15a / MEM1**：按 `docs/roadmap.md` 的顺序；M14 含 CLI 与 host 的斜杠命令、技能清单注入与正文按需加载；M14a–c 是 M14 之后的三小步（工作区契约 / 上下文经济与计量 / 个人助理 UX 工具）；M15a 是无人值守壳的硬前置；MEM1 是最小记忆。
@@ -25,7 +25,7 @@
 - **P0 预算读数未复现**：`budget_reading` 仍无「摘要之后」的 seq 界，代码路径在；但 2026-10-27 的 W1/W2 真实端点诊断没有复现「遮蔽后 tokens 后 > 前」，W2 也没触发溢出。先不按旧 20 task apply；要么补稳定复现样本，要么降级为未复现的历史缺陷。诊断见 `docs/verification/p0-budget-reading-diagnostic-2026-10-27.md`。
 - **UI 服务端 allowlist / 投影暂缓**：H2 保持日志逐行镜像 + 客户端过滤；公网/多客户端/事件词表变大时再按 ADR-0002 的最小 MVP 判，现在不实现。
 - **`SESSION_BUSY` 的状态码自相矛盾（H1 spec）**：错误表写 409，`/messages` 队满的场景与 task 4.3 写 429；实现按 429 归档，spec 表仍写 409，留到 H2 或后续 spec 修正时裁决。
-- **H2 已归档**：`h2-streaming-and-event-echo` 全部 task 勾完；真实端点 S1–S4、UAT S1–S5（人跑）、变异四条、Learning Gate 都过。归档在 `openspec/changes/archive/2026-10-28-h2-streaming-and-event-echo`；主规格 `provider` / `host-api` 已 sync。分支 `change/h2-streaming-and-event-echo`（tip `ed07c8d`）**尚未合入 `main`**。
+- **H2 已合入并归档**：全部 task 勾完；真实端点 S1–S4、UAT S1–S5（人跑）、变异四条、Learning Gate 全过。归档在 `openspec/changes/archive/2026-10-28-h2-streaming-and-event-echo`；主规格 `provider` / `host-api` 已 sync。
 - **没有 resume / 格式迁移 / session index**：M11。
 - **没有技能 / 斜杠命令 / 渐进披露**：M14；CLI 与 host 要同一份命令面。
 - **没有工作区契约 / 结果剪枝计量 / 助理 UX 工具**：M14a / M14b / M14c；非核心，但缺了个人助理不像。
