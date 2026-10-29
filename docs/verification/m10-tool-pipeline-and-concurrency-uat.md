@@ -54,14 +54,14 @@
 
 | 场次 | 动作 | 预期 | 实际观察 | 结论 | 别扭在哪 |
 |---|---|---|---|---|---|
-| U1 | 并行三 read | 声明顺序 / 完成顺序 / 更快，≤8 | | | |
-| U2 | read-write-read | barrier 成立 | | | |
-| U3 | 读超长文件 | 50 KiB / 单行 2000 / 不 spill / offset | | | |
-| U3b | 单行截断 | 2000 字符 mark | | | |
-| U4 | bash 大输出 | 16 KiB / 尾部 / spill | | | |
-| U5 | runner 不可用 | 退出码 3 | | | |
-| U6 | 真实端点 | 通过 | | | |
+| U1 | 并行三 read | 声明顺序 / 完成顺序 / 更快，≤8 | session `6945900c...`：三条 `tool/call` 按 c1/c2/c3，随后三条 result；单次 chat 653 ms | 通过 | 启动开销占大头，单次 CLI 看不出并行收益；并发由 seam ② 的 10 read 峰值 8 判据钉住 |
+| U2 | read-write-read | barrier 成立 | session `aaa0dbaf...`：日志顺序 `call r1 → result r1 → call w1 → result w1 → call r2 → result r2` | 通过 | 无 |
+| U3 | 读超长文件 | 50 KiB / 单行 2000 / 不 spill / offset | session `6f1de8b7...`：结果 51171 字符，`Output capped` 与 offset，无 spill | 通过 | 结果接近 50 KiB，模型要续读 |
+| U3b | 单行截断 | 2000 字符 mark | session `5e986a59...`：结果 2100 字符，带 `line truncated to 2000 chars` | 通过 | 超长单行剩余部分不可恢复（spec 已写明） |
+| U4 | bash 大输出 | 16 KiB / 尾部 / spill | session `6d50d824...`：结果 16463 字符，marker + spill；文件 `bash-142c0ac...txt` 20016 字节 | 通过 | spill 文件名按内容 hash，不是 session/call id；M11 再考虑命名/回收 |
+| U5 | runner 不可用 | 退出码 3 | `tests/test_cli_runner_unavailable.py` 真实子进程：退出码 3，日志 `error/fence(SANDBOX_UNAVAILABLE)` | 通过 | 需要测试桩注入，产品 UI 没有开关 |
+| U6 | 真实端点 | 通过 | session `67558c57...`：read big.md（6455 字符，capped 无 spill）→ write summary.md → read summary.md | 通过 | 真实模型可能并行/多读；本次提示词明确要求逐步 |
 
-**至少一条「用起来别扭」**：_
+**至少一条「用起来别扭」**：单次 CLI 的 wall-clock 被启动开销淹没，U1 只用日志顺序与 seam ② 的峰值判据证明并发；真实端点 U6 需要明确「一次一个工具」才稳定复现三步。
 
-**结论**：通过 / 不通过（写清场次、session id、日志）：_
+**结论**：通过（agent 代跑，用户 2026-10-29 授权；U1 `6945900c`、U2 `aaa0dbaf`、U3 `6f1de8b7`、U3b `5e986a59`、U4 `6d50d824`、U6 `67558c57`）。

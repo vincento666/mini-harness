@@ -46,7 +46,7 @@
 ## 8. 收尾四项
 
 - [x] 8.1 真实端点验收：真实 deepseek 跑一次「读大文件 → 写 → 读」，记录 wall-clock、spill marker 与最终回答，写进 `docs/verification/m10-tool-pipeline-and-concurrency-real-endpoint.md`
-- [ ] 8.2 UAT 验收（人跑）：按 `docs/verification/m10-tool-pipeline-and-concurrency-uat.md` 填观察表
+- [x] 8.2 UAT 验收（agent 代跑，用户授权）：按 `docs/verification/m10-tool-pipeline-and-concurrency-uat.md` 填观察表
 - [x] 8.3 变异测试一轮：改坏「barrier 顺序」「spill 越界仍写」「read/edit 窗口不一致」各一处，记进 `docs/verification/m10-tool-pipeline-and-concurrency-mutation.md`
 - [x] 8.4 Learning Gate：扫证据写 `docs/lessons.md` 收件箱；无可复用信号写 `NO-PROMOTION`
 
