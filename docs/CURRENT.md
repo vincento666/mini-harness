@@ -10,12 +10,12 @@
 - **P0 诊断完成**：`docs/verification/p0-budget-reading-diagnostic-2026-10-27.md`。当前 main 的 W1 四次遮蔽均下降、W2 未触发溢出；**不按旧 20 个 task 原样 apply**，需重新确认是否还有可复现症状。
 - **唯一未实现的修复分支**：`change/fix-post-compaction-budget-reading`（20 个 task 全未勾，只有 proposal / design / spec / tasks；不实现、不归档）。
 - 已合并但分支还没删的：`change/fix-small-window-compaction-dead-zone`、`change/add-key-driven-default-provider`、`change/fix-chat-screen-feedback`、`change/add-platform-facts-to-protected-header`、`change/fix-compaction-and-context-overflow`。
-- `openspec validate --all --strict`：**13 份主规格、0 个活动 change，0 失败**（2026-10-29 M10 第一切片归档后实测）。
-- 门禁（M10 第一切片）：`534 passed / 8 skipped`、`TOTAL 2730 语句 / 139 未覆盖 / 95%`；ruff / mypy 全绿。
+- `openspec validate --all --strict`：**14 份主规格、0 个活动 change，0 失败**（2026-10-29 M10 全部归档后实测）。
+- 门禁（M10 工具管线）：`546 passed / 8 skipped`、`TOTAL 2843 语句 / 147 未覆盖 / 95%`；ruff / mypy 全绿。
 
 ## 下一步
 
-1. **M10 第一切片已合入**：`m10-compaction-parameters` 18/18 task；归档在 `openspec/changes/archive/2026-10-29-m10-compaction-parameters`，`main` 合并 `aa48ae7`。**余下 `m10-tool-pipeline-and-concurrency` 已 propose，待 review**：六段管线、并发类别/barrier、CommandRunner、read 50 KiB/2000 字符窗口（不 spill）、bash/搜索 spill。
+1. **M10 已完成**：第一切片 `m10-compaction-parameters` 已合入 `aa48ae7`；余下 `m10-tool-pipeline-and-concurrency` 26/26 task，归档在 `openspec/changes/archive/2026-10-29-m10-tool-pipeline-and-concurrency`，**待合入 `main`**。六段管线、并发类别/barrier、CommandRunner、read 50 KiB/2000 字符窗口（不 spill）、bash/搜索 spill 都已落成。
 2. **思考模式与预算**：M10 之后、M11/M12 之前立 `reasoning-mode-and-budget`；durable `model/response` 用有序 content blocks（reasoning/text/tool-call）而不是单字段、实时 `reasoning/delta` ephemeral、reasoning tokens 属 output 不重复计；DSH 对照与暂缓项见 `docs/reference/reasoning-mode.md`。
 3. **P0**：`fix-post-compaction-budget-reading` 先不 apply——诊断（W1/W2）没有复现「遮蔽后 tokens 后 > 前」；要么补一次能稳定触发溢出的真实端点样本再决定是否修，要么把它降级为未复现的历史缺陷并记账。
 4. **M11 / M12 / M13 / M14 / M14a / M14b / M14c / M15a / MEM1**：按 `docs/roadmap.md` 的顺序；M14 含 CLI 与 host 的斜杠命令、技能清单注入与正文按需加载；M14a–c 是 M14 之后的三小步（工作区契约 / 上下文经济与计量 / 个人助理 UX 工具）；M15a 是无人值守壳的硬前置；MEM1 是最小记忆。
