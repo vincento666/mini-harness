@@ -35,7 +35,7 @@
 
 ### Requirement: run 参数记录进 session/start
 
-系统 SHALL 在 `session/start` 的 payload 里记录本次运行的**有效参数**（层叠之后的结果）：`entry`（`run`、`chat`、`serve` 或 `host`）、`workspace`（绝对路径）、`provider`、`max_turns`、`window`、`reserve`、`append_system_prompt`、`sandbox`、`approval`（`ask` 或 `auto`）、`tools`（装配筛出来并送给模型的工具名列表），以及用户 prompt 原文——`entry` 为 `chat` 或 `host` 时 prompt MUST 是空串，人话住在 `user/message` 里。payload MUST NOT 重复携带 `schema_version`。
+系统 SHALL 在 `session/start` 的 payload 里记录本次运行的**有效参数**（层叠之后的结果）：`entry`（`run`、`chat`、`serve` 或 `host`）、`workspace`（绝对路径）、`provider`、`max_turns`、`window`、`reserve`、`compaction_threshold_ratio`、`compaction_headroom_tokens`、`compaction_retain_ratio`、`compaction_retain_tokens`、`append_system_prompt`、`sandbox`、`approval`（`ask` 或 `auto`）、`tools`（装配筛出来并送给模型的工具名列表），以及用户 prompt 原文——`entry` 为 `chat` 或 `host` 时 prompt MUST 是空串，人话住在 `user/message` 里。payload MUST NOT 重复携带 `schema_version`。
 
 #### Scenario: payload 与命令行一致
 - **WHEN** 执行 `minihns run -p "x" --max-turns 3 --workspace <dir> --sandbox read-only`
@@ -52,6 +52,10 @@
 #### Scenario: 窗口与预留进 payload
 - **WHEN** 执行 `minihns run -p "x" --window 4000 --reserve 500`
 - **THEN** `session/start` 的 payload 里 `window` 为 4000、`reserve` 为 500
+
+#### Scenario: 压缩参数进 payload
+- **WHEN** 配置文件写 `compaction_retain_ratio = 0.10`、`compaction_retain_tokens = 3000`
+- **THEN** `session/start` 的 payload 里这两个值分别是 0.10 与 3000
 
 #### Scenario: 同一命令行在两份配置下 payload 不同
 - **WHEN** 同一份命令行分别在「工作区根写着 `max_turns = 2` 与 `tools = ["read"]`」和「没有配置文件」两种情况下执行
