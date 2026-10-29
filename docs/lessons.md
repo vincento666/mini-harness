@@ -878,6 +878,15 @@ ADR 到 9.2 才提交；已提交的 `tasks.md` 三处引用本分支不存在�
 - Promotion candidate: 与 L-003（写下即绿是危险信号）同族，本轮不占 AGENTS.md 额度
 - Status: inbox
 
+### L-065
+- Date: 2026-10-29
+- Context: M10 `m10-compaction-parameters` 把比率从常量改成可配
+- Observation: `int(window * ratio)` 不是 `floor(window × ratio)`：`0.7` 的二进制 double 略小于十进制真值，`int(1000 * 0.7)` 会得到 699 而不是 700。默认 `0.8` / `0.16` 恰好偏大，默认判据抓不到；Review 的 Spec 轴用任意比率才暴露
+- Evidence: 修复为 `Decimal(str(ratio))` 后 `trigger_line(100, 0, threshold_ratio=0.7, headroom_tokens=0) == 70`、`retain_line(1000, retain_ratio=0.7) == 700`（`tests/test_context_budget.py::test_floors_a_decimal_ratio_without_binary_drift`）
+- Next use: 可配比率进入公式时，不要用 `int()` 冒充 floor；先把十进制字面值固定成精确表示，再取 floor。默认值「碰巧对」不能当判据
+- Promotion candidate: 与 L-016 的估算取舍同族；本轮不占 AGENTS.md 额度
+- Status: inbox
+
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 - 每个里程碑收尾扫一次，**允许输出 `NO-PROMOTION`**（没有可复用信号就不写条目）。
 - 收件箱条目超过 **15 条**必须先消化再收新的：合并同类、把已被代码或规格自证的条目删掉。

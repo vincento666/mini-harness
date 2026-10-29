@@ -1,4 +1,4 @@
-﻿# Tasks
+# Tasks
 
 ## 1. 配置字段与类型
 
@@ -31,10 +31,10 @@
 
 ## 6. 收尾四项
 
-- [ ] 6.1 真实端点验收：真实 deepseek 下用一组自定义参数跑一次，记录 `[遮蔽] tokens 前/后` 与 `session/start` 四值，写进 `docs/verification/m10-compaction-parameters-real-endpoint.md`
+- [x] 6.1 真实端点验收：真实 deepseek 下用一组自定义参数跑一次，记录 `[遮蔽] tokens 前/后` 与 `session/start` 四值，写进 `docs/verification/m10-compaction-parameters-real-endpoint.md`
 - [ ] 6.2 UAT 验收（人跑）：按 `docs/verification/m10-compaction-parameters-uat.md` 填观察表
-- [ ] 6.3 变异测试一轮：改坏「tokens 不覆盖 ratio」「ratio 边界放过 0」「payload 不记录」各一处，记进 `docs/verification/m10-compaction-parameters-mutation.md`
-- [ ] 6.4 Learning Gate：扫证据写 `docs/lessons.md` 收件箱；无可复用信号写 `NO-PROMOTION`
+- [x] 6.3 变异测试一轮：改坏「tokens 不覆盖 ratio」「ratio 边界放过 0」「payload 不记录」各一处，记进 `docs/verification/m10-compaction-parameters-mutation.md`
+- [x] 6.4 Learning Gate：扫证据写 `docs/lessons.md` 收件箱；无可复用信号写 `NO-PROMOTION`
 
 ## Workflow follow-up
 
