@@ -99,6 +99,15 @@ async def test_grep_returns_file_line_number_and_line_text(tmp_path: Path) -> No
         assert text.startswith(" TODO")
 
 
+async def test_grep_truncates_a_long_matched_line(tmp_path: Path) -> None:
+    (tmp_path / "long.txt").write_text("x" * 5000 + "命中\n", encoding="utf-8")
+
+    outcome = await _grep(tmp_path, pattern="命中")
+
+    assert "line truncated to 2000 chars" in outcome.result.content
+    assert len(outcome.result.content) < 5000
+
+
 async def test_grep_lists_at_most_two_hundred_and_fifty_matches(tmp_path: Path) -> None:
     (tmp_path / "many.txt").write_text("命中\n" * 300, encoding="utf-8")
 

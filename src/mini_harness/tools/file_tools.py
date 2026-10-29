@@ -12,8 +12,12 @@ from mini_harness.tools.fences import DispatchContext, path_key
 from mini_harness.tools.registry import ToolArgs, ToolDefinition, ToolResult
 
 DEFAULT_READ_LIMIT = 2000
+READ_MAX_BYTES = 51200
+READ_MAX_LINE_LENGTH = 2000
 GLOB_LIMIT = 100
 GREP_LIMIT = 250
+GREP_MAX_LINE_CHARS = 2000
+GREP_RAW_MAX_BYTES = 20_000_000
 
 
 class ReadArgs(ToolArgs):
@@ -77,10 +81,36 @@ def resolve_target(workspace: Path, raw_path: str) -> Path:
 
 
 def _numbered_window(text: str, offset: int, limit: int | None) -> str:
+    """read/edit 共用的窗口：行数、单行 2000 字符、总字节 51200，先到者生效。
+
+    只有被字节/单行上限截断时才加 capped footer；显式 `limit` 的普通窗口保持原样。
+    """
     start = offset - 1
     width = DEFAULT_READ_LIMIT if limit is None else limit
-    window = text.splitlines()[start : start + width]
-    return "\n".join(f"{index}: {line}" for index, line in enumerate(window, start=offset))
+    selected = text.splitlines()[start : start + width]
+    rendered: list[str] = []
+    total_bytes = 0
+    capped = False
+    for index, line in enumerate(selected, start=offset):
+        if len(line) > READ_MAX_LINE_LENGTH:
+            line = line[:READ_MAX_LINE_LENGTH] + (
+                f"... (line truncated to {READ_MAX_LINE_LENGTH} chars)"
+            )
+            capped = True
+        numbered = f"{index}: {line}"
+        cost = len(numbered.encode("utf-8")) + 1
+        if rendered and total_bytes + cost > READ_MAX_BYTES:
+            capped = True
+            break
+        rendered.append(numbered)
+        total_bytes += cost
+    content = "\n".join(rendered)
+    if capped and rendered:
+        end = offset + len(rendered) - 1
+        content += (
+            f"\n\n(Output capped. Showing lines {offset}-{end}. Use offset={end + 1} to continue.)"
+        )
+    return content
 
 
 def _read_body(target: Path) -> str | None:
@@ -195,19 +225,30 @@ async def search_files(args: GrepArgs, context: DispatchContext) -> ToolResult:
     expression = re.compile(args.pattern)
     hits: list[str] = []
     total = 0
+    raw_bytes = 0
     for entry in sorted(root.rglob("*")):
         if not entry.is_file():
             continue
         body = _read_body(entry)
         if body is None:
             continue
+        raw_bytes += len(body.encode("utf-8"))
+        if raw_bytes > GREP_RAW_MAX_BYTES:
+            hits.append(f"[raw output capped at {GREP_RAW_MAX_BYTES} bytes]")
+            break
         for number, line in enumerate(body.splitlines(), start=1):
             if not expression.search(line):
                 continue
             total += 1
             if len(hits) < GREP_LIMIT:
+                preview = line
+                if len(preview) > GREP_MAX_LINE_CHARS:
+                    preview = (
+                        preview[:GREP_MAX_LINE_CHARS]
+                        + f"... (line truncated to {GREP_MAX_LINE_CHARS} chars)"
+                    )
                 relative = _relative_to(context.workspace, entry)
-                hits.append(f"{relative}:{number}: {line}")
+                hits.append(f"{relative}:{number}: {preview}")
 
     if total == 0:
         return ToolResult(outcome="OK", content=f"没有匹配：{args.pattern}")

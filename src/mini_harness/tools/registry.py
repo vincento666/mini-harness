@@ -55,6 +55,9 @@ class ToolResult:
 
 ToolExecutor = Callable[[Any, DispatchContext], Awaitable[ToolResult]]
 
+# 调度类别：只读可并发，会改动/需独占的调用是 barrier。`mutates` 仍供围栏与 approval 使用。
+ConcurrencyClass = Literal["parallel", "exclusive"]
+
 
 @dataclass(frozen=True)
 class ToolDefinition:
@@ -65,6 +68,12 @@ class ToolDefinition:
     args_model: type[ToolArgs]
     mutates: bool
     run: ToolExecutor
+    concurrency: ConcurrencyClass | None = None
+
+    def __post_init__(self) -> None:
+        """没显式声明时按 `mutates` 推导；显式声明优先。"""
+        if self.concurrency is None:
+            object.__setattr__(self, "concurrency", "exclusive" if self.mutates else "parallel")
 
 
 class ToolRegistry:

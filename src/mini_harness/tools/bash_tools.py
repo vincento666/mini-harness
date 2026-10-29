@@ -2,22 +2,24 @@
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
+import hashlib
 import os
-import signal
 import sys
-from typing import Any
+from pathlib import Path
 
 from pydantic import Field
 
+from mini_harness.tools.command_runner import (
+    CommandRunner,
+    default_command_runner,
+)
 from mini_harness.tools.fences import DispatchContext
 from mini_harness.tools.registry import ToolArgs, ToolDefinition, ToolResult
 
 DEFAULT_TIMEOUT_SECONDS = 30
 MAX_TIMEOUT_SECONDS = 600
 OUTPUT_LIMIT_BYTES = 16 * 1024
-TRUNCATION_MARK = "[输出已截断]"
+TRUNCATION_MARK = "[output truncated; full output: "
 
 SHELL_FORM_POSIX = "/bin/sh -c"
 
@@ -42,12 +44,21 @@ def platform_facts() -> dict[str, str]:
     return {"os": os.name, "shell": shell_form()}
 
 
-def _bounded(content: str) -> str:
-    """进日志的结果内容有界：超限截到上限字节数，末尾留下固定标记。"""
+def bound_bash_content(content: str, workspace: Path) -> str:
+    """进日志的结果有界：超限保留尾部，完整内容落工作区 spill，结果只留 marker + 相对路径。"""
     encoded = content.encode("utf-8")
     if len(encoded) <= OUTPUT_LIMIT_BYTES:
         return content
-    return encoded[:OUTPUT_LIMIT_BYTES].decode("utf-8", errors="ignore") + TRUNCATION_MARK
+    tail = encoded[-OUTPUT_LIMIT_BYTES:].decode("utf-8", errors="ignore")
+    digest = hashlib.sha256(encoded).hexdigest()[:16]
+    spill = workspace / ".mini-harness" / "spill" / f"bash-{digest}.txt"
+    try:
+        spill.parent.mkdir(parents=True, exist_ok=True)
+        spill.write_text(content, encoding="utf-8")
+        relative = spill.relative_to(workspace).as_posix()
+        return f"{tail}\n{TRUNCATION_MARK}{relative}]"
+    except OSError:
+        return f"{tail}\n[output truncated; spill unavailable]"
 
 
 class BashArgs(ToolArgs):
@@ -58,59 +69,33 @@ class BashArgs(ToolArgs):
         return self.command
 
 
-async def _terminate_tree(process: asyncio.subprocess.Process) -> None:
-    """收掉这条命令启动的进程树。手段按平台不同，规格只承诺后果（ADR-0009）。"""
-    if sys.platform == "win32":
-        killer = await asyncio.create_subprocess_exec(
-            "taskkill",
-            "/T",
-            "/F",
-            "/PID",
-            str(process.pid),
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        await killer.wait()
-    else:
-        with contextlib.suppress(ProcessLookupError):
-            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-    await process.wait()
-
-
-async def run_bash(args: BashArgs, context: DispatchContext) -> ToolResult:
-    """跑一条命令：Windows 走 `cmd.exe /c`、POSIX 走 `/bin/sh -c`，cwd 是工作区根。"""
-    shell_kwargs: dict[str, Any] = {}
-    if sys.platform != "win32":
-        # POSIX：命令待在自己的进程组里，超时之后整组收。
-        shell_kwargs["start_new_session"] = True
-    process = await asyncio.create_subprocess_shell(
-        args.command,
-        cwd=str(context.workspace),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        **shell_kwargs,
-    )
+async def run_bash(
+    args: BashArgs, context: DispatchContext, runner: CommandRunner | None = None
+) -> ToolResult:
+    """跑一条命令：经注入的 runner；默认 runner 按平台选 adapter，cwd 是工作区根。"""
     try:
-        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=args.timeout_seconds)
+        result = await (runner or default_command_runner()).run(
+            args.command,
+            cwd=context.workspace,
+            timeout_seconds=args.timeout_seconds,
+        )
     except TimeoutError:
-        await _terminate_tree(process)
         return ToolResult(
             outcome="TOOL_TIMEOUT",
             content=f"命令超过 {args.timeout_seconds} 秒没有结束：{args.command}",
         )
-    except asyncio.CancelledError:
-        # 取消打断的是执行段：命令的进程树同样收掉，再把取消传出去，由派发段塌成结果词。
-        await _terminate_tree(process)
-        raise
-    output = stdout.decode("utf-8", errors="replace") + stderr.decode("utf-8", errors="replace")
     return ToolResult(
         outcome="OK",
-        content=_bounded(f"退出码 {process.returncode}\n{output}"),
+        content=f"退出码 {result.exit_code}\n{result.output}",
     )
 
 
-def bash_tool_definitions() -> list[ToolDefinition]:
+def bash_tool_definitions(runner: CommandRunner | None = None) -> list[ToolDefinition]:
     """`bash` 的工具定义：会改动，所以档位轴与问人都照常约束它。"""
+
+    async def run(args: BashArgs, context: DispatchContext) -> ToolResult:
+        return await run_bash(args, context, runner)
+
     return [
         ToolDefinition(
             name="bash",
@@ -122,6 +107,6 @@ def bash_tool_definitions() -> list[ToolDefinition]:
             ),
             args_model=BashArgs,
             mutates=True,
-            run=run_bash,
+            run=run,
         )
     ]

@@ -222,6 +222,8 @@ async def _dispatch_batch(
     记录（`tool/call` 加 `ABORTED_BEFORE_DISPATCH`），已经开始的被打断并落 `TOOL_CANCELLED`。
     前缀只在本批次开始时取样一次，整批共用。
     """
+    if not calls:
+        return _BatchOutcome()
     prefix = read_events(log.path)
     if isinstance(prefix, LogReadFailure):
         return _BatchOutcome(failure=prefix)
@@ -236,7 +238,7 @@ async def _dispatch_batch(
     mutating: list[bool] = []
     for call in calls:
         definition = registry.lookup(call.name)
-        mutating.append(definition is not None and definition.mutates)
+        mutating.append(definition is not None and definition.concurrency == "exclusive")
     stop = asyncio.Event()
     read_slots = asyncio.Semaphore(MAX_PARALLEL_TOOLS)
     mutating_slot = asyncio.Lock()

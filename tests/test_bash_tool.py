@@ -17,6 +17,13 @@ from mini_harness.tools.bash_tools import (
     bash_tool_definitions,
     shell_form,
 )
+from mini_harness.tools.command_runner import (
+    CommandResult,
+    PosixCommandRunner,
+    SandboxUnavailable,
+    Win32CommandRunner,
+    default_command_runner,
+)
 from mini_harness.tools.fences import ApprovalDecision
 from mini_harness.tools.file_tools import file_tool_definitions
 from tool_harness import DONE, dispatch_call, result_outcomes, run_fixture_session, tool_call_entry
@@ -264,8 +271,10 @@ async def test_oversized_output_is_truncated_and_marked(tmp_path: Path) -> None:
     assert outcome.result.outcome == "OK"
     assert TRUNCATION_MARK in outcome.result.content
     assert OUTPUT_LIMIT_BYTES == 16 * 1024
-    limit = OUTPUT_LIMIT_BYTES + len(TRUNCATION_MARK.encode("utf-8"))
-    assert len(outcome.result.content.encode("utf-8")) <= limit
+    spill = next((tmp_path / ".mini-harness" / "spill").glob("bash-*.txt"))
+    assert spill.is_file()
+    assert "x" * 40 in spill.read_text(encoding="utf-8")
+    assert spill.relative_to(tmp_path).as_posix() in outcome.result.content
 
 
 async def test_the_output_limit_is_a_boundary_not_a_threshold(tmp_path: Path) -> None:
@@ -343,3 +352,57 @@ def test_the_timeout_numbers_are_the_ones_the_spec_names() -> None:
     assert DEFAULT_TIMEOUT_SECONDS == 30
     assert MAX_TIMEOUT_SECONDS == 600
     assert BashArgs(command="true").timeout_seconds == 30
+
+
+class _SpyRunner:
+    platform = "test"
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, Path, int]] = []
+
+    async def run(self, command: str, *, cwd: Path, timeout_seconds: int) -> CommandResult:
+        self.calls.append((command, cwd, timeout_seconds))
+        return CommandResult(exit_code=7, output="spy output")
+
+
+class _UnavailableRunner:
+    platform = "test"
+
+    async def run(self, command: str, *, cwd: Path, timeout_seconds: int) -> CommandResult:
+        raise SandboxUnavailable("no confined runner")
+
+
+async def test_bash_uses_the_injected_command_runner(tmp_path: Path) -> None:
+    spy = _SpyRunner()
+    outcome = await dispatch_call(
+        tmp_path,
+        "bash",
+        {"command": "ignored"},
+        registry=ToolRegistry(bash_tool_definitions(runner=spy)),
+    )
+
+    assert outcome.result.outcome == "OK"
+    assert spy.calls == [("ignored", tmp_path, DEFAULT_TIMEOUT_SECONDS)]
+    assert "7" in outcome.result.content
+    assert "spy output" in outcome.result.content
+
+
+async def test_an_unavailable_runner_is_sandbox_unavailable(tmp_path: Path) -> None:
+    outcome = await dispatch_call(
+        tmp_path,
+        "bash",
+        {"command": "ignored"},
+        registry=ToolRegistry(bash_tool_definitions(runner=_UnavailableRunner())),
+    )
+
+    assert outcome.result.outcome == "DENIED_BY_FENCE"
+    assert outcome.fence_code == "SANDBOX_UNAVAILABLE"
+
+
+def test_win32_and_posix_adapters_are_selected() -> None:
+    runner = default_command_runner()
+
+    if sys.platform == "win32":
+        assert isinstance(runner, Win32CommandRunner)
+    else:
+        assert isinstance(runner, PosixCommandRunner)

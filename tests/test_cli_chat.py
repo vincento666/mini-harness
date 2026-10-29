@@ -557,7 +557,7 @@ def test_a_chat_that_ends_cleanly_prints_no_segment_note(tmp_path: Path) -> None
 
 def test_a_segments_summary_never_appears_on_stdout(tmp_path: Path) -> None:
     """seam ⑥：段里真发生一次压缩时，那条摘要回复不打到 stdout。"""
-    (tmp_path / "a.md").write_text("x" * 100000, encoding="utf-8")
+    (tmp_path / "a.md").write_text(("x" * 100 + "\n") * 1000, encoding="utf-8")
     fixture = _fixture(
         tmp_path,
         "compact.json",
@@ -594,7 +594,7 @@ def test_a_compaction_shows_what_it_shadowed_on_stderr(tmp_path: Path) -> None:
 
     第二条输入是判据的一半：压缩只发生在第一段，那一行就只能出现一次。
     """
-    (tmp_path / "a.md").write_text("x" * 100000, encoding="utf-8")
+    (tmp_path / "a.md").write_text(("x" * 100 + "\n") * 1000, encoding="utf-8")
     fixture = _fixture(
         tmp_path,
         "compact.json",
@@ -652,7 +652,7 @@ def test_a_chat_without_compaction_prints_no_shadow_note(tmp_path: Path) -> None
 
 def test_a_chat_that_compacted_replays_the_same_log_unchanged(tmp_path: Path) -> None:
     """seam ⑥：遮蔽反馈不是日志的投影——同一份日志的 `replay` 里没有出现那一行。"""
-    (tmp_path / "a.md").write_text("x" * 100000, encoding="utf-8")
+    (tmp_path / "a.md").write_text(("x" * 100 + "\n") * 1000, encoding="utf-8")
     fixture = _fixture(
         tmp_path,
         "compact.json",
