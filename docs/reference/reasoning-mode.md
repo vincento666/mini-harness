@@ -42,9 +42,17 @@ DSH 不把每个 delta 写成一条日志事件。一次成功 attempt 只追加
 - opening snapshot 可带 `assistantStream` baseline；`SessionAssistantStreamAccumulator` 保留 `startedAfterSeq`、`nextIndex` 和已收到 stream，所以重连能接上进行中的半截。
 - 最终 durable `assistant/message` 是重放/历史；实时帧只负责“正在发生”。
 
-### 1.5 plan mode 是另一件事
+### 1.5 mini 当前的不足
 
-`dsh-plan-mode` 是独立产品包：`/plan`、持久化 `plan/mode` 事件、`plan:policy` 提示词、`exit_plan_mode` 工具，工具目录不变。它不负责 reasoning effort，也不该和本 change 混在一起。
+| 位置 | mini 现状 | 只加 `reasoning` 字段的问题 |
+|---|---|---|
+| durable `model/response` | `content: str` + `tool_calls` | 只能表达“思考在回答之前”，无法表达 reasoning / text / tool-call 的任意顺序 |
+| 表层 `Message` | `content` + `tool_calls` | reasoning 没有块类型，provider 回传时只能当普通文本或丢弃 |
+| 实时输出 | 只有 `model/delta` | 思考与正文共用一条流，壳无法可靠分流 |
+| shell | 正文区 + durable 事件回显 | 没有独立思考区 |
+| DSH 对照 | `assistant/message` 的 `content` 是有序块数组 | mini 的单字段模型不具备同等表达能力 |
+
+**结论**：要真正对齐 DSH 的“先思考 / 思考与行动交错”，不能只加一个 `reasoning` 字符串；必须把 assistant message 升级成 **有序 content blocks**。单字段只能作为临时过渡，不能作为 `reasoning-mode-and-budget` 的目标形状。
 
 ## 2. mini 的决策
 
@@ -56,6 +64,7 @@ DSH 不把每个 delta 写成一条日志事件。一次成功 attempt 只追加
 4. **思考强度是 provider/请求头配置**：值域先照 DSH 的 `off|low|high|max`，具体适配器映射由 provider 决定。
 5. **历史回传**：后续请求把之前的 reasoning 原样带回；`fold` 必须能从日志重建它。
 6. **UI 形态参考 DSH**：流式时思考区显示最新段落预览；结束后可展开完整 Markdown；回答区独立。
+7. **采用 DSH 的有序 content blocks**：`model/response` 的 assistant message 用 `blocks` 表达 `reasoning` / `text` / `tool-call` 的顺序；`fold` 保留顺序；provider 按协议回传。只加 `reasoning` 字段不足以对齐 DSH，不列为目标形状。
 
 ### 固定取舍
 
@@ -66,9 +75,7 @@ DSH 不把每个 delta 写成一条日志事件。一次成功 attempt 只追加
 
 - 紧凑带时间 stream（DSH 的 `assistant/message.stream` 时间线）。
 - 单独的 `assistant/attempt` 事件；mini 先复用 `error/model` + `model/retry`。
-- 完整 content-block 模型（reasoning/text/tool-call 交错）；第一个切片先加 `reasoning` 字段。
 - DSH 式 active attempt baseline（重连接上生成中的半截）；H2 仍是不补 delta，最终 response 校正。
-- 完整 plan-mode 状态机；`todo`/`plan` 归 M14c。
 
 ## 3. 建议的数据形状
 
@@ -79,9 +86,12 @@ durable：
   "type": "model/response",
   "payload": {
     "turn_id": "t1",
-    "content": "最终回答",
-    "reasoning": "可选：最终思考文本",
-    "tool_calls": [],
+    "blocks": [
+      {"type": "reasoning", "text": "先看 note.md"},
+      {"type": "tool-call", "id": "c1", "name": "read", "arguments": {"file_path": "note.md"}},
+      {"type": "reasoning", "text": "读到了 alpha/beta"},
+      {"type": "text", "text": "note.md 里是 alpha 和 beta。"}
+    ],
     "usage": {
       "input_tokens": 100,
       "output_tokens": 50,
@@ -99,23 +109,33 @@ event: reasoning/delta
 data: {"turn_id":"t1","index":0,"text":"..."}
 ```
 
-折叠层增加可选 `Message.reasoning`；provider 请求把历史 reasoning 带回。若未来需要交错块，再把 `reasoning`/`content` 升级成 `blocks`，作为另一次 schema 变更。
+折叠层：
+
+```python
+class Message:
+    role: str
+    blocks: list[Block]          # reasoning / text / tool-call，保序
+    # content 与 tool_calls 若保留，只能是 blocks 的派生投影，不能双写真源
+```
+
+provider 请求按协议把 blocks 回传（DSH 的 DeepSeek 适配器用 thinking block）。如果 mini 的 OpenAI 兼容适配器不支持块级回传，就在适配器层显式降级/丢弃并记录，MUST NOT 把 reasoning 当普通 `content` 静默塞回。
 
 ## 4. 边界
 
 - 不改 H2 已冻结的 `model/delta` / durable 帧形状；`reasoning/delta` 是新增的并列 ephemeral 事件。
 - 不把 reasoning 写进 `model/delta`，也不把工具参数/usage 逐块流式化。
-- 不做完整 plan-mode；M14c 的 `plan` / `todo` 是另一层。
+- **本 change 的目标是 content blocks，不是单字段**；`content` / `tool_calls` 若保留只是投影。
 - 不默认把 reasoning 当可见回答；UI 必须能折叠。
 - 没有 reasoning 的 provider/model 必须保持现有行为逐点不变。
+- 不做完整 plan-mode 状态机。
 
 ## 5. 判据（change 起草时落成 seam）
 
 - seam ⑤：DeepSeek/兼容适配器解析 reasoning 与 `reasoning_tokens`；mock fixture 能发 reasoning deltas；不支持 effort 在 I/O 前失败。
-- seam ①：turn loop 把 reasoning sink 传给 provider；最终 reasoning 与 content 一起落一条 `model/response`；delta 不写日志；取消不写半条 response。
-- seam ④：`fold` 能从日志重建 `Message.reasoning`；`replay` 逐点相等。
-- seam ⑥：SSE 同时有 `reasoning/delta` 与 `model/delta`，两者顺序与 `model/response` 边界正确；重连不补 delta，最终 response 带 reasoning；无 reasoning 的模型日志与今天逐点相同。
-- 真实端点：reasoner 一次长回复；首 reasoning delta / 首正文 delta / 最终 content 一致；usage 的 reasoning 不重复计。
+- seam ①：turn loop 把 reasoning sink 传给 provider；最终 blocks（含 reasoning/text/tool-call 顺序）落一条 `model/response`；delta 不写日志；取消不写半条 response。
+- seam ④：`fold` 能从 blocks 重建 `Message` 的顺序；`replay` 逐点相等。
+- seam ⑥：SSE 同时有 `reasoning/delta` 与 `model/delta`，两者顺序与 `model/response` 边界正确；重连不补 delta，最终 response 带 blocks；无 reasoning 的模型日志与今天逐点相同。
+- 真实端点：reasoner 一次长回复；reasoning → tool-call → reasoning → text 的顺序可重放；usage 的 reasoning 不重复计。
 - UAT：思考区与回答区分开；折叠/展开；长思考不把回答挤掉。
 - 变异：reasoning 误写日志、reasoning 混进正文、reasoning tokens 重复计——各至少一条判据杀死。
 
@@ -133,15 +153,15 @@ M14 / M14c（plan/todo UX）
 接壳前冻结 reasoning 协议
 ```
 
-M10 完成后、M11/M12 前做。这样 M12 子代理能继承思考档位，不用回头补；M14c 只做 plan/todo，不和 reasoning 混。
+**顺序**：M10 完成后、M11/M12 前做。这样 M12 子代理能继承思考档位；M14c 的 `todo` / `plan` 仍另算。
 
 ## 7. 开放问题（propose 时答）
 
-1. 档位是会话级（`session/start`）还是每回合可改（`model/request`）？先按会话级，减少 payload 漂移；若壳要每回合切换，再改 request header。
-2. mini 的 DeepSeek 走 OpenAI 兼容 `reasoning_content`，还是新写 Messages/thinking 适配器？先按现有适配器能力定；不为了对齐 DSH 直接换协议。
+1. `blocks` 是新增字段并保留 `content`/`tool_calls` 投影，还是直接替换旧字段？若保留投影，必须保证投影不成为第二真源。
+2. mini 的 DeepSeek 走 OpenAI 兼容 `reasoning_content`，还是新写 Messages/thinking 适配器？块级回传能力按适配器协议裁。
 3. reasoning 回传是否总是原样带回，还是只在同一 provider/model 路由内？默认同一路由原样；跨路由要 ADR。
 4. 思考区默认折叠；是否需要“只看摘要”策略？MVP 不做自动摘要。
-5. reasoning 是否影响上下文压缩的遮蔽范围？先按普通 message 内容计入预算；是否需要单独保留，留 E1 数据。
+5. reasoning 是否影响上下文压缩的遮蔽范围？先按普通 block 内容计入预算；是否需要单独保留，留 E1 数据。
 
 ## 出处
 

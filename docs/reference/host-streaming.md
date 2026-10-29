@@ -1,6 +1,6 @@
 # 宿主流式与事件回显：H2 的设计底稿
 
-**定位**：H2 开工前的设计备忘，不是规格。对外行为以 H2 的 delta spec 为准；本文只把 DSH 的 durable / ephemeral 两层怎么落到 mini 的 SSE 上写清楚。
+**定位**：H2 开工前的设计备忘，不是规格。对外行为以 H2 的 delta spec 为准；本文只把 DSH 的 durable / ephemeral 两层怎么落到 mini 的 SSE 上写清楚。H2 完成后的完整分层对照（含 sink、合流、reasoning 帧、DSH 的 assistant/message 与 baseline）见 `docs/reference/h2-streaming-and-reasoning.md`。
 
 ## 1. DSH 的对照
 
