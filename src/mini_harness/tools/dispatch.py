@@ -160,15 +160,9 @@ async def dispatch_tool_call(
     if result.outcome != "OK":
         return finished(DispatchOutcome(result, approval=approval))
     stages("post-execute")
-    result = _post_execute(result)
     stages("finalizeContent")
     result = _finalize_content(result, definition.name, context.workspace)
     return finished(DispatchOutcome(result, approval=approval))
-
-
-def _post_execute(result: ToolResult) -> ToolResult:
-    """执行后的归一化；本切片保持原结果，预算/替换策略后续只在这里加。"""
-    return result
 
 
 def _finalize_content(result: ToolResult, tool_name: str, workspace: Path) -> ToolResult:
@@ -176,10 +170,13 @@ def _finalize_content(result: ToolResult, tool_name: str, workspace: Path) -> To
     if tool_name == "bash" and result.outcome == "OK":
         from mini_harness.tools.bash_tools import bound_bash_content
 
-        return ToolResult(
-            outcome=result.outcome,
-            content=bound_bash_content(result.content, workspace),
-        )
+        try:
+            return ToolResult(
+                outcome=result.outcome,
+                content=bound_bash_content(result.content, workspace),
+            )
+        except OSError as exc:
+            return ToolResult(outcome="TOOL_IO_FAILED", content=f"bash 结果 spill 失败：{exc}")
     return result
 
 

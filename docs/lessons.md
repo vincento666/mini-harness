@@ -887,6 +887,15 @@ ADR 到 9.2 才提交；已提交的 `tasks.md` 三处引用本分支不存在�
 - Promotion candidate: 与 L-016 的估算取舍同族；本轮不占 AGENTS.md 额度
 - Status: inbox
 
+### L-066
+- Date: 2026-10-29
+- Context: M10 给 `read` 加 50 KiB / 2000 字符单行 / 2000 行窗口
+- Observation: 压缩测试用「一整行 50000 个中文字符」构造大工具结果；单行上限把结果截到 2000 字符，token 从 12500 掉到 500，压缩不再触发。判据红的是 fixture 形状，不是压缩逻辑
+- Evidence: `test_cli_chat` / `test_cli_replay` / `test_vocabulary_reachability` 的 long.md 改成 500 行 × 100 ASCII 字符后恢复；`test_turn_compaction` 的 untrimmable 用 1000 行 × 100 字符并把窗口降到 10000
+- Next use: 给读窗口加 cap 时，所有「靠超大工具结果触发预算」的测试都要检查是否被单行 cap 提前截断；用多行、接近真实文件形状的 fixture
+- Promotion candidate: 与 L-016 的估算取舍同族；本轮不占 AGENTS.md 额度
+- Status: inbox
+
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 - 每个里程碑收尾扫一次，**允许输出 `NO-PROMOTION`**（没有可复用信号就不写条目）。
 - 收件箱条目超过 **15 条**必须先消化再收新的：合并同类、把已被代码或规格自证的条目删掉。

@@ -104,7 +104,7 @@ async def test_grep_truncates_a_long_matched_line(tmp_path: Path) -> None:
 
     outcome = await _grep(tmp_path, pattern="命中")
 
-    assert "line truncated to 2000 chars" in outcome.result.content
+    assert "line truncated to 2000 bytes" in outcome.result.content
     assert len(outcome.result.content) < 5000
 
 

@@ -4,7 +4,7 @@
 
 ### Requirement: 工具派发走六段管线
 
-系统 SHALL 按 `pre-execute → guard → execute → post-execute → finalizeContent → tools/result` 六段执行一次工具调用；每一段 SHALL 只产出「继续 / 结果」两种出口，失败也是结果，MUST NOT 抛出未捕获异常打断回合。`guard` SHALL 复用现有围栏与 approval 语义；`finalizeContent` 是结果预算/spill 的唯一收尾点。
+系统 SHALL 按 `pre-execute → guard → execute → post-execute → finalizeContent → tools/result` 六段执行一次工具调用；每一段 SHALL 只产出「继续 / 结果」两种出口，失败也是结果，MUST NOT 抛出未捕获异常打断回合。`guard` SHALL 复用现有围栏与 approval 语义；`finalizeContent` 是 `bash` 的 16 KiB/尾部/spill 收尾点，`read`/`grep`/`glob` 的窗口与条数上限在各自工具内生效。
 
 #### Scenario: 六段顺序可观察
 
@@ -51,7 +51,7 @@
 
 ### Requirement: read 是 capped window，不落 spill
 
-`read` SHALL 同时受 `readLimit`（默认 2000 行）、`readMaxBytes`（默认 51200 字节）与 `readMaxLineLength`（默认 2000 字符/行）约束，先到者生效。超出时 SHALL 返回截断窗口、固定 capped footer 与 `offset=<next>` 续读提示；单行超长 SHALL 带 `... (line truncated to <max> chars)` mark。`read` MUST NOT 写 spill 文件；完整内容通过继续 `read` 同一路径获得。
+`read` SHALL 同时受 `readLimit`（默认 2000 行）、`readMaxBytes`（默认 51200 字节）与 `readMaxLineLength`（默认 2000 字符/行）约束，先到者生效。超出时 SHALL 返回截断窗口、固定 capped footer 与 `offset=<next>` 续读提示；单行超长 SHALL 带 `... (line truncated to <max> chars)` mark。`read` MUST NOT 写 spill 文件；完整内容通过继续 `read` 同一路径获得，但被 `readMaxLineLength` 截断的单行剩余部分不可恢复。
 
 #### Scenario: 超长单行只截该行
 
@@ -70,7 +70,7 @@
 
 ### Requirement: bash 与搜索工具超限落 spill
 
-`bash` 的输出上限 SHALL 保持 16 KiB，超限时 SHALL 保留可见尾部并写完整输出到工作区内 spill，结果带 `[output truncated; full output: <path>]`。`grep` / `glob` SHALL 分别受 `grepMaxMatches=250`、`globMaxResults=100`、`grepMaxLineBytes=2000` 与 `rawOutputMaxBytes=20000000` 约束；超出 inline 上限时 SHALL 留 marker，完整结果 MAY 落 spill。spill 路径解析后 MUST 仍在工作区根内；M10 不做 GC。
+`bash` 的输出上限 SHALL 保持 16 KiB，超限时 SHALL 保留可见尾部并写完整输出到工作区内 spill，结果带 `[output truncated; full output: <path>]`。`grep` SHALL 受 `grepMaxMatches=250`、`grepMaxLineBytes=2000` 与 `rawOutputMaxBytes=20000000` 约束；`glob` SHALL 受 `globMaxResults=100` 约束。超出 inline 上限时 SHALL 留 marker，完整结果 MAY 落 spill。spill 路径解析后 MUST 仍在工作区根内；M10 不做 GC。
 
 #### Scenario: bash 保留尾部并 spill
 

@@ -273,6 +273,7 @@ async def test_oversized_output_is_truncated_and_marked(tmp_path: Path) -> None:
     assert OUTPUT_LIMIT_BYTES == 16 * 1024
     spill = next((tmp_path / ".mini-harness" / "spill").glob("bash-*.txt"))
     assert spill.is_file()
+    assert spill.resolve().is_relative_to(tmp_path.resolve())
     assert "x" * 40 in spill.read_text(encoding="utf-8")
     assert spill.relative_to(tmp_path).as_posix() in outcome.result.content
 

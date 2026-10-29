@@ -51,14 +51,17 @@ def bound_bash_content(content: str, workspace: Path) -> str:
         return content
     tail = encoded[-OUTPUT_LIMIT_BYTES:].decode("utf-8", errors="ignore")
     digest = hashlib.sha256(encoded).hexdigest()[:16]
-    spill = workspace / ".mini-harness" / "spill" / f"bash-{digest}.txt"
+    root = workspace.resolve()
+    spill = (workspace / ".mini-harness" / "spill" / f"bash-{digest}.txt").resolve()
+    if not spill.is_relative_to(root):
+        raise OSError(f"spill 路径越出工作区：{spill}")
     try:
         spill.parent.mkdir(parents=True, exist_ok=True)
         spill.write_text(content, encoding="utf-8")
-        relative = spill.relative_to(workspace).as_posix()
+        relative = spill.relative_to(root).as_posix()
         return f"{tail}\n{TRUNCATION_MARK}{relative}]"
-    except OSError:
-        return f"{tail}\n[output truncated; spill unavailable]"
+    except OSError as exc:
+        raise OSError(f"spill 写不进去：{exc}") from exc
 
 
 class BashArgs(ToolArgs):
@@ -107,6 +110,7 @@ def bash_tool_definitions(runner: CommandRunner | None = None) -> list[ToolDefin
             ),
             args_model=BashArgs,
             mutates=True,
+            concurrency="exclusive",
             run=run,
         )
     ]

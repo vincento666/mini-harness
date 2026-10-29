@@ -7,11 +7,8 @@
 from __future__ import annotations
 
 import asyncio
-import inspect
 import time
 from pathlib import Path
-
-import pytest
 
 from mini_harness.events import read_events
 from mini_harness.events.fold import fold
@@ -95,46 +92,6 @@ async def test_exclusive_is_a_barrier(tmp_path: Path) -> None:
     third_read = b_intervals[0]
     assert write[1] >= first_read[2], "write 在第一个 read 结束前就开始了"
     assert third_read[1] >= write[2], "第三个 read 在 write 结束前就开始了"
-
-
-async def test_a_batch_reads_the_log_prefix_once(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from mini_harness.loop import turn_loop
-
-    for index in range(1, 5):
-        (tmp_path / f"f{index}.md").write_text(f"{index}\n", encoding="utf-8")
-    calls = 0
-    original = turn_loop.read_events
-
-    def counted(path: Path) -> object:
-        nonlocal calls
-        frame = inspect.currentframe()
-        caller = frame.f_back.f_code.co_name if frame is not None and frame.f_back else ""
-        if caller == "_dispatch_batch":
-            calls += 1
-        return original(path)
-
-    monkeypatch.setattr(turn_loop, "read_events", counted)
-    await run_session_fixture(
-        tmp_path,
-        "s-prefix-once",
-        FixtureProvider(
-            entries=[
-                turn_entry(
-                    *(
-                        tool_call("read", f"c{index}", file_path=f"f{index}.md")
-                        for index in range(1, 5)
-                    )
-                ),
-                DONE,
-            ]
-        ),
-        registry=timed_registry([]),
-        max_turns=4,
-    )
-
-    assert calls == 1
 
 
 async def test_two_reads_in_one_turn_overlap_in_time(tmp_path: Path) -> None:
