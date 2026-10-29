@@ -64,11 +64,11 @@ uv run minihns replay <session-id> --session-dir .tmp\m10-compaction-uat\s2
 
 | 场次 | 动作 | 预期 | 实际观察 | 结论 | 别扭在哪 |
 |---|---|---|---|---|---|
-| W1 | 0.16 vs 0.05 | 遮蔽范围变大 / payload 对 | | | |
-| W2 | retain_tokens=3000 | 覆盖 0.5 ratio | | | |
-| W3 | ratio=0 | 退出码 2 / 无日志 | | | |
-| W4 | replay | 退出码 0 | | | |
+| W1 | 0.16 vs 0.05 | 遮蔽范围变大 / payload 对 | 0.16：`12171->10154` range 1-8；0.05：`6117->2079` range 1-15，第二次 `6115->4100` range 28-32；payload 分别为 0.16/0.05 | 通过 | 单份大文件只产生一条 read 结果，最后一条总被保留，比率看不出差别；要六份文件才看得到尾部落差 |
+| W2 | retain_tokens=3000 | 覆盖 0.5 ratio | 0.5+3000：出现两次遮蔽（`6117->2079`、`6115->4100`），payload `0.5/3000`；对照组 0.5+0 不触发遮蔽 | 通过 | 无 |
+| W3 | ratio=0 | 退出码 2 / 无日志 | `INVALID_ARGUMENT: compaction_retain_ratio 必须在 (0, 1] 内，收到 0.0`；退出码 2，`w3-sessions` 无 jsonl | 通过 | 无 |
+| W4 | replay | 退出码 0 | session `16d04ac7...`：`verified seq=28/35/45: OK`，退出码 0 | 通过 | 无 |
 
-**至少一条「用起来别扭」**：_
+**至少一条「用起来别扭」**：单份大文件只有一条 read 结果，保留尾部永远包含它，ratio 调小看不出差别；UAT 需要用多份文件/多条结果才能观察 retain 的效果。
 
-**结论**：通过 / 不通过（写清场次与日志 session id）：_
+**结论**：通过（agent 代跑，用户明确要求；W1 s3/s4、W2 s5 + s6 对照、W3 w3-sessions、W4 s4）。
