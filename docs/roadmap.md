@@ -75,6 +75,7 @@ H1 / H2 是新增的宿主轨，不占用 M10–M15 的决策编号；M 编号�
 ### 思考模式与预算（M10 之后，`reasoning-mode-and-budget`）
 
 - **change**：`reasoning-mode-and-budget`（**M10 完成后才 propose**；不占 M 编号）
+- **状态**：2026-10-29 已 propose，待 review。
 - **层**：模型 + 宿主 + 日志 + 壳前协议
 - **内容**：provider 支持 reasoning（DeepSeek/兼容适配器的 `reasoning_content` 或 thinking block）；`off|low|high|max` 档位与有效值记录；实时 `reasoning/delta` 是独立 ephemeral 帧，不落日志；一条 durable `model/response` 用**有序 content blocks**（`reasoning` / `text` / `tool-call`）表达最终结果（**不按 delta 写日志**）；`fold` 保留块顺序并回传；usage 的 `reasoning_tokens` 是 output 的子集、不重复计；UI 思考区折叠、回答区独立。只加 `reasoning` 字符串不足以对齐 DSH 的交错形状，不作为目标。设计底稿在 `docs/reference/reasoning-mode.md`。
 - **完成判据**：真实 reasoner 一次长回复的 reasoning delta 与最终 blocks 一致；日志只有一条 `model/response`、没有 delta 记录；`reasoning → tool-call → reasoning → text` 的顺序可重放；`replay` 逐点相等；unsupported effort 在网络 I/O 前失败；reasoning tokens 不重复计；UI 能分开折叠/回答；无 reasoning 的模型行为逐点不变；真实端点一次；UAT（人跑）观察表填完。
