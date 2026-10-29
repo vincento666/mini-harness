@@ -22,15 +22,15 @@
 
 ## 4. 结果预算与 spill
 
-- [ ] 4.1 seam ③：红判据 `test_read_has_a_32_kib_byte_cap`——超长单行被字节截断，marker 与 spill 路径存在，内容不超预算
-- [ ] 4.2 seam ③：红判据 `test_bash_output_goes_to_spill`——16 KiB 上限 + marker + 完整内容可从 spill 读回
-- [ ] 4.3 seam ③：红判据 `test_grep_and_glob_have_byte_caps`——超限有 marker 与缩小范围提示
+- [ ] 4.1 seam ③：红判据 `test_read_has_a_50_kib_window_and_no_spill`——超长单行被 2000 字符截断，总字节不超过 51200，结果带 `offset=<next>` 且没有 spill 路径
+- [ ] 4.2 seam ③：红判据 `test_bash_keeps_the_tail_and_spills`——16 KiB 上限、保留尾部、marker 与完整内容可从 spill 读回
+- [ ] 4.3 seam ③：红判据 `test_grep_and_glob_have_inline_caps`——250/100 条、2000 字符/行、20 MB raw 上限；超限有 marker 与缩小范围提示
 - [ ] 4.4 seam ③：红判据 `test_spill_stays_inside_the_workspace`——解析后路径仍在工作区根内；越界是围栏结果
-- [ ] 4.5 seam ②：守卫——`finalizeContent` 是唯一硬截断点；无超限时结果逐字节不变
+- [ ] 4.5 seam ②：守卫——`finalizeContent` 只硬截断 bash/搜索；`read` 的结果不带 spill；无超限时逐字节不变
 
 ## 5. read/edit 共用窗口
 
-- [ ] 5.1 seam ③：红判据 `test_edit_cas_uses_the_same_byte_window_as_read`——超长文件 read 被截断后，在窗口内 edit 不被误报 `STALE_EDIT`
+- [ ] 5.1 seam ③：红判据 `test_edit_cas_uses_the_same_read_window`——超长文件 read 被行/字节/单行上限截断后，在窗口内 edit 不被误报 `STALE_EDIT`
 - [ ] 5.2 seam ③：守卫——窗口外 edit 仍报 `STALE_EDIT`；正常文件行为不变
 
 ## 6. 批内前缀复用

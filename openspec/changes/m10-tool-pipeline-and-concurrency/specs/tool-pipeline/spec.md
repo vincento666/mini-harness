@@ -49,19 +49,43 @@
 - **WHEN** 两个 `parallel` 调用完成顺序与声明顺序相反
 - **THEN** 两条 `tool/result` 按完成顺序落盘，`tool/call` 仍按声明顺序
 
-### Requirement: 单条结果有预算并落 spill
+### Requirement: read 是 capped window，不落 spill
 
-`read` 的结果 SHALL 同时受行数与 32 KiB 字节上限约束，先到者生效；`bash` 的输出上限 SHALL 保持 16 KiB；`grep` 与 `glob` SHALL 各有一个字节上限。超限内容 SHALL 落工作区内的 `.mini-harness/spill/`，结果里 SHALL 留固定 marker 与可读回路径；spill 路径 MUST 仍在工作区边界内。`read` 被字节截断时，结果 MUST NOT 让模型以为看到了完整文件。
+`read` SHALL 同时受 `readLimit`（默认 2000 行）、`readMaxBytes`（默认 51200 字节）与 `readMaxLineLength`（默认 2000 字符/行）约束，先到者生效。超出时 SHALL 返回截断窗口、固定 capped footer 与 `offset=<next>` 续读提示；单行超长 SHALL 带 `... (line truncated to <max> chars)` mark。`read` MUST NOT 写 spill 文件；完整内容通过继续 `read` 同一路径获得。
 
-#### Scenario: 超长单行被截断
+#### Scenario: 超长单行只截该行
 
-- **WHEN** `read` 一个单行远超 32 KiB 的文件
-- **THEN** 结果带截断 marker 与 spill 路径，内容不超过字节预算
+- **WHEN** `read` 一个包含超长单行的文件
+- **THEN** 该行截到 2000 字符并带 mark，窗口仍可按 `offset` 继续读
 
-#### Scenario: bash 输出落 spill
+#### Scenario: 字节上限结束窗口
+
+- **WHEN** 所选行合计超过 51200 字节
+- **THEN** 结果以 capped footer 结束并给出下一个 `offset`；没有 spill 路径
+
+#### Scenario: 行数上限照旧
+
+- **WHEN** `read` 不带 `limit` 读取超过 2000 行
+- **THEN** 只返回前 2000 行与 `offset=2001` 的续读提示
+
+### Requirement: bash 与搜索工具超限落 spill
+
+`bash` 的输出上限 SHALL 保持 16 KiB，超限时 SHALL 保留可见尾部并写完整输出到工作区内 spill，结果带 `[output truncated; full output: <path>]`。`grep` / `glob` SHALL 分别受 `grepMaxMatches=250`、`globMaxResults=100`、`grepMaxLineBytes=2000` 与 `rawOutputMaxBytes=20000000` 约束；超出 inline 上限时 SHALL 留 marker，完整结果 MAY 落 spill。spill 路径解析后 MUST 仍在工作区根内；M10 不做 GC。
+
+#### Scenario: bash 保留尾部并 spill
 
 - **WHEN** `bash` 输出超过 16 KiB
-- **THEN** 结果带固定 marker，完整输出可从 spill 文件读回
+- **THEN** 结果保留尾部、带 `[output truncated; full output: <path>]`，完整输出可从 spill 读回
+
+#### Scenario: grep 超限
+
+- **WHEN** `grep` 命中超过 250 条
+- **THEN** inline 只保留上限内的匹配并带 marker；超过 `grepMaxLineBytes` 的单行被截断
+
+#### Scenario: glob 超限
+
+- **WHEN** `glob` 命中超过 100 条
+- **THEN** inline 只保留上限内的路径并带 marker
 
 #### Scenario: spill 不越界
 
@@ -70,11 +94,11 @@
 
 ### Requirement: read 与 edit 共用截断窗口
 
-`read` 的字节上限生效后，`edit` 的「写前必读」与 CAS 判定 SHALL 使用与 `read` 相同的截断窗口；否则合法编辑 MUST NOT 被误报 `STALE_EDIT`。
+`read` 的行/字节/单行上限生效后，`edit` 的「写前必读」与 CAS 判定 SHALL 使用与 `read` 相同的截断窗口；否则合法编辑 MUST NOT 被误报 `STALE_EDIT`。
 
 #### Scenario: 截断窗口内编辑不误报
 
-- **WHEN** 模型先 `read` 一个超长文件（被字节截断），再在窗口内做 `edit`
+- **WHEN** 模型先 `read` 一个超长文件（被行/字节/单行上限截断），再在窗口内做 `edit`
 - **THEN** 编辑被接受，不出现 `STALE_EDIT`
 
 ### Requirement: 一批调用共享一次日志前缀

@@ -22,17 +22,23 @@
 
 **预期**：第一个 read 完成 → write 完成 → 第三个 read 才开始；日志顺序能看出 barrier；写入内容正确。
 
-## U3 · read 字节上限与 spill
+## U3 · read 窗口（不 spill）
 
 提示：`读 big.md 并总结。`
 
-**预期**：结果不超过 32 KiB，带截断 marker 与 `.mini-harness/spill/...` 路径；spill 文件能读回完整内容。
+**预期**：结果不超过 50 KiB、单行不超过 2000 字符，带 capped footer 与 `offset=<next>`；**没有** spill 路径；继续 `read` 同一个文件能推进 offset。
+
+## U3b · read 的单行截断
+
+准备一个单行 5000 字符的文件，提示：`读 longline.md 并告诉我第一行。`
+
+**预期**：该行带 `... (line truncated to 2000 chars)` mark；窗口仍可继续读。
 
 ## U4 · bash spill
 
 提示：`用 bash 输出 20000 个 x，然后告诉我输出有多长。`
 
-**预期**：结果带 16 KiB 截断 marker 与 spill 路径；完整输出可从 spill 读回。
+**预期**：结果保留尾部、带 16 KiB 截断 marker 与 spill 路径；完整输出可从 spill 读回。
 
 ## U5 · runner 不可用
 
@@ -48,10 +54,11 @@
 
 | 场次 | 动作 | 预期 | 实际观察 | 结论 | 别扭在哪 |
 |---|---|---|---|---|---|
-| U1 | 并行三 read | 声明顺序 / 完成顺序 / 更快 | | | |
+| U1 | 并行三 read | 声明顺序 / 完成顺序 / 更快，≤8 | | | |
 | U2 | read-write-read | barrier 成立 | | | |
-| U3 | 读超长文件 | 32 KiB / spill | | | |
-| U4 | bash 大输出 | 16 KiB / spill | | | |
+| U3 | 读超长文件 | 50 KiB / 单行 2000 / 不 spill / offset | | | |
+| U3b | 单行截断 | 2000 字符 mark | | | |
+| U4 | bash 大输出 | 16 KiB / 尾部 / spill | | | |
 | U5 | runner 不可用 | 退出码 3 | | | |
 | U6 | 真实端点 | 通过 | | | |
 
