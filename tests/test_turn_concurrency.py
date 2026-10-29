@@ -13,6 +13,8 @@ from pathlib import Path
 from mini_harness.events import read_events
 from mini_harness.events.fold import fold
 from mini_harness.provider import FixtureProvider
+from mini_harness.tools.bash_tools import bash_tool_definitions
+from mini_harness.tools.file_tools import file_tool_definitions
 from tool_harness import (
     DONE,
     Intervals,
@@ -42,6 +44,54 @@ def _peak(observed: Intervals) -> int:
         current += delta
         peak = max(peak, current)
     return peak
+
+
+def test_concurrency_class_maps_by_tool() -> None:
+    definitions = {
+        definition.name: definition.concurrency
+        for definition in [*file_tool_definitions(), *bash_tool_definitions()]
+    }
+
+    assert definitions == {
+        "read": "parallel",
+        "write": "exclusive",
+        "edit": "exclusive",
+        "glob": "parallel",
+        "grep": "parallel",
+        "bash": "exclusive",
+    }
+
+
+async def test_exclusive_is_a_barrier(tmp_path: Path) -> None:
+    """read → write → read：写开始前第一条读完成，第三条读在写完成后开始。"""
+    (tmp_path / "a.md").write_text("甲\n", encoding="utf-8")
+    (tmp_path / "b.md").write_text("乙\n", encoding="utf-8")
+    observed: Intervals = []
+
+    await run_session_fixture(
+        tmp_path,
+        "s-barrier",
+        FixtureProvider(
+            entries=[
+                turn_entry(tool_call("read", "r1", file_path="a.md")),
+                turn_entry(
+                    tool_call("write", "w1", file_path="a.md", content="改写\n"),
+                    tool_call("read", "r2", file_path="b.md"),
+                ),
+                DONE,
+            ]
+        ),
+        registry=timed_registry(observed),
+        max_turns=4,
+    )
+
+    a_intervals = [span for span in observed if span[0] == "a.md"]
+    b_intervals = [span for span in observed if span[0] == "b.md"]
+    first_read = a_intervals[0]
+    write = a_intervals[1]
+    third_read = b_intervals[0]
+    assert write[1] >= first_read[2], "write 在第一个 read 结束前就开始了"
+    assert third_read[1] >= write[2], "第三个 read 在 write 结束前就开始了"
 
 
 async def test_two_reads_in_one_turn_overlap_in_time(tmp_path: Path) -> None:

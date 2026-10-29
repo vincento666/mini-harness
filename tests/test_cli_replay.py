@@ -433,8 +433,9 @@ async def test_a_log_that_went_through_compaction_replays_pointwise(tmp_path: Pa
     遮蔽范围写在 `compaction/summary` 里；重放方只从日志读这条记录，不另算一份。
     """
     session_dir = tmp_path / "sessions"
-    # 50000 个字符 ≈ 12500 个估算 token：比保留预算大一倍，所以它该被遮蔽。
-    (tmp_path / "long.md").write_text("长" * 50000, encoding="utf-8")
+    # 50000 个 ASCII 字符 ≈ 12500 个估算 token：比保留预算大一倍，所以它该被遮蔽。
+    # 多行是因为 read 的单行上限是 2000 字符（M10）。
+    (tmp_path / "long.md").write_text(("x" * 100 + "\n") * 500, encoding="utf-8")
 
     _, outcome = await run_session_fixture(
         tmp_path,

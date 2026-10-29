@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 
@@ -84,6 +84,7 @@ def timed_registry(observed: Intervals, delays: dict[str, float] | None = None) 
             args_model=definition.args_model,
             mutates=definition.mutates,
             run=run,
+            concurrency=definition.concurrency,
         )
 
     return ToolRegistry([wrap(definition) for definition in file_tool_definitions()])
@@ -108,6 +109,7 @@ def serialized_registry(observed: Intervals) -> ToolRegistry:
             args_model=definition.args_model,
             mutates=definition.mutates,
             run=run,
+            concurrency=definition.concurrency,
         )
 
     return ToolRegistry([wrap(definition) for definition in file_tool_definitions()])
@@ -142,6 +144,7 @@ async def dispatch_call(
     records: Iterable[EventRecord] | None = None,
     registry: ToolRegistry | None = None,
     approval_gate: ApprovalGate | None = None,
+    on_stage: Callable[[str], None] | None = None,
 ) -> DispatchOutcome:
     """跑完一次派发判定。注册表与 approval 门都可注入。"""
     call = ToolCall(id="c1", name=name, arguments=arguments)
@@ -150,6 +153,7 @@ async def dispatch_call(
         file_registry() if registry is None else registry,
         dispatch_context(workspace, sandbox=sandbox, approval=approval, records=records),
         _ApprovingGate() if approval_gate is None else approval_gate,
+        on_stage=on_stage,
     )
 
 

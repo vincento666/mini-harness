@@ -233,13 +233,13 @@ async def _dispatch_batch(
     # `started` 是「轮到过：开始派发或放弃」；`finished` 是「整个跑完」。
     started: list[asyncio.Event] = [asyncio.Event() for _ in calls]
     finished: list[asyncio.Event] = [asyncio.Event() for _ in calls]
-    mutating: list[bool] = []
+    exclusive: list[bool] = []
     for call in calls:
         definition = registry.lookup(call.name)
-        mutating.append(definition is not None and definition.mutates)
+        exclusive.append(definition is not None and definition.concurrency == "exclusive")
     stop = asyncio.Event()
     read_slots = asyncio.Semaphore(MAX_PARALLEL_TOOLS)
-    mutating_slot = asyncio.Lock()
+    exclusive_slot = asyncio.Lock()
     outcome = _BatchOutcome()
 
     def begin(index: int, call: ToolCall) -> bool:
@@ -406,12 +406,12 @@ async def _dispatch_batch(
     async def dispatch_one(index: int, call: ToolCall) -> None:
         if index > 0:
             await started[index - 1].wait()
-            if mutating[index] or mutating[index - 1]:
+            if exclusive[index] or exclusive[index - 1]:
                 # 只有一对相邻的只读调用允许同时在跑；沾上「要改动」的都排队。
                 # 于是「拒绝之后的调用不再派发」是这条规则保证的，不是碰巧的调度顺序。
                 await finished[index - 1].wait()
-        if mutating[index]:
-            async with mutating_slot:
+        if exclusive[index]:
+            async with exclusive_slot:
                 # 拿到独占权之后才决定要不要开始：串行链上「已声明」不等于「已派发」。
                 if cancel.is_set():
                     abandoned(index, call)

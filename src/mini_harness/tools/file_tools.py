@@ -12,14 +12,18 @@ from mini_harness.tools.fences import DispatchContext, path_key
 from mini_harness.tools.registry import ToolArgs, ToolDefinition, ToolResult
 
 DEFAULT_READ_LIMIT = 2000
+READ_MAX_BYTES = 51200
+READ_MAX_LINE_LENGTH = 2000
 GLOB_LIMIT = 100
 GREP_LIMIT = 250
+GREP_MAX_LINE_BYTES = 2000
+GREP_RAW_MAX_BYTES = 20_000_000
 
 
 class ReadArgs(ToolArgs):
     file_path: str
     offset: int = Field(default=1, ge=1)
-    limit: int = Field(default=DEFAULT_READ_LIMIT, ge=1)
+    limit: int = Field(default=DEFAULT_READ_LIMIT, ge=1, le=DEFAULT_READ_LIMIT)
 
     def target_path(self) -> str | None:
         return self.file_path
@@ -77,10 +81,39 @@ def resolve_target(workspace: Path, raw_path: str) -> Path:
 
 
 def _numbered_window(text: str, offset: int, limit: int | None) -> str:
+    """read/edit 共用的窗口：行数、单行 2000 字符、总字节 51200，先到者生效。
+
+    只有被字节/单行上限截断时才加 capped footer；显式 `limit` 的普通窗口保持原样。
+    """
     start = offset - 1
     width = DEFAULT_READ_LIMIT if limit is None else limit
-    window = text.splitlines()[start : start + width]
-    return "\n".join(f"{index}: {line}" for index, line in enumerate(window, start=offset))
+    all_lines = text.splitlines()
+    selected = all_lines[start : start + width]
+    rendered: list[str] = []
+    total_bytes = 0
+    capped = False
+    for index, line in enumerate(selected, start=offset):
+        if len(line) > READ_MAX_LINE_LENGTH:
+            line = line[:READ_MAX_LINE_LENGTH] + (
+                f"... (line truncated to {READ_MAX_LINE_LENGTH} chars)"
+            )
+            capped = True
+        numbered = f"{index}: {line}"
+        cost = len(numbered.encode("utf-8")) + 1
+        if rendered and total_bytes + cost > READ_MAX_BYTES:
+            capped = True
+            break
+        rendered.append(numbered)
+        total_bytes += cost
+    if rendered and start + len(rendered) < len(all_lines):
+        capped = True
+    content = "\n".join(rendered)
+    if capped and rendered:
+        end = offset + len(rendered) - 1
+        content += (
+            f"\n\n(Output capped. Showing lines {offset}-{end}. Use offset={end + 1} to continue.)"
+        )
+    return content
 
 
 def _read_body(target: Path) -> str | None:
@@ -194,26 +227,41 @@ async def search_files(args: GrepArgs, context: DispatchContext) -> ToolResult:
 
     expression = re.compile(args.pattern)
     hits: list[str] = []
+    markers: list[str] = []
     total = 0
+    raw_bytes = 0
+    raw_capped = False
     for entry in sorted(root.rglob("*")):
         if not entry.is_file():
             continue
         body = _read_body(entry)
         if body is None:
             continue
+        raw_bytes += len(body.encode("utf-8"))
+        if raw_bytes > GREP_RAW_MAX_BYTES:
+            raw_capped = True
+            break
         for number, line in enumerate(body.splitlines(), start=1):
             if not expression.search(line):
                 continue
             total += 1
             if len(hits) < GREP_LIMIT:
+                encoded = line.encode("utf-8")
+                if len(encoded) > GREP_MAX_LINE_BYTES:
+                    preview = encoded[:GREP_MAX_LINE_BYTES].decode("utf-8", errors="ignore")
+                    preview += f"... (line truncated to {GREP_MAX_LINE_BYTES} bytes)"
+                else:
+                    preview = line
                 relative = _relative_to(context.workspace, entry)
-                hits.append(f"{relative}:{number}: {line}")
+                hits.append(f"{relative}:{number}: {preview}")
 
+    if raw_capped:
+        markers.append(f"[raw output capped at {GREP_RAW_MAX_BYTES} bytes]")
     if total == 0:
-        return ToolResult(outcome="OK", content=f"没有匹配：{args.pattern}")
+        return ToolResult(outcome="OK", content="\n".join([f"没有匹配：{args.pattern}", *markers]))
     if total > len(hits):
-        hits.append(f"共 {total} 条匹配，只列出前 {GREP_LIMIT} 条。")
-    return ToolResult(outcome="OK", content="\n".join(hits))
+        markers.append(f"共 {total} 条匹配，只列出前 {GREP_LIMIT} 条。")
+    return ToolResult(outcome="OK", content="\n".join([*hits, *markers]))
 
 
 def file_tool_definitions() -> list[ToolDefinition]:
@@ -227,6 +275,7 @@ def file_tool_definitions() -> list[ToolDefinition]:
             ),
             args_model=ReadArgs,
             mutates=False,
+            concurrency="parallel",
             run=read_file,
         ),
         ToolDefinition(
@@ -234,6 +283,7 @@ def file_tool_definitions() -> list[ToolDefinition]:
             description="覆盖式写入 UTF-8 文本文件；覆盖已存在的文件前必须先读过。",
             args_model=WriteArgs,
             mutates=True,
+            concurrency="exclusive",
             run=write_file,
         ),
         ToolDefinition(
@@ -241,6 +291,7 @@ def file_tool_definitions() -> list[ToolDefinition]:
             description="在已读过的文件里做字面替换；old_string 必须恰好出现一次。",
             args_model=EditArgs,
             mutates=True,
+            concurrency="exclusive",
             run=edit_file,
         ),
         ToolDefinition(
@@ -252,6 +303,7 @@ def file_tool_definitions() -> list[ToolDefinition]:
             ),
             args_model=GlobArgs,
             mutates=False,
+            concurrency="parallel",
             run=glob_files,
         ),
         ToolDefinition(
@@ -262,6 +314,7 @@ def file_tool_definitions() -> list[ToolDefinition]:
             ),
             args_model=GrepArgs,
             mutates=False,
+            concurrency="parallel",
             run=search_files,
         ),
     ]

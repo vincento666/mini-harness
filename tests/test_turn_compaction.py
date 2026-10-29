@@ -36,11 +36,11 @@ DEAD_ZONE_TEXT = "x" * 24000
 # 75000 个估算 token：比 `70000 - 100` 这个压力预算还大，装不下才是溢出。
 OVERFLOW_TEXT = "x" * 300000
 
-# 窗口 20000 / 预留 100：压力预算 19900 个 token、保留预算 3200、触发线 0。
-# 100000 个字符约 25000 个估算 token：比压力预算还大的一组工具往返，裁到只剩它也装不下。
-SMALL_WINDOW = 20000
+# 窗口 10000 / 预留 100：压力预算 9900 个 token、保留预算 1600、触发线 0。
+# read 的 51200 字节窗口约 12800 个估算 token：裁到只剩它也装不下。
+SMALL_WINDOW = 10000
 SMALL_RESERVE = 100
-UNTRIMMABLE_TEXT = "长" * 100000
+UNTRIMMABLE_TEXT = ("x" * 100 + "\n") * 1000
 
 SUMMARY_TEXT = "那是此前的对话摘要"
 
@@ -256,7 +256,7 @@ async def test_a_shadowed_range_too_big_to_trim_sends_no_summary_request(
     error = _records_of(log.path, "error/context")[0]
     assert error.payload["code"] == "CONTEXT_WINDOW_EXCEEDED"
     assert error.payload["detail"].startswith("可遮蔽的那一段")
-    assert "压力预算 19900" in error.payload["detail"]
+    assert "压力预算 9900" in error.payload["detail"]
     assert "触发线 0" in error.payload["detail"]
     assert outcome.stop_reason == "CONTEXT_WINDOW_EXCEEDED"
 

@@ -110,6 +110,26 @@ async def test_editing_a_file_changed_outside_the_session_is_stale(tmp_path: Pat
     assert target.read_bytes() == outside
 
 
+async def test_edit_in_a_truncated_read_window_is_not_stale(tmp_path: Path) -> None:
+    (tmp_path / "a.md").write_text("marker-" + "x" * 5000 + "\n", encoding="utf-8")
+    entries = [
+        tool_call_entry("read", "c1", file_path="a.md"),
+        tool_call_entry(
+            "edit",
+            "c2",
+            file_path="a.md",
+            old_string="marker-" + "x" * 5,
+            new_string="marker-" + "y" * 5,
+        ),
+        DONE,
+    ]
+
+    log, _ = await run_fixture_session(tmp_path, "s-truncated-edit", entries)
+
+    assert tool_outcomes(log) == ["OK", "OK"]
+    assert (tmp_path / "a.md").read_text(encoding="utf-8").startswith("marker-yyyyy")
+
+
 async def test_edit_without_reading_first_is_refused(tmp_path: Path) -> None:
     (tmp_path / "a.md").write_text(_ORIGINAL, encoding="utf-8")
 

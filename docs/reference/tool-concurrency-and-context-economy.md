@@ -63,25 +63,25 @@ compaction_retain_tokens = 0   # >0 时覆盖 ratio
 
 **单条结果的预算**（不进配置，先进规格常量；E1 量到再谈）：
 
-- `read`：已有 `offset` / `limit`（默认 2000 行）；补**字节上限**（例如 32 KiB，取行数与字节先到者），单行超长时截断并留 marker；超出部分落 spill 文件，结果里留 `[已截断；完整内容：<path>]`。
-- `bash`：保留 16 KB 上限；超出部分落 spill，结果里留同样的 marker；不再静默丢。
-- `grep` / `glob`：已有条数上限；补字节上限，超出留 marker 与「缩小范围」提示；不把 spill 当默认路径（它们是导航工具，不是内容读取）。
+- `read`：已有 `offset` / `limit`（默认 2000 行）；补 `readMaxBytes=51200` 与 `readMaxLineLength=2000`，先到者生效。超限返回 capped window + `offset=<next>`，单行超长带 mark；**不落 spill**，完整内容靠继续 `read` 同一路径获得。
+- `bash`：保留 16 KiB 上限，**保留尾部**；完整输出落 spill，结果里留 `[output truncated; full output: <path>]`。
+- `grep` / `glob`：`grepMaxMatches=250`、`globMaxResults=100`、`grepMaxLineBytes=2000`、`rawOutputMaxBytes=20000000`；超出 inline 上限留 marker 与「缩小范围」提示；完整结果 MAY 落 spill（M10 先固定落，便于恢复）。
 
-**spill**：文件落在工作区内的 `.mini-harness/spill/`（或 `session_dir` 下的子目录），按会话 + 工具调用 id 命名；生命周期到会话结束（M10 不做 GC，M11 可做）。spill 路径必须仍在工作区边界内，否则是围栏问题。
+**spill**：只用于 `bash` 与搜索工具的完整结果；文件落在工作区内的 `.mini-harness/spill/`，按会话 + 工具调用 id 命名；生命周期到会话结束（M10 不做 GC，M11 可做）。spill 路径必须仍在工作区边界内，否则是围栏问题。
 
 **剪枝与压缩分开**：
 
 - 单条剪枝：一条工具结果太长，就地在折叠时剪短（DSH 的 pruner 形状：阈值 8192、头 4096、尾 1024）。日志里仍保留完整记录，折叠读的是剪短后的内容；这与「遮蔽整段」是两条规则。
 - 整段压缩：M5 的 `compaction/summary` 遮蔽一段历史；它不替代单条剪枝，也不依赖 spill。
 
-**CAS 与截断必须用同一份窗口**：`read` 的字节上限一旦生效，`edit` 的写前必读判定要拿同一份截断后的窗口去比（现在两边都用 `_numbered_window`，但字节上限还没有）；否则合法编辑会被误报 `STALE_EDIT`。M10 起草时把「读窗口」抽成一个函数，`read` 与 `edit` 共用。
+**CAS 与截断必须用同一份窗口**：`read` 的行/字节/单行上限一旦生效，`edit` 的写前必读判定要拿同一份截断窗口去比；否则合法编辑会被误报 `STALE_EDIT`。M10 把「读窗口」抽成一个函数，`read` 与 `edit` 共用。
 
-**前缀复用**：一批调用共享一次前缀读；不要每个工具自己 `read_events`。跨回合的折叠缓存是 M11，不在 M10 做。
+**批内日志前缀复用**：一批调用共享一次日志前缀读；不要每个工具自己 `read_events`。provider 的 prompt prefix cache 不在 M10；跨回合的折叠缓存是 M11。
 
 ## 5. 判据（M10 起草时落成 seam 判据）
 
 - seam ②：`ConcurrencyClass` 的映射；注入一个自定义工具，验证 1–6 六条不变量。
-- seam ③：`read` 的 range/limit、超限 marker、spill 文件内容与边界；`bash` 的 spill；`grep`/`glob` 双限。
+- seam ③：`read` 的 range/limit、50 KiB/2000 字符/单行窗口、`offset` 续读且**无 spill**；`bash` 尾部 + spill；`grep`/`glob` 250/100/2000/20 MB 限制。
 - seam ⑥：真实子进程里「读 → 写 → 读」批次的 wall-clock 与最大并发数（E1 记录），以及 `SANDBOX_UNAVAILABLE` 的退出码 3。
 - seam ④：折叠读到的是剪短后的内容，日志里仍是完整记录；`replay` 逐点相等。
 

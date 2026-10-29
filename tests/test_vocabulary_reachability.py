@@ -22,6 +22,8 @@ from mini_harness.provider.openai_compat import (
     OpenAICompatProvider,
 )
 from mini_harness.tools import DispatchOutcome, ToolRegistry
+from mini_harness.tools.bash_tools import bash_tool_definitions
+from mini_harness.tools.command_runner import CommandResult, SandboxUnavailable
 from mini_harness.tools.fences import (
     ApprovalDecision,
     DispatchContext,
@@ -244,6 +246,18 @@ async def test_every_fence_code_is_reachable(tmp_path: Path) -> None:
 
     await run("write", {"file_path": "../outside.md", "content": "x\n"})
     await run("write", {"file_path": "unread.md", "content": "x\n"}, sandbox="read-only")
+
+    class _Unavailable:
+        platform = "test"
+
+        async def run(self, command: str, *, cwd: Path, timeout_seconds: int) -> CommandResult:
+            raise SandboxUnavailable("no runner")
+
+    await run(
+        "bash",
+        {"command": "ignored"},
+        registry=ToolRegistry(bash_tool_definitions(runner=_Unavailable())),
+    )
     for decision in ("DENIED", "UNAVAILABLE"):
         outcome = await _dispatch_with_gate(workspace, decision, file_path="new.md", content="x\n")
         outcomes.add(outcome.result.outcome)
@@ -326,7 +340,7 @@ async def test_the_new_event_types_are_reached_by_a_real_run(tmp_path: Path) -> 
     """
     compacted = tmp_path / "compacted"
     compacted.mkdir()
-    (compacted / "long.md").write_text("长" * 50000, encoding="utf-8")
+    (compacted / "long.md").write_text(("x" * 100 + "\n") * 500, encoding="utf-8")
     compacted_log, _ = await run_session_fixture(
         compacted,
         "s-compaction",
