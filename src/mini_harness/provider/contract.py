@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable, Sequence
-from typing import Annotated, Any, Literal, Protocol, Union
+from typing import Annotated, Any, Literal, Protocol
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -41,7 +41,7 @@ class ToolCallBlock(BaseModel):
 
 
 Block = Annotated[
-    Union[ReasoningBlock, TextBlock, ToolCallBlock],
+    ReasoningBlock | TextBlock | ToolCallBlock,
     Field(discriminator="type"),
 ]
 
