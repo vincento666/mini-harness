@@ -55,22 +55,27 @@ Provider SHALL 接受独立的 `ReasoningSink`；正文 `on_delta` 只收 `text`
 
 ### Requirement: reasoning 标签只在成对时识别
 
-核心层 MUST NOT 解析 reasoning 标签；它只认结构化 `reasoning_content` / thinking chunk / block channel。若某个 adapter 选择解析标签，只有**成对闭合**的标签才 SHALL 归入 reasoning；只有开标签、只有闭标签、嵌套标签、标签跨 chunk 直到流结束仍未闭合、或标签外又有无法归属的内容时，SHALL 以 `PROVIDER_SCHEMA_INVALID` 失败，MUST NOT 写 `model/response`，MUST NOT 把半截内容同时塞进 reasoning 与正文。跨 chunk 的合法标签 MUST 先缓冲到闭合再 emit。
+核心层 MUST NOT 解析 reasoning 标签；它只认结构化 `reasoning_content` / thinking chunk / block channel。若某个 adapter 选择解析标签，开标签确认后 SHALL 立即进入 reasoning 模式并**乐观 emit** 后续内容，只保留检测闭标签所需的小缓冲；闭标签确认后才算这段完整。只有闭标签、嵌套标签、标签外无法归属的内容、或流结束仍未闭合时，SHALL 以 `PROVIDER_SCHEMA_INVALID` 失败，MUST NOT 写 `model/response`。失败时已经发出的 `reasoning/delta` 无法撤回，壳 MUST 清掉/折叠这段 live 内容并显示错误；MUST NOT 留下半条 durable reasoning 或把半截内容同时算进 reasoning 与正文。
+
+#### Scenario: 开标签后立即流式
+
+- **WHEN** 开标签在 chunk 1 确认，reasoning 文本在 chunk 2 到达
+- **THEN** chunk 2 的文本立即作为 `reasoning/delta` 发出，不等待闭标签
+
+#### Scenario: 闭标签跨 chunk
+
+- **WHEN** 闭标签被拆到两个 chunk
+- **THEN** adapter 只缓冲可能是闭标签的尾部，不把标签字符 emit 给 reasoning 或正文
 
 #### Scenario: 开标签没有闭标签
 
 - **WHEN** adapter 在流结束前只看到开标签
-- **THEN** 返回 `PROVIDER_SCHEMA_INVALID`，没有 `model/response`，没有半条 reasoning block
+- **THEN** 返回 `PROVIDER_SCHEMA_INVALID`，没有 `model/response`；已发出的 live reasoning 由壳清掉
 
 #### Scenario: 只有闭标签
 
 - **WHEN** adapter 看到闭标签但没有配对的开标签
 - **THEN** 同样 `PROVIDER_SCHEMA_INVALID`，不把标签内容当正文
-
-#### Scenario: 标签跨 chunk 但最终闭合
-
-- **WHEN** 开标签在 chunk 1、闭标签在 chunk 2，中间是 reasoning 文本
-- **THEN** 等闭合后一次性归入 reasoning block；正文 sink 不收到标签内文本
 
 #### Scenario: 没有标签
 
