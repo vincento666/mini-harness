@@ -21,6 +21,7 @@
 - [ ] 3.2 seam ①：红判据 `test_reasoning_delta_is_not_logged`——`reasoning/delta` 不写日志，只有最终 response
 - [ ] 3.3 seam ①：守卫——取消/失败不写半条 response；无 reasoning 的日志与今天逐点相同
 - [ ] 3.4 seam ①：红判据 `test_reasoning_tokens_are_a_subset_of_output`——usage 加 reasoning_tokens，计量不重复加
+- [ ] 3.5 seam ①/④：红判据 `test_failed_stream_writes_model_attempt_but_no_response`——坏标签/取消写 `model/attempt`（错误码 + partial blocks）；fold 忽略它、不进历史
 
 ## 4. fold / replay
 

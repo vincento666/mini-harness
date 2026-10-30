@@ -40,6 +40,8 @@ class ToolCallBlock(BaseModel): type: Literal["tool-call"]; id: str; name: str; 
 
 **D10 空 reasoning 丢弃，仅 reasoning 不冒充回答。** 空文本不产生 block/delta；只有 reasoning 的响应保留 blocks、`content` 投影为空，壳显示“无正文”，不把 reasoning 升级为可见答案。这样“只有思考没有正文”是可解释状态，不是半条回答。
 
+**D11 失败也留 attempt 证据，DSH 同款。** DSH 在每个 settlement 的 attempt 上提交事件：成功是 `assistant/message`，失败/重试/取消/stream error 是 `assistant/attempt`，保留 stream 但不进模型历史。mini 对应地加一条 log-only `model/attempt`（`status`、`error_code`、`partial_blocks` / 紧凑 stream），`fold` 忽略它；这样坏标签/取消不会只剩一行 `error/model`，也不会把半条内容塞进历史。硬进程丢失在 settlement 前仍无 durable attempt（DSH 同样如此）。
+
 ## Risks / Trade-offs
 
 - **投影双真源** → D1 规定投影只由 blocks 派生；判据比较 blocks 与投影。

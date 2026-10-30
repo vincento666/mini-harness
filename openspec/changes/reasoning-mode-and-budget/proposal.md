@@ -12,7 +12,7 @@ mini 现在的 assistant message 只有 `content: str` + `tool_calls`，实时�
 - **`model/response.blocks`**：一次成功调用仍只写一条 durable 记录；完整 reasoning 内容进日志；delta 不进日志。
 - **`reasoning/delta`**：新的 ephemeral SSE 事件，`turn_id` + `index` + `text`；无 `id`、不落日志、不参与游标；与 `model/delta` 并列。
 - **Provider sink 分流**：`ReasoningSink` 与正文 `DeltaSink` 分开传入；适配器 MUST NOT 把 reasoning 混进正文 sink。
-- **坏标签容错**：核心层不解析标签；adapter 的标签协议在开标签确认后**乐观 emit** reasoning，只留小尾缓冲等闭标签。半开（EOF 未闭合）/半闭/嵌套一律 `PROVIDER_SCHEMA_INVALID`、不写 `model/response`；已发出的 live reasoning 由壳清掉。空 reasoning 丢弃；只有 reasoning 时保留 blocks、`content` 为空，不冒充正文。
+- **坏标签容错**：核心层不解析标签；adapter 的标签协议在开标签确认后**乐观 emit** reasoning，只留小尾缓冲等闭标签。半开（EOF 未闭合）/半闭/嵌套一律 `PROVIDER_SCHEMA_INVALID`、不写 `model/response`；已发出的 live reasoning 由壳清掉。失败时写一条 log-only `model/attempt`（错误码 + 已收前缀）留审计证据，`fold` 忽略它。空 reasoning 丢弃；只有 reasoning 时保留 blocks、`content` 为空，不冒充正文。
 - **思考强度**：`reasoning_effort` 配置 `off|low|high|max`；不支持的档位在网络 I/O 前失败；有效值随请求记录。
 - **usage**：`reasoning_tokens` 是 `output_tokens` 的子集；成本/计量不重复加；上下文预算按普通文本计入回传的 reasoning。
 - **fold/replay**：`fold` 从 blocks 重建有序消息；旧日志没有 blocks 时行为逐点不变。

@@ -32,17 +32,22 @@
 
 ### Requirement: 一次调用仍只有一条 durable response
 
-一次成功 attempt SHALL 只追加一条 `model/response`，payload 带 `blocks`、`usage`、`finish_reason`；完整 reasoning 文本 SHALL 保存在 blocks 里，不按 delta 逐条落账。失败/取消 MUST NOT 写半条 `model/response`。
+一次成功 attempt SHALL 只追加一条 `model/response`，payload 带 `blocks`、`usage`、`finish_reason`；完整 reasoning 文本 SHALL 保存在 blocks 里，不按 delta 逐条落账。失败/取消 MUST NOT 写半条 `model/response`；若流中已收到部分内容（包括坏标签导致的 schema 失败），SHALL 追加一条 log-only 的 `model/attempt`，带 `status`、`error_code` 与已收到的 `partial_blocks`（或等价紧凑 stream），供审计/回放诊断。`fold` MUST 忽略 `model/attempt`，它 MUST NOT 进入模型历史。
 
 #### Scenario: 完整 reasoning 可重放
 
 - **WHEN** 一次响应含 reasoning 与 text
 - **THEN** 日志只有一条 `model/response`，`blocks` 里能读出完整 reasoning
 
-#### Scenario: 取消不写半条
+#### Scenario: 取消/坏标签保留证据
 
-- **WHEN** 流式中途取消
-- **THEN** 没有 `model/response`，按现有 ABORTED 收尾
+- **WHEN** 流式中途取消，或开标签直到 EOF 未闭合
+- **THEN** 没有 `model/response`；有 `model/attempt` 记录部分 blocks 与错误码，`fold` 不把它当消息
+
+#### Scenario: 证据可审计
+
+- **WHEN** 事后查看一次 schema 失败的日志
+- **THEN** 能看到 provider 发来的已收前缀与 `PROVIDER_SCHEMA_INVALID`，而不是只有一行错误
 
 ### Requirement: Provider sink 分流
 
@@ -70,7 +75,7 @@ Provider SHALL 接受独立的 `ReasoningSink`；正文 `on_delta` 只收 `text`
 #### Scenario: 开标签没有闭标签
 
 - **WHEN** adapter 在流结束前只看到开标签
-- **THEN** 返回 `PROVIDER_SCHEMA_INVALID`，没有 `model/response`；已发出的 live reasoning 由壳清掉
+- **THEN** 返回 `PROVIDER_SCHEMA_INVALID`，没有 `model/response`；有 `model/attempt` 保留已收前缀与错误码，壳清掉 live reasoning
 
 #### Scenario: 只有闭标签
 

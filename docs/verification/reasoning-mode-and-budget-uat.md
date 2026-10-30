@@ -44,7 +44,7 @@
 
 用 adapter 的标签模式发：开标签后正常流式、只有闭标签、流结束仍未闭合三种。
 
-**预期**：开标签后 reasoning 立即出现；半开结束时 `PROVIDER_SCHEMA_INVALID`，没有 `model/response`，壳清掉已显示的 live reasoning；不留下半条正文/思考。
+**预期**：开标签后 reasoning 立即出现；半开结束时 `PROVIDER_SCHEMA_INVALID`，没有 `model/response`；日志有 `model/attempt`（错误码 + 已收前缀），壳清掉 live reasoning；不留下半条正文/思考。
 
 ## R7 · 只有 reasoning
 
@@ -61,7 +61,7 @@
 | R3 | 无 reasoning 模型 | 行为不变 | | | |
 | R4 | usage | 不重复计 | | | |
 | R5 | effort off/high | off 无思考 | | | |
-| R6 | 半标签/坏标签 | 先 emit，EOF 报错清 live | | | |
+| R6 | 半标签/坏标签 | 先 emit；EOF 报错 + `model/attempt` 证据 | | | |
 | R7 | 只有 reasoning | 保留 blocks / 无正文 | | | |
 
 **至少一条「用起来别扭」**：_
