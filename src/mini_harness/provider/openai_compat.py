@@ -18,10 +18,15 @@ import httpx
 from mini_harness.events.fold import Message
 from mini_harness.provider.contract import (
     AssistantTurn,
+    Block,
     DeltaSink,
     ProviderAttempt,
     ProviderFailure,
+    ReasoningBlock,
+    ReasoningSink,
+    TextBlock,
     ToolCall,
+    ToolCallBlock,
     ToolSpec,
     Usage,
 )
@@ -307,6 +312,7 @@ class OpenAICompatProvider:
         tools: Sequence[ToolSpec],
         signal: asyncio.Event,
         on_delta: DeltaSink | None = None,
+        on_reasoning: ReasoningSink | None = None,
     ) -> AssistantTurn | ProviderFailure:
         if signal.is_set():
             return ProviderFailure(code="PROVIDER_ABORTED", detail="取消信号已置位，未发出请求")
@@ -330,9 +336,9 @@ class OpenAICompatProvider:
         async with httpx.AsyncClient(
             transport=self._transport, timeout=self._timeout_s, trust_env=False
         ) as client:
-            if on_delta is not None:
+            if on_delta is not None or on_reasoning is not None:
                 return await self._stream_generate(
-                    client, body, headers, attempts, signal, on_delta
+                    client, body, headers, attempts, signal, on_delta, on_reasoning
                 )
             first = await _post(client, self._base_url, body, headers, attempts)
             if isinstance(first, ProviderFailure):
@@ -371,7 +377,8 @@ class OpenAICompatProvider:
         headers: dict[str, str],
         attempts: list[ProviderAttempt],
         signal: asyncio.Event,
-        on_delta: DeltaSink,
+        on_delta: DeltaSink | None,
+        on_reasoning: ReasoningSink | None = None,
         *,
         include_usage: bool = True,
     ) -> AssistantTurn | ProviderFailure:
@@ -400,6 +407,7 @@ class OpenAICompatProvider:
                         attempts,
                         signal,
                         on_delta,
+                        on_reasoning,
                         include_usage=False,
                     )
                 if response.status_code >= 400:
@@ -418,6 +426,7 @@ class OpenAICompatProvider:
                             [*attempts, ProviderAttempt(attempt=1, status=response.status_code)],
                             signal,
                             on_delta,
+                            on_reasoning,
                             include_usage=include_usage,
                         )
                     failure = _status_failure(response, attempts)
@@ -425,6 +434,8 @@ class OpenAICompatProvider:
                     return failure
 
                 content: list[str] = []
+                reasoning_parts: list[str] = []
+                reasoning_index = 0
                 finish_reason: str | None = None
                 usage = Usage()
                 tool_call_parts: dict[int, dict[str, str]] = {}
@@ -462,10 +473,17 @@ class OpenAICompatProvider:
                         return _schema_failure("流式 choices[0] 不是对象", attempts)
                     delta = first.get("delta")
                     if isinstance(delta, dict):
+                        reasoning = delta.get("reasoning_content")
+                        if isinstance(reasoning, str) and reasoning:
+                            reasoning_parts.append(reasoning)
+                            if on_reasoning is not None:
+                                await on_reasoning("", reasoning_index, reasoning)
+                                reasoning_index += 1
                         text = delta.get("content")
                         if isinstance(text, str) and text:
                             content.append(text)
-                            await on_delta(text)
+                            if on_delta is not None:
+                                await on_delta(text)
                         raw_calls = delta.get("tool_calls")
                         if isinstance(raw_calls, list):
                             for raw_call in raw_calls:
@@ -510,10 +528,18 @@ class OpenAICompatProvider:
         tool_calls = _stream_tool_calls(tool_call_parts, attempts)
         if isinstance(tool_calls, ProviderFailure):
             return tool_calls
+        blocks: list[Block] = []
+        if reasoning_parts:
+            blocks.append(ReasoningBlock(text="".join(reasoning_parts)))
+        if content:
+            blocks.append(TextBlock(text="".join(content)))
+        blocks.extend(
+            ToolCallBlock(id=call.id, name=call.name, arguments=call.arguments)
+            for call in tool_calls
+        )
         return AssistantTurn(
-            content="".join(content),
             finish_reason=finish_reason,
-            tool_calls=tool_calls,
+            blocks=blocks,
             usage=usage,
             attempts=list(attempts),
         )

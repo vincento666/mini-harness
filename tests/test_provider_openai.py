@@ -838,4 +838,5 @@ async def test_the_provider_still_accepts_no_key_and_sends_no_header() -> None:
         "tools",
         "signal",
         "on_delta",
+        "on_reasoning",
     ]

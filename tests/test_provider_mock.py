@@ -28,6 +28,7 @@ async def test_mock_provider_exposes_only_generate_with_optional_delta_sink() ->
         "tools",
         "signal",
         "on_delta",
+        "on_reasoning",
     ]
 
 
