@@ -30,24 +30,43 @@
 - **WHEN** 一次带 reasoning 的回合结束
 - **THEN** 日志里没有 `reasoning/delta` 记录，只有最终 `model/response`
 
-### Requirement: 一次调用仍只有一条 durable response
+### Requirement: 成功 attempt 与失败 attempt 分开落账
 
-一次成功 attempt SHALL 只追加一条 `model/response`，payload 带 `blocks`、`usage`、`finish_reason`；完整 reasoning 文本 SHALL 保存在 blocks 里，不按 delta 逐条落账。失败/取消 MUST NOT 写半条 `model/response`；若流中已收到部分内容（包括坏标签导致的 schema 失败），SHALL 追加一条 log-only 的 `model/attempt`，带 `status`、`error_code` 与已收到的 `partial_blocks`（或等价紧凑 stream），供审计/回放诊断。`fold` MUST 忽略 `model/attempt`，它 MUST NOT 进入模型历史。
+一次成功 attempt SHALL 只追加一条 `model/response`，payload 带 `blocks`、`usage`、`finish_reason`；完整 reasoning 文本 SHALL 保存在 blocks 里，不按 delta 逐条落账。失败 MUST NOT 写半条 `model/response`；若流中已收到部分内容（包括坏标签导致的 schema 失败），SHALL 追加一条 log-only 的 `model/attempt`，带 `status`、`error_code` 与已收到的 `partial_blocks`（或等价紧凑 stream），供审计/回放诊断。`fold` MUST 忽略 `model/attempt`，它 MUST NOT 进入模型历史，也 MUST NOT 进入下一次请求。
 
 #### Scenario: 完整 reasoning 可重放
 
 - **WHEN** 一次响应含 reasoning 与 text
 - **THEN** 日志只有一条 `model/response`，`blocks` 里能读出完整 reasoning
 
-#### Scenario: 取消/坏标签保留证据
+#### Scenario: 坏标签保留证据
 
-- **WHEN** 流式中途取消，或开标签直到 EOF 未闭合
-- **THEN** 没有 `model/response`；有 `model/attempt` 记录部分 blocks 与错误码，`fold` 不把它当消息
+- **WHEN** 开标签直到 EOF 未闭合
+- **THEN** 没有 `model/response`；有 `model/attempt` 记录部分 blocks 与 `PROVIDER_SCHEMA_INVALID`，`fold` 不把它当消息
 
 #### Scenario: 证据可审计
 
 - **WHEN** 事后查看一次 schema 失败的日志
 - **THEN** 能看到 provider 发来的已收前缀与 `PROVIDER_SCHEMA_INVALID`，而不是只有一行错误
+
+### Requirement: 用户取消写 interrupted assistant 锚点
+
+用户取消流式生成时，系统 SHALL 追加一条 `model/response`，带 `interrupted: true` 与已经交付给用户的 `blocks`；该记录 SHALL 进入 `fold`/模型历史，下一次请求 SHALL 包含用户已经看到的前缀。`interrupted` 是消息级字段，MUST NOT 表示成正文里的标签或伪 block；没有交付内容时 MAY 只写 `model/attempt` 与 ABORTED。非用户取消的失败 MUST NOT 使用 interrupted 锚点。
+
+#### Scenario: 取消保留已交付前缀
+
+- **WHEN** 用户在看到 reasoning/text 后取消
+- **THEN** 一条 `model/response` 带 `interrupted: true` 与已交付 blocks；`fold` 把它们当 assistant 消息，下一次请求包含它们
+
+#### Scenario: 没有交付内容
+
+- **WHEN** 取消发生在首个 delta 之前
+- **THEN** 不写空 interrupted 锚点，按现有 ABORTED 收尾；需要时只留 `model/attempt`
+
+#### Scenario: 失败不使用 interrupted
+
+- **WHEN** provider 返回 schema 错误或坏标签
+- **THEN** 不写 `interrupted: true` 的 `model/response`；只写 `model/attempt`，不进历史/下一次请求
 
 ### Requirement: Provider sink 分流
 

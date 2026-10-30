@@ -42,6 +42,8 @@ class ToolCallBlock(BaseModel): type: Literal["tool-call"]; id: str; name: str; 
 
 **D11 失败也留 attempt 证据，DSH 同款。** DSH 在每个 settlement 的 attempt 上提交事件：成功是 `assistant/message`，失败/重试/取消/stream error 是 `assistant/attempt`，保留 stream 但不进模型历史。mini 对应地加一条 log-only `model/attempt`（`status`、`error_code`、`partial_blocks` / 紧凑 stream），`fold` 忽略它；这样坏标签/取消不会只剩一行 `error/model`，也不会把半条内容塞进历史。硬进程丢失在 settlement 前仍无 durable attempt（DSH 同样如此）。
 
+**D12 用户取消另写 interrupted assistant 锚点。** DSH 对“用户取消的流”额外追加 `interrupted: true` 的 assistant 锚点，带已交付前缀，使下一轮包含用户看到的内容；这和失败 attempt 不是一回事。mini 用 `model/response` + `interrupted: true` + 已交付 `blocks` 表示，`fold` 把它当 assistant 消息；没有交付内容时不写空锚点。`interrupted` 是 payload 字段，不是正文标签，也不是伪 block。schema 错误/坏标签仍只写 `model/attempt`，不写 interrupted。
+
 ## Risks / Trade-offs
 
 - **投影双真源** → D1 规定投影只由 blocks 派生；判据比较 blocks 与投影。

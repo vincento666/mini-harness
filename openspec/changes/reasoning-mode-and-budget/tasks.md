@@ -22,12 +22,14 @@
 - [ ] 3.3 seam ①：守卫——取消/失败不写半条 response；无 reasoning 的日志与今天逐点相同
 - [ ] 3.4 seam ①：红判据 `test_reasoning_tokens_are_a_subset_of_output`——usage 加 reasoning_tokens，计量不重复加
 - [ ] 3.5 seam ①/④：红判据 `test_failed_stream_writes_model_attempt_but_no_response`——坏标签/取消写 `model/attempt`（错误码 + partial blocks）；fold 忽略它、不进历史
+- [ ] 3.6 seam ①：红判据 `test_user_cancel_writes_interrupted_anchor`——已交付前缀写 `model/response(interrupted:true)`，fold 进历史、下一轮包含；首个 delta 前取消不写空锚点
 
 ## 4. fold / replay
 
 - [ ] 4.1 seam ④：红判据 `test_fold_rebuilds_ordered_blocks`——fold 从 blocks 重建 reasoning/text/tool-call 顺序
 - [ ] 4.2 seam ④：红判据 `test_old_logs_without_blocks_still_replay_pointwise`——旧日志退化路径逐点相等
 - [ ] 4.3 seam ④：红判据 `test_provider_history_carries_blocks`——后续请求按块回传；不支持块回传的适配器显式降级
+- [ ] 4.4 seam ④：红判据 `test_fold_includes_interrupted_anchor_in_order`——interrupted assistant 锚点进入模型历史顺序；`model/attempt` 不进入
 
 ## 5. SSE / host
 
