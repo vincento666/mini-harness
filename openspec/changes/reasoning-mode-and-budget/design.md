@@ -36,6 +36,10 @@ class ToolCallBlock(BaseModel): type: Literal["tool-call"]; id: str; name: str; 
 
 **D8 host SSE 复用现有合流。** `reasoning/delta` 是 ephemeral 帧，走 H2 的 delta 队列；`model/response` 是 durable 边界；重连不补 delta，最终 response 校正。
 
+**D9 核心不解析标签，adapter 的标签协议必须 fail closed。** 结构化 channel 是主路径；只有 adapter 选择 `思考...` 标签时，才要求成对闭合。半开/半闭/嵌套/流结束未闭合一律 `PROVIDER_SCHEMA_INVALID`，不写 `model/response`，不把半截内容同时塞进两个 channel。跨 chunk 的标签先缓冲，闭合后再 emit；没有标签时全部按 text。
+
+**D10 空 reasoning 丢弃，仅 reasoning 不冒充回答。** 空文本不产生 block/delta；只有 reasoning 的响应保留 blocks、`content` 投影为空，壳显示“无正文”，不把 reasoning 升级为可见答案。这样“只有思考没有正文”是可解释状态，不是半条回答。
+
 ## Risks / Trade-offs
 
 - **投影双真源** → D1 规定投影只由 blocks 派生；判据比较 blocks 与投影。

@@ -40,6 +40,18 @@
 
 **预期**：off 无 reasoning；high 有；不支持档位在请求前失败。
 
+## R6 · 半标签/坏标签
+
+用 adapter 的标签模式发：只有开标签、只有闭标签、流结束仍未闭合三种。
+
+**预期**：三种都 `PROVIDER_SCHEMA_INVALID`，没有 `model/response`；不出现半条 reasoning 或半条正文。
+
+## R7 · 只有 reasoning
+
+让 provider 返回 reasoning 但没有正文。
+
+**预期**：blocks 保留 reasoning，`content` 投影为空；壳显示“无正文”，不把 reasoning 当回答。
+
 ## 观察表
 
 | 场次 | 动作 | 预期 | 实际观察 | 结论 | 别扭在哪 |
@@ -49,6 +61,8 @@
 | R3 | 无 reasoning 模型 | 行为不变 | | | |
 | R4 | usage | 不重复计 | | | |
 | R5 | effort off/high | off 无思考 | | | |
+| R6 | 半标签/坏标签 | `PROVIDER_SCHEMA_INVALID` | | | |
+| R7 | 只有 reasoning | 保留 blocks / 无正文 | | | |
 
 **至少一条「用起来别扭」**：_
 

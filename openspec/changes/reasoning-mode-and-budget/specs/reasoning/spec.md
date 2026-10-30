@@ -53,6 +53,44 @@ Provider SHALL 接受独立的 `ReasoningSink`；正文 `on_delta` 只收 `text`
 - **WHEN** 适配器收到 reasoning 与正文片段
 - **THEN** 正文 sink 只收到正文片段，reasoning sink 只收到 reasoning 片段
 
+### Requirement: reasoning 标签只在成对时识别
+
+核心层 MUST NOT 解析 reasoning 标签；它只认结构化 `reasoning_content` / thinking chunk / block channel。若某个 adapter 选择解析标签，只有**成对闭合**的标签才 SHALL 归入 reasoning；只有开标签、只有闭标签、嵌套标签、标签跨 chunk 直到流结束仍未闭合、或标签外又有无法归属的内容时，SHALL 以 `PROVIDER_SCHEMA_INVALID` 失败，MUST NOT 写 `model/response`，MUST NOT 把半截内容同时塞进 reasoning 与正文。跨 chunk 的合法标签 MUST 先缓冲到闭合再 emit。
+
+#### Scenario: 开标签没有闭标签
+
+- **WHEN** adapter 在流结束前只看到开标签
+- **THEN** 返回 `PROVIDER_SCHEMA_INVALID`，没有 `model/response`，没有半条 reasoning block
+
+#### Scenario: 只有闭标签
+
+- **WHEN** adapter 看到闭标签但没有配对的开标签
+- **THEN** 同样 `PROVIDER_SCHEMA_INVALID`，不把标签内容当正文
+
+#### Scenario: 标签跨 chunk 但最终闭合
+
+- **WHEN** 开标签在 chunk 1、闭标签在 chunk 2，中间是 reasoning 文本
+- **THEN** 等闭合后一次性归入 reasoning block；正文 sink 不收到标签内文本
+
+#### Scenario: 没有标签
+
+- **WHEN** adapter 收到普通正文且没有 reasoning 标签
+- **THEN** 全部按 text 处理，行为与今天相同
+
+### Requirement: 空 reasoning 丢弃、仅 reasoning 不冒充正文
+
+空的 reasoning 文本 SHALL 被丢弃，不产生空 block、空 delta 或空 SSE 帧。一次响应只有 reasoning、没有 text/tool-call 时 SHALL 保留 reasoning blocks，`content` 投影为空串；壳 SHALL 能显示“无正文”，MUST NOT 把 reasoning 自动升级为可见回答。
+
+#### Scenario: 空 delta 被丢弃
+
+- **WHEN** provider 发来空 reasoning delta
+- **THEN** 不产生 `reasoning/delta`，也没有空 reasoning block
+
+#### Scenario: 只有 reasoning
+
+- **WHEN** 响应 blocks 只有 reasoning，finish_reason 是 stop
+- **THEN** blocks 保留 reasoning，content 投影为空；壳显示“无正文”，不把 reasoning 当答案
+
 ### Requirement: 思考强度是请求配置
 
 系统 SHALL 支持 `reasoning_effort = off|low|high|max`；不支持的档位 SHALL 在发起网络 I/O 之前失败，错误码 `UNSUPPORTED_REASONING_EFFORT`。`off` MUST 把 reasoning 关掉；其余档位按 provider 协议映射。
