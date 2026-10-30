@@ -997,9 +997,7 @@ async def _run_turns(
                     {
                         "turn_id": turn_id,
                         "content": generated.content,
-                        "blocks": [
-                            block.model_dump(mode="json") for block in generated.blocks
-                        ],
+                        "blocks": [block.model_dump(mode="json") for block in generated.blocks],
                         "tool_calls": [
                             call.model_dump(mode="json") for call in generated.tool_calls
                         ],
