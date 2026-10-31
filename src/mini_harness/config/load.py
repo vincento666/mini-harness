@@ -25,6 +25,7 @@ SETTINGS_FIELDS: dict[str, tuple[type[Any], ...]] = {
     "append_system_prompt": (str,),
     "sandbox": (str,),
     "approval": (str,),
+    "reasoning_effort": (str,),
     "tools": (list,),
     "session_dir": (str,),
     "workspace": (str,),

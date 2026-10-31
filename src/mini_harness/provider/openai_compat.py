@@ -315,12 +315,14 @@ class OpenAICompatProvider:
         base_url: str,
         model: str,
         api_key: str | None,
+        reasoning_effort: str = "high",
         transport: httpx.AsyncBaseTransport | None = None,
         timeout_s: float = _TIMEOUT_S,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._model = model
         self._api_key = api_key
+        self._reasoning_effort = reasoning_effort
         self._transport = transport
         self._timeout_s = timeout_s
 
@@ -345,6 +347,8 @@ class OpenAICompatProvider:
             # 决策 23：显式要求允许一轮多个调用，不指望模型的心情。
             "parallel_tool_calls": True,
         }
+        if self._reasoning_effort != "off":
+            body["reasoning_effort"] = self._reasoning_effort
         attempts: list[ProviderAttempt] = []
 
         # trust_env=False：不继承 HTTP_PROXY / NO_PROXY / netrc。

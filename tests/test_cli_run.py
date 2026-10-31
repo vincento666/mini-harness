@@ -268,6 +268,34 @@ def test_a_one_shot_run_writes_exactly_one_segment(tmp_path: Path) -> None:
     }
 
 
+def test_unsupported_reasoning_effort_fails_before_a_session(tmp_path: Path) -> None:
+    (tmp_path / "mini.config.toml").write_text('reasoning_effort = "ultra"\n', encoding="utf-8")
+
+    result = _cli(
+        "run", "-p", "任务", "--provider", "mock", "--fixture", str(HELLO_SCENARIO), cwd=tmp_path
+    )
+
+    assert result.returncode == 2
+    assert "UNSUPPORTED_REASONING_EFFORT" in result.stderr
+    assert _log_files(tmp_path) == []
+
+
+def test_reasoning_effort_reaches_the_session_start_payload(tmp_path: Path) -> None:
+    (tmp_path / "mini.config.toml").write_text('reasoning_effort = "low"\n', encoding="utf-8")
+
+    result = _cli(
+        "run", "-p", "任务", "--provider", "mock", "--fixture", str(HELLO_SCENARIO), cwd=tmp_path
+    )
+
+    records = [
+        json.loads(line)
+        for line in _log_files(tmp_path)[0].read_text(encoding="utf-8").splitlines()
+    ]
+    payload = next(record["payload"] for record in records if record["type"] == "session/start")
+    assert result.returncode == 0
+    assert payload["reasoning_effort"] == "low"
+
+
 def test_compaction_ratio_out_of_range_fails_before_a_session(tmp_path: Path) -> None:
     for config in (
         "compaction_retain_ratio = 0\n",
@@ -920,6 +948,7 @@ def test_the_three_entries_still_write_the_same_payload(tmp_path: Path) -> None:
         "prompt",
         "sandbox",
         "approval",
+        "reasoning_effort",
         "window",
         "reserve",
         "compaction_threshold_ratio",

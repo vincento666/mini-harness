@@ -25,6 +25,7 @@ from mini_harness.events import EventLog, LogWriteFailure
 from mini_harness.loop import (
     APPROVAL_MODES,
     PROVIDER_NAMES,
+    REASONING_EFFORTS,
     SANDBOX_LEVELS,
     ProviderEndpoint,
     SessionSettings,
@@ -184,6 +185,13 @@ def assemble(
                 f"{key} 只接受 {' / '.join(allowed)}，收到 {level}",
                 EXIT_INVALID_ARGUMENT,
             )
+    if layered.reasoning_effort not in REASONING_EFFORTS:
+        return Failure(
+            "UNSUPPORTED_REASONING_EFFORT",
+            f"reasoning_effort 只接受 {' / '.join(REASONING_EFFORTS)}，"
+            f"收到 {layered.reasoning_effort}",
+            EXIT_INVALID_ARGUMENT,
+        )
     # 宿主层的服务器级许可：只有服务器启动时显式给了，才允许请求体里的这两档。
     if layered.sandbox == "danger-full-access" and not allow_danger_full_access:
         return Failure(
@@ -261,6 +269,7 @@ def assemble(
             base_url=endpoint.base_url,
             model=endpoint.model,
             api_key=api_key,
+            reasoning_effort=layered.reasoning_effort,
         )
     else:
         if request.fixture is None:
@@ -284,6 +293,7 @@ def assemble(
         max_turns=max_turns,
         sandbox=layered.sandbox,
         approval=approval,
+        reasoning_effort=layered.reasoning_effort,
         append_system_prompt=layered.append_system_prompt,
         window=layered.window,
         reserve=layered.reserve,

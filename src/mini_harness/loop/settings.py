@@ -16,6 +16,7 @@ DEFAULT_COMPACTION_RETAIN_TOKENS = context_budget.DEFAULT_COMPACTION_RETAIN_TOKE
 # 围栏的两条独立轴：设置对象带着它们，围栏模块消费它们。
 SandboxLevel = Literal["read-only", "workspace-write", "danger-full-access"]
 ApprovalMode = Literal["ask", "auto"]
+ReasoningEffort = Literal["off", "low", "high", "max"]
 
 # 词表在运行期也要有一份：`--sandbox` / `--approval` 的 choices 与配置文件读进来的值都判这一份。
 SANDBOX_LEVELS: tuple[SandboxLevel, ...] = ("read-only", "workspace-write", "danger-full-access")
@@ -34,6 +35,8 @@ DEFAULT_MAX_TURNS = 8
 DEFAULT_SANDBOX: SandboxLevel = "workspace-write"
 DEFAULT_APPROVAL: ApprovalMode = "ask"
 DEFAULT_APPEND_SYSTEM_PROMPT = ""
+REASONING_EFFORTS: tuple[ReasoningEffort, ...] = ("off", "low", "high", "max")
+DEFAULT_REASONING_EFFORT: ReasoningEffort = "high"
 
 # provider 名字是「端点预设名」，不是适配器名（ADR-0027）：`openai` 与 `deepseek` 都由
 # openai 兼容适配器执行，差别只在这三项默认。表里只有环境变量的名字，没有任何密钥的值；
@@ -79,6 +82,7 @@ class SessionSettings:
     sandbox: SandboxLevel = "workspace-write"
     approval: ApprovalMode = "ask"
     append_system_prompt: str = ""
+    reasoning_effort: ReasoningEffort = DEFAULT_REASONING_EFFORT
     # 窗口预算的两个参数（不变量 D）：`--window` 与 `--reserve`。
     window: int = DEFAULT_WINDOW
     reserve: int = DEFAULT_RESERVE

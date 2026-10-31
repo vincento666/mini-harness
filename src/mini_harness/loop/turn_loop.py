@@ -817,6 +817,7 @@ def start_session(*, prompt: str, entry: SessionEntry, env: SessionEnv) -> Segme
         "prompt": prompt,
         "sandbox": settings.sandbox,
         "approval": settings.approval,
+        "reasoning_effort": settings.reasoning_effort,
         "window": settings.window,
         "reserve": settings.reserve,
         "compaction_threshold_ratio": settings.compaction_threshold_ratio,
