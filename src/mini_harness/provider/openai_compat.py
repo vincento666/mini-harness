@@ -186,6 +186,18 @@ def _reports_context_overflow(response: httpx.Response) -> bool:
     return any(phrase in lowered for phrase in CONTEXT_OVERFLOW_PHRASES)
 
 
+def _usage_from(raw: dict[str, Any]) -> Usage:
+    """OpenAI 兼容 usage；reasoning_tokens 是 output 的子集，缺失按 0。"""
+    details = raw.get("completion_tokens_details")
+    details = details if isinstance(details, dict) else {}
+    reasoning = raw.get("reasoning_tokens", details.get("reasoning_tokens", 0))
+    return Usage(
+        input_tokens=int(raw.get("prompt_tokens", 0) or 0),
+        output_tokens=int(raw.get("completion_tokens", 0) or 0),
+        reasoning_tokens=int(reasoning or 0),
+    )
+
+
 def _parse_response(
     response: httpx.Response, attempts: Sequence[ProviderAttempt]
 ) -> AssistantTurn | ProviderFailure:
@@ -237,14 +249,20 @@ def _parse_response(
 
     usage = payload.get("usage")
     usage = usage if isinstance(usage, dict) else {}
+    content = str(message.get("content") or "")
+    reasoning = message.get("reasoning_content") or message.get("reasoning")
+    blocks: list[Block] = []
+    if isinstance(reasoning, str) and reasoning:
+        blocks.append(ReasoningBlock(text=reasoning))
+    if content:
+        blocks.append(TextBlock(text=content))
+    blocks.extend(
+        ToolCallBlock(id=call.id, name=call.name, arguments=call.arguments) for call in tool_calls
+    )
     return AssistantTurn(
-        content=str(message.get("content") or ""),
         finish_reason=finish_reason,
-        tool_calls=tool_calls,
-        usage=Usage(
-            input_tokens=int(usage.get("prompt_tokens", 0) or 0),
-            output_tokens=int(usage.get("completion_tokens", 0) or 0),
-        ),
+        blocks=blocks,
+        usage=_usage_from(usage),
         attempts=list(attempts),
     )
 
@@ -461,10 +479,7 @@ class OpenAICompatProvider:
                         return _schema_failure("流式 data 不是对象", attempts)
                     raw_usage = payload.get("usage")
                     if isinstance(raw_usage, dict):
-                        usage = Usage(
-                            input_tokens=int(raw_usage.get("prompt_tokens", 0) or 0),
-                            output_tokens=int(raw_usage.get("completion_tokens", 0) or 0),
-                        )
+                        usage = _usage_from(raw_usage)
                     choices = payload.get("choices")
                     if not isinstance(choices, list) or not choices:
                         continue
