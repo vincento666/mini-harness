@@ -555,6 +555,65 @@ def test_the_event_stream_mixes_durable_and_delta_frames(tmp_path: Path) -> None
         _stop(process)
 
 
+def test_reasoning_delta_is_a_separate_ephemeral_frame(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = tmp_path / "reasoning.json"
+    fixture.write_text(
+        json.dumps(
+            [
+                {
+                    "content": "答案",
+                    "deltas": ["答", "案"],
+                    "reasoning_deltas": ["想", "一下"],
+                    "finish_reason": "stop",
+                }
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(client, workspace, fixture)
+            with client.stream(
+                "GET", f"/sessions/{session_id}/events", headers=_headers()
+            ) as response:
+                lines = response.iter_lines()
+                assert _next_frame(lines)["event"] == "session/start"
+                client.post(
+                    f"/sessions/{session_id}/messages",
+                    headers=_headers(),
+                    json={"content": "任务"},
+                )
+                frames = []
+                while True:
+                    frame = _next_frame(lines)
+                    frames.append(frame)
+                    if frame["event"] == "model/response":
+                        break
+
+        events = [frame["event"] for frame in frames]
+        assert events.count("reasoning/delta") == 2
+        assert events.count("model/delta") == 2
+        assert events.index("reasoning/delta") < events.index("model/delta")
+        reasoning = [
+            json.loads(frame["data"]) for frame in frames if frame["event"] == "reasoning/delta"
+        ]
+        assert [item["text"] for item in reasoning] == ["想", "一下"]
+        assert all("id" not in frame for frame in frames if frame["event"] == "reasoning/delta")
+        log = session_dir / f"{session_id}.jsonl"
+        assert "reasoning/delta" not in log.read_text(encoding="utf-8")
+    finally:
+        _stop(process)
+
+
 def test_a_delta_does_not_move_the_cursor(tmp_path: Path) -> None:
     session_dir = tmp_path / "sessions"
     workspace = tmp_path / "workspace"

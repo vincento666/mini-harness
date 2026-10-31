@@ -337,6 +337,7 @@ class _DeltaProvider:
         tools: object,
         signal: asyncio.Event,
         on_delta: object = None,
+        on_reasoning: object = None,
     ) -> AssistantTurn:
         self.sink = on_delta
         if callable(on_delta):
@@ -377,6 +378,7 @@ class _AbortStreamProvider:
         tools: object,
         signal: asyncio.Event,
         on_delta: object = None,
+        on_reasoning: object = None,
     ) -> ProviderFailure:
         if callable(on_delta):
             await on_delta("半")
@@ -421,6 +423,7 @@ class _CancelDuringGenerate:
         tools: object,
         signal: asyncio.Event,
         on_delta: object = None,
+        on_reasoning: object = None,
     ) -> AssistantTurn:
         if callable(on_delta):
             await on_delta("半")
@@ -543,7 +546,7 @@ async def test_loop_only_calls_generate_with_three_positional_parameters(tmp_pat
         max_turns=8,
     )
 
-    assert spy.calls == [("generate", 3, ("on_delta",))]
+    assert spy.calls == [("generate", 3, ("on_delta", "on_reasoning"))]
     assert spy.signals[0] is cancel
 
 

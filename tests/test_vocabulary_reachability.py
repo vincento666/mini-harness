@@ -67,6 +67,7 @@ class _CancelDuringGenerate:
         tools: object,
         signal: asyncio.Event,
         on_delta: object = None,
+        on_reasoning: object = None,
     ) -> AssistantTurn:
         self._cancel.set()
         return AssistantTurn(content="部分回复", finish_reason="stop")

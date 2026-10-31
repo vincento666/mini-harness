@@ -130,7 +130,8 @@ def _snapshot_frame(payload: dict[str, object]) -> bytes:
 
 def _delta_frame(payload: dict[str, object]) -> bytes:
     """ephemeral 帧：不带 `id`，不参与 `Last-Event-ID`，也不落日志。"""
-    return f"event: model/delta\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
+    event = "reasoning/delta" if payload.get("kind") == "reasoning" else "model/delta"
+    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
 
 
 class HostServer:

@@ -62,6 +62,7 @@ class HostSession:
     approvals: dict[str, asyncio.Future[bool | None]] = field(default_factory=dict)
     subscribers: set[asyncio.Queue[dict[str, object]]] = field(default_factory=set)
     delta_indexes: dict[str, int] = field(default_factory=dict)
+    reasoning_indexes: dict[str, int] = field(default_factory=dict)
     task: asyncio.Task[None] | None = None
     stopping: bool = False
     ended_by_failure: bool = False
@@ -85,7 +86,21 @@ class HostSession:
         """把一个正文增量广播给当前所有订阅者；慢读者丢最旧，不反压 provider。"""
         index = self.delta_indexes.get(turn_id, 0)
         self.delta_indexes[turn_id] = index + 1
-        frame: dict[str, object] = {"turn_id": turn_id, "index": index, "text": text}
+        frame: dict[str, object] = {
+            "turn_id": turn_id,
+            "index": index,
+            "text": text,
+        }
+        self._publish_ephemeral(frame)
+
+    async def publish_reasoning(self, turn_id: str, index: int, text: str) -> None:
+        """把一个 reasoning 增量广播给当前所有订阅者，与正文队列并列。"""
+        self.reasoning_indexes[turn_id] = self.reasoning_indexes.get(turn_id, 0) + 1
+        self._publish_ephemeral(
+            {"turn_id": turn_id, "index": index, "text": text, "kind": "reasoning"}
+        )
+
+    def _publish_ephemeral(self, frame: dict[str, object]) -> None:
         for queue in list(self.subscribers):
             if queue.full():
                 with contextlib.suppress(asyncio.QueueEmpty):
@@ -166,6 +181,7 @@ def create_session(
         env,
         approval_gate=HostApprovalGate(handle),
         on_delta=handle.publish_delta,
+        on_reasoning=handle.publish_reasoning,
     )
     state.sessions[prepared.log.session_id] = handle
     return handle

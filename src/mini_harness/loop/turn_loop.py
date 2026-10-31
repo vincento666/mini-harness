@@ -32,6 +32,7 @@ from mini_harness.provider.contract import (
     DeltaSink,
     Provider,
     ProviderFailure,
+    ReasoningSink,
     ToolCall,
     TurnDeltaSink,
 )
@@ -105,6 +106,7 @@ class SessionEnv:
     settings: SessionSettings
     approval_gate: ApprovalGate = STDIN_APPROVAL_GATE
     on_delta: TurnDeltaSink | None = None
+    on_reasoning: ReasoningSink | None = None
 
 
 @dataclass(frozen=True)
@@ -480,6 +482,17 @@ def _forward_delta(sink: TurnDeltaSink | None, turn_id: str) -> DeltaSink | None
     return forward
 
 
+def _forward_reasoning(sink: ReasoningSink | None, turn_id: str) -> ReasoningSink | None:
+    """把宿主 sink 包成 provider 只认 `(index, text)` 的回调，绑定当前 turn。"""
+    if sink is None:
+        return None
+
+    async def forward(_turn_id: str, index: int, text: str) -> None:
+        await sink(turn_id, index, text)
+
+    return forward
+
+
 def _abort_turn(log: EventLog, turn_id: str, turns: int) -> SegmentOutcome:
     """流式取消的收尾：不写半条 `model/response`，只写 `error/abort` 与 ABORTED。"""
     failure = _append_all(
@@ -613,6 +626,7 @@ async def _recover_overflowed_request(
     failure: ProviderFailure,
     retry_events: Sequence[tuple[str, dict[str, Any]]],
     on_delta: DeltaSink | None = None,
+    on_reasoning: ReasoningSink | None = None,
 ) -> _RetriedRequest | SegmentOutcome:
     """provider 报出上下文超限时先压一次、再重试一次，上限 1 次（ADR-0019）。
 
@@ -668,7 +682,11 @@ async def _recover_overflowed_request(
         return _segment_failure(written, turns)
 
     generated = await provider.generate(
-        folded.messages, registry.specs(), cancel, on_delta=on_delta
+        folded.messages,
+        registry.specs(),
+        cancel,
+        on_delta=on_delta,
+        on_reasoning=on_reasoning,
     )
     attempts = _retry_events(turn_id, generated)
     if isinstance(generated, ProviderFailure):
@@ -891,6 +909,7 @@ async def _run_turns(
         turn_id = f"t{turn_index}"
         tool_names = [spec.name for spec in registry.specs()]
         text_sink = _forward_delta(env.on_delta, turn_id)
+        reasoning_sink = _forward_reasoning(env.on_reasoning, turn_id)
 
         failure = _append_all(log, [("turn/start", {"turn_id": turn_id})])
         if failure is not None:
@@ -950,7 +969,11 @@ async def _run_turns(
             return _segment_failure(failure, turns)
 
         generated = await provider.generate(
-            context.messages, registry.specs(), cancel, on_delta=text_sink
+            context.messages,
+            registry.specs(),
+            cancel,
+            on_delta=text_sink,
+            on_reasoning=reasoning_sink,
         )
         # 重试事实由 provider 带回、由循环写进日志：provider 不碰日志（不变量 A）。
         retry_events = _retry_events(turn_id, generated)
@@ -971,6 +994,7 @@ async def _run_turns(
                     failure=generated,
                     retry_events=retry_events,
                     on_delta=text_sink,
+                    on_reasoning=reasoning_sink,
                 )
                 if isinstance(recovered, SegmentOutcome):
                     return recovered
@@ -1087,6 +1111,7 @@ async def run_session(
     cancel: asyncio.Event,
     approval_gate: ApprovalGate = STDIN_APPROVAL_GATE,
     on_delta: TurnDeltaSink | None = None,
+    on_reasoning: ReasoningSink | None = None,
 ) -> RunOutcome:
     """一次性入口（`run` / `serve`）：开始会话、恰一个段、结束会话。
 
@@ -1099,6 +1124,7 @@ async def run_session(
         settings=settings,
         approval_gate=approval_gate,
         on_delta=on_delta,
+        on_reasoning=on_reasoning,
     )
     started = start_session(prompt=prompt, entry=entry, env=env)
     if started is not None:

@@ -79,6 +79,7 @@ class _OverflowProvider:
         tools: object,
         signal: asyncio.Event,
         on_delta: object = None,
+        on_reasoning: object = None,
     ) -> ProviderFailure:
         return ProviderFailure(code="PROVIDER_CONTEXT_OVERFLOW", detail="HTTP 400 上下文超限")
 
@@ -447,7 +448,12 @@ class _OverflowOnceProvider:
         self._plain_calls = 0
 
     async def generate(
-        self, messages: object, tools: object, signal: asyncio.Event, on_delta: object = None
+        self,
+        messages: object,
+        tools: object,
+        signal: asyncio.Event,
+        on_delta: object = None,
+        on_reasoning: object = None,
     ) -> object:
         if tools:
             self._plain_calls += 1
@@ -562,6 +568,7 @@ class _RecordingProvider:
         tools: Sequence[ToolSpec],
         signal: asyncio.Event,
         on_delta: object = None,
+        on_reasoning: object = None,
     ) -> AssistantTurn | ProviderFailure:
         self.calls.append((list(messages), list(tools)))
         return await self._inner.generate(messages, tools, signal, on_delta=on_delta)
