@@ -403,9 +403,11 @@ async def test_a_provider_aborted_stream_turn_ends_aborted(tmp_path: Path) -> No
         max_turns=8,
     )
 
-    types = [record.type for record in read_events(log.path)]
+    records = read_events(log.path)
+    types = [record.type for record in records]
     assert seen == [("t1", "半")]
-    assert "model/response" not in types
+    response = next(record for record in records if record.type == "model/response")
+    assert response.payload["interrupted"] is True
     assert "error/model" not in types
     assert "error/abort" in types
     assert outcome.stop_reason == "ABORTED"
@@ -475,7 +477,7 @@ async def test_a_cancelled_turn_writes_an_error_abort_event(tmp_path: Path) -> N
     assert outcome.stop_reason == "ABORTED"
 
 
-async def test_a_cancel_during_stream_aborts_without_a_model_response(tmp_path: Path) -> None:
+async def test_a_cancel_during_stream_writes_an_interrupted_response(tmp_path: Path) -> None:
     cancel = asyncio.Event()
     seen: list[tuple[str, str]] = []
 
@@ -492,9 +494,12 @@ async def test_a_cancel_during_stream_aborts_without_a_model_response(tmp_path: 
         max_turns=8,
     )
 
-    types = [record.type for record in read_events(log.path)]
+    records = read_events(log.path)
+    types = [record.type for record in records]
     assert seen == [("t1", "半")]
-    assert "model/response" not in types
+    response = next(record for record in records if record.type == "model/response")
+    assert response.payload["interrupted"] is True
+    assert response.payload["blocks"] == [{"type": "text", "text": "半"}]
     assert "error/abort" in types
     assert outcome.stop_reason == "ABORTED"
 

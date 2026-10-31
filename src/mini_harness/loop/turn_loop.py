@@ -29,10 +29,13 @@ from mini_harness.events.writer import EventLog, LogWriteFailure
 from mini_harness.loop.settings import SessionSettings
 from mini_harness.provider.contract import (
     AssistantTurn,
+    Block,
     DeltaSink,
     Provider,
     ProviderFailure,
+    ReasoningBlock,
     ReasoningSink,
+    TextBlock,
     ToolCall,
     TurnDeltaSink,
 )
@@ -493,15 +496,93 @@ def _forward_reasoning(sink: ReasoningSink | None, turn_id: str) -> ReasoningSin
     return forward
 
 
-def _abort_turn(log: EventLog, turn_id: str, turns: int) -> SegmentOutcome:
-    """流式取消的收尾：不写半条 `model/response`，只写 `error/abort` 与 ABORTED。"""
-    failure = _append_all(
-        log,
+@dataclass
+class _TurnCapture:
+    """收回合内已交付的 reasoning/text 前缀；取消/失败时它就是 interrupted/attempt 的内容。"""
+
+    reasoning: list[str]
+    text: list[str]
+
+    def __init__(self) -> None:
+        self.reasoning = []
+        self.text = []
+
+    def blocks(self) -> list[Block]:
+        blocks: list[Block] = []
+        if self.reasoning:
+            blocks.append(ReasoningBlock(text="".join(self.reasoning)))
+        if self.text:
+            blocks.append(TextBlock(text="".join(self.text)))
+        return blocks
+
+
+def _capture_sinks(
+    capture: _TurnCapture,
+    on_delta: TurnDeltaSink | None,
+    on_reasoning: ReasoningSink | None,
+    turn_id: str,
+) -> tuple[DeltaSink | None, ReasoningSink | None]:
+    """把 provider sink 包成「先收前缀、再转发宿主」；没有宿主 sink 也收。"""
+
+    async def text(text_value: str) -> None:
+        capture.text.append(text_value)
+        if on_delta is not None:
+            await on_delta(turn_id, text_value)
+
+    async def reasoning(_turn_id: str, index: int, text_value: str) -> None:
+        capture.reasoning.append(text_value)
+        if on_reasoning is not None:
+            await on_reasoning(turn_id, index, text_value)
+
+    return text, reasoning
+
+
+def _abort_turn(
+    log: EventLog,
+    turn_id: str,
+    turns: int,
+    blocks: Sequence[Block] = (),
+    *,
+    evidence: bool = False,
+) -> SegmentOutcome:
+    """流式取消的收尾：有已交付前缀写 interrupted message，否则只写 attempt + abort。"""
+    events: list[tuple[str, dict[str, Any]]] = []
+    if blocks:
+        events.append(
+            (
+                "model/response",
+                {
+                    "turn_id": turn_id,
+                    "content": "\n".join(
+                        block.text for block in blocks if isinstance(block, TextBlock)
+                    ),
+                    "blocks": [block.model_dump(mode="json") for block in blocks],
+                    "tool_calls": [],
+                    "finish_reason": "interrupted",
+                    "interrupted": True,
+                },
+            )
+        )
+    else:
+        if evidence:
+            events.append(
+                (
+                    "model/attempt",
+                    {
+                        "turn_id": turn_id,
+                        "status": "aborted",
+                        "error_code": STOP_ABORTED,
+                        "partial_blocks": [],
+                    },
+                )
+            )
+    events.extend(
         [
             ("error/abort", {"turn_id": turn_id, "code": STOP_ABORTED, "detail": "取消被置位"}),
             ("turn/end", {"turn_id": turn_id, "stop_reason": STOP_ABORTED}),
-        ],
+        ]
     )
+    failure = _append_all(log, events)
     if failure is not None:
         return _segment_failure(failure, turns)
     return SegmentOutcome(stop_reason=STOP_ABORTED, turns=turns)
@@ -513,15 +594,29 @@ async def _provider_error(
     failure: ProviderFailure,
     turns: int,
     retry_events: Sequence[tuple[str, dict[str, Any]]],
+    partial_blocks: Sequence[Block] = (),
 ) -> SegmentOutcome:
-    """provider 失败作为**回合**收尾：`error/model` + `turn/end`（design D7）。
-
-    段的边界与 `session/end` 不在这里——它们归段与入口（ADR-0011）。
-    """
+    """provider 失败作为**回合**收尾：有前缀先写 attempt，再 `error/model` + `turn/end`。"""
+    attempt = (
+        [
+            (
+                "model/attempt",
+                {
+                    "turn_id": turn_id,
+                    "status": "error",
+                    "error_code": failure.code,
+                    "partial_blocks": [block.model_dump(mode="json") for block in partial_blocks],
+                },
+            )
+        ]
+        if partial_blocks
+        else []
+    )
     written = _append_all(
         log,
         [
             *retry_events,
+            *attempt,
             ("error/model", {"turn_id": turn_id, "code": failure.code, "detail": failure.detail}),
             ("turn/end", {"turn_id": turn_id, "stop_reason": STOP_PROVIDER_ERROR}),
         ],
@@ -909,8 +1004,14 @@ async def _run_turns(
         turns = offset + 1
         turn_id = f"t{turn_index}"
         tool_names = [spec.name for spec in registry.specs()]
-        text_sink = _forward_delta(env.on_delta, turn_id)
-        reasoning_sink = _forward_reasoning(env.on_reasoning, turn_id)
+        capture = _TurnCapture()
+        if env.on_delta is None and env.on_reasoning is None:
+            text_sink = None
+            reasoning_sink = None
+        else:
+            text_sink, reasoning_sink = _capture_sinks(
+                capture, env.on_delta, env.on_reasoning, turn_id
+            )
 
         failure = _append_all(log, [("turn/start", {"turn_id": turn_id})])
         if failure is not None:
@@ -1001,17 +1102,27 @@ async def _run_turns(
                     return recovered
                 generated, retry_events = recovered.generated, recovered.retry_events
             if isinstance(generated, ProviderFailure):
-                if (
-                    generated.code == "PROVIDER_ABORTED"
-                    and env.on_delta is not None
-                    and cancel.is_set()
-                ):
-                    return _abort_turn(log, turn_id, turns)
-                return await _provider_error(log, turn_id, generated, turns, retry_events)
+                if generated.code == "PROVIDER_ABORTED" and cancel.is_set():
+                    return _abort_turn(
+                        log,
+                        turn_id,
+                        turns,
+                        capture.blocks(),
+                        evidence=env.on_delta is not None or env.on_reasoning is not None,
+                    )
+                return await _provider_error(
+                    log, turn_id, generated, turns, retry_events, capture.blocks()
+                )
 
-        if cancel.is_set() and env.on_delta is not None:
-            # 流式读取中途取消：已经显示的增量不补，但不把半条回复写成 durable 真相。
-            return _abort_turn(log, turn_id, turns)
+        if cancel.is_set():
+            # 流式读取中途取消：已交付前缀写成 interrupted message，不写半条成功 response。
+            return _abort_turn(
+                log,
+                turn_id,
+                turns,
+                capture.blocks(),
+                evidence=env.on_delta is not None or env.on_reasoning is not None,
+            )
 
         failure = _append_all(
             log,
