@@ -8,7 +8,7 @@
 
 **Goals:** blocks 保序；reasoning delta 独立 ephemeral；durable 一条 response；usage 口径；effort 配置；fold/replay 兼容；host SSE 分流。
 
-**Non-Goals:** 紧凑带时间 stream、assistant/attempt、active baseline、plan mode、自动摘要/脱敏、跨路由回传。
+**Non-Goals:** 紧凑带时间 stream 的完整实现（只留 `partial_blocks`/等价简写）、active baseline、plan mode、自动摘要/脱敏、跨路由回传。
 
 ## Decisions
 
@@ -40,9 +40,9 @@ class ToolCallBlock(BaseModel): type: Literal["tool-call"]; id: str; name: str; 
 
 **D10 空 reasoning 丢弃，仅 reasoning 不冒充回答。** 空文本不产生 block/delta；只有 reasoning 的响应保留 blocks、`content` 投影为空，壳显示“无正文”，不把 reasoning 升级为可见答案。这样“只有思考没有正文”是可解释状态，不是半条回答。
 
-**D11 失败也留 attempt 证据，DSH 同款。** DSH 在每个 settlement 的 attempt 上提交事件：成功是 `assistant/message`，失败/重试/取消/stream error 是 `assistant/attempt`，保留 stream 但不进模型历史。mini 对应地加一条 log-only `model/attempt`（`status`、`error_code`、`partial_blocks` / 紧凑 stream），`fold` 忽略它；这样坏标签/取消不会只剩一行 `error/model`，也不会把半条内容塞进历史。硬进程丢失在 settlement 前仍无 durable attempt（DSH 同样如此）。
+**D11 失败/协议错误留 attempt 证据，DSH 同款。** DSH 对失败、重试、stream error 的 attempt 提交 `assistant/attempt`，保留 stream 但不进模型历史；用户取消有已交付内容时走 interrupted message，不是 attempt。mini 对应地加一条 log-only `model/attempt`（`status`、`error_code`、`partial_blocks` / 紧凑 stream），`fold` 忽略它；这样坏标签/失败不会只剩一行 `error/model`，也不会把半条内容塞进历史。硬进程丢失在 settlement 前仍无 durable attempt（DSH 同样如此）。
 
-**D12 用户取消另写 interrupted assistant 锚点。** DSH 对“用户取消的流”额外追加 `interrupted: true` 的 assistant 锚点，带已交付前缀，使下一轮包含用户看到的内容；这和失败 attempt 不是一回事。mini 用 `model/response` + `interrupted: true` + 已交付 `blocks` 表示，`fold` 把它当 assistant 消息；没有交付内容时不写空锚点。`interrupted` 是 payload 字段，不是正文标签，也不是伪 block。schema 错误/坏标签仍只写 `model/attempt`，不写 interrupted。
+**D12 用户取消另写 interrupted assistant 锚点，与 attempt 二选一。** DSH 对“用户取消且有已交付内容”的流只追加 `interrupted: true` 的 assistant message，带已交付前缀，使下一轮包含用户看到的内容；没有交付内容时只写 `assistant/attempt`。mini 用 `model/response` + `interrupted: true` + 已交付 `blocks` 表示，`fold` 把它当 assistant 消息；**有内容时不写 `model/attempt`**，没有内容时不写空锚点。`interrupted` 是 payload 字段，不是正文标签，也不是伪 block。schema 错误/坏标签仍只写 `model/attempt`，不写 interrupted。
 
 ## Risks / Trade-offs
 

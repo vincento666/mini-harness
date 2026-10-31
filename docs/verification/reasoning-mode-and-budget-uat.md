@@ -56,7 +56,7 @@
 
 在 reasoning/text 已经显示后取消；另跑一次首个 delta 前取消。
 
-**预期**：前者写 `model/response(interrupted:true)` 带已交付前缀，下一轮包含；后者不写空锚点，按 ABORTED 收尾。坏标签失败不写 interrupted。
+**预期**：前者只写 `model/response(interrupted:true)` 带已交付前缀，不写 `model/attempt`，下一轮包含；后者只写 `model/attempt`，不写空锚点，按 ABORTED 收尾。坏标签失败只写 `model/attempt`，不写 interrupted。
 
 ## 观察表
 

@@ -51,7 +51,7 @@
 
 ### Requirement: 用户取消写 interrupted assistant 锚点
 
-用户取消流式生成时，系统 SHALL 追加一条 `model/response`，带 `interrupted: true` 与已经交付给用户的 `blocks`；该记录 SHALL 进入 `fold`/模型历史，下一次请求 SHALL 包含用户已经看到的前缀。`interrupted` 是消息级字段，MUST NOT 表示成正文里的标签或伪 block；没有交付内容时 MAY 只写 `model/attempt` 与 ABORTED。非用户取消的失败 MUST NOT 使用 interrupted 锚点。
+用户取消流式生成时，系统 SHALL 追加一条 `model/response`，带 `interrupted: true` 与已经交付给用户的 `blocks`；该记录 SHALL 进入 `fold`/模型历史，下一次请求 SHALL 包含用户已经看到的前缀。`interrupted` 是消息级字段，MUST NOT 表示成正文里的标签或伪 block。**有已交付内容的取消只写这一条 interrupted message，不再写 `model/attempt`**；没有交付内容时只写 `model/attempt` 与 ABORTED，不写空 interrupted 锚点。二者互斥。非用户取消的失败 MUST NOT 使用 interrupted 锚点。
 
 #### Scenario: 取消保留已交付前缀
 
@@ -61,7 +61,7 @@
 #### Scenario: 没有交付内容
 
 - **WHEN** 取消发生在首个 delta 之前
-- **THEN** 不写空 interrupted 锚点，按现有 ABORTED 收尾；需要时只留 `model/attempt`
+- **THEN** 不写空 interrupted 锚点，按现有 ABORTED 收尾；只写 `model/attempt`
 
 #### Scenario: 失败不使用 interrupted
 

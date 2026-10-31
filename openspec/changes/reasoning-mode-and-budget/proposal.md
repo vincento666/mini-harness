@@ -37,7 +37,7 @@ mini 现在的 assistant message 只有 `content: str` + `tool_calls`，实时�
 
 ## Non-Goals
 
-- DSH 的紧凑带时间 stream、`assistant/attempt` 事件、active attempt baseline。
+- DSH 紧凑带时间 stream 的完整实现（只留 `partial_blocks`/等价简写）、active attempt baseline。
 - 完整 plan-mode 状态机、自动摘要/脱敏。
 - 把 reasoning 当可见回答；默认折叠。
 - 跨 provider/model 路由回传；默认同一路由原样。
