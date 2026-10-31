@@ -1,15 +1,15 @@
-# Tasks
+﻿# Tasks
 
 ## 1. Blocks 契约与旧投影
 
-- [ ] 1.1 seam ⑤：红判据 `test_assistant_turn_keeps_block_order`——reasoning/text/tool-call 交错保序；实现 `Block` 判别联合与 `AssistantTurn.blocks`
-- [ ] 1.2 seam ⑤：红判据 `test_old_content_projection_is_derived_from_blocks`——`content`/`tool_calls` 是投影，不是第二真源；旧 provider 只有 content 时是一个 text 块
-- [ ] 1.3 seam ④：守卫——没有 blocks 的旧 fixture / 旧日志行为逐点不变
+- [x] 1.1 seam ⑤：红判据 `test_assistant_turn_keeps_block_order`——reasoning/text/tool-call 交错保序；实现 `Block` 判别联合与 `AssistantTurn.blocks`
+- [x] 1.2 seam ⑤：红判据 `test_old_content_projection_is_derived_from_blocks`——`content`/`tool_calls` 是投影，不是第二真源；旧 provider 只有 content 时是一个 text 块
+- [x] 1.3 seam ④：守卫——没有 blocks 的旧 fixture / 旧日志行为逐点不变
 
 ## 2. Provider 解析与 sink 分流
 
-- [ ] 2.1 seam ⑤：红判据 `test_reasoning_delta_does_not_reach_the_text_sink`——reasoning 只进 reasoning sink，正文只进 text sink；实现 `ReasoningSink`
-- [ ] 2.2 seam ⑤：红判据 `test_mock_fixture_can_emit_reasoning_deltas`——fixture 可声明 reasoning deltas；mock 按顺序发
+- [x] 2.1 seam ⑤：红判据 `test_reasoning_delta_does_not_reach_the_text_sink`——reasoning 只进 reasoning sink，正文只进 text sink；实现 `ReasoningSink`
+- [x] 2.2 seam ⑤：红判据 `test_mock_fixture_can_emit_reasoning_deltas`——fixture 可声明 reasoning deltas；mock 按顺序发
 - [ ] 2.3 seam ⑤：红判据 `test_openai_compat_maps_reasoning_content`——`reasoning_content`/thinking 解析成 reasoning blocks，usage 带 reasoning_tokens
 - [ ] 2.4 seam ⑤：红判据 `test_unsupported_reasoning_effort_fails_before_io`——`ultra` 在网络前失败 `UNSUPPORTED_REASONING_EFFORT`；`off` 不发 thinking
 - [ ] 2.5 seam ⑤：红判据 `test_incomplete_reasoning_tag_is_a_schema_failure`——开标签后立即 emit；只有闭标签、嵌套、EOF 未闭合都 `PROVIDER_SCHEMA_INVALID`，无 `model/response`；半开时已发出的 reasoning 要能被壳清掉
@@ -26,14 +26,14 @@
 
 ## 4. fold / replay
 
-- [ ] 4.1 seam ④：红判据 `test_fold_rebuilds_ordered_blocks`——fold 从 blocks 重建 reasoning/text/tool-call 顺序
-- [ ] 4.2 seam ④：红判据 `test_old_logs_without_blocks_still_replay_pointwise`——旧日志退化路径逐点相等
+- [x] 4.1 seam ④：红判据 `test_fold_rebuilds_ordered_blocks`——fold 从 blocks 重建 reasoning/text/tool-call 顺序
+- [x] 4.2 seam ④：红判据 `test_old_logs_without_blocks_still_replay_pointwise`——旧日志退化路径逐点相等
 - [ ] 4.3 seam ④：红判据 `test_provider_history_carries_blocks`——后续请求按块回传；不支持块回传的适配器显式降级
 - [ ] 4.4 seam ④：红判据 `test_fold_includes_interrupted_anchor_in_order`——interrupted assistant 锚点进入模型历史顺序；`model/attempt` 不进入
 
 ## 5. SSE / host
 
-- [ ] 5.1 seam ⑥：红判据 `test_sse_has_reasoning_delta_and_model_delta`——两者分开、无 durable id、顺序正确
+- [x] 5.1 seam ⑥：红判据 `test_sse_has_reasoning_delta_and_model_delta`——两者分开、无 durable id、顺序正确
 - [ ] 5.2 seam ⑥：红判据 `test_reasoning_delta_is_not_logged_in_sse_snapshot`——snapshot 不重放 delta；最终 response 带 blocks
 - [ ] 5.3 seam ⑥：守卫——没有 reasoning 的模型 SSE 与今天逐点相同
 
