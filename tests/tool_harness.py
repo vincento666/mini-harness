@@ -19,7 +19,7 @@ from mini_harness.loop import (
 )
 from mini_harness.loop.settings import ApprovalMode, ProviderEndpoint, SandboxLevel
 from mini_harness.provider import FixtureProvider, Provider
-from mini_harness.provider.contract import ToolCall, TurnDeltaSink
+from mini_harness.provider.contract import ReasoningSink, ToolCall, TurnDeltaSink
 from mini_harness.tools import ToolRegistry
 from mini_harness.tools.bash_tools import bash_tool_definitions
 from mini_harness.tools.dispatch import DispatchOutcome, dispatch_tool_call
@@ -213,6 +213,7 @@ def build_session_env(
     registry: ToolRegistry | None = None,
     approval_gate: ApprovalGate | None = None,
     on_delta: TurnDeltaSink | None = None,
+    on_reasoning: ReasoningSink | None = None,
 ) -> tuple[EventLog, SessionEnv]:
     """seam ① 的「一个会话的冻结环境」形状：建日志、建设置、冻成 `SessionEnv`。
 
@@ -236,6 +237,7 @@ def build_session_env(
         settings=settings,
         approval_gate=STDIN_APPROVAL_GATE if approval_gate is None else approval_gate,
         on_delta=on_delta,
+        on_reasoning=on_reasoning,
     )
     return log, env
 
@@ -258,6 +260,7 @@ async def run_session_fixture(
     registry: ToolRegistry | None = None,
     approval_gate: ApprovalGate | None = None,
     on_delta: TurnDeltaSink | None = None,
+    on_reasoning: ReasoningSink | None = None,
     cancel: asyncio.Event | None = None,
     entry: SessionEntry = ENTRY_RUN,
 ) -> tuple[EventLog, RunOutcome]:
@@ -281,6 +284,7 @@ async def run_session_fixture(
         registry=registry,
         approval_gate=approval_gate,
         on_delta=on_delta,
+        on_reasoning=on_reasoning,
     )
     outcome = await run_session(
         prompt=prompt,
@@ -292,6 +296,7 @@ async def run_session_fixture(
         cancel=asyncio.Event() if cancel is None else cancel,
         approval_gate=env.approval_gate,
         on_delta=env.on_delta,
+        on_reasoning=env.on_reasoning,
     )
     return log, outcome
 

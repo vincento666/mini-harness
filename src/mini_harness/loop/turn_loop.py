@@ -1114,7 +1114,7 @@ async def _run_turns(
                     log, turn_id, generated, turns, retry_events, capture.blocks()
                 )
 
-        if cancel.is_set():
+        if cancel.is_set() and (env.on_delta is not None or env.on_reasoning is not None):
             # 流式读取中途取消：已交付前缀写成 interrupted message，不写半条成功 response。
             return _abort_turn(
                 log,

@@ -1110,3 +1110,78 @@ async def test_a_builtin_tool_filtered_out_by_the_whitelist_is_unknown(tmp_path:
     assert result_outcomes(records) == [("c1", "UNKNOWN_TOOL")]
     assert [record.type for record in records].count("turn/end") == 2
     assert outcome.stop_reason == "MODEL_COMPLETED"
+
+
+class _ReasoningCancelProvider:
+    def __init__(self, cancel: asyncio.Event) -> None:
+        self._cancel = cancel
+
+    async def generate(
+        self,
+        messages: object,
+        tools: object,
+        signal: asyncio.Event,
+        on_delta: object = None,
+        on_reasoning: object = None,
+    ) -> ProviderFailure:
+        if callable(on_reasoning):
+            await on_reasoning("", 0, "想")
+        self._cancel.set()
+        return ProviderFailure("PROVIDER_ABORTED", "取消")
+
+
+class _SchemaAfterTextProvider:
+    async def generate(
+        self,
+        messages: object,
+        tools: object,
+        signal: asyncio.Event,
+        on_delta: object = None,
+        on_reasoning: object = None,
+    ) -> ProviderFailure:
+        if callable(on_delta):
+            await on_delta("半")
+        return ProviderFailure("PROVIDER_SCHEMA_INVALID", "坏标签")
+
+
+async def test_cancel_with_reasoning_prefix_writes_interrupted_reasoning_block(
+    tmp_path: Path,
+) -> None:
+    cancel = asyncio.Event()
+    log, outcome = await run_session_fixture(
+        tmp_path,
+        "s-reasoning-cancel",
+        _ReasoningCancelProvider(cancel),
+        registry=ToolRegistry(),
+        cancel=cancel,
+        on_reasoning=lambda *_args: asyncio.sleep(0),
+        max_turns=4,
+    )
+
+    records = read_events(log.path)
+    response = next(record for record in records if record.type == "model/response")
+    assert response.payload["interrupted"] is True
+    assert response.payload["blocks"] == [{"type": "reasoning", "text": "想"}]
+    assert outcome.stop_reason == "ABORTED"
+    assert "model/attempt" not in [record.type for record in records]
+
+
+async def test_schema_failure_with_prefix_writes_attempt_not_response(
+    tmp_path: Path,
+) -> None:
+    log, outcome = await run_session_fixture(
+        tmp_path,
+        "s-schema-prefix",
+        _SchemaAfterTextProvider(),
+        registry=ToolRegistry(),
+        on_delta=lambda *_args: asyncio.sleep(0),
+        max_turns=4,
+    )
+
+    records = read_events(log.path)
+    types = [record.type for record in records]
+    assert "model/response" not in types
+    attempt = next(record for record in records if record.type == "model/attempt")
+    assert attempt.payload["error_code"] == "PROVIDER_SCHEMA_INVALID"
+    assert attempt.payload["partial_blocks"] == [{"type": "text", "text": "半"}]
+    assert outcome.stop_reason == "PROVIDER_ERROR"

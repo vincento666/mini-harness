@@ -13,6 +13,7 @@ CONCRETE_EVENT_TYPES: frozenset[str] = frozenset(
         "context/assembled",
         "model/request",
         "model/retry",
+        "model/attempt",
         "model/response",
         "user/message",
         "tool/call",

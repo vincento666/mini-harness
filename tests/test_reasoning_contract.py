@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 
+import httpx
+
 from mini_harness.provider import (
     AssistantTurn,
     FixtureProvider,
@@ -11,6 +13,7 @@ from mini_harness.provider import (
     TextBlock,
     ToolCallBlock,
 )
+from mini_harness.provider.openai_compat import _parse_response
 
 
 async def test_mock_fixture_can_emit_reasoning_deltas() -> None:
@@ -32,6 +35,17 @@ async def test_mock_fixture_can_emit_reasoning_deltas() -> None:
 
     assert isinstance(turn, AssistantTurn)
     assert [item[2] for item in reasoning] == ["先想", "再答"]
+
+
+async def test_mock_fixture_rejects_bad_reasoning_deltas() -> None:
+    provider = FixtureProvider(
+        [{"content": "答案", "finish_reason": "stop", "reasoning_deltas": "not-a-list"}]
+    )
+
+    turn = await provider.generate([], [], asyncio.Event())
+
+    assert isinstance(turn, AssistantTurn) is False
+    assert turn.code == "PROVIDER_SCHEMA_INVALID"
 
 
 def test_assistant_turn_keeps_block_order() -> None:
@@ -66,3 +80,29 @@ def test_usage_reasoning_tokens_default_to_zero() -> None:
     turn = AssistantTurn(content="好", finish_reason="stop")
 
     assert turn.usage.reasoning_tokens == 0
+
+
+def test_nonstream_reasoning_content_becomes_a_reasoning_block() -> None:
+    response = httpx.Response(
+        200,
+        json={
+            "choices": [
+                {
+                    "message": {"content": "答案", "reasoning_content": "先想"},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 10,
+                "completion_tokens": 8,
+                "completion_tokens_details": {"reasoning_tokens": 5},
+            },
+        },
+    )
+
+    turn = _parse_response(response, [])
+
+    assert isinstance(turn, AssistantTurn)
+    assert [block.type for block in turn.blocks] == ["reasoning", "text"]
+    assert turn.content == "答案"
+    assert turn.usage.reasoning_tokens == 5

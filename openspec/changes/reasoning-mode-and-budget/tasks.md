@@ -10,8 +10,8 @@
 
 - [x] 2.1 seam ⑤：红判据 `test_reasoning_delta_does_not_reach_the_text_sink`——reasoning 只进 reasoning sink，正文只进 text sink；实现 `ReasoningSink`
 - [x] 2.2 seam ⑤：红判据 `test_mock_fixture_can_emit_reasoning_deltas`——fixture 可声明 reasoning deltas；mock 按顺序发
-- [ ] 2.3 seam ⑤：红判据 `test_openai_compat_maps_reasoning_content`——`reasoning_content`/thinking 解析成 reasoning blocks，usage 带 reasoning_tokens
-- [ ] 2.4 seam ⑤：红判据 `test_unsupported_reasoning_effort_fails_before_io`——`ultra` 在网络前失败 `UNSUPPORTED_REASONING_EFFORT`；`off` 不发 thinking
+- [x] 2.3 seam ⑤：红判据 `test_openai_compat_maps_reasoning_content`——`reasoning_content`/thinking 解析成 reasoning blocks，usage 带 reasoning_tokens
+- [x] 2.4 seam ⑤：红判据 `test_unsupported_reasoning_effort_fails_before_io`——`ultra` 在网络前失败 `UNSUPPORTED_REASONING_EFFORT`；`off` 不发 thinking
 - [ ] 2.5 seam ⑤：红判据 `test_incomplete_reasoning_tag_is_a_schema_failure`——开标签后立即 emit；只有闭标签、嵌套、EOF 未闭合都 `PROVIDER_SCHEMA_INVALID`，无 `model/response`；半开时已发出的 reasoning 要能被壳清掉
 - [ ] 2.6 seam ⑤：红判据 `test_empty_reasoning_is_dropped_and_reasoning_only_keeps_blocks`——空 delta 不 emit；仅 reasoning 时 content 投影为空，不冒充正文
 
@@ -20,9 +20,9 @@
 - [ ] 3.1 seam ①：红判据 `test_turn_loop_writes_blocks_to_one_response`——一次成功调用只写一条 `model/response`，blocks 保序
 - [ ] 3.2 seam ①：红判据 `test_reasoning_delta_is_not_logged`——`reasoning/delta` 不写日志，只有最终 response
 - [ ] 3.3 seam ①：守卫——取消/失败不写半条 response；无 reasoning 的日志与今天逐点相同
-- [ ] 3.4 seam ①：红判据 `test_reasoning_tokens_are_a_subset_of_output`——usage 加 reasoning_tokens，计量不重复加
-- [ ] 3.5 seam ①/④：红判据 `test_failed_stream_writes_model_attempt_but_no_response`——坏标签/失败写 `model/attempt`（错误码 + partial blocks）；fold 忽略它、不进历史
-- [ ] 3.6 seam ①：红判据 `test_user_cancel_writes_interrupted_anchor`——有交付前缀时只写 `model/response(interrupted:true)`，不写 `model/attempt`；首个 delta 前取消只写 `model/attempt`，不写空锚点
+- [x] 3.4 seam ①：红判据 `test_reasoning_tokens_are_a_subset_of_output`——usage 加 reasoning_tokens，计量不重复加
+- [x] 3.5 seam ①/④：红判据 `test_failed_stream_writes_model_attempt_but_no_response`——坏标签/失败写 `model/attempt`（错误码 + partial blocks）；fold 忽略它、不进历史
+- [x] 3.6 seam ①：红判据 `test_user_cancel_writes_interrupted_anchor`——有交付前缀时只写 `model/response(interrupted:true)`，不写 `model/attempt`；首个 delta 前取消只写 `model/attempt`，不写空锚点
 
 ## 4. fold / replay
 
