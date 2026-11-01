@@ -28,7 +28,7 @@
 
 - [x] 4.1 seam ④：红判据 `test_fold_rebuilds_ordered_blocks`——fold 从 blocks 重建 reasoning/text/tool-call 顺序
 - [x] 4.2 seam ④：红判据 `test_old_logs_without_blocks_still_replay_pointwise`——旧日志退化路径逐点相等
-- [ ] 4.3 seam ④：红判据 `test_provider_history_carries_blocks`——后续请求按块回传；不支持块回传的适配器显式降级
+- [x] 4.3 seam ④：红判据 `test_provider_history_carries_blocks`——后续请求按块回传；不支持块回传的适配器显式降级
 - [ ] 4.4 seam ④：红判据 `test_fold_includes_interrupted_anchor_in_order`——interrupted assistant 锚点进入模型历史顺序；`model/attempt` 不进入
 
 ## 5. SSE / host

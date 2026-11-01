@@ -6,6 +6,7 @@ import asyncio
 
 import httpx
 
+from mini_harness.events.fold import Message
 from mini_harness.provider import (
     AssistantTurn,
     FixtureProvider,
@@ -13,7 +14,7 @@ from mini_harness.provider import (
     TextBlock,
     ToolCallBlock,
 )
-from mini_harness.provider.openai_compat import _parse_response
+from mini_harness.provider.openai_compat import _parse_response, _wire_messages
 
 
 async def test_mock_fixture_can_emit_reasoning_deltas() -> None:
@@ -106,3 +107,42 @@ def test_nonstream_reasoning_content_becomes_a_reasoning_block() -> None:
     assert [block.type for block in turn.blocks] == ["reasoning", "text"]
     assert turn.content == "答案"
     assert turn.usage.reasoning_tokens == 5
+
+
+def test_wire_messages_carries_blocks_back_to_the_provider() -> None:
+    wire = _wire_messages(
+        [
+            Message(
+                role="assistant",
+                content="答案",
+                blocks=[
+                    {"type": "reasoning", "text": "先想"},
+                    {"type": "text", "text": "答案"},
+                    {
+                        "type": "tool-call",
+                        "id": "c1",
+                        "name": "read",
+                        "arguments": {"file_path": "a.md"},
+                    },
+                ],
+            )
+        ]
+    )
+
+    assert wire == [
+        {
+            "role": "assistant",
+            "content": "答案",
+            "reasoning_content": "先想",
+            "tool_calls": [
+                {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {
+                        "name": "read",
+                        "arguments": '{"file_path": "a.md"}',
+                    },
+                }
+            ],
+        }
+    ]

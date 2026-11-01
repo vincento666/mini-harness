@@ -54,13 +54,42 @@ _DETAIL_MAX_CHARS = 200
 
 
 def _wire_messages(messages: Sequence[Message]) -> list[dict[str, Any]]:
-    """内核的消息形状 → chat completions 的消息形状（`arguments` 在协议里是 JSON 字符串）。"""
+    """内核的消息形状 → chat completions 的消息形状（`arguments` 在协议里是 JSON 字符串）。
+
+    assistant 有 blocks 时按块回传：reasoning 进 `reasoning_content`，text 进 content，
+    tool-call 仍走 OpenAI 的 tool_calls 形状；旧消息没有 blocks 时保持原行为。
+    """
     wire: list[dict[str, Any]] = []
     for message in messages:
-        entry: dict[str, Any] = {"role": message.role, "content": message.content}
+        reasoning = ""
+        tool_calls = message.tool_calls
+        content = message.content
+        if message.blocks:
+            reasoning = "".join(
+                str(block.get("text", ""))
+                for block in message.blocks
+                if block.get("type") == "reasoning"
+            )
+            content = "\n".join(
+                str(block.get("text", ""))
+                for block in message.blocks
+                if block.get("type") == "text"
+            )
+            tool_calls = [
+                {
+                    "id": block.get("id", ""),
+                    "name": block.get("name", ""),
+                    "arguments": block.get("arguments", {}),
+                }
+                for block in message.blocks
+                if block.get("type") == "tool-call"
+            ]
+        entry: dict[str, Any] = {"role": message.role, "content": content}
+        if reasoning:
+            entry["reasoning_content"] = reasoning
         if message.tool_call_id is not None:
             entry["tool_call_id"] = message.tool_call_id
-        if message.tool_calls:
+        if tool_calls:
             entry["tool_calls"] = [
                 {
                     "id": str(call.get("id", "")),
@@ -70,7 +99,7 @@ def _wire_messages(messages: Sequence[Message]) -> list[dict[str, Any]]:
                         "arguments": json.dumps(call.get("arguments", {}), ensure_ascii=False),
                     },
                 }
-                for call in message.tool_calls
+                for call in tool_calls
             ]
         wire.append(entry)
     return wire
