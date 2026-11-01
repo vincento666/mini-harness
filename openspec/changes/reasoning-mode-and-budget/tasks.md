@@ -34,13 +34,13 @@
 ## 5. SSE / host
 
 - [x] 5.1 seam ⑥：红判据 `test_sse_has_reasoning_delta_and_model_delta`——两者分开、无 durable id、顺序正确
-- [ ] 5.2 seam ⑥：红判据 `test_reasoning_delta_is_not_logged_in_sse_snapshot`——snapshot 不重放 delta；最终 response 带 blocks
-- [ ] 5.3 seam ⑥：守卫——没有 reasoning 的模型 SSE 与今天逐点相同
+- [x] 5.2 seam ⑥：红判据 `test_reasoning_delta_is_not_logged_in_sse_snapshot`——snapshot 不重放 delta；最终 response 带 blocks
+- [x] 5.3 seam ⑥：守卫——没有 reasoning 的模型 SSE 与今天逐点相同
 
 ## 6. 文档与 UAT
 
 - [ ] 6.1 文档：更新 `docs/reference/reasoning-mode.md` 的已实现章节与 `docs/contracts/`（若有 assistant message 形状）
-- [ ] 6.2 UAT 骨架：`docs/verification/reasoning-mode-and-budget-uat.md`（propose 时立；人跑）
+- [x] 6.2 UAT 骨架：`docs/verification/reasoning-mode-and-budget-uat.md`（propose 时立；人跑）
 
 ## 7. 收尾四项
 

@@ -665,7 +665,14 @@ def test_reconnect_does_not_replay_lost_deltas(tmp_path: Path) -> None:
     fixture = tmp_path / "delta-reconnect.json"
     fixture.write_text(
         json.dumps(
-            [{"content": "你好", "deltas": ["你", "好"], "finish_reason": "stop"}],
+            [
+                {
+                    "content": "你好",
+                    "deltas": ["你", "好"],
+                    "reasoning_deltas": ["想"],
+                    "finish_reason": "stop",
+                }
+            ],
             ensure_ascii=False,
         ),
         encoding="utf-8",
@@ -703,6 +710,7 @@ def test_reconnect_does_not_replay_lost_deltas(tmp_path: Path) -> None:
             text = log.read_text(encoding="utf-8")
         assert snapshot["messages"][-1]["content"] == "你好"
         assert "model/delta" not in text
+        assert "reasoning/delta" not in text
         assert text.count('"type": "model/response"') == 1
     finally:
         _stop(process)
