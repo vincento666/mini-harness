@@ -62,15 +62,15 @@
 
 | 场次 | 动作 | 预期 | 实际观察 | 结论 | 别扭在哪 |
 |---|---|---|---|---|---|
-| R1 | 读文件后回答 | 思考/正文分开 | | | |
-| R2 | 折叠/展开 | 默认折叠 | | | |
-| R3 | 无 reasoning 模型 | 行为不变 | | | |
-| R4 | usage | 不重复计 | | | |
-| R5 | effort off/high | off 无思考 | | | |
-| R6 | 半标签/坏标签 | 先 emit；EOF 报错 + `model/attempt` 证据 | | | |
-| R7 | 只有 reasoning | 保留 blocks / 无正文 | | | |
-| R8 | 用户取消 | interrupted 前缀进历史 | | | |
+| R1 | 读文件后回答 | 思考/正文分开 | session `e782b7be...`：blocks `reasoning → text`；session `e8a28659...`：tool-call 回合 + `reasoning → text` 回合 | 通过 | 真实模型不保证一次响应里 reasoning→tool→reasoning→text 全出现 |
+| R2 | 折叠/展开 | 默认折叠 | 未跑：需要壳的视觉确认 | 待确认 | agent 不能替代视觉检查 |
+| R3 | 无 reasoning 模型 | 行为不变 | session `e50213e6...`（`deepseek-chat`，off）：blocks 只有 `text` | 通过 | 无 |
+| R4 | usage | 不重复计 | `e782b7be...`：`output_tokens=266`、`reasoning_tokens=143`；不按 409 计 | 通过 | 无 |
+| R5 | effort off/high | off 无思考 | off：`e50213e6...` 只有 text；high：`e782b7be...` 有 reasoning | 通过 | 无 |
+| R6 | 半标签/坏标签 | 先 emit；EOF 报错 + `model/attempt` 证据 | `tests/test_reasoning_tags.py`：开标签后先 emit、EOF/孤立闭标签/嵌套均 `TagReasoningError`；`test_schema_failure...` 写 `model/attempt`、不写 response | 通过（adapter 单测） | 产品没有可切换的 tag adapter，只有单测路径 |
+| R7 | 只有 reasoning | 保留 blocks / 无正文 | `test_only_reasoning_keeps_blocks_and_empty_content`：reasoning block + `content=""` | 通过（单测） | 真实端点未复现“只有 reasoning”的响应 |
+| R8 | 用户取消 | interrupted 前缀进历史 | `test_cancel_with_reasoning_prefix...`：只写 interrupted response；`test_schema_failure...`：失败只写 attempt | 通过（单测） | 需要构造取消时序，不是产品 UI 点击 |
 
-**至少一条「用起来别扭」**：_
+**至少一条「用起来别扭」**：R2 的折叠/展开必须在真实壳里看；R6–R8 目前只能靠单元测试/构造时序，产品没有 tag adapter 或取消注入开关。
 
-**结论**：通过 / 不通过（写清场次、session id、SSE 证据）：_
+**结论**：非视觉部分通过；**R2 折叠/展开待人工视觉确认**。agent 代跑范围依据用户 2026-11-01 授权。
