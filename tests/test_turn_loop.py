@@ -1185,3 +1185,58 @@ async def test_schema_failure_with_prefix_writes_attempt_not_response(
     assert attempt.payload["error_code"] == "PROVIDER_SCHEMA_INVALID"
     assert attempt.payload["partial_blocks"] == [{"type": "text", "text": "半"}]
     assert outcome.stop_reason == "PROVIDER_ERROR"
+
+
+async def test_reasoning_delta_is_not_logged(tmp_path: Path) -> None:
+    provider = FixtureProvider(
+        [
+            {
+                "content": "答案",
+                "finish_reason": "stop",
+                "reasoning_deltas": ["想"],
+            }
+        ]
+    )
+    log, _ = await run_session_fixture(
+        tmp_path,
+        "s-reasoning-log",
+        provider,
+        registry=ToolRegistry(),
+        max_turns=2,
+    )
+
+    assert "reasoning/delta" not in log.path.read_text(encoding="utf-8")
+
+
+async def test_reasoning_does_not_reach_the_text_sink(tmp_path: Path) -> None:
+    seen_text: list[str] = []
+    seen_reasoning: list[str] = []
+
+    async def text(turn_id: str, value: str) -> None:
+        seen_text.append(value)
+
+    async def reasoning(turn_id: str, index: int, value: str) -> None:
+        seen_reasoning.append(value)
+
+    provider = FixtureProvider(
+        [
+            {
+                "content": "答案",
+                "finish_reason": "stop",
+                "deltas": ["答"],
+                "reasoning_deltas": ["想"],
+            }
+        ]
+    )
+    await run_session_fixture(
+        tmp_path,
+        "s-reasoning-sink",
+        provider,
+        registry=ToolRegistry(),
+        on_delta=text,
+        on_reasoning=reasoning,
+        max_turns=2,
+    )
+
+    assert seen_text == ["答"]
+    assert seen_reasoning == ["想"]
