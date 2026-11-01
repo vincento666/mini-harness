@@ -107,6 +107,7 @@ def test_nonstream_reasoning_content_becomes_a_reasoning_block() -> None:
     assert [block.type for block in turn.blocks] == ["reasoning", "text"]
     assert turn.content == "答案"
     assert turn.usage.reasoning_tokens == 5
+    assert turn.usage.output_tokens == 8
 
 
 def test_only_reasoning_keeps_blocks_and_empty_content() -> None:
