@@ -13,7 +13,7 @@
 - [x] 2.3 seam ⑤：红判据 `test_openai_compat_maps_reasoning_content`——`reasoning_content`/thinking 解析成 reasoning blocks，usage 带 reasoning_tokens
 - [x] 2.4 seam ⑤：红判据 `test_unsupported_reasoning_effort_fails_before_io`——`ultra` 在网络前失败 `UNSUPPORTED_REASONING_EFFORT`；`off` 不发 thinking
 - [ ] 2.5 seam ⑤：红判据 `test_incomplete_reasoning_tag_is_a_schema_failure`——开标签后立即 emit；只有闭标签、嵌套、EOF 未闭合都 `PROVIDER_SCHEMA_INVALID`，无 `model/response`；半开时已发出的 reasoning 要能被壳清掉
-- [ ] 2.6 seam ⑤：红判据 `test_empty_reasoning_is_dropped_and_reasoning_only_keeps_blocks`——空 delta 不 emit；仅 reasoning 时 content 投影为空，不冒充正文
+- [x] 2.6 seam ⑤：红判据 `test_empty_reasoning_is_dropped_and_reasoning_only_keeps_blocks`——空 delta 不 emit；仅 reasoning 时 content 投影为空，不冒充正文
 
 ## 3. 回合循环与 durable response
 

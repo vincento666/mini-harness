@@ -109,6 +109,13 @@ def test_nonstream_reasoning_content_becomes_a_reasoning_block() -> None:
     assert turn.usage.reasoning_tokens == 5
 
 
+def test_only_reasoning_keeps_blocks_and_empty_content() -> None:
+    turn = AssistantTurn(finish_reason="stop", blocks=[ReasoningBlock(text="只想不说")])
+
+    assert [block.type for block in turn.blocks] == ["reasoning"]
+    assert turn.content == ""
+
+
 def test_wire_messages_carries_blocks_back_to_the_provider() -> None:
     wire = _wire_messages(
         [
