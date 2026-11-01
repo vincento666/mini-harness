@@ -1,6 +1,6 @@
 # 思考模式与预算：M10 之后的设计底稿
 
-**状态**：planning memo，不是活动 OpenSpec change。按 `docs/roadmap.md` 的顺序，**M10 完成后**才 propose `reasoning-mode-and-budget`；本文只固定决策与边界，避免到接壳时再补协议。
+**状态**：活动 change `reasoning-mode-and-budget` 已开始 apply；结构化 blocks、`reasoning/delta`、host SSE、fold、provider 历史与 `reasoning_effort` 已落成，坏标签 adapter 与收尾四项仍在做。
 
 **依据**：`re/verified/dsh` 的实际实现，不是只看摘要。关键出处见文末。
 

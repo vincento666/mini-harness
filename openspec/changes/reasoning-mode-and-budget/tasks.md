@@ -17,9 +17,9 @@
 
 ## 3. 回合循环与 durable response
 
-- [ ] 3.1 seam ①：红判据 `test_turn_loop_writes_blocks_to_one_response`——一次成功调用只写一条 `model/response`，blocks 保序
-- [ ] 3.2 seam ①：红判据 `test_reasoning_delta_is_not_logged`——`reasoning/delta` 不写日志，只有最终 response
-- [ ] 3.3 seam ①：守卫——取消/失败不写半条 response；无 reasoning 的日志与今天逐点相同
+- [x] 3.1 seam ①：红判据 `test_turn_loop_writes_blocks_to_one_response`——一次成功调用只写一条 `model/response`，blocks 保序
+- [x] 3.2 seam ①：红判据 `test_reasoning_delta_is_not_logged`——`reasoning/delta` 不写日志，只有最终 response
+- [x] 3.3 seam ①：守卫——取消/失败不写半条 response；无 reasoning 的日志与今天逐点相同
 - [x] 3.4 seam ①：红判据 `test_reasoning_tokens_are_a_subset_of_output`——usage 加 reasoning_tokens，计量不重复加
 - [x] 3.5 seam ①/④：红判据 `test_failed_stream_writes_model_attempt_but_no_response`——坏标签/失败写 `model/attempt`（错误码 + partial blocks）；fold 忽略它、不进历史
 - [x] 3.6 seam ①：红判据 `test_user_cancel_writes_interrupted_anchor`——有交付前缀时只写 `model/response(interrupted:true)`，不写 `model/attempt`；首个 delta 前取消只写 `model/attempt`，不写空锚点
@@ -39,7 +39,7 @@
 
 ## 6. 文档与 UAT
 
-- [ ] 6.1 文档：更新 `docs/reference/reasoning-mode.md` 的已实现章节与 `docs/contracts/`（若有 assistant message 形状）
+- [x] 6.1 文档：更新 `docs/reference/reasoning-mode.md` 的已实现章节与 `docs/contracts/`（若有 assistant message 形状）
 - [x] 6.2 UAT 骨架：`docs/verification/reasoning-mode-and-budget-uat.md`（propose 时立；人跑）
 
 ## 7. 收尾四项
