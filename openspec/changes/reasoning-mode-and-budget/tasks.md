@@ -46,8 +46,8 @@
 
 - [x] 7.1 真实端点验收：真实 reasoner 一次长回复，reasoning → tool-call → reasoning → text 可重放；写进 `docs/verification/reasoning-mode-and-budget-real-endpoint.md`
 - [ ] 7.2 UAT 验收（人跑）：按 `docs/verification/reasoning-mode-and-budget-uat.md` 填表
-- [ ] 7.3 变异测试一轮：改坏「reasoning 写日志」「reasoning 混进正文」「reasoning tokens 重复计」各一处，记进 `docs/verification/reasoning-mode-and-budget-mutation.md`
-- [ ] 7.4 Learning Gate：扫证据写 `docs/lessons.md` 收件箱；无可复用信号写 `NO-PROMOTION`
+- [x] 7.3 变异测试一轮：改坏「reasoning 写日志」「reasoning 混进正文」「reasoning tokens 重复计」各一处，记进 `docs/verification/reasoning-mode-and-budget-mutation.md`
+- [x] 7.4 Learning Gate：扫证据写 `docs/lessons.md` 收件箱；无可复用信号写 `NO-PROMOTION`
 
 ## Workflow follow-up
 

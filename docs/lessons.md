@@ -896,6 +896,15 @@ ADR 到 9.2 才提交；已提交的 `tasks.md` 三处引用本分支不存在�
 - Promotion candidate: 与 L-016 的估算取舍同族；本轮不占 AGENTS.md 额度
 - Status: inbox
 
+### L-067
+- Date: 2026-11-01
+- Context: reasoning 模式把 assistant message 从单 `content` 升级成有序 blocks
+- Observation: 「失败就不写任何东西」会丢掉排查证据；DSH 把成功 message 与失败 attempt 分开：`assistant/message` 进历史，`assistant/attempt` 只留 stream，用户取消有前缀时另写 `interrupted:true` message。证据和历史是两条不同的写入，不能用一条 `model/response` 硬塞
+- Evidence: `model/attempt` 进事件词表但 `fold` 忽略；取消写 interrupted response 的测试；真实 reasoner 的 reasoning_tokens 是 output 子集
+- Next use: 流式失败先问「证据写哪条 log-only 事件」，再问「模型历史要不要这条」；不要把 attempt 和 message 合并
+- Promotion candidate: 与 L-063（失败码不是失败谓词）同族；本轮不占 AGENTS.md 额度
+- Status: inbox
+
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 - 每个里程碑收尾扫一次，**允许输出 `NO-PROMOTION`**（没有可复用信号就不写条目）。
 - 收件箱条目超过 **15 条**必须先消化再收新的：合并同类、把已被代码或规格自证的条目删掉。
