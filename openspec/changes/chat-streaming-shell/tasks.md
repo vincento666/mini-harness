@@ -23,10 +23,10 @@
 
 ## 4. 收尾四项
 
-- [ ] 4.1 真实端点验收：真实 reasoner `chat --stream` 看正文/思考分流与取消，写进 `docs/verification/chat-streaming-shell-real-endpoint.md`
+- [x] 4.1 真实端点验收：真实 reasoner `chat --stream` 看正文/思考分流与取消，写进 `docs/verification/chat-streaming-shell-real-endpoint.md`
 - [ ] 4.2 UAT 验收（人跑）：按 UAT 表填
-- [ ] 4.3 变异测试一轮：改坏「deltas 重复打印」「reasoning 进 stdout」「取消后补整段」各一处，记进 `docs/verification/chat-streaming-shell-mutation.md`
-- [ ] 4.4 Learning Gate：扫证据写 `docs/lessons.md` 收件箱；无可复用信号写 `NO-PROMOTION`
+- [x] 4.3 变异测试一轮：改坏「deltas 重复打印」「reasoning 进 stdout」「取消后补整段」各一处，记进 `docs/verification/chat-streaming-shell-mutation.md`
+- [x] 4.4 Learning Gate：扫证据写 `docs/lessons.md` 收件箱；无可复用信号写 `NO-PROMOTION`
 
 ## Workflow follow-up
 
