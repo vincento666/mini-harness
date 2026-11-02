@@ -5,10 +5,10 @@
 **执行顺序（2026-10-26 修订）**
 
 - **P0（不入里程碑）**：合 `fix-post-compaction-budget-reading`——UAT 表填完才合（ADR-0025）。
-- **第二阶段**：**H1 宿主会话 API** → **H2 流式与事件回显**（2026-10-26 人裁决：优先于 M10）→ **M10 工具管线 / 并发 / 上下文经济** → **M11 存储与恢复** → **M12 委派** → **M13 目标** → **M14 技能 / 斜杠命令 / 渐进式披露** → **M14a 工作区契约** → **M14b 上下文经济与计量** → **M14c 个人助理 UX 工具** → **M15a 进程收容** → **MEM1 基础记忆**。
+- **第二阶段**：**H1 宿主会话 API** → **H2 流式与事件回显**（2026-10-26 人裁决：优先于 M10）→ **M10 工具管线 / 并发 / 上下文经济** → **M11 存储与恢复** → **M12 委派** → **M13 目标** → **M14 技能 / 斜杠命令 / 渐进式披露** → **M14a 工作区契约** → **M14b 上下文经济与计量** → **M14c 个人助理与基础记忆**（合并原 MEM1）→ **M15a 进程收容 / 无人值守基础能力**。
 - **支撑轨**：**E1 评测与观测**（并行，不阻塞里程碑）；**E2 组件接缝**（M 核心完成后、R3/G 之前；**不是壳前置**）。
 - **服务化分支（G 轨）**：`personal-baseline-v1` 之后；G0 → G6；不属于 M 轨，也不是加壳。
-- **第三阶段（加壳）**：在 H1 / H2 / M11 / M14 / MEM1 / M15a 完成、宿主协议冻结之后规划；无人值守入口条件见下。
+- **第三阶段（加壳）**：在 H1 / H2 / M11 / M14 / M14c / M15a 完成、宿主协议冻结之后规划；无人值守入口条件见下。
 - **壳后**：**M15b 文件写拒绝**、**MEM2 定时巩固**、M13 目标轮次可后置。
 
 H1 / H2 是新增的宿主轨，不占用 M10–M15 的决策编号；M 编号仍是决策编号、不是执行顺序。**H2 固定优先于 M10**，不再互换：流式是壳的第一体验，先做。
@@ -116,14 +116,17 @@ H1 / H2 是新增的宿主轨，不占用 M10–M15 的决策编号；M 编号�
 - **完成判据**：仓库内一个 skill 被列出并加载；同一 skill 在两级根里只出现一次且高优先胜出；正文不在 `session/start` 的清单里、只在按需加载后才进上下文；CLI 与 host 对同一 `/skill` 得到同一份正文与同一条日志；一条外部触发在日志里是一条事件、`replay` 仍相等。
 - **明确不做**：插件容器与热更新（ADR-0035）、MCP、hooks 的完整 allowlist、shell 自己发明一套绕过内核的命令。
 
-### M14 之后的三小步（M14a–c，非核心、个人助理向）
+### M14 之后的两个小步（M14a–b）与个人助理/记忆（M14c）
 
-三小步各自一个 change；**M14a 先做**（`ContextPolicy` 的契约/头部要它），M14b / M14c 可按壳的需求调序。它们都不是接壳硬前置，但缺了个人助理会明显“不像”。
+M14a / M14b 各自一个 change；**M14c 合并原 MEM1**，作为基础记忆系统提前到 M14 这一簇，紧跟其后的就是 **M15a 无人值守基础能力**。M14a 先做（`ContextPolicy` 的契约/头部要它），M14b / M14c 可按壳的需求调序。
 
-- **M14a 工作区契约（`m14a-workspace-contract`）**：项目 `AGENTS.md` + 用户 `USER.md`（可选 persona/SOUL）按字节预算注入受保护头部；记录 scope / hash / 截断，不写绝对路径与密钥；**只读加载，不自动写**。判据：两份契约都在头部可见、超预算有 marker、`replay` 逐点相等；与 MEM1 的 `MEMORY.md` 分开（契约 vs 记忆）。
+- **M14a 工作区契约（`m14a-workspace-contract`）**：项目 `AGENTS.md` + 用户 `USER.md`（可选 persona/SOUL）按字节预算注入受保护头部；记录 scope / hash / 截断，不写绝对路径与密钥；**只读加载，不自动写**。判据：两份契约都在头部可见、超预算有 marker、`replay` 逐点相等；与 M14c 的 `MEMORY.md` 分开（契约 vs 记忆）。
 - **M14b 上下文经济与计量（`m14b-context-economy-and-metering`）**：单条结果剪枝（头/尾 + 阈值）、spill 的读回与回收、每会话/每回合 token 计量与成本估算、E1 报告里的上下文/成本列；M10 的“输出预算 + spill”是底座，M14b 是收尾。判据：超大结果被剪短且 spill 可读回、token 计量与 provider usage 对得上、E1 能出报告。
-- **M14c 个人助理 UX 工具（`m14c-personal-assistant-tools`）**：`todo` / `plan`、`ask_user`（普通提问，不只是审批）、`present`（把产物交给壳）；CLI 的 `/todo` / `/plan` 与 host 的同一命令面。判据：多步任务会用 todo、`ask_user` 的答案作为结果进日志、`present` 产出一个可打开的产物、`replay` 相等。
-- **明确不做**：自动写 workspace 契约、向量库记忆、完整 plan-mode 状态机、HMR/插件市场。
+- **M14c 个人助理与基础记忆（`m14c-personal-assistant-and-memory`）**：
+  - 个人助理 UX：`todo` / `plan`、`ask_user`（普通提问，不只是审批）、`present`（把产物交给壳）；CLI 的 `/todo` / `/plan` 与 host 的同一命令面。
+  - 基础记忆：项目 `MEMORY.md`（工作区根）+ 用户 `$MINIHNS_HOME/MEMORY.md`；启动时按「项目 > 用户」加载，受 token 预算；写一条 `memory/loaded`（scope / path / hash / 截断后的 content），`replay` 可复现；`memory` 工具（read / append / replace，带 CAS 与边界）；memory 写是 mutating，`ask` 档位要审批。短期记忆就是当前 session 日志 + 压缩，不另造一套。底稿在 `docs/reference/memory.md`。
+  - 判据：多步任务会用 todo、`ask_user` 的答案作为结果进日志、`present` 产出一个可打开的产物；会话 A 写的事实，会话 B 启动后能在受保护头部看到；`replay` 逐点相等；超预算有截断 marker；`memory` 写被 CAS / 边界 / 审批约束。
+  - 明确不做：自动写 workspace 契约、向量库 / embedding 检索、每轮自动抽取、跨用户记忆、静默写入、完整 plan-mode 状态机、HMR/插件市场。
 
 ### M15 围栏增厚（M15a / M15b）
 
@@ -133,15 +136,6 @@ H1 / H2 是新增的宿主轨，不占用 M10–M15 的决策编号；M 编号�
 - **M15b 文件写拒绝（贵，可壳后）**：Windows ACL / Linux landlock / bwrap；一条命令试图写工作区外的文件时被 OS 拒；adapter 仍坐在 M10 那条缝上、工具体不改。
 - **依赖**：M10。M15a 是**无人值守壳的硬前置**；M15b 在引入不可信 skills/MCP 或绑非 loopback 时必须提前。威胁模型在 `docs/reference/host-security-threat-model.md`。
 
-### MEM1 基础记忆（最小）
-
-- **change**：`mem1-basic-memory`
-- **层**：扩展 / 数据
-- **参照**：DSH 没有独立的 memory 子系统；它的「会话记忆」是 session / resume + `CLAUDE.md` 类约定文件 + 压缩摘要（`docs/dsh-reference/DSH运行时设计说明.html` 的「会话记忆」一行）。mini 照这个形状，不造向量库。
-- **内容**：项目 `MEMORY.md`（工作区根）+ 用户 `$MINIHNS_HOME/MEMORY.md`；启动时按「项目 > 用户」加载，受 token 预算；写一条 `memory/loaded`（scope / path / hash / 截断后的 content），让 `replay` 能复现；`memory` 工具（read / append / replace，带 CAS 与边界）；memory 写是 mutating，`ask` 档位要审批。短期记忆就是当前 session 日志 + 压缩，不另造一套。底稿在 `docs/reference/memory.md`。
-- **完成判据**：会话 A 写的事实，会话 B 启动后能在受保护头部看到；`replay` 逐点相等；超预算有截断 marker；`memory` 写被 CAS / 边界 / 审批约束。
-- **明确不做**：向量库 / embedding 检索、每轮自动抽取、跨用户记忆、静默写入。
-
 ### MEM2 定时巩固（壳后）
 
 - **change**：`mem2-memory-consolidation`
@@ -150,13 +144,13 @@ H1 / H2 是新增的宿主轨，不占用 M10–M15 的决策编号；M 编号�
 - **完成判据**：手动跑一次把两个会话的结论并进长期记忆；同一份日志重放得到同一条 `memory/summary`；关掉时零副作用。
 - **明确不做**：每轮自动总结、跨用户、向量检索、内核内置 cron。
 
-**记忆的顺序**：MEM1 在壳前（壳要用户/项目记忆）；MEM2 在壳后（先把「手动巩固」跑稳，再谈定时）。「定时总结」不是 DSH 的既有实现，是 mini 的扩展，别把它写成「照抄 DSH」。
+**记忆的顺序**：基础记忆与个人助理合并为 **M14c**（原 MEM1 提前到 M14 这一簇）；**M14c 之后紧跟 M15a 无人值守基础能力**；MEM2 定时巩固在壳后（先把「手动巩固」跑稳，再谈定时）。「定时总结」不是 DSH 的既有实现，是 mini 的扩展，别把它写成「照抄 DSH」。
 
 ## 第三阶段入口条件（无人值守）
 
 壳要跑无人值守任务时，**不能只靠 `approval: ask`**；入口条件写死：
 
-- **必需**：H1（宿主）、H2（流式）、M11（resume）、M14（技能/命令）、MEM1（记忆）、**M15a（进程收容）** 全部完成。
+- **必需**：H1（宿主）、H2（流式）、M11（resume）、M14（技能/命令）、M14c（个人助理与基础记忆）、**M15a（进程收容）** 全部完成。
 - **策略**：`approval: auto` 必须服务器启动时显式给 `--allow-auto-approval`；sandbox 只允许 `read-only` / `workspace-write`；**无人值守 MUST NOT 使用 `danger-full-access`**；每个任务给 `max_turns` / 窗口 / 时间的上限；host 退出时取消并收干净所有段与子进程。
 - **审计**：所有 `tool/call` / `tool/result` / 审批 / `session/end` 都在日志里；无人值守会话要能事后 replay。
 - **建议**：引入不可信 skills / MCP / 外部工具，或 host 绑非 loopback 时，把 **M15b（文件写拒绝）** 也提前到壳前。
@@ -188,11 +182,11 @@ H1 / H2 是新增的宿主轨，不占用 M10–M15 的决策编号；M 编号�
 **定位**：支撑轨 / 架构，不是新功能；M 轨核心之后、R3（模块级 harness 进化）与 G 轨（多用户/客服）之前。**不是接壳前置**。
 
 - **目标**：把核心能力抽成可寻址、可版本化、可在**会话之间**替换的组件；支持架构优化、生产 A/B/回滚、以及模块级 RSI 的组件变异与归因。
-- **首批组件**：`Provider`、`ApprovalGate`、`ToolPolicy`、`ContextPolicy`、`CompactionPolicy`、`FailurePolicy`、`MemoryStore`、`SkillCatalog`/`CommandRegistry`、`SubagentPolicy`、`Verifier`、`CommandRunner`。其中 **`MemoryStore` 在 MEM1 里直接按组件接口生出来**（greenfield，不做二次抽取），因为 R1/R2 都要换记忆策略。
+- **首批组件**：`Provider`、`ApprovalGate`、`ToolPolicy`、`ContextPolicy`、`CompactionPolicy`、`FailurePolicy`、`MemoryStore`、`SkillCatalog`/`CommandRegistry`、`SubagentPolicy`、`Verifier`、`CommandRunner`。其中 **`MemoryStore` 在 M14c 里直接按组件接口生出来**（greenfield，不做二次抽取），因为 R1/R2 都要换记忆策略。
 - **边界**：**不做 HMR**、不做插件市场、不做远程代码加载、不做多租户/多 worker、不做通用 DI/事件总线、不重写 `turn_loop.py`、不改内核语义；日志只多 `session/start.payload.components`。
 - **离线热插拔**：会话边界换组件版本（进程可继续、运行中会话不变）；不是运行中会话内替换。
 - **验收**：默认组合行为不变；测试里换 fake `ContextPolicy`/`CompactionPolicy` 不改 `turn_loop.py`；同版本 replay 逐点相等、跨版本显式；E1 能做 A/B 与归因；组件异常不崩 host。
-- **进入条件**：H1/H2/M10/M11/M14/**M14a**/MEM1 完成、E1 有 held-out 基线；M12/M13/M14b/M14c 可选。
+- **进入条件**：H1/H2/M10/M11/M14/**M14a**/M14c 完成、E1 有 held-out 基线；M12/M13/M14b 可选。
 - **明确不做**：E2 本身不做 RSI 实验；R1–R4 是消费者。
 - 规划口径：[docs/reference/e2-component-seams.md](docs/reference/e2-component-seams.md)。OpenSpec change 等 M 核心完成后再 propose。
 

@@ -18,7 +18,7 @@
 1. **M10 已完成并合入**：第一切片 `m10-compaction-parameters` 合入 `aa48ae7`；余下 `m10-tool-pipeline-and-concurrency` 26/26 task，`main` 合并 `856d368`，归档在 `openspec/changes/archive/2026-10-29-m10-tool-pipeline-and-concurrency`。六段管线、并发类别/barrier、CommandRunner、read 50 KiB/2000 字符窗口（不 spill）、bash/搜索 spill 都已落成。
 2. **思考模式与预算实现完成，视觉 UAT 延后**：`reasoning-mode-and-budget` 27/28 task；blocks、`reasoning/delta`、`model/attempt`、interrupted、effort 与真实 reasoner 已验证。**R2 折叠/展开等壳实现后再跑**，因此本 change 暂不归档、不合入 `main`；分支 `change/reasoning-mode-and-budget` tip `ccfaf45`。
 3. **P0**：`fix-post-compaction-budget-reading` 先不 apply——诊断（W1/W2）没有复现「遮蔽后 tokens 后 > 前」；要么补一次能稳定触发溢出的真实端点样本再决定是否修，要么把它降级为未复现的历史缺陷并记账。
-4. **M11 / M12 / M13 / M14 / M14a / M14b / M14c / M15a / MEM1**：按 `docs/roadmap.md` 的顺序；M14 含 CLI 与 host 的斜杠命令、技能清单注入与正文按需加载；M14a–c 是 M14 之后的三小步（工作区契约 / 上下文经济与计量 / 个人助理 UX 工具）；M15a 是无人值守壳的硬前置；MEM1 是最小记忆。
+4. **M11 / M12 / M13 / M14 / M14a / M14b / M14c / M15a**：按 `docs/roadmap.md` 的顺序；M14 含 CLI 与 host 的斜杠命令、技能清单注入与正文按需加载；M14a/b 是工作区契约与上下文经济/计量；**M14c 合并原 MEM1**（个人助理 UX + 基础记忆），紧跟其后是 M15a 无人值守基础能力。
 
 ## 开放缺口（按严重度）
 
@@ -28,8 +28,8 @@
 - **H2 已合入并归档**：全部 task 勾完；真实端点 S1–S4、UAT S1–S5（人跑）、变异四条、Learning Gate 全过。归档在 `openspec/changes/archive/2026-10-28-h2-streaming-and-event-echo`；主规格 `provider` / `host-api` 已 sync。
 - **没有 resume / 格式迁移 / session index**：M11。
 - **没有技能 / 斜杠命令 / 渐进披露**：M14；CLI 与 host 要同一份命令面。
-- **没有工作区契约 / 结果剪枝计量 / 助理 UX 工具**：M14a / M14b / M14c；非核心，但缺了个人助理不像。
-- **没有记忆**：MEM1（项目/用户 `MEMORY.md` + `memory` 工具）；MEM2 定时巩固在壳后。
+- **没有工作区契约 / 结果剪枝计量 / 助理记忆**：M14a / M14b / M14c（个人助理与基础记忆）。
+- **没有独立记忆变更**：基础记忆并入 M14c（项目/用户 `MEMORY.md` + `memory` 工具）；MEM2 定时巩固在壳后。
 - **没有子代理并发**：M12；`maxActiveSubagents = 8`、`maxDepth = 1`、同批 `subagent` 真并发。
 - **没有 OS 级沙箱**：M15a 进程收容是无人值守壳的硬前置；M15b 文件写拒绝可壳后。
 - **fork 与插件容器**：暂不做，见 ADR-0035；图上两项与 roadmap 的差异已写明。
