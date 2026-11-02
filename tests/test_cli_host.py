@@ -20,6 +20,8 @@ import httpx
 import pytest
 
 from cli_blackbox import _cli, _cli_process
+from mini_harness.cli.serve import sse_frame
+from mini_harness.events import EventRecord
 
 HOST_TOKEN = "h1-test-token-" + "x" * 32
 
@@ -565,6 +567,53 @@ def test_log_read_failure_sends_stream_end(tmp_path: Path) -> None:
         _stop(process)
 
 
+def test_sse_frame_preserves_blocks_and_interrupted() -> None:
+    record = EventRecord(
+        schema_version=1,
+        type="model/response",
+        session_id="s1",
+        seq=9,
+        ts="2026-11-02T00:00:00+00:00",
+        payload={
+            "turn_id": "t1",
+            "content": "半",
+            "blocks": [
+                {"type": "reasoning", "text": "想"},
+                {"type": "text", "text": "半"},
+            ],
+            "interrupted": True,
+        },
+    )
+
+    frame = sse_frame(record).decode("utf-8")
+    data = json.loads(frame.split("data: ", 1)[1])
+
+    assert frame.startswith("id: 9\n")
+    assert data["payload"]["blocks"][0]["type"] == "reasoning"
+    assert data["payload"]["interrupted"] is True
+
+
+def test_sse_frame_preserves_model_attempt() -> None:
+    record = EventRecord(
+        schema_version=1,
+        type="model/attempt",
+        session_id="s1",
+        seq=10,
+        ts="2026-11-02T00:00:00+00:00",
+        payload={
+            "turn_id": "t1",
+            "status": "error",
+            "error_code": "PROVIDER_SCHEMA_INVALID",
+            "partial_blocks": [{"type": "text", "text": "半"}],
+        },
+    )
+
+    data = json.loads(sse_frame(record).decode("utf-8").split("data: ", 1)[1])
+
+    assert data["type"] == "model/attempt"
+    assert data["payload"]["error_code"] == "PROVIDER_SCHEMA_INVALID"
+
+
 def _normalized_log(path: Path) -> list[dict[str, object]]:
     records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
     return [
@@ -841,6 +890,7 @@ def test_a_disconnected_delta_reader_does_not_stop_the_segment(tmp_path: Path) -
         assert _normalized_log(session_dir / f"{watched}.jsonl") == _normalized_log(
             session_dir / f"{baseline}.jsonl"
         )
+        assert "stream/end" not in (session_dir / f"{watched}.jsonl").read_text(encoding="utf-8")
     finally:
         _stop(process)
 
