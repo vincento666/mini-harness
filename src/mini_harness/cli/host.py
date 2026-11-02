@@ -134,6 +134,11 @@ def _delta_frame(payload: dict[str, object]) -> bytes:
     return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
 
 
+def _stream_end_frame(payload: dict[str, object]) -> bytes:
+    """Host 主动终止标记：无 id、不落日志；物理断线不发。"""
+    return f"event: stream/end\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
+
+
 class HostServer:
     """一个 aiohttp 应用 + 一个绑定：鉴权与来源在中间件里，路由只关心会话。"""
 
@@ -329,6 +334,9 @@ class HostServer:
                     return response
                 records = tail.read_new()
                 if isinstance(records, LogReadFailure):
+                    await response.write(
+                        _stream_end_frame({"reason": "error", "code": "LOG_UNREADABLE"})
+                    )
                     return response
                 try:
                     # 先把这一批 durable 记录按顺序写出去；遇到 `model/response` 时
@@ -341,6 +349,10 @@ class HostServer:
                     # 还没有 response 时也要把已到的增量送出去，不能等整段结束。
                     while not deltas.empty():
                         await response.write(_delta_frame(deltas.get_nowait()))
+                    if handle.stream_ended:
+                        await response.write(_stream_end_frame({"reason": "session_ended"}))
+                        await response.write_eof()
+                        return response
                 except ConnectionResetError:
                     return response
                 await asyncio.sleep(EVENTS_POLL_SECONDS)
