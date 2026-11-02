@@ -43,12 +43,12 @@
 
 | 场次 | 动作 | 预期 | 实际观察 | 结论 | 别扭在哪 |
 |---|---|---|---|---|---|
-| H1 | 首次全量 | seq 0 起 | | | |
-| H2 | snapshot | 消息基线 + last_seq | | | |
-| H3 | 游标重连 | 只补 >N | | | |
-| H4 | 业务终止 | stream/end | | | |
-| H5 | 物理断线 | 无 end | | | |
+| H1 | 首次全量 | seq 0 起 | 真实 host session `e10dbb4c...`：首帧 `session/start`，随后 `segment/start...model/response`；delta 无 id | 通过 | 无 |
+| H2 | snapshot | 消息基线 + last_seq | `test_snapshot_precedes_only_new_frames`：snapshot 首帧、`last_seq` 正确、messages 首条 role=system；后续从 last_seq+1 开始 | 通过 | snapshot 只是模型上下文，不是 UI 全量；已在协议里写明 |
+| H3 | 游标重连 | 只补 >N | 真实 host `?from=6` 第一条是 seq 7 `turn/end`，未重发 6；`test_a_cursor_resumes_without_gaps` 同判 | 通过 | 无 |
+| H4 | 业务终止 | stream/end | 真实 host 删除会话：DELETE 200 后收到 `stream/end {"reason":"session_ended"}`，无 id、日志无此帧；`test_log_read_failure_sends_stream_end` 覆盖 error/LOG_UNREADABLE | 通过 | 业务终止前若有段在跑，DELETE 会 409；需先等 idle |
+| H5 | 物理断线 | 无 end | `test_a_disconnected_delta_reader_does_not_stop_the_segment`：客户端断开后段继续，日志无 `stream/end`；Host 不向已断连接写 end | 通过（间接） | 物理断开收不到帧，只能从“连接关闭且无终止帧/日志无 end”判定 |
 
-**至少一条「用起来别扭」**：_
+**至少一条「用起来别扭」**：H5 的“没有 end”无法在断开后直接读；只能从连接关闭时没有收到终止帧、日志也没有 end 来判定。snapshot 只有模型消息，不是完整 UI 基线，壳必须首次从 seq 0 全量读。
 
-**结论**：通过 / 不通过（写清 session id、帧证据）：_
+**结论**：API 部分通过（agent 代跑，用户 2026-11-02 授权）。真实端点 session `e10dbb4c...`；单元/黑盒判据在 `tests/test_cli_host.py`。

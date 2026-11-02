@@ -34,7 +34,7 @@
 ## 6. 收尾四项
 
 - [x] 6.1 真实端点验收：真实 reasoner 下 Web/SSE 首次全量 + 断线重连 + 业务终止，写进 `docs/verification/host-event-sync-contract-real-endpoint.md`
-- [ ] 6.2 UAT 验收（人跑）：按 UAT 表填
+- [x] 6.2 UAT 验收（人跑）：按 UAT 表填
 - [x] 6.3 变异测试一轮：改坏「from 包含边界」「snapshot 当 UI 全量」「物理断线发 end」各一处，记进 `docs/verification/host-event-sync-contract-mutation.md`
 - [x] 6.4 Learning Gate：扫证据写 `docs/lessons.md` 收件箱；无可复用信号写 `NO-PROMOTION`
 
