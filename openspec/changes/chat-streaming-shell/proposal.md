@@ -14,7 +14,7 @@
   - reasoning delta 实时写 stderr（`[thinking]` 前缀），stdout 仍只放正文；
   - 段结束时不再重复打印已经流出的正文；没有 delta 的回复仍走最终日志投影，避免空输出；
   - Ctrl-C 仍按现有段级取消收尾，已流出的部分不撤回。
-- **复用现有通路**：chat 的 `SessionEnv` 注入 `on_delta` / `on_reasoning`，provider 仍走 `generate`；不复制 host SSE，不改内核事件形状。
+- **复用现有通路**：chat 的 `SessionEnv` 注入 `on_delta` / `on_reasoning`，provider 仍走 `generate`；不复制 host SSE，不改内核事件形状。**共享抽象只到 kernel sink 为止**：host 在 sink 上加 SSE/cursor/重连，chat 在 sink 上加 `ChatStreamRenderer`；不新增 StreamEvent 总线。
 - **非流式不变**：`--no-stream` / 不传 flag 的 stdout、日志、退出码与现在逐点相同。
 
 ## Capabilities

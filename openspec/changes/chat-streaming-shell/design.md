@@ -24,6 +24,16 @@
 
 **D6 段结束后只补一次换行。** 流式正文允许没有换行；段结束时若 stdout 当前行非空，补一个 `\n`，让下一条提示符不粘在正文尾部。提示符仍只打印一次。
 
+**D7 共享的抽象就是 kernel 的 sink，不新增 StreamEvent 总线。** `DeltaSink` / `ReasoningSink` 已经是内核与宿主之间最小的可复用缝；host 在它上面加 SSE/cursor/重连，chat 在它上面加终端渲染。差异隔离在两个 adapter：
+
+```text
+kernel sinks
+  ├─ HostStreamAdapter：DeltaQueue → SSE / snapshot / reconnect
+  └─ ChatStreamAdapter：ChatStreamRenderer → stdout / stderr / 去重 / 回退
+```
+
+不把 host 的 SSE 帧、队列、cursor 抽象成通用层；chat 不需要它们。`ChatStreamRenderer` 是 `cli` 内的小类，不是新内核模块；它只负责正文 stdout、思考 stderr、`streamed_turns` 去重和无 delta 回退。这样最大复用内核（provider 调用、sink 顺序、durable 写入、取消/attempt），最小新增面（一个 renderer + 一个 flag），差异只住在两个 adapter。
+
 ## Risks / Trade-offs
 
 - **重复/漏打** → `streamed_turns` 只由非空正文 delta 置位；无 delta 回退。
