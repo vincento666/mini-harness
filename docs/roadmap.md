@@ -146,6 +146,18 @@ M14a / M14b 各自一个 change；**M14c 合并原 MEM1**，作为基础记忆�
 
 **记忆的顺序**：基础记忆与个人助理合并为 **M14c**（原 MEM1 提前到 M14 这一簇）；**M14c 之后紧跟 M15a 无人值守基础能力**；MEM2 定时巩固在壳后（先把「手动巩固」跑稳，再谈定时）。「定时总结」不是 DSH 的既有实现，是 mini 的扩展，别把它写成「照抄 DSH」。
 
+### Host / Web 壳同步：现在、壳时、更后
+
+| 阶段 | 做什么 | 为什么 |
+|---|---|---|
+| **现在（壳前）** | `host-event-sync-contract`：snapshot 是消息基线不是 UI 全量；无游标=从 seq 0；`from`/`Last-Event-ID` 半开；durable 字段透出；`stream/end` 区分业务终止与物理断线；不提供日志下载 | Web 壳没有这些契约就只能猜或读文件 |
+| **现在（壳前）** | `chat-streaming-shell`：`--stream/--no-stream`、正文 stdout、思考 stderr、去重/回退/取消 | 用同一 kernel sink 验证第二个 adapter |
+| **壳时** | UI projection：消息/tool/approval/error/interrupted 行；首屏全量 replay；snapshot 快速基线；gap/重连状态机；Turn 对齐分页 | 这些需要真实 UI 与多客户端，提前做会过度设计 |
+| **壳时** | R2 折叠/展开视觉 UAT | plain terminal 不能替代壳 |
+| **更后** | active assistant stream baseline（`startedAfterSeq`/`nextIndex`/compact stream）；`surfaceOp replace`；投影缓存；fork/多客户端连续性；日志导出 API；事件 allowlist | DSH 完整能力，不是壳 v1 硬前置 |
+
+**原则**：现在只冻“日志→durable 事件流→seq/游标→终止语义”；壳时做“事件→UI projection”；更后做“live baseline / replacement / 缓存 / 导出”。
+
 ## 第三阶段入口条件（无人值守）
 
 壳要跑无人值守任务时，**不能只靠 `approval: ask`**；入口条件写死：
