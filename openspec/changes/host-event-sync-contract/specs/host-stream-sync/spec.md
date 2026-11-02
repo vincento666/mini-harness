@@ -54,7 +54,7 @@ Host SHALL 原样透出 durable `model/response.blocks`（含 `reasoning` / `tex
 Host 在主动终止事件流时（业务/持久化错误、会话删除/结束等）SHALL 先发一个 ephemeral `stream/end` 帧：
 
 ```json
-{ "reason": "error" | "session_ended" | "server_shutdown", "code": "..." }
+{ "reason": "error" | "session_ended", "code": "..." }
 ```
 
 `stream/end` MUST NOT 带 `id`、MUST NOT 落日志、MUST NOT 参与游标。物理断线（客户端断开、TCP 断、Host 被杀）MUST NOT 发 `stream/end`。

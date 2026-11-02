@@ -16,15 +16,15 @@
 
 ```text
 event: stream/end
-data: {"reason":"error|session_ended|server_shutdown","code":"..."}
+data: {"reason":"error|session_ended","code":"..."}
 ```
 
 无 id、不落日志。仅在 Host 主动终止时发；物理断线不发。客户端据此区分“可重连断线”与“业务终止”。
 
 **D5 终止点。** 目前最小实现只覆盖：
 - 读日志失败（`LogReadFailure`）→ `stream/end(error, code)`；
-- 会话被删除/结束时的流收尾（若当前循环能观察到）→ `stream/end(session_ended)`；
-- server shutdown（若实现）→ `server_shutdown`。
+- 会话被删除/结束时 → `stream/end(session_ended)`；
+- server shutdown 暂不承诺（不新增 `server_shutdown` reason；壳时再定）。
 
 不新增内核事件，不把 `stream/end` 写日志。
 

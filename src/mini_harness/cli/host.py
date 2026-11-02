@@ -349,7 +349,7 @@ class HostServer:
                     # 还没有 response 时也要把已到的增量送出去，不能等整段结束。
                     while not deltas.empty():
                         await response.write(_delta_frame(deltas.get_nowait()))
-                    if handle.stream_ended.is_set():
+                    if handle.stream_ended:
                         await response.write(_stream_end_frame({"reason": "session_ended"}))
                         await response.write_eof()
                         return response

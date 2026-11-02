@@ -57,7 +57,7 @@ class HostSession:
     env: SessionEnv
     created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     status: SessionStatus = SESSION_IDLE
-    stream_ended: asyncio.Event = field(default_factory=asyncio.Event)
+    stream_ended: bool = False
     queue: deque[str] = field(default_factory=deque)
     cancel: asyncio.Event | None = None
     approvals: dict[str, asyncio.Future[bool | None]] = field(default_factory=dict)
@@ -279,6 +279,7 @@ async def _run_segment(
         handle.task = None
         if failed:
             handle.status = SESSION_ENDED
+            handle.stream_ended = True
             handle.ended_by_failure = True
             handle.queue.clear()
         else:
@@ -321,7 +322,7 @@ def close_session(handle: HostSession) -> Failure | None:
             EXIT_INTERNAL_ERROR,
         )
     handle.status = SESSION_ENDED
-    handle.stream_ended.set()
+    handle.stream_ended = True
     return None
 
 
