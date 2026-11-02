@@ -478,6 +478,7 @@ def test_snapshot_precedes_only_new_frames(tmp_path: Path) -> None:
                 assert snapshot["session_id"] == session_id
                 assert snapshot["last_seq"] == expected_last
                 assert isinstance(snapshot["messages"], list)
+                assert snapshot["messages"][0]["role"] == "system"
 
                 client.post(
                     f"/sessions/{session_id}/messages",
@@ -488,6 +489,78 @@ def test_snapshot_precedes_only_new_frames(tmp_path: Path) -> None:
 
         assert int(new_frame["id"]) == expected_last + 1
         assert json.loads(new_frame["data"])["type"] == "segment/start"
+    finally:
+        _stop(process)
+
+
+def test_session_end_sends_stream_end_without_id(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = _mock_fixture(tmp_path)
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(client, workspace, fixture)
+            with client.stream(
+                "GET", f"/sessions/{session_id}/events", headers=_headers()
+            ) as response:
+                lines = response.iter_lines()
+                assert _next_frame(lines)["event"] == "session/start"
+                deleted = client.delete(f"/sessions/{session_id}", headers=_headers())
+                assert deleted.status_code == 200
+
+                frames = []
+                while True:
+                    frame = _next_frame(lines)
+                    frames.append(frame)
+                    if frame["event"] == "stream/end":
+                        break
+
+        assert frames[-1]["data"] == '{"reason": "session_ended"}'
+        assert "id" not in frames[-1]
+        log = session_dir / f"{session_id}.jsonl"
+        assert "stream/end" not in log.read_text(encoding="utf-8")
+    finally:
+        _stop(process)
+
+
+def test_log_read_failure_sends_stream_end(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = _mock_fixture(tmp_path)
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(client, workspace, fixture)
+            log = session_dir / f"{session_id}.jsonl"
+            with client.stream(
+                "GET", f"/sessions/{session_id}/events", headers=_headers()
+            ) as response:
+                lines = response.iter_lines()
+                assert _next_frame(lines)["event"] == "session/start"
+                with log.open("a", encoding="utf-8") as handle:
+                    handle.write("not-json\n")
+
+                frames = []
+                while True:
+                    frame = _next_frame(lines)
+                    frames.append(frame)
+                    if frame["event"] == "stream/end":
+                        break
+
+        payload = json.loads(frames[-1]["data"])
+        assert payload == {"reason": "error", "code": "LOG_UNREADABLE"}
+        assert "id" not in frames[-1]
     finally:
         _stop(process)
 
@@ -567,6 +640,10 @@ def test_reasoning_delta_is_a_separate_ephemeral_frame(tmp_path: Path) -> None:
                     "content": "答案",
                     "deltas": ["答", "案"],
                     "reasoning_deltas": ["想", "一下"],
+                    "blocks": [
+                        {"type": "reasoning", "text": "想一下"},
+                        {"type": "text", "text": "答案"},
+                    ],
                     "finish_reason": "stop",
                 }
             ],
@@ -608,6 +685,12 @@ def test_reasoning_delta_is_a_separate_ephemeral_frame(tmp_path: Path) -> None:
         ]
         assert [item["text"] for item in reasoning] == ["想", "一下"]
         assert all("id" not in frame for frame in frames if frame["event"] == "reasoning/delta")
+        response_frame = next(frame for frame in frames if frame["event"] == "model/response")
+        response_payload = json.loads(response_frame["data"])
+        assert [block["type"] for block in response_payload["payload"]["blocks"]] == [
+            "reasoning",
+            "text",
+        ]
         log = session_dir / f"{session_id}.jsonl"
         assert "reasoning/delta" not in log.read_text(encoding="utf-8")
     finally:
