@@ -905,6 +905,15 @@ ADR 到 9.2 才提交；已提交的 `tasks.md` 三处引用本分支不存在�
 - Promotion candidate: 与 L-063（失败码不是失败谓词）同族；本轮不占 AGENTS.md 额度
 - Status: inbox
 
+### L-068
+- Date: 2026-11-02
+- Context: Web 壳通过 Host 恢复 UI 投影，讨论 snapshot、游标与断流
+- Observation: `snapshot.messages` 是 `fold` 的模型上下文，不是完整 UI transcript；只靠 snapshot 会丢 tool/approval/error 行。完整 UI 首次加载必须从 seq 0 读 durable events。SSE 游标只重放 durable 记录，不重传 ephemeral delta；`stream/end` 必须区分业务终止与物理断线，否则客户端会无限重连
+- Evidence: `host-stream-sync` 规格；`test_snapshot_precedes_only_new_frames` 的 system role；`test_session_end_sends_stream_end_without_id`；真实 host session `e10dbb4c...`
+- Next use: 设计远端壳初始化先问「snapshot 是模型基线还是 UI 基线」；断流先问「有没有终止帧」
+- Promotion candidate: 与 L-067 同族（证据 vs 历史）；本轮不占 AGENTS.md 额度
+- Status: inbox
+
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 - 每个里程碑收尾扫一次，**允许输出 `NO-PROMOTION`**（没有可复用信号就不写条目）。
 - 收件箱条目超过 **15 条**必须先消化再收新的：合并同类、把已被代码或规格自证的条目删掉。
