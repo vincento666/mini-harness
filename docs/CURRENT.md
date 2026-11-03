@@ -16,7 +16,7 @@
 ## 下一步
 
 1. **M10 已完成并合入**：第一切片 `m10-compaction-parameters` 合入 `aa48ae7`；余下 `m10-tool-pipeline-and-concurrency` 26/26 task，`main` 合并 `856d368`，归档在 `openspec/changes/archive/2026-10-29-m10-tool-pipeline-and-concurrency`。六段管线、并发类别/barrier、CommandRunner、read 50 KiB/2000 字符窗口（不 spill）、bash/搜索 spill 都已落成。
-2. **思考模式与预算实现完成，视觉 UAT 延后**：`reasoning-mode-and-budget` 27/28 task；blocks、`reasoning/delta`、`model/attempt`、interrupted、effort 与真实 reasoner 已验证。**R2 折叠/展开等壳实现后再跑**，因此本 change 暂不归档、不合入 `main`；分支 `change/reasoning-mode-and-budget` tip `ccfaf45`。
+2. **流式栈已齐，reasoning 视觉 UAT 延后**：`host-event-sync-contract` 与 `chat-streaming-shell` 已归档并合入 reasoning 栈；`reasoning-mode-and-budget` 27/28，只剩 R2 折叠/展开等壳。分支 `change/reasoning-mode-and-budget` tip `6857ce4`；主规格新增 `host-stream-sync` / `chat-streaming`。
 3. **P0**：`fix-post-compaction-budget-reading` 先不 apply——诊断（W1/W2）没有复现「遮蔽后 tokens 后 > 前」；要么补一次能稳定触发溢出的真实端点样本再决定是否修，要么把它降级为未复现的历史缺陷并记账。
 4. **M11 / M12 / M13 / M14 / M14a / M14b / M14c / M15a**：按 `docs/roadmap.md` 的顺序；M14 含 CLI 与 host 的斜杠命令、技能清单注入与正文按需加载；M14a/b 是工作区契约与上下文经济/计量；**M14c 合并原 MEM1**（个人助理 UX + 基础记忆），紧跟其后是 M15a 无人值守基础能力。
 

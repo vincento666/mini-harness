@@ -521,8 +521,109 @@ DSH（`re/verified/dsh/node_modules/@deepseek-ai/...`）：
 
 ## 10. 一句话总结
 
-**mini 的流式是：外部 API 的 SSE → provider 正文 sink → kernel 的 turn-aware sink → host 每连接队列 → durable + `model/delta` 合流；日志只记最终 `model/response`。**
+**mini 的流式是：外部 API 的 SSE → provider 的正文/思考 sink → kernel 的 turn-aware sink → host 每连接队列或 chat 的终端 renderer；日志只记最终 durable 事件。**
 
-**思考要真正进入模型行动前的上下文，必须多走一步：reasoning 进入 assistant message 的内容块，`fold` 重建，provider 在下一请求回传。只加日志或只加 UI 都不算。**
+**思考进入模型历史，必须走：reasoning block → `model/response.blocks` → `fold` → provider 下一请求回传。只加日志或只加 UI 都不算。** host 的 `snapshot.messages` 是这条 fold 链的模型上下文，不是完整 UI transcript；远端壳要完整 UI，必须从 seq 0 读 durable 事件自己投影。
 
-**DSH 已经把这一步做成 typed 的 `reasoning` 内容块 + 实时 `assistant-stream` + durable `assistant/message`；mini 目前只有正文流，思考帧与历史回传还没有。即便补上，它提供的是跨回合的思考连续性，不是“强制先计划”或“思考与工具同时执行”。**
+**DSH 的完整形状是 typed `reasoning` block + live assistant stream + durable `assistant/message` + 可选 active baseline；mini 已经落成前三个，active baseline/compact stream 仍留在壳时。**
+
+---
+
+## 11. 构建回顾：一条流式能力是怎么长出来的
+
+### 11.1 时间线
+
+| 阶段 | change | 落成了什么 | 边界 |
+|---|---|---|---|
+| H2 | `h2-streaming-and-event-echo` | provider 正文 delta、`model/delta`、host SSE 合流、每连接队列、LogTail | 只流正文；delta 不落日志 |
+| reasoning | `reasoning-mode-and-budget` | `on_reasoning`、有序 blocks、`reasoning/delta`、`model/attempt`、interrupted message、fold 回传、`reasoning_effort` | R2 折叠视觉等壳 |
+| host sync | `host-event-sync-contract` | snapshot 语义、seq 游标、durable 字段透出、`stream/end` | 只定协议；不做客户端 |
+| chat shell | `chat-streaming-shell` | 默认 `--stream`、`ChatStreamRenderer`、`[thinking]`/`[answer]`、去重/回退/取消 | 只做终端 adapter |
+
+这四步不是四次“加一个字段”，而是把同一条流依次拆到四个边界上：provider → kernel → host/chat → client。
+
+### 11.2 五条原理
+
+1. **三条事实分开**
+   - 日志：durable、append-only、带 seq，是唯一真源；
+   - surface：`fold(日志前缀)` 给模型的 messages；
+   - live：delta 只表示“正在发生”，不是历史。
+
+2. **sink 是分层组合，不是通用事件总线**
+   ```text
+   provider chunk
+     → kernel TurnDeltaSink / ReasoningSink（收前缀、定 turn）
+     → host DeltaQueue 或 chat ChatStreamRenderer
+   ```
+   共享只到 sink；host 的 SSE/cursor/reconnect 和 chat 的 stdout/stderr 各自适配。强行抽“通用流层”会造出第二套无用协议。
+
+3. **durable 边界由内核决定**
+   - `model/response` 是成功/取消后的唯一 durable 结果；
+   - `model/attempt` 是失败/重试/无前缀取消的证据，log-only；
+   - `interrupted: true` 是 message 的字段，不是 block；
+   - delta 永不落日志，也不参与游标。
+
+4. **attempt 与 message 二选一**
+   - 有已交付前缀的用户取消 → interrupted message，进历史；
+   - 无前缀取消 → attempt；
+   - 失败/坏标签 → attempt，不写空 response；
+   - host 重启/硬杀前未 settlement → 没有 durable attempt。
+
+5. **传输层只负责“怎么送达”**
+   - host：HTTP 鉴权、多会话、队列、SSE `id=seq`、`from`/`Last-Event-ID`、snapshot、`stream/end`；
+   - chat：进程内，无游标、无重连、无 snapshot；
+   - 两者共享内核语义，不共享传输语义。
+
+### 11.3 顺序、游标与恢复
+
+```text
+model/request (durable)
+   → reasoning/delta / model/delta (ephemeral)
+   → model/response (durable, 完整 blocks)
+```
+
+- durable 帧有 `id=seq`；delta 无 `id`；
+- 无 cursor 从 seq 0；`from=N` 只发 `seq > N`；
+- 重连只补 durable，不重放 delta；
+- snapshot 是消息级基线，`last_seq` 之后继续；
+- `stream/end` 只在 Host 主动终止时发，物理断线不发；
+- 客户端收到 end 不重连；无 end 才按 last_seq 重连。
+
+### 11.4 踩过的坑
+
+- **把 capture sink 一直传下去**：非流式测试被强迫走 streaming；只在宿主有 sink 时捕获/转发。
+- **取消条件只看 cancel**：没有 host sink 时也走 abort 分支，破坏旧行为；改成 `cancel and (on_delta or on_reasoning)`。
+- **attempt 和 interrupted message 同时写**：证据和进历史混在一起；改成二选一。
+- **snapshot 当 UI 全量**：`messages` 是 fold 模型上下文，不是 tool/approval/error 的完整 UI 历史。
+- **chat 无正文开始标志**：`[thinking]` 没有结束行；补 `[answer]` 标记并结束 thinking 行。
+- **默认非流式**：shell 体验倒挂；改为默认 `--stream`，`--no-stream` 显式兼容。
+- **覆盖率高但判据不在 seam**：内存里 `sse_frame` 往返不算 host 行为；删掉，改为 CLI 黑盒/真实端点。
+
+### 11.5 判据落在哪
+
+| 层 | 判据 |
+|---|---|
+| provider | OpenAI/mock 的 reasoning/正文 delta、usage、坏标签 |
+| kernel | sink 分流、blocks、attempt/interrupted、cancel |
+| host | snapshot、seq 游标、SSE 字段、`stream/end`、日志无 delta |
+| chat | 默认 stream、stdout/stderr 分流、`[answer]`、去重/回退/取消 |
+| 真实端点 | reasoner 的 reasoning→text、usage、chat 分流 |
+| UAT | 人看折叠/回答区（R2）；人按 Ctrl-C（C3） |
+
+### 11.6 代码地图补充
+
+| 文件 | 责任 |
+|---|---|
+| `src/mini_harness/loop/turn_loop.py` | `_forward_delta` / `_forward_reasoning`；`_capture_sinks`；interrupted/attempt |
+| `src/mini_harness/provider/contract.py` | blocks、`ReasoningSink`、`AssistantTurn` 投影 |
+| `src/mini_harness/provider/openai_compat.py` | `reasoning_content`、usage reasoning tokens、blocks 回传 |
+| `src/mini_harness/provider/reasoning_tags.py` | 可选标签 adapter（非核心） |
+| `src/mini_harness/session/host.py` | `publish_reasoning`、`stream_ended` |
+| `src/mini_harness/cli/host.py` | `_stream_end_frame`、snapshot/cursor、reasoning SSE |
+| `src/mini_harness/cli/main.py` | `ChatStreamRenderer`、`--stream/--no-stream`、`[answer]` |
+| `openspec/specs/host-stream-sync/spec.md` | Host 同步契约 |
+| `openspec/specs/chat-streaming/spec.md` | chat shell 契约 |
+
+### 11.7 下一步
+
+流式栈已归档 host/chat，reasoning 只差 R2 视觉 UAT（等壳）。下一个按 roadmap 是 **M11 存储、恢复与投影缓存**：resume、schema 迁移、session index、fold 缓存、投影三态与硬杀修复。
