@@ -47,7 +47,3 @@ Host SHALL 从 session 目录/session index 重建列表，`GET /sessions` 能�
 
 - **WHEN** 一个 session 已结束，Host 重启
 - **THEN** `GET /sessions` 仍能列出它，状态为 ended
-
-### Requirement: 不提供原始日志下载
-
-session index/resume 只在 Host 本机读文件；HTTP 仍不暴露按路径下载原始 JSONL 的接口。
