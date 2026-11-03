@@ -10,7 +10,7 @@ kernel sinks
   └─ on_reasoning(turn_id, index, text) → stderr `[thinking]`
 ```
 
-- `--stream` 打开；`--no-stream`（默认）保持旧的整段日志投影。
+- 默认 `--stream`；`--no-stream` 显式回到旧的整段日志投影。
 - 正文只写 stdout；思考只写 stderr，不混进正文。
 - 有 delta 的 turn 结束后不再打印最终整段；没有 delta 时回退到 `model/response` 投影。
 - Ctrl-C 仍按段级取消；已写出的前缀不撤回，不补最终整段。

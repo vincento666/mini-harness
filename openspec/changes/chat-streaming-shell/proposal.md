@@ -8,7 +8,7 @@
 
 ## What Changes
 
-- **`--stream` / `--no-stream`**：互斥；默认 `--no-stream`，保持现有阻塞输出逐点不变；`--stream` 打开 shell 的实时输出。
+- **`--stream` / `--no-stream`**：互斥；默认 `--stream`（shell 体验），`--no-stream` 显式回到旧的阻塞输出；有 delta 不重复，无 delta 回退最终正文。
 - **`--stream` 时**：
   - 正文 delta 实时写 stdout；
   - reasoning delta 实时写 stderr（`[thinking]` 前缀），stdout 仍只放正文；

@@ -1,8 +1,8 @@
-﻿# Tasks
+# Tasks
 
 ## 1. flag 与 sink 注入
 
-- [x] 1.1 seam ⑥：红判据 `test_chat_stream_flag_is_mutually_exclusive`——`--stream --no-stream` 退出 2；默认 `stream=False`
+- [x] 1.1 seam ⑥：红判据 `test_chats_flag_table_is_runs_flag_table_minus_two`——`--stream --no-stream` 退出 2；默认 `stream=True`
 - [x] 1.2 seam ⑥：红判据 `test_chat_stream_wires_delta_and_reasoning_sinks`——`--stream` 时 `SessionEnv` 有 on_delta/on_reasoning；`--no-stream` 没有
 - [x] 1.3 seam ⑥：守卫——`--no-stream` 的 stdout/日志/退出码与今天逐点相同
 - [ ] 1.4 seam ⑥：红判据 `test_chat_stream_renderer_is_a_cli_adapter`——renderer 只依赖 sink/输出流，不引用 host 的 SSE/cursor/queue；chat `_chat` 不出现 host 分支

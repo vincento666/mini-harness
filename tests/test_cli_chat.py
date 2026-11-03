@@ -1039,7 +1039,7 @@ def test_chat_stream_prints_text_deltas_without_repeating_final_content(
         encoding="utf-8",
     )
 
-    result = _chat("--stream", "--fixture", str(fixture), cwd=tmp_path, stdin_text="任务\n")
+    result = _chat("--fixture", str(fixture), cwd=tmp_path, stdin_text="任务\n")
 
     assert result.returncode == 0
     assert result.stdout.count("你好") == 1

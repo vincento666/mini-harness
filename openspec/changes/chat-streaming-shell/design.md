@@ -12,7 +12,7 @@
 
 ## Decisions
 
-**D1 flag 是 `--stream` / `--no-stream` 互斥，默认 `--no-stream`。** 这样现有 chat 行为、测试、脚本逐点不变；`--stream` 是显式 shell 体验。argparse 用 `add_mutually_exclusive_group`，`dest="stream"`，默认 `False`。
+**D1 flag 是 `--stream` / `--no-stream` 互斥，默认 `--stream`。** shell 默认给实时输出；`--no-stream` 是显式兼容开关，保持旧的阻塞输出。argparse 用 `add_mutually_exclusive_group`，`dest="stream"`，默认 `True`。
 
 **D2 chat 只注入 sink，不新造流式路径。** `SessionEnv(on_delta=..., on_reasoning=...)`；正文 sink 直接写 stdout 并 flush；reasoning sink 写 stderr `[thinking] ` 前缀，首次写行头，片段连续。provider 仍走既有 `generate`；`stream=True` 由 provider 自己决定。
 

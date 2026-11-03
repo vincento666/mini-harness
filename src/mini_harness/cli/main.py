@@ -214,7 +214,7 @@ def build_parser() -> argparse.ArgumentParser:
     stream_group = chat.add_mutually_exclusive_group()
     stream_group.add_argument("--stream", dest="stream", action="store_true")
     stream_group.add_argument("--no-stream", dest="stream", action="store_false")
-    chat.set_defaults(stream=False)
+    chat.set_defaults(stream=True)
 
     replay = subcommands.add_parser("replay", help="重放一个 session 的日志")
     replay.add_argument("session_id")

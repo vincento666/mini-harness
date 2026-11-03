@@ -4,7 +4,7 @@
 
 ### Requirement: chat 的 `--stream` 是可选 shell 模式
 
-`minihns chat` SHALL 接受互斥的 `--stream` 与 `--no-stream`；默认 MUST 是 `--no-stream`。`--no-stream` 的 stdout、stderr、日志、退出码 MUST 与今天逐点相同。`--stream` SHALL 复用 `run_turn_segment` 的 `on_delta` / `on_reasoning`，MUST NOT 新造 provider 或内核流式路径。
+`minihns chat` SHALL 接受互斥的 `--stream` 与 `--no-stream`；默认 MUST 是 `--stream`（shell 体验）。`--no-stream` 的 stdout、stderr、日志、退出码 MUST 与今天的阻塞输出逐点相同。`--stream` SHALL 复用 `run_turn_segment` 的 `on_delta` / `on_reasoning`，MUST NOT 新造 provider 或内核流式路径。
 
 #### Scenario: 默认不流式
 
