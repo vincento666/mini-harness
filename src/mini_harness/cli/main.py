@@ -210,7 +210,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     # `chat` 没有 `-p/--prompt`，也没有 `--events`：一个会话的人话从 stdin 按行进来，
     # stdout 上只有模型回复正文与提示符（chat-repl 规格）。
-    subcommands.add_parser("chat", help="跑一个连续会话的 REPL", parents=[shared])
+    chat = subcommands.add_parser("chat", help="跑一个连续会话的 REPL", parents=[shared])
+    stream_group = chat.add_mutually_exclusive_group()
+    stream_group.add_argument("--stream", dest="stream", action="store_true")
+    stream_group.add_argument("--no-stream", dest="stream", action="store_false")
+    chat.set_defaults(stream=True)
 
     replay = subcommands.add_parser("replay", help="重放一个 session 的日志")
     replay.add_argument("session_id")
@@ -423,11 +427,66 @@ def _suppress_sigint(signum: int, frame: FrameType | None) -> None:
     return None
 
 
-def _print_new_replies(log: EventLog, printed: int) -> int | LogReadFailure:
+class _ChatStreamRenderer:
+    """chat 的终端适配器：正文 stdout、思考 stderr；只依赖 kernel sink。"""
+
+    def __init__(self) -> None:
+        self.streamed_turns: set[str] = set()
+        self._text_written = False
+        self._reasoning_started = False
+        self._answer_started = False
+
+    async def text(self, turn_id: str, text: str) -> None:
+        if not text:
+            return
+        self.streamed_turns.add(turn_id)
+        if not self._answer_started:
+            if self._reasoning_started:
+                sys.stderr.write("\n")
+                self._reasoning_started = False
+            sys.stderr.write("[answer] ")
+            sys.stderr.flush()
+            self._answer_started = True
+        self._text_written = True
+        sys.stdout.write(text)
+        sys.stdout.flush()
+
+    async def reasoning(self, turn_id: str, index: int, text: str) -> None:
+        if not text:
+            return
+        if self._answer_started:
+            sys.stderr.write("\n")
+            self._answer_started = False
+        if not self._reasoning_started:
+            sys.stderr.write("[thinking] ")
+            self._reasoning_started = True
+        sys.stderr.write(text)
+        sys.stderr.flush()
+
+    def finish_segment(self) -> None:
+        if self._text_written:
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+        elif self._reasoning_started:
+            # 只有思考 delta、正文走最终回退：也要给正文一个开始标志。
+            sys.stderr.write("[answer] ")
+            self._answer_started = True
+        if self._reasoning_started or self._answer_started:
+            sys.stderr.write("\n")
+            sys.stderr.flush()
+        self._text_written = False
+        self._reasoning_started = False
+        self._answer_started = False
+
+
+def _print_new_replies(
+    log: EventLog, printed: int, skip_turns: set[str] | None = None
+) -> int | LogReadFailure:
     """把日志里新增的模型回复正文按发生顺序打到 stdout（design D11）。
 
     stdout 是日志的一个投影，不是第二真源：读回来打，内核就不需要知道有人在看着。
     带 `purpose` 的那次 `model/response` 是请求级压缩的内部摘要，不是给人的回复，不打。
+    `skip_turns` 是 `--stream` 已经实时打过的 turn：不重复整段。
     """
     events = read_events(log.path)
     if isinstance(events, LogReadFailure):
@@ -438,6 +497,9 @@ def _print_new_replies(log: EventLog, printed: int) -> int | LogReadFailure:
             continue
         seen += 1
         if seen <= printed:
+            continue
+        turn_id = str(event.payload.get("turn_id", ""))
+        if skip_turns is not None and turn_id in skip_turns:
             continue
         # 只带工具调用的回合 `content` 是空串：打出去就是一条空行（design D2）。
         content = str(event.payload.get("content", ""))
@@ -494,17 +556,20 @@ def _print_shadow_feedback(log: EventLog, through: int) -> tuple[int, LogReadFai
     return latest, None
 
 
-async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
+async def _chat_session(prepared: Prepared, signals: _ChatSignals, *, stream: bool = False) -> int:
     """读一行、开一个段、回到提示符；EOF 或提示符上的 Ctrl-C 收尾整个会话。
 
     SIGINT 处理器由 `_chat` 装（design D7）：会话收尾也在它的覆盖范围里，
     取消落进「循环已经退出、`end_session` 还没开始」那道缝隙里也有人接。
     """
+    renderer = _ChatStreamRenderer() if stream else None
     env = SessionEnv(
         provider=prepared.provider,
         log=prepared.log,
         registry=prepared.registry,
         settings=prepared.settings,
+        on_delta=renderer.text if renderer is not None else None,
+        on_reasoning=renderer.reasoning if renderer is not None else None,
     )
     started = start_session(prompt="", entry=ENTRY_CHAT, env=env)
     if started is not None:
@@ -570,6 +635,8 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
                         EXIT_INTERNAL_ERROR,
                     )
                 turn_index += segment.turns
+                if renderer is not None:
+                    renderer.finish_segment()
                 _print_segment_note(segment)
                 if (
                     segment.stop_reason == STOP_CONTEXT_WINDOW_EXCEEDED
@@ -590,7 +657,11 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
                     return _report_failure(
                         shadow_failure.code, shadow_failure.detail, EXIT_INTERNAL_ERROR
                     )
-                replies = _print_new_replies(prepared.log, printed)
+                replies = _print_new_replies(
+                    prepared.log,
+                    printed,
+                    renderer.streamed_turns if renderer is not None else None,
+                )
                 if isinstance(replies, LogReadFailure):
                     return _report_failure(replies.code, replies.detail, EXIT_INTERNAL_ERROR)
                 printed = replies
@@ -617,7 +688,7 @@ def _chat(args: argparse.Namespace) -> int:
     signal.signal(signal.SIGINT, _chat_sigint_handler(signals))
     # 不换回旧处理器（design D7）：会话收尾之后进程正在退出，换回去等于在退出前的缝隙里
     # 重新开一个没人接的洞——那里落进一次 Ctrl-C 就是一段 traceback 加一个非 0 退出码。
-    return asyncio.run(_chat_session(prepared, signals))
+    return asyncio.run(_chat_session(prepared, signals, stream=args.stream))
 
 
 def _replay(args: argparse.Namespace) -> int:

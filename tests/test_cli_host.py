@@ -615,6 +615,72 @@ def test_no_log_download_route(tmp_path: Path) -> None:
         _stop(process)
 
 
+def test_missing_session_and_bad_json_return_http_errors(tmp_path: Path) -> None:
+    process = _start_host(tmp_path, _free_port(), HOST_TOKEN)
+    try:
+        port = int(process.args[process.args.index("--port") + 1])
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            assert (
+                client.get(
+                    "/sessions/00000000000000000000000000000000", headers=_headers()
+                ).status_code
+                == 404
+            )
+            assert (
+                client.post(
+                    "/sessions/00000000000000000000000000000000/messages",
+                    headers=_headers(),
+                    json={},
+                ).status_code
+                == 404
+            )
+            assert (
+                client.post(
+                    "/sessions/00000000000000000000000000000000/cancel", headers=_headers()
+                ).status_code
+                == 404
+            )
+            assert (
+                client.delete(
+                    "/sessions/00000000000000000000000000000000", headers=_headers()
+                ).status_code
+                == 404
+            )
+            bad = client.post(
+                "/sessions",
+                headers={**_headers(), "Content-Type": "application/json"},
+                content="not-json",
+            )
+            assert bad.status_code == 400
+
+            workspace = tmp_path / "workspace"
+            workspace.mkdir(exist_ok=True)
+            session_id = _create_session(client, workspace, _mock_fixture(tmp_path))
+            bad_message = client.post(
+                f"/sessions/{session_id}/messages",
+                headers={**_headers(), "Content-Type": "application/json"},
+                content="not-json",
+            )
+            assert bad_message.status_code == 400
+            bad_approval = client.post(
+                f"/sessions/{session_id}/approvals/c1",
+                headers={**_headers(), "Content-Type": "application/json"},
+                content="not-json",
+            )
+            assert bad_approval.status_code == 400
+            bad_decision = client.post(
+                f"/sessions/{session_id}/approvals/c1",
+                headers=_headers(),
+                json={"decision": "maybe"},
+            )
+            assert bad_decision.status_code == 400
+    finally:
+        _stop(process)
+
+
 def _normalized_log(path: Path) -> list[dict[str, object]]:
     records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
     return [

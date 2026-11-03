@@ -914,6 +914,15 @@ ADR 到 9.2 才提交；已提交的 `tasks.md` 三处引用本分支不存在�
 - Promotion candidate: 与 L-067 同族（证据 vs 历史）；本轮不占 AGENTS.md 额度
 - Status: inbox
 
+### L-069
+- Date: 2026-11-03
+- Context: 给 chat 加 `--stream`，复用 kernel sink
+- Observation: host 与 chat 的差异应隔离在 adapter：host 需要 SSE/游标/重连，chat 只需要 stdout/stderr/去重/回退。把 sink 以上的传输语义抽成“通用层”会造出无人使用的协议；但 chat 也有自己的小状态（streamed_turns、thinking 行头），不能假装它只是 host 的迷你版
+- Evidence: `ChatStreamRenderer` 只依赖 sink；`--no-stream` 旧行为不变；host sync spec 与 chat spec 分开
+- Next use: 新入口先问“它缺的是 kernel 语义还是传输语义”；只复用前者
+- Promotion candidate: 与 L-067/L-068 同族（证据/传输边界）；本轮不占 AGENTS.md 额度
+- Status: inbox
+
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 - 每个里程碑收尾扫一次，**允许输出 `NO-PROMOTION`**（没有可复用信号就不写条目）。
 - 收件箱条目超过 **15 条**必须先消化再收新的：合并同类、把已被代码或规格自证的条目删掉。
