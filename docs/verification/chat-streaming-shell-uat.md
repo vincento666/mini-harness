@@ -45,8 +45,8 @@ uv run minihns chat --no-stream ...
 
 | 场次 | 动作 | 预期 | 实际观察 | 结论 | 别扭在哪 |
 |---|---|---|---|---|---|
-| C1 | `--stream` | 正文逐字、不重复 | 真实 session `94676c...`：正文一次，未重复整段；默认 `--stream` 已生效 | 通过（agent） | 无 |
-| C2 | 思考分流 | 只在 stderr | 同 session：stderr `[thinking] ...`，stdout 无思考文本 | 通过（agent） | 无 |
+| C1 | `--stream` | 正文逐字、不重复 | 真实 session `94676c...`：正文一次，未重复整段；默认 `--stream` 已生效；session `383ba483...` 看到 `[answer]` 开始标志 | 通过（agent） | 无 |
+| C2 | 思考分流 | 只在 stderr | session `94676c...`：stderr `[thinking] ...`，stdout 无思考文本；`[answer]` 结束 thinking 行 | 通过（agent） | 无 |
 | C3 | 流式中取消 | 保留前缀 | 未跑：需要 tty Ctrl-C；Windows 测试跳过 | 待人工 | 交互取消不能由非 tty agent 代跑 |
 | C4 | `--no-stream` | 旧行为不变 | 真实 session `f09b8b42...`：整段 `> 4。` 一次输出 | 通过（agent） | 无 |
 
