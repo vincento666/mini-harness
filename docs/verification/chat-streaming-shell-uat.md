@@ -45,11 +45,11 @@ uv run minihns chat --no-stream ...
 
 | 场次 | 动作 | 预期 | 实际观察 | 结论 | 别扭在哪 |
 |---|---|---|---|---|---|
-| C1 | `--stream` | 正文逐字、不重复 | | | |
-| C2 | 思考分流 | 只在 stderr | | | |
-| C3 | 流式中取消 | 保留前缀 | | | |
-| C4 | `--no-stream` | 旧行为不变 | | | |
+| C1 | `--stream` | 正文逐字、不重复 | 真实 session `94676c...`：正文一次，未重复整段；默认 `--stream` 已生效 | 通过（agent） | 无 |
+| C2 | 思考分流 | 只在 stderr | 同 session：stderr `[thinking] ...`，stdout 无思考文本 | 通过（agent） | 无 |
+| C3 | 流式中取消 | 保留前缀 | 未跑：需要 tty Ctrl-C；Windows 测试跳过 | 待人工 | 交互取消不能由非 tty agent 代跑 |
+| C4 | `--no-stream` | 旧行为不变 | 真实 session `f09b8b42...`：整段 `> 4。` 一次输出 | 通过（agent） | 无 |
 
-**至少一条「用起来别扭」**：_
+**至少一条「用起来别扭」**：C3 必须人在终端按 Ctrl-C；脚本只能验证非取消路径。
 
-**结论**：通过 / 不通过（写清 session id、stdout/stderr 证据）：_
+**结论**：C1/C2/C4 通过；**C3 tty 取消待人工确认**，因此 4.2 暂不勾。
