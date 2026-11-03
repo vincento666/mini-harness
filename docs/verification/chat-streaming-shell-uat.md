@@ -47,9 +47,9 @@ uv run minihns chat --no-stream ...
 |---|---|---|---|---|---|
 | C1 | `--stream` | 正文逐字、不重复 | 真实 session `94676c...`：正文一次，未重复整段；默认 `--stream` 已生效；session `383ba483...` 看到 `[answer]` 开始标志 | 通过（agent） | 无 |
 | C2 | 思考分流 | 只在 stderr | session `94676c...`：stderr `[thinking] ...`，stdout 无思考文本；`[answer]` 结束 thinking 行 | 通过（agent） | 无 |
-| C3 | 流式中取消 | 保留前缀 | 未跑：需要 tty Ctrl-C；Windows 测试跳过 | 待人工 | 交互取消不能由非 tty agent 代跑 |
+| C3 | 流式中取消 | 保留前缀 | 人在 tty 输入「输出1000字散文」，正文流到「那时」按 Ctrl-C：保留该前缀，未追加最终整段，stderr `[段] ABORTED`，回到提示符 | 通过（人跑） | 无 |
 | C4 | `--no-stream` | 旧行为不变 | 真实 session `f09b8b42...`：整段 `> 4。` 一次输出 | 通过（agent） | 无 |
 
 **至少一条「用起来别扭」**：C3 必须人在终端按 Ctrl-C；脚本只能验证非取消路径。
 
-**结论**：C1/C2/C4 通过；**C3 tty 取消待人工确认**，因此 4.2 暂不勾。
+**结论**：C1–C4 全部通过；C3 由人在 tty 跑，输出保留了已显示前缀并写 `[段] ABORTED`。
