@@ -1,9 +1,9 @@
-# Tasks
+﻿# Tasks
 
 ## 1. EventLog 续写
 
-- [ ] 1.1 seam ④：`test_open_reads_last_seq_and_appends_next`——最后 seq 7，新 append 是 8
-- [ ] 1.2 seam ④：空日志从 0 开始
+- [x] 1.1 seam ④：`test_open_reads_last_seq_and_appends_next`——最后 seq 7，新 append 是 8
+- [x] 1.2 seam ④：空日志从 0 开始
 
 ## 2. resume
 

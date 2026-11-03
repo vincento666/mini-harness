@@ -36,6 +36,30 @@ def test_seq_starts_at_zero_and_increments_by_one(tmp_path: Path) -> None:
     assert seqs == [0, 1, 2]
 
 
+def test_open_reads_last_seq_and_appends_next(tmp_path: Path) -> None:
+    log = EventLog.create(session_dir=tmp_path, session_id="sess-open")
+    for index in range(8):
+        log.append("session/start", {"index": index})
+
+    reopened = EventLog.open(tmp_path, "sess-open")
+
+    assert isinstance(reopened, EventLog)
+    assert reopened.last_seq == 7
+    record = reopened.append("turn/start", {"turn_id": "t1"})
+    assert record.seq == 8
+
+
+def test_open_empty_log_appends_at_zero(tmp_path: Path) -> None:
+    created = EventLog.create(session_dir=tmp_path, session_id="sess-empty")
+    assert isinstance(created, EventLog)
+
+    reopened = EventLog.open(tmp_path, "sess-empty")
+
+    assert isinstance(reopened, EventLog)
+    assert reopened.last_seq == -1
+    assert reopened.append("turn/start", {"turn_id": "t1"}).seq == 0
+
+
 def test_log_is_append_only(tmp_path: Path) -> None:
     log = EventLog.create(session_dir=tmp_path, session_id="sess-3")
     log.append("session/start", {})

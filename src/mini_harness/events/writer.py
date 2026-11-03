@@ -24,10 +24,10 @@ class LogWriteFailure:
 class EventLog:
     """一个 session 的 JSONL 日志：只追加，`seq` 在此单点分配。"""
 
-    def __init__(self, path: Path, session_id: str) -> None:
+    def __init__(self, path: Path, session_id: str, *, next_seq: int = 0) -> None:
         self.path = path
         self.session_id = session_id
-        self._next_seq = 0
+        self._next_seq = next_seq
 
     @property
     def last_seq(self) -> int:
@@ -40,6 +40,20 @@ class EventLog:
         return cls.create(session_dir=session_dir, session_id=uuid.uuid4().hex)
 
     @classmethod
+    def open(cls, session_dir: Path, session_id: str) -> EventLog | LogWriteFailure:
+        """打开已有日志并从最后一条记录续写；缺失或坏日志是失败结果。"""
+        from mini_harness.events.reader import LogReadFailure, read_events
+
+        path = session_dir / f"{session_id}.jsonl"
+        if not path.is_file():
+            return LogWriteFailure(path=path, detail=f"{path}: 日志不存在", code="LOG_NOT_FOUND")
+        records = read_events(path)
+        if isinstance(records, LogReadFailure):
+            return LogWriteFailure(path=path, detail=records.detail, code=records.code)
+        next_seq = records[-1].seq + 1 if records else 0
+        return cls(path, session_id, next_seq=next_seq)
+
+    @classmethod
     def create(cls, session_dir: Path, session_id: str) -> EventLog | LogWriteFailure:
         path = session_dir / f"{session_id}.jsonl"
         try:
@@ -47,7 +61,7 @@ class EventLog:
             path.touch()
         except OSError as exc:
             return LogWriteFailure(path=path, detail=f"{session_dir}: {exc}")
-        return cls(path, session_id)
+        return cls.open(session_dir, session_id)
 
     def append(self, event_type: str, payload: dict[str, Any]) -> EventRecord | LogWriteFailure:
         if not is_known_type(event_type):
