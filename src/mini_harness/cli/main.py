@@ -434,11 +434,19 @@ class _ChatStreamRenderer:
         self.streamed_turns: set[str] = set()
         self._text_written = False
         self._reasoning_started = False
+        self._answer_started = False
 
     async def text(self, turn_id: str, text: str) -> None:
         if not text:
             return
         self.streamed_turns.add(turn_id)
+        if not self._answer_started:
+            if self._reasoning_started:
+                sys.stderr.write("\n")
+                self._reasoning_started = False
+            sys.stderr.write("[answer] ")
+            sys.stderr.flush()
+            self._answer_started = True
         self._text_written = True
         sys.stdout.write(text)
         sys.stdout.flush()
@@ -446,6 +454,9 @@ class _ChatStreamRenderer:
     async def reasoning(self, turn_id: str, index: int, text: str) -> None:
         if not text:
             return
+        if self._answer_started:
+            sys.stderr.write("\n")
+            self._answer_started = False
         if not self._reasoning_started:
             sys.stderr.write("[thinking] ")
             self._reasoning_started = True
@@ -456,11 +467,16 @@ class _ChatStreamRenderer:
         if self._text_written:
             sys.stdout.write("\n")
             sys.stdout.flush()
-        if self._reasoning_started:
+        elif self._reasoning_started:
+            # 只有思考 delta、正文走最终回退：也要给正文一个开始标志。
+            sys.stderr.write("[answer] ")
+            self._answer_started = True
+        if self._reasoning_started or self._answer_started:
             sys.stderr.write("\n")
             sys.stderr.flush()
         self._text_written = False
         self._reasoning_started = False
+        self._answer_started = False
 
 
 def _print_new_replies(

@@ -18,17 +18,17 @@
 
 ### Requirement: 正文与思考在 shell 里分流
 
-`--stream` 时，正文 delta SHALL 写 stdout；reasoning delta SHALL 写 stderr，并带固定 `[thinking]` 前缀。reasoning MUST NOT 写 stdout，正文 MUST NOT 写 stderr 的思考行。MUST NOT 把 reasoning 当最终回答。
+`--stream` 时，正文 delta SHALL 写 stdout；reasoning delta SHALL 写 stderr，并带固定 `[thinking]` 前缀。正文首次出现时 SHALL 在 stderr 打 `[answer] ` 开始标志，并结束上一段 `[thinking]` 行。reasoning MUST NOT 写 stdout，正文 MUST NOT 写 stderr 的思考行。MUST NOT 把 reasoning 当最终回答。
 
 #### Scenario: 思考走 stderr
 
 - **WHEN** `--stream` 且 provider 先发 reasoning delta
 - **THEN** stderr 出现 `[thinking]` 行，stdout 没有该思考文本
 
-#### Scenario: 正文走 stdout
+#### Scenario: 正文开始有标志
 
-- **WHEN** `--stream` 且 provider 发正文 delta
-- **THEN** stdout 出现正文片段，stderr 没有该正文片段
+- **WHEN** reasoning 结束、正文 delta 开始
+- **THEN** stderr 结束 `[thinking]` 行并出现 `[answer] `，stdout 才开始正文
 
 ### Requirement: 流式去重与无 delta 回退
 

@@ -1043,6 +1043,7 @@ def test_chat_stream_prints_text_deltas_without_repeating_final_content(
 
     assert result.returncode == 0
     assert result.stdout.count("你好") == 1
+    assert "[answer]" in result.stderr
 
 
 def test_chat_stream_sends_reasoning_to_stderr_only(tmp_path: Path) -> None:
@@ -1065,6 +1066,7 @@ def test_chat_stream_sends_reasoning_to_stderr_only(tmp_path: Path) -> None:
 
     assert result.returncode == 0
     assert "[thinking] 先想" in result.stderr
+    assert "[answer]" in result.stderr
     assert "先想" not in result.stdout
 
 
