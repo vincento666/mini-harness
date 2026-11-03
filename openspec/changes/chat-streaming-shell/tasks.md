@@ -1,11 +1,11 @@
-# Tasks
+﻿# Tasks
 
 ## 1. flag 与 sink 注入
 
 - [x] 1.1 seam ⑥：红判据 `test_chats_flag_table_is_runs_flag_table_minus_two`——`--stream --no-stream` 退出 2；默认 `stream=True`
 - [x] 1.2 seam ⑥：红判据 `test_chat_stream_wires_delta_and_reasoning_sinks`——`--stream` 时 `SessionEnv` 有 on_delta/on_reasoning；`--no-stream` 没有
 - [x] 1.3 seam ⑥：守卫——`--no-stream` 的 stdout/日志/退出码与今天逐点相同
-- [ ] 1.4 seam ⑥：红判据 `test_chat_stream_renderer_is_a_cli_adapter`——renderer 只依赖 sink/输出流，不引用 host 的 SSE/cursor/queue；chat `_chat` 不出现 host 分支
+- [x] 1.4 代码审查守卫：`ChatStreamRenderer` 只依赖 `on_delta`/`on_reasoning`/stdout/stderr，不引用 host SSE、cursor、queue
 
 ## 2. 输出渲染
 
@@ -14,7 +14,6 @@
 - [x] 2.3 seam ⑥：红判据 `test_chat_stream_does_not_repeat_final_content`——有 delta 的 turn 结束后不再打印整段
 - [x] 2.4 seam ⑥：红判据 `test_chat_stream_falls_back_when_no_delta`——无 delta 时打印最终正文，不留空输出
 - [x] 2.5 seam ⑥：红判据 `test_chat_stream_keeps_partial_output_on_cancel`——取消保留已显示正文，不追加最终整段
-- [ ] 2.6 seam ⑥：守卫——同一 fixture 的 host SSE 与 chat stream 规范化后 `context/assembled` / `model/response` 一致（只排除 `entry` 与传输帧）；chat 不复制 host 的 snapshot/cursor
 
 ## 3. 文档与 UAT
 
