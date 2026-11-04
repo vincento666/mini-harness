@@ -1041,3 +1041,7 @@ def test_chat_resume_appends_to_the_same_log(tmp_path: Path) -> None:
     assert sum(1 for record in records if record["type"] == "user/message") == 2
     assert "第一次" in first.stdout
     assert "第二次" in second.stdout
+
+    replay = _cli("replay", session_id, cwd=tmp_path)
+    assert replay.returncode == 0
+    assert "REPLAY_MISMATCH" not in replay.stderr
