@@ -11,6 +11,10 @@ from mini_harness.events.vocabulary import is_known_type
 SCHEMA_VERSION = 1
 
 
+class SchemaUnsupported(ValueError):
+    """日志 schema_version 不是当前或相邻旧版：拒绝，不猜迁移。"""
+
+
 class EventRecord(BaseModel):
     """日志里的一条事件记录。"""
 
@@ -28,3 +32,14 @@ class EventRecord(BaseModel):
         if not is_known_type(value):
             raise ValueError(f"事件类型不在词表内：{value}")
         return value
+
+
+def migrate_schema(record: EventRecord) -> EventRecord:
+    """当前版本原样返回；只接受 N-1 → N，其余版本拒绝。"""
+    if record.schema_version == SCHEMA_VERSION:
+        return record
+    if record.schema_version == SCHEMA_VERSION - 1:
+        return record.model_copy(update={"schema_version": SCHEMA_VERSION})
+    raise SchemaUnsupported(
+        f"不支持的 schema_version {record.schema_version}（当前 {SCHEMA_VERSION}）"
+    )

@@ -199,3 +199,42 @@ def test_append_notifies_observers_until_unsubscribe(tmp_path: Path) -> None:
     log.append("turn/start", {"turn_id": "t1"})
 
     assert seen == ["session/start"]
+
+
+def _write_schema_record(path: Path, schema_version: int) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": schema_version,
+                "type": "session/start",
+                "session_id": "migrate",
+                "seq": 0,
+                "ts": "2026-11-04T00:00:00+00:00",
+                "payload": {},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def test_adjacent_schema_migration(tmp_path: Path) -> None:
+    path = tmp_path / "old.jsonl"
+    _write_schema_record(path, 0)
+
+    records = read_events(path)
+
+    assert isinstance(records, list)
+    assert records[0].schema_version == 1
+
+
+def test_schema_skip_is_rejected_without_writing(tmp_path: Path) -> None:
+    path = tmp_path / "future.jsonl"
+    _write_schema_record(path, 2)
+    before = path.read_bytes()
+
+    outcome = read_events(path)
+
+    assert isinstance(outcome, LogReadFailure)
+    assert outcome.code == "SCHEMA_UNSUPPORTED"
+    assert path.read_bytes() == before

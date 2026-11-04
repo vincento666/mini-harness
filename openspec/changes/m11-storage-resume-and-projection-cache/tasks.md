@@ -20,8 +20,8 @@
 
 ## 3. schema 迁移
 
-- [ ] 3.1 seam ④：`test_adjacent_schema_migration`
-- [ ] 3.2 seam ④：`test_schema_skip_is_rejected_without_writing`
+- [x] 3.1 seam ④：`test_adjacent_schema_migration`
+- [x] 3.2 seam ④：`test_schema_skip_is_rejected_without_writing`
 
 ## 4. session index
 
