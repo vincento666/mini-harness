@@ -15,7 +15,7 @@
 
 - [x] 2.1 seam ⑥：`test_chat_resume_appends_to_the_same_log`——不新建 session/start
 - [x] 2.2 seam ⑥：`test_resume_replay_is_pointwise_equal`
-- [ ] 2.3 seam ⑥：`test_resume_closes_hard_kill_gap_without_rewriting`
+- [x] 2.3 seam ⑥：`test_resume_closes_hard_kill_gap_without_rewriting`
 - [ ] 2.4 seam ⑥：`test_host_resume_uses_existing_session`
 
 ## 3. schema 迁移

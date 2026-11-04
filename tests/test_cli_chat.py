@@ -23,6 +23,7 @@ from cli_blackbox import (
     _send_ctrl_c,
 )
 from mini_harness.cli.main import _chat_sigint_handler, _ChatSignals
+from mini_harness.events import EventLog
 from paths import WRITE_OUTSIDE_SCENARIO
 
 
@@ -1045,3 +1046,22 @@ def test_chat_resume_appends_to_the_same_log(tmp_path: Path) -> None:
     replay = _cli("replay", session_id, cwd=tmp_path)
     assert replay.returncode == 0
     assert "REPLAY_MISMATCH" not in replay.stderr
+
+
+def test_resume_closes_hard_kill_gap_without_rewriting(tmp_path: Path) -> None:
+    sessions = tmp_path / "sessions"
+    log = EventLog.create(sessions, "s-half")
+    assert isinstance(log, EventLog)
+    log.append("session/start", {})
+    log.append("segment/start", {"segment_id": "s1"})
+    log.append("user/message", {"segment_id": "s1", "content": "半截"})
+    log.append("turn/start", {"turn_id": "t1"})
+    original = log.path.read_bytes()
+
+    fixture = _fixture(tmp_path, "unused.json", [{"content": "不该跑", "finish_reason": "stop"}])
+    result = _chat("--resume", "s-half", "--fixture", str(fixture), cwd=tmp_path, stdin_text="")
+
+    assert result.returncode == 0
+    assert log.path.read_bytes().startswith(original), "旧记录必须逐字节保留"
+    records = _records(tmp_path)
+    assert records[-1]["type"] == "session/end"
