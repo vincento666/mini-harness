@@ -187,3 +187,15 @@ def test_a_corrupt_line_is_a_log_read_failure_for_the_tail_too(tmp_path: Path) -
     assert isinstance(outcome, LogReadFailure)
     assert outcome.code == "LOG_UNREADABLE"
     assert str(log.path) in outcome.detail
+
+
+def test_append_notifies_observers_until_unsubscribe(tmp_path: Path) -> None:
+    log = EventLog.create(session_dir=tmp_path, session_id="sess-observers")
+    seen: list[str] = []
+    unsubscribe = log.subscribe(lambda record: seen.append(record.type))
+
+    log.append("session/start", {})
+    unsubscribe()
+    log.append("turn/start", {"turn_id": "t1"})
+
+    assert seen == ["session/start"]

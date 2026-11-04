@@ -1,4 +1,4 @@
-﻿# Tasks
+# Tasks
 
 ## 1. EventLog 续写
 
@@ -8,7 +8,7 @@
 ## 1b. chat 工具事件行
 
 - [x] 1.3 seam ⑥：`test_chat_prints_tool_call_and_result_to_stderr`——`[tool] read` / `-> OK` 只在 stderr，stdout 只有正文
-- [x] 1.4 跨段计数 `printed_tools` 不重复打印
+- [x] 1.4 seam ④：`test_append_notifies_observers_until_unsubscribe`——observer 只收新 append，退订后停
 
 ## 2. resume
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,17 @@ class EventLog:
         self.path = path
         self.session_id = session_id
         self._next_seq = next_seq
+        self._observers: list[Callable[[EventRecord], None]] = []
+
+    def subscribe(self, observer: Callable[[EventRecord], None]) -> Callable[[], None]:
+        """订阅 append 后的 durable 记录；返回退订函数。observer 不参与落账。"""
+        self._observers.append(observer)
+
+        def unsubscribe() -> None:
+            if observer in self._observers:
+                self._observers.remove(observer)
+
+        return unsubscribe
 
     @property
     def last_seq(self) -> int:
@@ -81,4 +93,10 @@ class EventLog:
         except OSError as exc:
             return LogWriteFailure(path=self.path, detail=f"{self.path}: {exc}")
         self._next_seq += 1
+        for observer in tuple(self._observers):
+            try:
+                observer(record)
+            except Exception:
+                # 观察者是显示层；它塌了不能反过来改日志/中断内核。
+                continue
         return record

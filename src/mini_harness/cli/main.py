@@ -17,7 +17,7 @@ from typing import NoReturn
 
 from mini_harness.cli.host import DEFAULT_HOST_PORT, host_main
 from mini_harness.cli.serve import DEFAULT_HOST, DEFAULT_PORT, SERVE_HOSTS, BindFailure, ServeServer
-from mini_harness.events import EventLog, LogReadFailure, read_events
+from mini_harness.events import EventLog, EventRecord, LogReadFailure, read_events
 from mini_harness.events.fold import assembled_payload, assembly_points, fold
 from mini_harness.loop import (
     ENTRY_CHAT,
@@ -424,19 +424,13 @@ def _suppress_sigint(signum: int, frame: FrameType | None) -> None:
     return None
 
 
-def _print_tool_events(log: EventLog, printed: int) -> int | LogReadFailure:
-    """把新增的工具调用/结果打到 stderr；stdout 仍只放正文。"""
-    events = read_events(log.path)
-    if isinstance(events, LogReadFailure):
-        return events
+def _tool_observer() -> Callable[[EventRecord], None]:
+    """把 append 的 tool 事件投影成 stderr 行；observer 不参与落账。"""
     names: dict[str, str] = {}
-    seen = 0
-    for event in events:
+
+    def observe(event: EventRecord) -> None:
         if event.type not in {"tool/call", "tool/result", "tool/cancelled"}:
-            continue
-        seen += 1
-        if seen <= printed:
-            continue
+            return
         call_id = str(event.payload.get("tool_call_id", ""))
         if event.type == "tool/call":
             name = str(event.payload.get("name", "?"))
@@ -455,7 +449,8 @@ def _print_tool_events(log: EventLog, printed: int) -> int | LogReadFailure:
         else:
             name = names.get(call_id, "?")
             print(f"[tool] {name} cancelled", file=sys.stderr)
-    return seen
+
+    return observe
 
 
 def _print_new_replies(log: EventLog, printed: int) -> int | LogReadFailure:
@@ -550,11 +545,11 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
     # 会话 id 走 stderr（design D5）：stdout 那个投影只有模型回复正文与提示符。
     # 这一行同时是「这次会话的日志在哪」的入口——拿它跑 `minihns replay <id>` 找得到这次会话。
     print(f"会话 {prepared.log.session_id}", file=sys.stderr)
+    prepared.log.subscribe(_tool_observer())
 
     segments = 0
     turn_index = 1
     printed = 0
-    printed_tools = 0
     scanned = 0
     if prepared.resumed:
         events = read_events(prepared.log.path)
@@ -564,9 +559,6 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
         turns = [event for event in events if event.type == "turn/start"]
         turn_index = len(turns) + 1
         printed = sum(1 for event in events if event.type == "model/response")
-        printed_tools = sum(
-            1 for event in events if event.type in {"tool/call", "tool/result", "tool/cancelled"}
-        )
         scanned = events[-1].seq if events else 0
     # 连续溢出的说明靠这两个局部变量（design 的 Risks）：记住上一个段的收尾理由、这一句说过没有。
     # 不进日志、不新增状态机。
@@ -639,10 +631,6 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
                     return _report_failure(
                         shadow_failure.code, shadow_failure.detail, EXIT_INTERNAL_ERROR
                     )
-                tools = _print_tool_events(prepared.log, printed_tools)
-                if isinstance(tools, LogReadFailure):
-                    return _report_failure(tools.code, tools.detail, EXIT_INTERNAL_ERROR)
-                printed_tools = tools
                 replies = _print_new_replies(prepared.log, printed)
                 if isinstance(replies, LogReadFailure):
                     return _report_failure(replies.code, replies.detail, EXIT_INTERNAL_ERROR)
