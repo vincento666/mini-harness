@@ -1,9 +1,14 @@
-﻿# Tasks
+# Tasks
 
 ## 1. EventLog 续写
 
 - [x] 1.1 seam ④：`test_open_reads_last_seq_and_appends_next`——最后 seq 7，新 append 是 8
 - [x] 1.2 seam ④：空日志从 0 开始
+
+## 1b. chat 工具事件行
+
+- [x] 1.3 seam ⑥：`test_chat_prints_tool_call_and_result_to_stderr`——`[tool] read` / `-> OK` 只在 stderr，stdout 只有正文
+- [x] 1.4 跨段计数 `printed_tools` 不重复打印
 
 ## 2. resume
 

@@ -423,6 +423,40 @@ def _suppress_sigint(signum: int, frame: FrameType | None) -> None:
     return None
 
 
+def _print_tool_events(log: EventLog, printed: int) -> int | LogReadFailure:
+    """把新增的工具调用/结果打到 stderr；stdout 仍只放正文。"""
+    events = read_events(log.path)
+    if isinstance(events, LogReadFailure):
+        return events
+    names: dict[str, str] = {}
+    seen = 0
+    for event in events:
+        if event.type not in {"tool/call", "tool/result", "tool/cancelled"}:
+            continue
+        seen += 1
+        if seen <= printed:
+            continue
+        call_id = str(event.payload.get("tool_call_id", ""))
+        if event.type == "tool/call":
+            name = str(event.payload.get("name", "?"))
+            names[call_id] = name
+            arguments = json.dumps(
+                event.payload.get("arguments", {}), ensure_ascii=False, sort_keys=True
+            )
+            print(f"[tool] {name} {arguments}", file=sys.stderr)
+        elif event.type == "tool/result":
+            name = names.get(call_id, "?")
+            outcome = str(event.payload.get("outcome", "?"))
+            content = str(event.payload.get("content", "")).replace("\n", " ")
+            preview = content[:160]
+            suffix = f": {preview}" if preview else ""
+            print(f"[tool] {name} -> {outcome}{suffix}", file=sys.stderr)
+        else:
+            name = names.get(call_id, "?")
+            print(f"[tool] {name} cancelled", file=sys.stderr)
+    return seen
+
+
 def _print_new_replies(log: EventLog, printed: int) -> int | LogReadFailure:
     """把日志里新增的模型回复正文按发生顺序打到 stdout（design D11）。
 
@@ -518,6 +552,7 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
     segments = 0
     turn_index = 1
     printed = 0
+    printed_tools = 0
     scanned = 0
     # 连续溢出的说明靠这两个局部变量（design 的 Risks）：记住上一个段的收尾理由、这一句说过没有。
     # 不进日志、不新增状态机。
@@ -590,6 +625,10 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
                     return _report_failure(
                         shadow_failure.code, shadow_failure.detail, EXIT_INTERNAL_ERROR
                     )
+                tools = _print_tool_events(prepared.log, printed_tools)
+                if isinstance(tools, LogReadFailure):
+                    return _report_failure(tools.code, tools.detail, EXIT_INTERNAL_ERROR)
+                printed_tools = tools
                 replies = _print_new_replies(prepared.log, printed)
                 if isinstance(replies, LogReadFailure):
                     return _report_failure(replies.code, replies.detail, EXIT_INTERNAL_ERROR)

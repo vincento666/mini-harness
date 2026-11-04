@@ -973,3 +973,34 @@ def test_a_single_overflow_does_not_say_the_session_cannot_come_down(tmp_path: P
     `test_consecutive_overflows_say_the_session_cannot_come_down` 判；不可达的理由记在 ADR-0026。
     """
     pytest.skip("第二段溢出这个形状在压力预算规则下不可达：压缩总会把对话体压到保留尾部之内")
+
+
+def test_chat_prints_tool_call_and_result_to_stderr(tmp_path: Path) -> None:
+    (tmp_path / "a.md").write_text("alpha\n", encoding="utf-8")
+    fixture = _fixture(
+        tmp_path,
+        "tool.json",
+        [
+            {
+                "content": "",
+                "finish_reason": "tool_calls",
+                "tool_calls": [
+                    {
+                        "id": "c1",
+                        "name": "read",
+                        "arguments": {"file_path": "a.md"},
+                    }
+                ],
+            },
+            {"content": "读到了 alpha", "finish_reason": "stop"},
+        ],
+    )
+
+    result = _chat("--fixture", str(fixture), cwd=tmp_path, stdin_text="读 a.md\n")
+
+    assert result.returncode == 0
+    assert "[tool] read" in result.stderr
+    assert "file_path" in result.stderr
+    assert "-> OK" in result.stderr
+    assert "读到了 alpha" in result.stdout
+    assert "读到了 alpha" not in result.stderr
