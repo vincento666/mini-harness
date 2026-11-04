@@ -323,6 +323,20 @@ def close_session(handle: HostSession) -> Failure | None:
     return None
 
 
+def resume_session(state: HostState, session_id: str) -> HostSession | Failure:
+    """把同一进程里已结束的会话重新置为 idle；不新建日志、不写 session/start。"""
+    handle = state.sessions.get(session_id)
+    if handle is None:
+        return Failure("SESSION_NOT_FOUND", f"没有会话 {session_id}", EXIT_INVALID_ARGUMENT)
+    if handle.status != SESSION_ENDED:
+        return Failure("SESSION_BUSY", "只有已结束的会话可以 resume", EXIT_INVALID_ARGUMENT)
+    handle.status = SESSION_IDLE
+    handle.stopping = False
+    handle.ended_by_failure = False
+    handle.queue.clear()
+    return handle
+
+
 async def shutdown(state: HostState) -> None:
     """服务退出：取消所有段、等它们写完收尾记录，再为每个会话写 `session/end`。"""
     handles = list(state.sessions.values())

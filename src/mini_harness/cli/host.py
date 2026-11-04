@@ -36,6 +36,7 @@ from mini_harness.session.host import (
     close_session,
     create_session,
     resolve_approval,
+    resume_session,
     shutdown,
     submit_message,
 )
@@ -149,6 +150,7 @@ class HostServer:
         router.add_get(f"{SESSIONS_PATH}/{{session_id}}", self._get_session)
         router.add_post(f"{SESSIONS_PATH}/{{session_id}}/messages", self._post_message)
         router.add_post(f"{SESSIONS_PATH}/{{session_id}}/cancel", self._cancel_session)
+        router.add_post(f"{SESSIONS_PATH}/{{session_id}}/resume", self._resume_session)
         router.add_delete(f"{SESSIONS_PATH}/{{session_id}}", self._delete_session)
         router.add_post(
             f"{SESSIONS_PATH}/{{session_id}}/approvals/{{tool_call_id}}",
@@ -253,6 +255,13 @@ class HostServer:
         if cancel_session(handle):
             return web.json_response({"cancelled": True}, status=202)
         return web.json_response({"cancelled": False}, status=200)
+
+    async def _resume_session(self, request: web.Request) -> web.Response:
+        session_id = request.match_info["session_id"]
+        resumed = resume_session(self._state, session_id)
+        if isinstance(resumed, Failure):
+            return _failure_response(resumed)
+        return web.json_response(resumed.view(), status=200)
 
     async def _delete_session(self, request: web.Request) -> web.Response:
         session_id = request.match_info["session_id"]

@@ -1865,3 +1865,51 @@ def test_host_starts_and_health_is_public(tmp_path: Path) -> None:
         assert response.json() == {"protocol": 1, "sessions": 0, "features": ["delta"]}
     finally:
         _stop(process)
+
+
+def test_host_resume_uses_existing_session(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = tmp_path / "resume.json"
+    fixture.write_text(
+        json.dumps(
+            [
+                {"content": "一", "finish_reason": "stop"},
+                {"content": "二", "finish_reason": "stop"},
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(client, workspace, fixture)
+            client.post(
+                f"/sessions/{session_id}/messages",
+                headers=_headers(),
+                json={"content": "一"},
+            )
+            _wait_until_idle(client, session_id)
+            assert client.delete(f"/sessions/{session_id}", headers=_headers()).status_code == 200
+
+            resumed = client.post(f"/sessions/{session_id}/resume", headers=_headers())
+            assert resumed.status_code == 200
+            client.post(
+                f"/sessions/{session_id}/messages",
+                headers=_headers(),
+                json={"content": "二"},
+            )
+            _wait_until_idle(client, session_id)
+
+        log = session_dir / f"{session_id}.jsonl"
+        records = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+        assert sum(1 for record in records if record["type"] == "session/start") == 1
+        assert sum(1 for record in records if record["type"] == "user/message") == 2
+    finally:
+        _stop(process)
