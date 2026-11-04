@@ -193,9 +193,11 @@ class HostServer:
         )
 
     async def _list_sessions(self, request: web.Request) -> web.Response:
-        return web.json_response(
-            {"sessions": [handle.view() for handle in self._state.sessions.values()]}
+        sessions = dict(self._state.index)
+        sessions.update(
+            {session_id: handle.view() for session_id, handle in self._state.sessions.items()}
         )
+        return web.json_response({"sessions": list(sessions.values())})
 
     async def _create_session(self, request: web.Request) -> web.Response:
         try:

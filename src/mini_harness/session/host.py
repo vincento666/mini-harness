@@ -12,9 +12,10 @@ from collections import deque
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Literal
 
-from mini_harness.events import EventLog, EventRecord
+from mini_harness.events import EventLog, EventRecord, LogReadFailure, read_events
 from mini_harness.loop import (
     ENTRY_HOST,
     STOP_MODEL_COMPLETED,
@@ -46,6 +47,33 @@ SessionStatus = Literal["idle", "running", "ended"]
 SESSION_IDLE: SessionStatus = "idle"
 SESSION_RUNNING: SessionStatus = "running"
 SESSION_ENDED: SessionStatus = "ended"
+
+
+def _scan_session_index(defaults: AssemblyRequest) -> dict[str, dict[str, object]]:
+    """启动时扫 session 目录，只索引已经有 session/end 的日志。"""
+    session_dir = Path(defaults.session_dir) if defaults.session_dir else Path.cwd() / "sessions"
+    index: dict[str, dict[str, object]] = {}
+    if not session_dir.is_dir():
+        return index
+    for path in sorted(session_dir.glob("*.jsonl")):
+        records = read_events(path)
+        if isinstance(records, LogReadFailure) or not records:
+            continue
+        start = next((record for record in records if record.type == "session/start"), None)
+        ended = any(record.type == "session/end" for record in records)
+        if start is None or not ended:
+            continue
+        session_id = path.stem
+        turns = sum(1 for record in records if record.type == "turn/start")
+        index[session_id] = {
+            "session_id": session_id,
+            "status": SESSION_ENDED,
+            "workspace": str(start.payload.get("workspace", "")),
+            "created_at": start.ts,
+            "last_seq": records[-1].seq,
+            "turns": turns,
+        }
+    return index
 
 
 @dataclass
@@ -134,6 +162,7 @@ class HostState:
         self.allow_danger_full_access = allow_danger_full_access
         self.allow_auto_approval = allow_auto_approval
         self.sessions: dict[str, HostSession] = {}
+        self.index: dict[str, dict[str, object]] = _scan_session_index(defaults)
 
     def session_count(self) -> int:
         return len(self.sessions)

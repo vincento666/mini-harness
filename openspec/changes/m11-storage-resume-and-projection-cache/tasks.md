@@ -25,8 +25,8 @@
 
 ## 4. session index
 
-- [ ] 4.1 seam ⑥：`test_host_lists_ended_sessions_after_restart`
-- [ ] 4.2 seam ⑥：`test_host_index_does_not_expose_log_download`
+- [x] 4.1 seam ⑥：`test_host_lists_ended_sessions_after_restart`
+- [x] 4.2 seam ⑥：`test_host_index_does_not_expose_log_download`
 
 ## 5. fold 缓存与三态
 

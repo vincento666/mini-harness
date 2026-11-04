@@ -1913,3 +1913,41 @@ def test_host_resume_uses_existing_session(tmp_path: Path) -> None:
         assert sum(1 for record in records if record["type"] == "user/message") == 2
     finally:
         _stop(process)
+
+
+def test_host_lists_ended_sessions_after_restart(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = _mock_fixture(tmp_path)
+    first_port = _free_port()
+    first = _start_host(tmp_path, first_port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(first_port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{first_port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(client, workspace, fixture)
+            client.post(
+                f"/sessions/{session_id}/messages",
+                headers=_headers(),
+                json={"content": "任务"},
+            )
+            _wait_until_idle(client, session_id)
+            assert client.delete(f"/sessions/{session_id}", headers=_headers()).status_code == 200
+    finally:
+        _stop(first)
+
+    second_port = _free_port()
+    second = _start_host(tmp_path, second_port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(second_port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{second_port}", timeout=10.0
+        ) as client:
+            listed = client.get("/sessions", headers=_headers())
+        assert listed.status_code == 200
+        entries = {entry["session_id"]: entry for entry in listed.json()["sessions"]}
+        assert entries[session_id]["status"] == "ended"
+    finally:
+        _stop(second)
