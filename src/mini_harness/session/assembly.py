@@ -63,6 +63,7 @@ class AssemblyRequest:
     sandbox: str | None = None
     approval: str | None = None
     auto_approve: bool = False
+    resume: str | None = None
 
 
 def request_from_args(args: Namespace, *, auto_approve: bool = False) -> AssemblyRequest:
@@ -86,6 +87,7 @@ def request_from_args(args: Namespace, *, auto_approve: bool = False) -> Assembl
         sandbox=args.sandbox,
         approval=None,
         auto_approve=auto_approve,
+        resume=getattr(args, "resume", None),
     )
 
 
@@ -97,6 +99,7 @@ class Prepared:
     settings: SessionSettings
     log: EventLog
     registry: ToolRegistry
+    resumed: bool = False
 
 
 @dataclass(frozen=True)
@@ -274,7 +277,11 @@ def assemble(
             return Failure(loaded.code, loaded.detail, EXIT_INVALID_ARGUMENT)
         provider = loaded
 
-    log = EventLog.start(_session_dir(layered.session_dir))
+    log = (
+        EventLog.open(_session_dir(layered.session_dir), request.resume)
+        if request.resume is not None
+        else EventLog.start(_session_dir(layered.session_dir))
+    )
     if isinstance(log, LogWriteFailure):
         return Failure(log.code, log.detail, EXIT_INTERNAL_ERROR)
 
@@ -294,4 +301,10 @@ def assemble(
         endpoint=endpoint,
         platform=platform_facts(),
     )
-    return Prepared(provider=provider, settings=settings, log=log, registry=registry)
+    return Prepared(
+        provider=provider,
+        settings=settings,
+        log=log,
+        registry=registry,
+        resumed=request.resume is not None,
+    )

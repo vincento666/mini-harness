@@ -698,7 +698,11 @@ def test_chats_flag_table_is_runs_flag_table_minus_two(tmp_path: Path) -> None:
 
     assert run_help.returncode == 0
     assert chat_help.returncode == 0
-    assert _flags(chat_help.stdout) == _flags(run_help.stdout) - {"-p", "--prompt", "--events"}
+    assert _flags(chat_help.stdout) == _flags(run_help.stdout) - {
+        "-p",
+        "--prompt",
+        "--events",
+    } | {"--resume"}
 
     for rejected in (("-p", "写一份报告"), ("--prompt", "写一份报告"), ("--events", "jsonl")):
         result = _cli("chat", *rejected, cwd=tmp_path)
@@ -1004,3 +1008,36 @@ def test_chat_prints_tool_call_and_result_to_stderr(tmp_path: Path) -> None:
     assert "-> OK" in result.stderr
     assert "读到了 alpha" in result.stdout
     assert "读到了 alpha" not in result.stderr
+
+
+def test_chat_resume_appends_to_the_same_log(tmp_path: Path) -> None:
+    fixture = _fixture(
+        tmp_path,
+        "resume.json",
+        [
+            {"content": "第一次", "finish_reason": "stop"},
+            {"content": "第二次", "finish_reason": "stop"},
+        ],
+    )
+    first = _chat("--fixture", str(fixture), cwd=tmp_path, stdin_text="一\n")
+    assert first.returncode == 0
+    session_id = _log_files(tmp_path)[0].stem
+
+    second_fixture = _fixture(
+        tmp_path, "resume-second.json", [{"content": "第二次", "finish_reason": "stop"}]
+    )
+    second = _chat(
+        "--resume",
+        session_id,
+        "--fixture",
+        str(second_fixture),
+        cwd=tmp_path,
+        stdin_text="二\n",
+    )
+
+    assert second.returncode == 0
+    records = _records(tmp_path)
+    assert sum(1 for record in records if record["type"] == "session/start") == 1
+    assert sum(1 for record in records if record["type"] == "user/message") == 2
+    assert "第一次" in first.stdout
+    assert "第二次" in second.stdout

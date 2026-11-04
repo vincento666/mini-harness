@@ -210,7 +210,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     # `chat` 没有 `-p/--prompt`，也没有 `--events`：一个会话的人话从 stdin 按行进来，
     # stdout 上只有模型回复正文与提示符（chat-repl 规格）。
-    subcommands.add_parser("chat", help="跑一个连续会话的 REPL", parents=[shared])
+    chat = subcommands.add_parser("chat", help="跑一个连续会话的 REPL", parents=[shared])
+    chat.add_argument("--resume", default=None)
 
     replay = subcommands.add_parser("replay", help="重放一个 session 的日志")
     replay.add_argument("session_id")
@@ -540,11 +541,12 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
         registry=prepared.registry,
         settings=prepared.settings,
     )
-    started = start_session(prompt="", entry=ENTRY_CHAT, env=env)
-    if started is not None:
-        return _report_failure(
-            started.failure_code or started.stop_reason, started.detail, EXIT_INTERNAL_ERROR
-        )
+    if not prepared.resumed:
+        started = start_session(prompt="", entry=ENTRY_CHAT, env=env)
+        if started is not None:
+            return _report_failure(
+                started.failure_code or started.stop_reason, started.detail, EXIT_INTERNAL_ERROR
+            )
     # 会话 id 走 stderr（design D5）：stdout 那个投影只有模型回复正文与提示符。
     # 这一行同时是「这次会话的日志在哪」的入口——拿它跑 `minihns replay <id>` 找得到这次会话。
     print(f"会话 {prepared.log.session_id}", file=sys.stderr)
@@ -554,6 +556,18 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
     printed = 0
     printed_tools = 0
     scanned = 0
+    if prepared.resumed:
+        events = read_events(prepared.log.path)
+        if isinstance(events, LogReadFailure):
+            return _report_failure(events.code, events.detail, EXIT_INTERNAL_ERROR)
+        segments = sum(1 for event in events if event.type == "segment/start")
+        turns = [event for event in events if event.type == "turn/start"]
+        turn_index = len(turns) + 1
+        printed = sum(1 for event in events if event.type == "model/response")
+        printed_tools = sum(
+            1 for event in events if event.type in {"tool/call", "tool/result", "tool/cancelled"}
+        )
+        scanned = events[-1].seq if events else 0
     # 连续溢出的说明靠这两个局部变量（design 的 Risks）：记住上一个段的收尾理由、这一句说过没有。
     # 不进日志、不新增状态机。
     previous_stop_reason: str | None = None
