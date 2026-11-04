@@ -14,7 +14,7 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Literal
 
-from mini_harness.events import EventLog
+from mini_harness.events import EventLog, EventRecord
 from mini_harness.loop import (
     ENTRY_HOST,
     STOP_MODEL_COMPLETED,
@@ -61,6 +61,7 @@ class HostSession:
     cancel: asyncio.Event | None = None
     approvals: dict[str, asyncio.Future[bool | None]] = field(default_factory=dict)
     subscribers: set[asyncio.Queue[dict[str, object]]] = field(default_factory=set)
+    event_subscribers: set[asyncio.Queue[EventRecord]] = field(default_factory=set)
     delta_indexes: dict[str, int] = field(default_factory=dict)
     task: asyncio.Task[None] | None = None
     stopping: bool = False
@@ -80,6 +81,20 @@ class HostSession:
 
     def unsubscribe_deltas(self, queue: asyncio.Queue[dict[str, object]]) -> None:
         self.subscribers.discard(queue)
+
+    def subscribe_events(self) -> asyncio.Queue[EventRecord]:
+        """一个 SSE 连接一个 durable 事件队列；live 事件由 append observer 推送。"""
+        queue: asyncio.Queue[EventRecord] = asyncio.Queue()
+        self.event_subscribers.add(queue)
+        return queue
+
+    def unsubscribe_events(self, queue: asyncio.Queue[EventRecord]) -> None:
+        self.event_subscribers.discard(queue)
+
+    def publish_event(self, record: EventRecord) -> None:
+        """append observer：把新 durable 记录推进所有连接队列。"""
+        for queue in list(self.event_subscribers):
+            queue.put_nowait(record)
 
     async def publish_delta(self, turn_id: str, text: str) -> None:
         """把一个正文增量广播给当前所有订阅者；慢读者丢最旧，不反压 provider。"""
@@ -167,6 +182,7 @@ def create_session(
         approval_gate=HostApprovalGate(handle),
         on_delta=handle.publish_delta,
     )
+    prepared.log.subscribe(handle.publish_event)
     state.sessions[prepared.log.session_id] = handle
     return handle
 

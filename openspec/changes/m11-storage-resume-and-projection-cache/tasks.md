@@ -9,6 +9,7 @@
 
 - [x] 1.3 seam ⑥：`test_chat_prints_tool_call_and_result_to_stderr`——`[tool] read` / `-> OK` 只在 stderr，stdout 只有正文
 - [x] 1.4 seam ④：`test_append_notifies_observers_until_unsubscribe`——observer 只收新 append，退订后停
+- [x] 1.5 seam ⑥：Host live durable 改为 `EventLog` observer；backlog 只补历史，按 seq 去重
 
 ## 2. resume
 
