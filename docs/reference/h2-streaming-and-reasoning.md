@@ -33,6 +33,7 @@
 | **log-only** | 只做证据、从不进模型历史的记录，如 `model/attempt`、`request/header` | 只留档、不给模型看的材料 | 不是被遮蔽的历史 |
 | **shadowed** | 被压缩遮蔽：仍在日志、不进当前上下文 | 账本里还在，但当前不摆到桌面上 | 不是被删除 |
 | **projection** | 客户端把 durable 事件映射成 UI 状态（消息/tool/error/审批行） | 把事件翻译成界面上的一行行内容 | 不是 `replay`，不是 `fold` |
+| **cache / fold 缓存** | 同一日志前缀的 `fold` 结果便签；不缓存会话现场 | 同一页账本反复算总账时贴的便签 | 不是会话状态，不是日志读取缓存；详见 `storage-resume-and-cache.md` |
 | **replay** | Host 本机重算 `context/assembled` 并逐点比对的校验工具 | 拿账本重算一遍，检查对不对 | 不是远端 UI 的渲染接口 |
 | **chat shell** | `minihns chat` 的终端适配器；默认 `--stream` | 终端里的聊天壳，不是网页 | 不是 host SSE 的复刻 |
 | **stdout / stderr** | 正常输出流 / 诊断输出流；chat 正文走 stdout，思考/标记走 stderr | 正常台词 / 旁白字幕；都不是错误码 | stderr 不是“错误码”；退出码才是数字状态 |
