@@ -912,6 +912,22 @@ def test_fold_cache_corruption_falls_back() -> None:
     ]
 
 
+def test_fold_cache_does_not_collide_on_same_seq_with_different_content() -> None:
+    first = [
+        _rec(0, "session/start", {}),
+        _rec(1, "user/message", {"segment_id": "s1", "content": "一"}),
+    ]
+    second = [
+        _rec(0, "session/start", {}),
+        _rec(1, "user/message", {"segment_id": "s1", "content": "二"}),
+    ]
+
+    fold(first)
+    actual = fold(second)
+
+    assert [message.content for message in actual.messages if message.role == "user"] == ["二"]
+
+
 def test_projection_marks_in_context_shadowed_log_only() -> None:
     events = [
         _rec(0, "session/start", {}),
