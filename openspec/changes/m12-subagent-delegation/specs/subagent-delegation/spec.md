@@ -59,3 +59,8 @@
 ### Requirement: Host 视图带父子字段
 
 Host 的 `GET /sessions` / `GET /sessions/{id}` 视图 SHALL 带 `parent_session_id`（根为空/null）与 `depth`；MUST NOT 转发子事件到父 SSE 流。
+
+#### Scenario: 父视图多两个字段
+
+- **WHEN** 查询一个由 subagent 创建的子会话
+- **THEN** view 有 parent_session_id 与 depth，父 SSE 流不含子事件
