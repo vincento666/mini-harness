@@ -60,7 +60,7 @@ uv run coverage report --fail-under=95 --show-missing   # 这三步不可拆，�
 
 ## 流程：每个里程碑一个 OpenSpec change
 
-一个里程碑的顺序：**propose → 人审 proposal / specs / design / tasks → apply（按 tdd 技能，red → green 单切片，一次一个）→ `code-review` 两轴 → 收尾四项（见下 Learning Gate）→ 在 change 分支上 sync delta 进主规格 + 归档 → 代码与规格一次合入 main**。
+一个里程碑的顺序：**propose → 人审 proposal / specs / design / tasks → apply（按 tdd 技能，red → green 单切片，一次一个）→ `code-review` 两轴 → DSH parity review（仅声称对齐 DSH 的 change）→ 收尾四项（见下 Learning Gate）→ 在 change 分支上 sync delta 进主规格 + 归档 → 代码与规格一次合入 main**。
 
 分支纪律：每个 change 一个分支 `change/<id>`；**归档在分支上做**——sync 进主规格、移 `changeRoot`、`openspec validate --all --strict` 全绿，然后代码与规格一次合入 `main`。反过来（先合并再归档）会在主干上留下「代码已合、主规格还停在上一个里程碑」的窗口。**merge 与推 `main` 先征求人的批准、确认了才执行**；agent 可自行推 `change/<id>` 分支与归档提交。
 
@@ -73,7 +73,7 @@ uv run coverage report --fail-under=95 --show-missing   # 这三步不可拆，�
 
 **每个里程碑收尾跑一轮变异测试并记录**：改坏一处实现 → 跑全量测试 → 把「变异 / 改法 / 哪些测试变红」记进 `docs/verification/<change-id>-mutation.md` → 还原并确认回到基线（**还原前先看 `git status`**，别把本轮未提交的改动一起回滚）。判据：每个变异都被至少一条测试杀死；存活的算覆盖缺口，补一条能杀死它的测试（先确认它在变异下红）。变异必须改变**可观察行为**，语义等价的改法是 dud mutant，不算。捕获一整个异常类族的代码，判据要用族里不显眼的那个成员。
 
-**Learning Gate（变异测试之后、归档之前）**：扫本轮证据——红过的测试、存活的变异、返工过的规格、踩过的工具坑——可复用教训写进 `docs/lessons.md` 收件箱，没有可复用信号就写 `NO-PROMOTION`。**每个 change 的 `tasks.md` 末尾固定四项收尾任务：真实端点验收、UAT 验收（人跑，场次手册在 propose 时立骨架）、变异测试一轮、Learning Gate**（archive 时未勾会警告）。晋升进本文件的只能是一句话规则，且**一进一出**：同时删掉或压缩本文件一条旧内容。收件箱超过 15 条先消化再收；每里程碑归档后跑一次 `agents-md-slim`。
+**Learning Gate（变异测试之后、归档之前）**：扫本轮证据——红过的测试、存活的变异、返工过的规格、踩过的工具坑——可复用教训写进 `docs/lessons.md` 收件箱，没有可复用信号就写 `NO-PROMOTION`。**每个 change 的 `tasks.md` 末尾固定四项收尾任务：真实端点验收、UAT 验收（人跑，场次手册在 propose 时立骨架）、变异测试一轮、Learning Gate**（archive 时未勾会警告）。**声称对齐 DSH 的 change 额外跑 DSH parity review**（code-review 之后、归档之前），按 `docs/verification/dsh-parity-review-template.md` 产出 `<change-id>-dsh-review.md`；结论只用 `aligned / simplified / deferred`，`simplified` 写理由/ADR，`deferred` 写触发条件。晋升进本文件的只能是一句话规则，且**一进一出**：同时删掉或压缩本文件一条旧内容。收件箱超过 15 条先消化再收；每里程碑归档后跑一次 `agents-md-slim`。
 
 ---
 

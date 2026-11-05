@@ -28,9 +28,10 @@
 - [ ] 5.1 文档：subagent 参考文档更新
 - [ ] 5.2 UAT 骨架
 
-## 6. 收尾四项
+## 6. 收尾四项 + DSH parity
 
 - [ ] 6.1 真实端点验收
 - [ ] 6.2 UAT 验收（人跑）
 - [ ] 6.3 变异测试一轮
 - [ ] 6.4 Learning Gate
+- [ ] 6.5 DSH parity review：spawn/depth/capacity/approval/parallel/cancel 六项逐条对比，写 `docs/verification/m12-subagent-delegation-dsh-review.md`
