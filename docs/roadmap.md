@@ -84,6 +84,7 @@ H1 / H2 是新增的宿主轨，不占用 M10–M15 的决策编号；M 编号�
 ### M11 存储、恢复与投影缓存
 
 - **change**：`m11-storage-resume-and-projection-cache`
+- **状态**：✅ **2026-11-05 已完成并合入 `main`**（`c9c62ee`）：23/23 task，真实端点 resume/replay、UAT API/CLI、变异 3 条、Learning L-070 全过；主规格 `session-resume` / `projection-cache` / `chat-tool-events` / `host-event-observer` 已 sync。
 - **层**：数据 + 工件
 - **内容**：`EventLog.open` 读最后 `seq`；`--resume`；`schema_version` 相邻迁移；session index（重启后 `GET /sessions` 能列已结束会话）；折叠缓存（日志领先、缓存跟随）；投影三态（进上下文 / 被遮蔽 / 只在日志）；多次压缩的遮蔽范围重叠规则；硬杀后的读方修复。
 - **完成判据**：resume 后续写 `seq` 正确、`replay` 逐点相等；硬杀日志被 resume 补出闭合；旧 schema 迁移；缓存失效正确；`GET /sessions` 重启后能列已结束会话。

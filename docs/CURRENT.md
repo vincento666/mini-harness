@@ -7,6 +7,7 @@
 - `main` 以 `git log -1` 为准（最近 H2 合并提交 `46ce2d2`，之后是状态/计划文档），tag `m1`–`m9` 都在；H1 / H2 分支已删除。
 - **H1 已合入并归档**：40/40 task；归档在 `openspec/changes/archive/2026-10-27-h1-host-session-api`。主规格新建 `host-api`，`cli` / `fences` delta 已 sync。GLOSSARY / roadmap / stage-map 的 K/R/S 分层口径已 cherry-pick（`9af5d3d`、`ad60a9d`）。
 - **H2 已合入并归档**：全部 task 勾完；真实端点 S1–S4、人跑 UAT S1–S5、变异四条、Learning Gate 全过。归档在 `openspec/changes/archive/2026-10-28-h2-streaming-and-event-echo`；主规格 `provider` / `host-api` 已 sync。
+- **M11 已合入并归档**：`m11-storage-resume-and-projection-cache` 23/23，`main` 合并 `c9c62ee`；EventLog 续写、chat/Host resume、schema 相邻迁移、Host session index、fold 缓存、投影三态、chat 工具事件行与 Host observer 已落成；主规格 4 个已 sync。归档在 `openspec/changes/archive/2026-11-05-m11-storage-resume-and-projection-cache`。
 - **P0 诊断完成**：`docs/verification/p0-budget-reading-diagnostic-2026-10-27.md`。当前 main 的 W1 四次遮蔽均下降、W2 未触发溢出；**不按旧 20 个 task 原样 apply**，需重新确认是否还有可复现症状。
 - **唯一未实现的修复分支**：`change/fix-post-compaction-budget-reading`（20 个 task 全未勾，只有 proposal / design / spec / tasks；不实现、不归档）。
 - 已合并但分支还没删的：`change/fix-small-window-compaction-dead-zone`、`change/add-key-driven-default-provider`、`change/fix-chat-screen-feedback`、`change/add-platform-facts-to-protected-header`、`change/fix-compaction-and-context-overflow`。
