@@ -37,8 +37,8 @@
 
 ## 6. 文档与 UAT
 
-- [ ] 6.1 文档：存储/恢复/缓存底稿更新
-- [ ] 6.2 UAT 骨架：`docs/verification/m11-storage-resume-and-projection-cache-uat.md`
+- [x] 6.1 文档：存储/恢复/缓存底稿更新
+- [x] 6.2 UAT 骨架：`docs/verification/m11-storage-resume-and-projection-cache-uat.md`
 
 ## 7. 收尾四项
 

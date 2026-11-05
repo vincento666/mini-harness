@@ -16,7 +16,15 @@ M11 只补数据/恢复层：日志可续写、session 可 resume、schema 可�
 
 **D5 session index 从日志扫描。** Host 启动时扫 `*.jsonl` 的 `session/start` 与 `session/end`，建只读索引；`GET /sessions` 合并进程内活会话与索引。索引缓存可选，但 miss 可重建。
 
-**D6 fold 缓存以 seq 为水位。** 进程内 `dict[path, (seq, messages)]`；日志 seq 更大就重算。缓存不落盘、不共享；损坏/不匹配直接丢弃。
+**D6 fold 缓存以 seq 为水位。** 进程内 `_FOLD_CACHE`，key 是 `session_id + 首 seq + 末 seq + 条数 + 内容指纹`；日志 seq/内容变化就重算。缓存不落盘、不共享；损坏/不匹配直接丢弃，返回深拷贝。
+
+**D6.1 cache 是“日志前缀的 fold 便签”，不是会话现场。** 它缓存的是 `AssembledContext`（模型 messages + header fingerprint），不缓存：
+
+- session 的 running/idle、队列、取消、approval future；
+- active attempt、delta、tool/error/thinking 的 UI 行；
+- 远端壳的 projection。
+
+命中时**仍要读日志**（key 需要事件内容），省的是重复 fold，不是磁盘读。主要受益者是同一前缀被反复折叠的路径：Host 重复 snapshot、同前缀的装配/审计；连续对话每轮 seq 都变，基本不命中；另一个进程（`replay`/远端壳）缓存为空。DSH 的对应物是常驻 Session 的 `deriveMessages()` 增量缓存与 append 失效，思想相同，mini 是文件后端的降级 memo。
 
 **D7 三态投影是 fold 的附带输出。** `projection` 给每个 source seq 打 `in_context` / `shadowed` / `log_only`；`messages` 仍是主输出，三态只给审计/UI。遮蔽区间合并为覆盖集合，后写覆盖先写。
 
