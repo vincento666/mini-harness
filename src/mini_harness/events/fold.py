@@ -169,6 +169,22 @@ def _summary_message(event: EventRecord) -> Message | None:
     return Message(role="system", content=summary)
 
 
+_FOLD_CACHE: dict[tuple[str, int, int, int, str], AssembledContext] = {}
+_FOLD_CACHE_MAX = 32
+
+
+def _fold_cache_key(events: Sequence[EventRecord]) -> tuple[str, int, int, int, str]:
+    """日志 append-only：session + 首尾 seq + 条数 + 内容指纹识别一个前缀。"""
+    if not events:
+        return ("", -1, -1, 0, "")
+    digest = hashlib.sha256(
+        "\n".join(
+            f"{event.seq}\x1f{event.type}\x1f{event.payload!r}" for event in events
+        ).encode("utf-8")
+    ).hexdigest()
+    return (events[0].session_id, events[0].seq, events[-1].seq, len(events), digest)
+
+
 def fold(events: Sequence[EventRecord]) -> AssembledContext:
     """折叠事件序列：不截断、不新造遮蔽、不自己摘要。
 
@@ -178,6 +194,10 @@ def fold(events: Sequence[EventRecord]) -> AssembledContext:
     闭合排在它该在的位置：未配对的调用先闭合，再轮到它之后的那条消息。于是半截日志折叠出来的
     上下文仍然配平——assistant 的工具请求后面跟着工具结果，之后才是既有消息。
     """
+    key = _fold_cache_key(events)
+    cached = _FOLD_CACHE.get(key)
+    if isinstance(cached, AssembledContext):
+        return cached.model_copy(deep=True)
     tool_names, append_system_prompt, platform = _start_facts(events)
     header = protected_header(
         append_system_prompt=append_system_prompt,
@@ -218,7 +238,11 @@ def fold(events: Sequence[EventRecord]) -> AssembledContext:
     fingerprint = hashlib.sha256(
         "\n".join(message.content for message in header).encode("utf-8")
     ).hexdigest()
-    return AssembledContext(messages=[*header, *body], header_fingerprint=fingerprint)
+    result = AssembledContext(messages=[*header, *body], header_fingerprint=fingerprint)
+    if len(_FOLD_CACHE) >= _FOLD_CACHE_MAX:
+        _FOLD_CACHE.pop(next(iter(_FOLD_CACHE)))
+    _FOLD_CACHE[key] = result.model_copy(deep=True)
+    return result
 
 
 def fold_range(events: Sequence[EventRecord], *, start: int, end: int) -> list[Message]:

@@ -9,9 +9,11 @@ from typing import Any
 from mini_harness.config import build_registry
 from mini_harness.events import EventLog, EventRecord
 from mini_harness.events.fold import (
+    _FOLD_CACHE,
     SYSTEM_PROMPT,
     TOOL_OUTCOME_UNKNOWN,
     AssembledContext,
+    _fold_cache_key,
     assembly_points,
     fold,
     fold_range,
@@ -874,3 +876,35 @@ def test_a_seq_range_excludes_the_protected_events_it_covers() -> None:
 def test_an_empty_seq_range_folds_to_no_messages() -> None:
     """起点大于终点的区间折出空对话，不报错也不猜。"""
     assert fold_range(_range_events(), start=5, end=4) == []
+
+
+def test_fold_cache_follows_new_log_seq() -> None:
+    events = [
+        _rec(0, "session/start", {}),
+        _rec(1, "user/message", {"segment_id": "s1", "content": "一"}),
+    ]
+    first = fold(events)
+    assert [message.content for message in first.messages if message.role == "user"] == ["一"]
+
+    grown = [*events, _rec(2, "user/message", {"segment_id": "s1", "content": "二"})]
+    second = fold(grown)
+
+    assert [message.content for message in second.messages if message.role == "user"] == [
+        "一",
+        "二",
+    ]
+
+
+def test_fold_cache_corruption_falls_back() -> None:
+    events = [
+        _rec(0, "session/start", {}),
+        _rec(1, "user/message", {"segment_id": "s1", "content": "一"}),
+    ]
+    expected = fold(events)
+    _FOLD_CACHE[_fold_cache_key(events)] = object()  # type: ignore[assignment]
+
+    actual = fold(events)
+
+    assert [message.content for message in actual.messages] == [
+        message.content for message in expected.messages
+    ]
