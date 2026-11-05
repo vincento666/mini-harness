@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -24,10 +25,21 @@ class LogWriteFailure:
 class EventLog:
     """一个 session 的 JSONL 日志：只追加，`seq` 在此单点分配。"""
 
-    def __init__(self, path: Path, session_id: str) -> None:
+    def __init__(self, path: Path, session_id: str, *, next_seq: int = 0) -> None:
         self.path = path
         self.session_id = session_id
-        self._next_seq = 0
+        self._next_seq = next_seq
+        self._observers: list[Callable[[EventRecord], None]] = []
+
+    def subscribe(self, observer: Callable[[EventRecord], None]) -> Callable[[], None]:
+        """订阅 append 后的 durable 记录；返回退订函数。observer 不参与落账。"""
+        self._observers.append(observer)
+
+        def unsubscribe() -> None:
+            if observer in self._observers:
+                self._observers.remove(observer)
+
+        return unsubscribe
 
     @property
     def last_seq(self) -> int:
@@ -40,6 +52,20 @@ class EventLog:
         return cls.create(session_dir=session_dir, session_id=uuid.uuid4().hex)
 
     @classmethod
+    def open(cls, session_dir: Path, session_id: str) -> EventLog | LogWriteFailure:
+        """打开已有日志并从最后一条记录续写；缺失或坏日志是失败结果。"""
+        from mini_harness.events.reader import LogReadFailure, read_events
+
+        path = session_dir / f"{session_id}.jsonl"
+        if not path.is_file():
+            return LogWriteFailure(path=path, detail=f"{path}: 日志不存在", code="LOG_NOT_FOUND")
+        records = read_events(path)
+        if isinstance(records, LogReadFailure):
+            return LogWriteFailure(path=path, detail=records.detail, code=records.code)
+        next_seq = records[-1].seq + 1 if records else 0
+        return cls(path, session_id, next_seq=next_seq)
+
+    @classmethod
     def create(cls, session_dir: Path, session_id: str) -> EventLog | LogWriteFailure:
         path = session_dir / f"{session_id}.jsonl"
         try:
@@ -47,7 +73,7 @@ class EventLog:
             path.touch()
         except OSError as exc:
             return LogWriteFailure(path=path, detail=f"{session_dir}: {exc}")
-        return cls(path, session_id)
+        return cls.open(session_dir, session_id)
 
     def append(self, event_type: str, payload: dict[str, Any]) -> EventRecord | LogWriteFailure:
         if not is_known_type(event_type):
@@ -67,4 +93,10 @@ class EventLog:
         except OSError as exc:
             return LogWriteFailure(path=self.path, detail=f"{self.path}: {exc}")
         self._next_seq += 1
+        for observer in tuple(self._observers):
+            try:
+                observer(record)
+            except Exception:
+                # 观察者是显示层；它塌了不能反过来改日志/中断内核。
+                continue
         return record

@@ -896,6 +896,15 @@ ADR 到 9.2 才提交；已提交的 `tasks.md` 三处引用本分支不存在�
 - Promotion candidate: 与 L-016 的估算取舍同族；本轮不占 AGENTS.md 额度
 - Status: inbox
 
+### L-070
+- Date: 2026-11-05
+- Context: M11 给 fold 加前缀缓存
+- Observation: 只用 `session + 首尾 seq + 条数` 做 cache key 会让不同日志/不同内容在同 seq 形状下碰撞，测试拿到上一份 messages。日志 append-only 不等于“任意同 seq 形状都同内容”；key 必须带内容指纹，或缓存绑定到确有版本的对象
+- Evidence: `test_fold_cache_does_not_collide_on_same_seq_with_different_content`；M11 变异 M1
+- Next use: 缓存 key 先问“它唯一识别输入吗”，不要拿“通常不会碰撞”的形状当身份
+- Promotion candidate: 与 L-069（adapter 边界）同族；本轮不占 AGENTS.md 额度
+- Status: inbox
+
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 - 每个里程碑收尾扫一次，**允许输出 `NO-PROMOTION`**（没有可复用信号就不写条目）。
 - 收件箱条目超过 **15 条**必须先消化再收新的：合并同类、把已被代码或规格自证的条目删掉。

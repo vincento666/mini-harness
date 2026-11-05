@@ -9,12 +9,16 @@ from typing import Any
 from mini_harness.config import build_registry
 from mini_harness.events import EventLog, EventRecord
 from mini_harness.events.fold import (
+    _FOLD_CACHE,
     SYSTEM_PROMPT,
     TOOL_OUTCOME_UNKNOWN,
     AssembledContext,
+    _fold_cache_key,
     assembly_points,
     fold,
     fold_range,
+    projection_states,
+    shadowed_seqs,
 )
 from mini_harness.events.reader import read_events
 from tool_harness import DONE, run_fixture_session
@@ -874,3 +878,88 @@ def test_a_seq_range_excludes_the_protected_events_it_covers() -> None:
 def test_an_empty_seq_range_folds_to_no_messages() -> None:
     """起点大于终点的区间折出空对话，不报错也不猜。"""
     assert fold_range(_range_events(), start=5, end=4) == []
+
+
+def test_fold_cache_follows_new_log_seq() -> None:
+    events = [
+        _rec(0, "session/start", {}),
+        _rec(1, "user/message", {"segment_id": "s1", "content": "一"}),
+    ]
+    first = fold(events)
+    assert [message.content for message in first.messages if message.role == "user"] == ["一"]
+
+    grown = [*events, _rec(2, "user/message", {"segment_id": "s1", "content": "二"})]
+    second = fold(grown)
+
+    assert [message.content for message in second.messages if message.role == "user"] == [
+        "一",
+        "二",
+    ]
+
+
+def test_fold_cache_corruption_falls_back() -> None:
+    events = [
+        _rec(0, "session/start", {}),
+        _rec(1, "user/message", {"segment_id": "s1", "content": "一"}),
+    ]
+    expected = fold(events)
+    _FOLD_CACHE[_fold_cache_key(events)] = object()  # type: ignore[assignment]
+
+    actual = fold(events)
+
+    assert [message.content for message in actual.messages] == [
+        message.content for message in expected.messages
+    ]
+
+
+def test_fold_cache_does_not_collide_on_same_seq_with_different_content() -> None:
+    first = [
+        _rec(0, "session/start", {}),
+        _rec(1, "user/message", {"segment_id": "s1", "content": "一"}),
+    ]
+    second = [
+        _rec(0, "session/start", {}),
+        _rec(1, "user/message", {"segment_id": "s1", "content": "二"}),
+    ]
+
+    fold(first)
+    actual = fold(second)
+
+    assert [message.content for message in actual.messages if message.role == "user"] == ["二"]
+
+
+def test_projection_marks_in_context_shadowed_log_only() -> None:
+    events = [
+        _rec(0, "session/start", {}),
+        _rec(1, "user/message", {"segment_id": "s1", "content": "一"}),
+        _rec(
+            2,
+            "compaction/summary",
+            {
+                "summary": "摘要",
+                "shadowed_range": {"start": 1, "end": 1},
+            },
+        ),
+        _rec(
+            3,
+            "error/model",
+            {"turn_id": "t1", "code": "PROVIDER_ERROR", "detail": "失败"},
+        ),
+    ]
+
+    assert projection_states(events) == {
+        0: "in_context",
+        1: "shadowed",
+        2: "in_context",
+        3: "log_only",
+    }
+
+
+def test_overlapping_shadow_ranges_merge() -> None:
+    events = [
+        _rec(0, "session/start", {}),
+        _rec(1, "compaction/summary", {"summary": "一", "shadowed_range": {"start": 1, "end": 3}}),
+        _rec(4, "compaction/summary", {"summary": "二", "shadowed_range": {"start": 2, "end": 5}}),
+    ]
+
+    assert shadowed_seqs(events) == {1, 2, 3, 4, 5}

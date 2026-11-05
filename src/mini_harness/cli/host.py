@@ -22,7 +22,7 @@ from typing import Any
 from aiohttp import web
 
 from mini_harness.cli.serve import SERVE_HOSTS, sse_frame
-from mini_harness.events import LogReadFailure, LogTail, read_events
+from mini_harness.events import LogReadFailure, read_events
 from mini_harness.events.fold import fold
 from mini_harness.session.assembly import (
     EXIT_INVALID_ARGUMENT,
@@ -36,6 +36,7 @@ from mini_harness.session.host import (
     close_session,
     create_session,
     resolve_approval,
+    resume_session,
     shutdown,
     submit_message,
 )
@@ -149,6 +150,7 @@ class HostServer:
         router.add_get(f"{SESSIONS_PATH}/{{session_id}}", self._get_session)
         router.add_post(f"{SESSIONS_PATH}/{{session_id}}/messages", self._post_message)
         router.add_post(f"{SESSIONS_PATH}/{{session_id}}/cancel", self._cancel_session)
+        router.add_post(f"{SESSIONS_PATH}/{{session_id}}/resume", self._resume_session)
         router.add_delete(f"{SESSIONS_PATH}/{{session_id}}", self._delete_session)
         router.add_post(
             f"{SESSIONS_PATH}/{{session_id}}/approvals/{{tool_call_id}}",
@@ -191,9 +193,11 @@ class HostServer:
         )
 
     async def _list_sessions(self, request: web.Request) -> web.Response:
-        return web.json_response(
-            {"sessions": [handle.view() for handle in self._state.sessions.values()]}
+        sessions = dict(self._state.index)
+        sessions.update(
+            {session_id: handle.view() for session_id, handle in self._state.sessions.items()}
         )
+        return web.json_response({"sessions": list(sessions.values())})
 
     async def _create_session(self, request: web.Request) -> web.Response:
         try:
@@ -253,6 +257,13 @@ class HostServer:
         if cancel_session(handle):
             return web.json_response({"cancelled": True}, status=202)
         return web.json_response({"cancelled": False}, status=200)
+
+    async def _resume_session(self, request: web.Request) -> web.Response:
+        session_id = request.match_info["session_id"]
+        resumed = resume_session(self._state, session_id)
+        if isinstance(resumed, Failure):
+            return _failure_response(resumed)
+        return web.json_response(resumed.view(), status=200)
 
     async def _delete_session(self, request: web.Request) -> web.Response:
         session_id = request.match_info["session_id"]
@@ -319,31 +330,37 @@ class HostServer:
             after = last_seq
         else:
             await response.prepare(request)
-        tail = LogTail(handle.log.path, after=after)
+        events = handle.subscribe_events()
         deltas = handle.subscribe_deltas()
         try:
+            backlog = read_events(handle.log.path)
+            if isinstance(backlog, LogReadFailure):
+                return response
+            for record in backlog:
+                if record.seq > after:
+                    await response.write(sse_frame(record))
+                    after = record.seq
             while True:
                 transport = request.transport
                 if transport is None or transport.is_closing():
                     return response
-                records = tail.read_new()
-                if isinstance(records, LogReadFailure):
-                    return response
                 try:
-                    # 先把这一批 durable 记录按顺序写出去；遇到 `model/response` 时
-                    # 先排空它之前的 delta——provider 在落 response 前已经发过所有片段。
-                    for record in records:
+                    while not events.empty():
+                        record = events.get_nowait()
+                        if record.seq <= after:
+                            continue
                         if record.type == "model/response":
                             while not deltas.empty():
                                 await response.write(_delta_frame(deltas.get_nowait()))
                         await response.write(sse_frame(record))
-                    # 还没有 response 时也要把已到的增量送出去，不能等整段结束。
+                        after = record.seq
                     while not deltas.empty():
                         await response.write(_delta_frame(deltas.get_nowait()))
                 except ConnectionResetError:
                     return response
                 await asyncio.sleep(EVENTS_POLL_SECONDS)
         finally:
+            handle.unsubscribe_events(events)
             handle.unsubscribe_deltas(deltas)
 
     async def bind(self) -> str | None:

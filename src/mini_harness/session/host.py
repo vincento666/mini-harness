@@ -12,9 +12,10 @@ from collections import deque
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Literal
 
-from mini_harness.events import EventLog
+from mini_harness.events import EventLog, EventRecord, LogReadFailure, read_events
 from mini_harness.loop import (
     ENTRY_HOST,
     STOP_MODEL_COMPLETED,
@@ -48,6 +49,33 @@ SESSION_RUNNING: SessionStatus = "running"
 SESSION_ENDED: SessionStatus = "ended"
 
 
+def _scan_session_index(defaults: AssemblyRequest) -> dict[str, dict[str, object]]:
+    """启动时扫 session 目录，只索引已经有 session/end 的日志。"""
+    session_dir = Path(defaults.session_dir) if defaults.session_dir else Path.cwd() / "sessions"
+    index: dict[str, dict[str, object]] = {}
+    if not session_dir.is_dir():
+        return index
+    for path in sorted(session_dir.glob("*.jsonl")):
+        records = read_events(path)
+        if isinstance(records, LogReadFailure) or not records:
+            continue
+        start = next((record for record in records if record.type == "session/start"), None)
+        ended = any(record.type == "session/end" for record in records)
+        if start is None or not ended:
+            continue
+        session_id = path.stem
+        turns = sum(1 for record in records if record.type == "turn/start")
+        index[session_id] = {
+            "session_id": session_id,
+            "status": SESSION_ENDED,
+            "workspace": str(start.payload.get("workspace", "")),
+            "created_at": start.ts,
+            "last_seq": records[-1].seq,
+            "turns": turns,
+        }
+    return index
+
+
 @dataclass
 class HostSession:
     """一个会话的全部运行时句柄：一个 env、一个队列、一个取消事件、一组审批 future。"""
@@ -61,6 +89,7 @@ class HostSession:
     cancel: asyncio.Event | None = None
     approvals: dict[str, asyncio.Future[bool | None]] = field(default_factory=dict)
     subscribers: set[asyncio.Queue[dict[str, object]]] = field(default_factory=set)
+    event_subscribers: set[asyncio.Queue[EventRecord]] = field(default_factory=set)
     delta_indexes: dict[str, int] = field(default_factory=dict)
     task: asyncio.Task[None] | None = None
     stopping: bool = False
@@ -80,6 +109,20 @@ class HostSession:
 
     def unsubscribe_deltas(self, queue: asyncio.Queue[dict[str, object]]) -> None:
         self.subscribers.discard(queue)
+
+    def subscribe_events(self) -> asyncio.Queue[EventRecord]:
+        """一个 SSE 连接一个 durable 事件队列；live 事件由 append observer 推送。"""
+        queue: asyncio.Queue[EventRecord] = asyncio.Queue()
+        self.event_subscribers.add(queue)
+        return queue
+
+    def unsubscribe_events(self, queue: asyncio.Queue[EventRecord]) -> None:
+        self.event_subscribers.discard(queue)
+
+    def publish_event(self, record: EventRecord) -> None:
+        """append observer：把新 durable 记录推进所有连接队列。"""
+        for queue in list(self.event_subscribers):
+            queue.put_nowait(record)
 
     async def publish_delta(self, turn_id: str, text: str) -> None:
         """把一个正文增量广播给当前所有订阅者；慢读者丢最旧，不反压 provider。"""
@@ -119,6 +162,7 @@ class HostState:
         self.allow_danger_full_access = allow_danger_full_access
         self.allow_auto_approval = allow_auto_approval
         self.sessions: dict[str, HostSession] = {}
+        self.index: dict[str, dict[str, object]] = _scan_session_index(defaults)
 
     def session_count(self) -> int:
         return len(self.sessions)
@@ -167,6 +211,7 @@ def create_session(
         approval_gate=HostApprovalGate(handle),
         on_delta=handle.publish_delta,
     )
+    prepared.log.subscribe(handle.publish_event)
     state.sessions[prepared.log.session_id] = handle
     return handle
 
@@ -305,6 +350,20 @@ def close_session(handle: HostSession) -> Failure | None:
         )
     handle.status = SESSION_ENDED
     return None
+
+
+def resume_session(state: HostState, session_id: str) -> HostSession | Failure:
+    """把同一进程里已结束的会话重新置为 idle；不新建日志、不写 session/start。"""
+    handle = state.sessions.get(session_id)
+    if handle is None:
+        return Failure("SESSION_NOT_FOUND", f"没有会话 {session_id}", EXIT_INVALID_ARGUMENT)
+    if handle.status != SESSION_ENDED:
+        return Failure("SESSION_BUSY", "只有已结束的会话可以 resume", EXIT_INVALID_ARGUMENT)
+    handle.status = SESSION_IDLE
+    handle.stopping = False
+    handle.ended_by_failure = False
+    handle.queue.clear()
+    return handle
 
 
 async def shutdown(state: HostState) -> None:

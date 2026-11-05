@@ -11,6 +11,35 @@
 
 术语以 mini 为主；mini 没有的概念用 DSH 原名。
 
+## 0.0 术语表
+
+| 术语 | 含义 | 大白话 | 不是 |
+|---|---|---|---|
+| **durable** | 已提交进 append-only 日志、带单调 `seq`、可重放/可重建的事实 | 已经写进账本，翻回去还能查到 | 不是“内存里收到过” |
+| **ephemeral** | 发出即算的 live 帧，如 `model/delta` / `reasoning/delta`；不落日志、无 `id` | 现场直播的一句话，错过就没了 | 不是历史，不保证送达 |
+| **seq** | 日志记录的单调序号；durable 帧的 `id=seq` | 账本的流水号/页码 | 不是 delta 的 index |
+| **high-water** | 日志当前最后的 seq；snapshot/cursor 的起点 | 账本现在写到第几页 | 不是“最后一回合” |
+| **snapshot** | 某一前缀的折叠结果；`last_seq` + 模型消息基线 | 某一刻拍的照片，不是整本账 | 不是完整 UI transcript，不是日志下载 |
+| **cursor** | 已读到的 seq；`?from=N` / `Last-Event-ID: N` 只发 `seq > N` | 夹在账本里的书签，记着读到哪 | 不是 delta 的播放位置 |
+| **sink** | provider 把正文/思考片段交给上层的回调；`DeltaSink` / `ReasoningSink` | 水管出口：水从模型流到宿主 | 不是总线，不是日志 |
+| **delta** | 模型输出的一次增量；正文和思考分两条流 | 一句话里的一小段，不是整段 | 不是最终 message |
+| **attempt** | 一次模型调用尝试；成功进 message，失败/重试留 attempt 证据 | 一次尝试的草稿；失败的草稿留档，不是正式答复 | 不是 session，不是 history |
+| **interrupted** | 用户取消时，已交付前缀仍写成 assistant message 的 `interrupted:true` 字段 | 用户喊停时已经说出口的半句话，仍算答复的一部分 | 不是 block，不是 attempt |
+| **stream/end** | Host 主动终止 SSE 的 ephemeral 帧（`reason`/`code`）；物理断线不发 | 服务员说“打烊了”，不是菜单上的一道菜 | 不是 durable 事件 |
+| **baseline / active attempt** | DSH 重连时接上“进行中的半截”的 `startedAfterSeq`/`nextIndex`/stream | 重连时接着播的进度条；mini 暂时没有 | mini 暂没有；只补 durable |
+| **compact timed stream** | DSH 把 chunk 分组成带时间边界的紧凑 stream，嵌在 durable message 里 | 把直播录像压成带时间戳的摘要 | 不是原始 chunk 列表，不是日志 |
+| **session/follow** | DSH 的 snapshot + durable + 可选 live assistant stream 协议 | DSH 的“先补历史，再接直播”接口 | 不是 mini 的 `/events` |
+| **surface / fold** | `fold(日志前缀)` 派生给模型的 messages；surface 是日志的投影 | 把账本整理成给模型看的那份摘要 | 不是第二真源，不是 UI 状态 |
+| **log-only** | 只做证据、从不进模型历史的记录，如 `model/attempt`、`request/header` | 只留档、不给模型看的材料 | 不是被遮蔽的历史 |
+| **shadowed** | 被压缩遮蔽：仍在日志、不进当前上下文 | 账本里还在，但当前不摆到桌面上 | 不是被删除 |
+| **projection** | 客户端把 durable 事件映射成 UI 状态（消息/tool/error/审批行） | 把事件翻译成界面上的一行行内容 | 不是 `replay`，不是 `fold` |
+| **cache / fold 缓存** | 同一日志前缀的 `fold` 结果便签；不缓存会话现场 | 同一页账本反复算总账时贴的便签 | 不是会话状态，不是日志读取缓存；详见 `storage-resume-and-cache.md` |
+| **replay** | Host 本机重算 `context/assembled` 并逐点比对的校验工具 | 拿账本重算一遍，检查对不对 | 不是远端 UI 的渲染接口 |
+| **chat shell** | `minihns chat` 的终端适配器；默认 `--stream` | 终端里的聊天壳，不是网页 | 不是 host SSE 的复刻 |
+| **stdout / stderr** | 正常输出流 / 诊断输出流；chat 正文走 stdout，思考/标记走 stderr | 正常台词 / 旁白字幕；都不是错误码 | stderr 不是“错误码”；退出码才是数字状态 |
+| **tty** | 真实交互式终端；Ctrl-C 能变成 SIGINT | 真人在键盘前敲的终端；管道、CI 不是 | 管道、CI、后台进程不是 tty |
+| **`[thinking]` / `[answer]`** | chat 在 stderr 上给思考和正文的开始标志；正文本身仍在 stdout | 旁白字幕里的“思考中 / 回答开始”，不是台词本身 | 不是模型内容的一部分 |
+
 ---
 
 ## 0. 总图：Client / Web、Host、Kernel、Provider、Log
@@ -305,22 +334,29 @@ data: {"delta":{"tool_calls":[{"index":0,
 
 ---
 
-## 6. 思考帧：mini 的目标与 DSH 的完整实现
+## 6. 思考帧：mini 的实现与 DSH 的完整实现
 
-### 6.1 mini 当前没有
+### 6.1 mini 已实现
 
-mini 的 `model/response` 只有：
+`model/response` 现在有有序 `blocks`：
 
 ```text
-content: str
-tool_calls: [...]
-usage: {input_tokens, output_tokens}
+content: str                 # text block 的派生投影
+blocks: [reasoning|text|tool-call...]
+tool_calls: [...]            # 派生投影
+usage: {input_tokens, output_tokens, reasoning_tokens}
 finish_reason
 ```
 
-没有 reasoning 内容块，也没有 `reasoning/delta`。H2 明确只流可见正文。
+- `reasoning/delta` 是独立 ephemeral 帧，不落日志；
+- 成功写一条 `model/response`，失败/重试写 `model/attempt`；
+- 用户取消有已交付前缀时写 `interrupted:true` 的 message，不写 attempt；
+- `reasoning_effort` 有 `off|low|high|max`，默认 `high`；
+- provider 历史按 blocks 回传（OpenAI 兼容的 `reasoning_content`）；
+- chat shell 默认 `--stream`，正文 stdout、思考 stderr，`[answer]` 标记正文开始；
+- **R2 折叠/展开视觉仍等壳**；mini 没有 DSH 的 active baseline / compact stream。
 
-### 6.2 目标形状（原理）
+### 6.2 已实现形状
 
 ```text
 实时：
@@ -402,6 +438,8 @@ assistant/message.content:
 ```
 
 不是“先把思考与回答合并成一段文本，再由壳拆开”；传输与 durable 都是 typed 的。
+
+mini 的 chat shell 是同一原理的终端版：`reasoning/delta` → stderr `[thinking]`，正文 → stdout，正文开始时 stderr 打 `[answer]`；没有折叠 UI，折叠留给壳。
 
 ---
 
@@ -488,6 +526,11 @@ DSH 也是这个结构：`assistant/message.content` 保留 reasoning / text / t
 | 把 reasoning 写进日志就等于模型看到了 | 必须进 assistant message 并在后续请求回传 |
 | reasoning 字段能强制先计划再行动 | 不能；强制计划是另一层 |
 | 首帧顺序对就说明没有缓冲 | 顺序对不代表实时；缓冲会拖到整段结束 |
+| `model/attempt` 是失败消息，进历史 | 它是 log-only 证据，`fold` 忽略 |
+| 取消和失败都写 attempt | 有已交付前缀的用户取消写 interrupted message；无前缀/失败才写 attempt |
+| `stream/end` 是 durable 事件 | 它是 ephemeral 终止标记，无 id、不落日志 |
+| chat 的 `[thinking]`/`[answer]` 是模型内容 | 它们是 stderr 的终端标记；正文仍在 stdout |
+| stderr 是错误码 | stderr 是诊断输出流；错误码是退出码 |
 
 ---
 

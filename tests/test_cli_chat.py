@@ -23,6 +23,7 @@ from cli_blackbox import (
     _send_ctrl_c,
 )
 from mini_harness.cli.main import _chat_sigint_handler, _ChatSignals
+from mini_harness.events import EventLog
 from paths import WRITE_OUTSIDE_SCENARIO
 
 
@@ -698,7 +699,11 @@ def test_chats_flag_table_is_runs_flag_table_minus_two(tmp_path: Path) -> None:
 
     assert run_help.returncode == 0
     assert chat_help.returncode == 0
-    assert _flags(chat_help.stdout) == _flags(run_help.stdout) - {"-p", "--prompt", "--events"}
+    assert _flags(chat_help.stdout) == _flags(run_help.stdout) - {
+        "-p",
+        "--prompt",
+        "--events",
+    } | {"--resume"}
 
     for rejected in (("-p", "写一份报告"), ("--prompt", "写一份报告"), ("--events", "jsonl")):
         result = _cli("chat", *rejected, cwd=tmp_path)
@@ -973,3 +978,90 @@ def test_a_single_overflow_does_not_say_the_session_cannot_come_down(tmp_path: P
     `test_consecutive_overflows_say_the_session_cannot_come_down` 判；不可达的理由记在 ADR-0026。
     """
     pytest.skip("第二段溢出这个形状在压力预算规则下不可达：压缩总会把对话体压到保留尾部之内")
+
+
+def test_chat_prints_tool_call_and_result_to_stderr(tmp_path: Path) -> None:
+    (tmp_path / "a.md").write_text("alpha\n", encoding="utf-8")
+    fixture = _fixture(
+        tmp_path,
+        "tool.json",
+        [
+            {
+                "content": "",
+                "finish_reason": "tool_calls",
+                "tool_calls": [
+                    {
+                        "id": "c1",
+                        "name": "read",
+                        "arguments": {"file_path": "a.md"},
+                    }
+                ],
+            },
+            {"content": "读到了 alpha", "finish_reason": "stop"},
+        ],
+    )
+
+    result = _chat("--fixture", str(fixture), cwd=tmp_path, stdin_text="读 a.md\n")
+
+    assert result.returncode == 0
+    assert "[tool] read" in result.stderr
+    assert "file_path" in result.stderr
+    assert "-> OK" in result.stderr
+    assert "读到了 alpha" in result.stdout
+    assert "读到了 alpha" not in result.stderr
+
+
+def test_chat_resume_appends_to_the_same_log(tmp_path: Path) -> None:
+    fixture = _fixture(
+        tmp_path,
+        "resume.json",
+        [
+            {"content": "第一次", "finish_reason": "stop"},
+            {"content": "第二次", "finish_reason": "stop"},
+        ],
+    )
+    first = _chat("--fixture", str(fixture), cwd=tmp_path, stdin_text="一\n")
+    assert first.returncode == 0
+    session_id = _log_files(tmp_path)[0].stem
+
+    second_fixture = _fixture(
+        tmp_path, "resume-second.json", [{"content": "第二次", "finish_reason": "stop"}]
+    )
+    second = _chat(
+        "--resume",
+        session_id,
+        "--fixture",
+        str(second_fixture),
+        cwd=tmp_path,
+        stdin_text="二\n",
+    )
+
+    assert second.returncode == 0
+    records = _records(tmp_path)
+    assert sum(1 for record in records if record["type"] == "session/start") == 1
+    assert sum(1 for record in records if record["type"] == "user/message") == 2
+    assert "第一次" in first.stdout
+    assert "第二次" in second.stdout
+
+    replay = _cli("replay", session_id, cwd=tmp_path)
+    assert replay.returncode == 0
+    assert "REPLAY_MISMATCH" not in replay.stderr
+
+
+def test_resume_closes_hard_kill_gap_without_rewriting(tmp_path: Path) -> None:
+    sessions = tmp_path / "sessions"
+    log = EventLog.create(sessions, "s-half")
+    assert isinstance(log, EventLog)
+    log.append("session/start", {})
+    log.append("segment/start", {"segment_id": "s1"})
+    log.append("user/message", {"segment_id": "s1", "content": "半截"})
+    log.append("turn/start", {"turn_id": "t1"})
+    original = log.path.read_bytes()
+
+    fixture = _fixture(tmp_path, "unused.json", [{"content": "不该跑", "finish_reason": "stop"}])
+    result = _chat("--resume", "s-half", "--fixture", str(fixture), cwd=tmp_path, stdin_text="")
+
+    assert result.returncode == 0
+    assert log.path.read_bytes().startswith(original), "旧记录必须逐字节保留"
+    records = _records(tmp_path)
+    assert records[-1]["type"] == "session/end"

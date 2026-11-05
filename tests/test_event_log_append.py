@@ -36,6 +36,30 @@ def test_seq_starts_at_zero_and_increments_by_one(tmp_path: Path) -> None:
     assert seqs == [0, 1, 2]
 
 
+def test_open_reads_last_seq_and_appends_next(tmp_path: Path) -> None:
+    log = EventLog.create(session_dir=tmp_path, session_id="sess-open")
+    for index in range(8):
+        log.append("session/start", {"index": index})
+
+    reopened = EventLog.open(tmp_path, "sess-open")
+
+    assert isinstance(reopened, EventLog)
+    assert reopened.last_seq == 7
+    record = reopened.append("turn/start", {"turn_id": "t1"})
+    assert record.seq == 8
+
+
+def test_open_empty_log_appends_at_zero(tmp_path: Path) -> None:
+    created = EventLog.create(session_dir=tmp_path, session_id="sess-empty")
+    assert isinstance(created, EventLog)
+
+    reopened = EventLog.open(tmp_path, "sess-empty")
+
+    assert isinstance(reopened, EventLog)
+    assert reopened.last_seq == -1
+    assert reopened.append("turn/start", {"turn_id": "t1"}).seq == 0
+
+
 def test_log_is_append_only(tmp_path: Path) -> None:
     log = EventLog.create(session_dir=tmp_path, session_id="sess-3")
     log.append("session/start", {})
@@ -163,3 +187,54 @@ def test_a_corrupt_line_is_a_log_read_failure_for_the_tail_too(tmp_path: Path) -
     assert isinstance(outcome, LogReadFailure)
     assert outcome.code == "LOG_UNREADABLE"
     assert str(log.path) in outcome.detail
+
+
+def test_append_notifies_observers_until_unsubscribe(tmp_path: Path) -> None:
+    log = EventLog.create(session_dir=tmp_path, session_id="sess-observers")
+    seen: list[str] = []
+    unsubscribe = log.subscribe(lambda record: seen.append(record.type))
+
+    log.append("session/start", {})
+    unsubscribe()
+    log.append("turn/start", {"turn_id": "t1"})
+
+    assert seen == ["session/start"]
+
+
+def _write_schema_record(path: Path, schema_version: int) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": schema_version,
+                "type": "session/start",
+                "session_id": "migrate",
+                "seq": 0,
+                "ts": "2026-11-04T00:00:00+00:00",
+                "payload": {},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def test_adjacent_schema_migration(tmp_path: Path) -> None:
+    path = tmp_path / "old.jsonl"
+    _write_schema_record(path, 0)
+
+    records = read_events(path)
+
+    assert isinstance(records, list)
+    assert records[0].schema_version == 1
+
+
+def test_schema_skip_is_rejected_without_writing(tmp_path: Path) -> None:
+    path = tmp_path / "future.jsonl"
+    _write_schema_record(path, 2)
+    before = path.read_bytes()
+
+    outcome = read_events(path)
+
+    assert isinstance(outcome, LogReadFailure)
+    assert outcome.code == "SCHEMA_UNSUPPORTED"
+    assert path.read_bytes() == before
