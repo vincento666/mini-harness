@@ -17,6 +17,8 @@ from mini_harness.events.fold import (
     assembly_points,
     fold,
     fold_range,
+    projection_states,
+    shadowed_seqs,
 )
 from mini_harness.events.reader import read_events
 from tool_harness import DONE, run_fixture_session
@@ -908,3 +910,40 @@ def test_fold_cache_corruption_falls_back() -> None:
     assert [message.content for message in actual.messages] == [
         message.content for message in expected.messages
     ]
+
+
+def test_projection_marks_in_context_shadowed_log_only() -> None:
+    events = [
+        _rec(0, "session/start", {}),
+        _rec(1, "user/message", {"segment_id": "s1", "content": "一"}),
+        _rec(
+            2,
+            "compaction/summary",
+            {
+                "summary": "摘要",
+                "shadowed_range": {"start": 1, "end": 1},
+            },
+        ),
+        _rec(
+            3,
+            "error/model",
+            {"turn_id": "t1", "code": "PROVIDER_ERROR", "detail": "失败"},
+        ),
+    ]
+
+    assert projection_states(events) == {
+        0: "in_context",
+        1: "shadowed",
+        2: "in_context",
+        3: "log_only",
+    }
+
+
+def test_overlapping_shadow_ranges_merge() -> None:
+    events = [
+        _rec(0, "session/start", {}),
+        _rec(1, "compaction/summary", {"summary": "一", "shadowed_range": {"start": 1, "end": 3}}),
+        _rec(4, "compaction/summary", {"summary": "二", "shadowed_range": {"start": 2, "end": 5}}),
+    ]
+
+    assert shadowed_seqs(events) == {1, 2, 3, 4, 5}

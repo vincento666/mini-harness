@@ -32,8 +32,8 @@
 
 - [x] 5.1 seam ④：`test_fold_cache_follows_new_log_seq`
 - [x] 5.2 seam ④：`test_fold_cache_corruption_falls_back`
-- [ ] 5.3 seam ④：`test_projection_marks_in_context_shadowed_log_only`
-- [ ] 5.4 seam ④：`test_overlapping_shadow_ranges_merge`
+- [x] 5.3 seam ④：`test_projection_marks_in_context_shadowed_log_only`
+- [x] 5.4 seam ④：`test_overlapping_shadow_ranges_merge`
 
 ## 6. 文档与 UAT
 

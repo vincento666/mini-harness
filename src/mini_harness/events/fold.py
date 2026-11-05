@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -161,6 +161,25 @@ def shadowed_seqs(events: Sequence[EventRecord]) -> set[int]:
     return shadowed
 
 
+ProjectionState = Literal["in_context", "shadowed", "log_only"]
+
+
+def projection_states(events: Sequence[EventRecord]) -> dict[int, ProjectionState]:
+    """每个 source seq 的投影状态：进上下文 / 被遮蔽 / 只留档。"""
+    shadowed = shadowed_seqs(events)
+    states: dict[int, ProjectionState] = {}
+    for event in events:
+        if event.type in {"session/start", "compaction/summary"}:
+            states[event.seq] = "in_context"
+        elif event.seq in shadowed:
+            states[event.seq] = "shadowed"
+        elif event.type == "tool/call" or _body_message(event) is not None:
+            states[event.seq] = "in_context"
+        else:
+            states[event.seq] = "log_only"
+    return states
+
+
 def _summary_message(event: EventRecord) -> Message | None:
     """一条 `compaction/summary` 折成的那条 `system` 消息（不落盘，只在表层里）。"""
     summary = event.payload.get("summary")
@@ -178,9 +197,9 @@ def _fold_cache_key(events: Sequence[EventRecord]) -> tuple[str, int, int, int, 
     if not events:
         return ("", -1, -1, 0, "")
     digest = hashlib.sha256(
-        "\n".join(
-            f"{event.seq}\x1f{event.type}\x1f{event.payload!r}" for event in events
-        ).encode("utf-8")
+        "\n".join(f"{event.seq}\x1f{event.type}\x1f{event.payload!r}" for event in events).encode(
+            "utf-8"
+        )
     ).hexdigest()
     return (events[0].session_id, events[0].seq, events[-1].seq, len(events), digest)
 
