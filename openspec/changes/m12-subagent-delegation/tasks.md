@@ -8,9 +8,9 @@
 
 ## 2. 限制
 
-- [ ] 2.1 seam ⑦：`test_depth_exceeded_is_a_result`
-- [ ] 2.2 seam ⑦：`test_activation_limit_is_a_result`——第 9 个子代理
-- [ ] 2.3 seam ⑦：`test_child_approval_is_unavailable`
+- [x] 2.1 seam ⑦：`test_depth_exceeded_is_a_result`
+- [x] 2.2 seam ⑦：`test_activation_limit_is_a_result`——第 9 个子代理
+- [x] 2.3 seam ⑦：`test_child_approval_is_unavailable`
 
 ## 3. 并发与取消
 

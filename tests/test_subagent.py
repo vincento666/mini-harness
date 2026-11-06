@@ -2,15 +2,24 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from mini_harness.events import read_events
 from mini_harness.loop import RunOutcome
+from mini_harness.provider import FixtureProvider
 from mini_harness.tools import ToolRegistry
 from mini_harness.tools.bash_tools import bash_tool_definitions
+from mini_harness.tools.fences import ApprovalDecision
 from mini_harness.tools.file_tools import file_tool_definitions
 from mini_harness.tools.subagent import subagent_tool_definitions
-from tool_harness import DONE, run_fixture_session, tool_call_entry
+from tool_harness import (
+    DONE,
+    build_session_env,
+    dispatch_call,
+    run_fixture_session,
+    tool_call_entry,
+)
 
 
 def delegation_registry() -> ToolRegistry:
@@ -117,3 +126,88 @@ async def test_child_session_context_is_empty_but_for_the_task(tmp_path: Path) -
     assert roles == ["system", "user"]
     assert "父任务" not in str(assembled.payload["messages"])
     assert assembled.payload["messages"][-1]["content"] == "只做这一件事"
+
+
+async def test_depth_exceeded_is_a_result(tmp_path: Path) -> None:
+    """`maxDepth = 1`：子代理（depth 1）再派子代理得到结果词，父回合继续（design D3）。"""
+    entries = [
+        tool_call_entry("subagent", "c1", task="先派一个子代理"),
+        tool_call_entry("subagent", "c2", task="子代理又想派子代理"),
+        {"content": "我不该派子代理", "finish_reason": "stop"},
+        DONE,
+    ]
+
+    _, outcome = await _run(tmp_path, entries)
+
+    assert outcome.stop_reason == "MODEL_COMPLETED"
+    child = read_events(_child_paths(tmp_path)[0])
+    results = [record.payload for record in child if record.type == "tool/result"]
+    assert [result["outcome"] for result in results] == ["DEPTH_EXCEEDED"]
+    # 被拒的那次没有建出孙会话：目录里只有父子两份日志。
+    assert len(_child_paths(tmp_path)) == 1
+
+
+async def test_activation_limit_is_a_result(tmp_path: Path) -> None:
+    """每父会话 8 个活跃子代理：额度用完时是结果词，不是异常（design D3）。"""
+    _, env = build_session_env(tmp_path, "s-parent", FixtureProvider(entries=[]))
+    env.delegation.active = env.delegation.max_active
+
+    outcome = await dispatch_call(
+        tmp_path,
+        "subagent",
+        {"task": "再来一个"},
+        registry=delegation_registry(),
+        session=env,
+        cancel=asyncio.Event(),
+    )
+
+    assert outcome.result.outcome == "ACTIVATION_LIMIT_REACHED"
+    assert str(env.delegation.max_active) in outcome.result.content
+    # 被拒的调用既不动额度，也不建子日志。
+    assert env.delegation.active == env.delegation.max_active
+    assert [path.name for path in tmp_path.glob("*.jsonl")] == ["s-parent.jsonl"]
+
+
+class _RecordingGate:
+    """父会话的问人门：一律批准，并记下被问过哪些工具。"""
+
+    def __init__(self) -> None:
+        self.asked: list[str] = []
+
+    async def request(self, *, tool_call_id: str, tool_name: str, detail: str) -> ApprovalDecision:
+        self.asked.append(tool_name)
+        return "APPROVED"
+
+
+async def test_a_child_approval_is_unavailable(tmp_path: Path) -> None:
+    """子会话问人得到 UNAVAILABLE：不继承父的一次性放行，也不等父代答（design D4）。"""
+    entries = [
+        tool_call_entry("subagent", "c1", task="改一个文件"),
+        tool_call_entry("write", "c2", file_path="out.md", content="写进去\n"),
+        DONE,
+    ]
+
+    gate = _RecordingGate()
+    log, outcome = await run_fixture_session(
+        tmp_path,
+        "s-parent",
+        entries,
+        registry=delegation_registry(),
+        prompt="父任务",
+        approval="ask",
+        approval_gate=gate,
+    )
+
+    assert outcome.stop_reason == "MODEL_COMPLETED"
+    child = read_events(_child_paths(tmp_path)[0])
+    assert [record.payload["outcome"] for record in child if record.type == "tool/result"] == [
+        "DENIED_BY_APPROVAL"
+    ]
+    fence = next(record for record in child if record.type == "error/fence")
+    assert fence.payload["code"] == "APPROVAL_UNAVAILABLE"
+    assert not (tmp_path / "out.md").exists()
+    # 子会话的提问没有转给父会话的问人门：父一次都没被问过。
+    assert gate.asked == []
+    # 子会话被拒也是父的结果：父回合继续，父日志那一条是 OK。
+    parent_result = next(record for record in read_events(log.path) if record.type == "tool/result")
+    assert parent_result.payload["outcome"] == "OK"
