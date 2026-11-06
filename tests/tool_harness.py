@@ -122,7 +122,6 @@ def dispatch_context(
     approval: ApprovalMode = "auto",
     records: Iterable[EventRecord] | None = None,
     session: SessionEnv | None = None,
-    cancel: asyncio.Event | None = None,
 ) -> DispatchContext:
     """seam ②③ 判据共用的围栏上下文。`SessionSettings` 只在这里构造一次。"""
     settings = SessionSettings(
@@ -133,7 +132,7 @@ def dispatch_context(
         approval=approval,
     )
     reads = None if records is None else reads_from_records(records, workspace)
-    return DispatchContext.from_settings(settings, reads=reads, session=session, cancel=cancel)
+    return DispatchContext.from_settings(settings, reads=reads, session=session)
 
 
 async def dispatch_call(
@@ -148,7 +147,6 @@ async def dispatch_call(
     approval_gate: ApprovalGate | None = None,
     on_stage: Callable[[str], None] | None = None,
     session: SessionEnv | None = None,
-    cancel: asyncio.Event | None = None,
 ) -> DispatchOutcome:
     """跑完一次派发判定。注册表与 approval 门都可注入。"""
     call = ToolCall(id="c1", name=name, arguments=arguments)
@@ -161,7 +159,6 @@ async def dispatch_call(
             approval=approval,
             records=records,
             session=session,
-            cancel=cancel,
         ),
         _ApprovingGate() if approval_gate is None else approval_gate,
         on_stage=on_stage,

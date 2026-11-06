@@ -43,8 +43,8 @@ class DispatchContext:
     """一次派发能看到的全部事实：工具只读它，不读进程内状态。
 
     `session` 是委派要的那一层（子会话需要父的日志、设置、注册表与 provider）；
-    `tool_call_id` 是这一次调用的身份，子会话的 `session/start` 靠它跟父结果对上；
-    `cancel` 是当前段的取消事件，父段取消要传播给这一批派生的子代理。
+    `tool_call_id` 是这一次调用的身份，子会话的 `session/start` 靠它跟父结果对上。
+    父段取消不经过这里：它到达工具的方式是 `CancelledError`（ADR-0007）。
     """
 
     workspace: Path
@@ -53,7 +53,6 @@ class DispatchContext:
     reads: Mapping[str, PriorRead] = field(default_factory=dict)
     session: SessionEnv | None = None
     tool_call_id: str | None = None
-    cancel: asyncio.Event | None = None
 
     @classmethod
     def from_settings(
@@ -62,7 +61,6 @@ class DispatchContext:
         *,
         reads: Mapping[str, PriorRead] | None = None,
         session: SessionEnv | None = None,
-        cancel: asyncio.Event | None = None,
     ) -> DispatchContext:
         return cls(
             workspace=settings.workspace,
@@ -70,7 +68,6 @@ class DispatchContext:
             approval=settings.approval,
             reads=reads or {},
             session=session,
-            cancel=cancel,
         )
 
 

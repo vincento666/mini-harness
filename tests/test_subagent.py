@@ -164,7 +164,6 @@ async def test_activation_limit_is_a_result(tmp_path: Path) -> None:
         {"task": "再来一个"},
         registry=delegation_registry(),
         session=env,
-        cancel=asyncio.Event(),
     )
 
     assert outcome.result.outcome == "ACTIVATION_LIMIT_REACHED"

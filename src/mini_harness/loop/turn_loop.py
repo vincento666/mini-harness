@@ -234,7 +234,6 @@ async def _dispatch_batch(
         settings,
         reads=reads_from_records(prefix, settings.workspace),
         session=session,
-        cancel=cancel,
     )
 
     # `started` 是「轮到过：开始派发或放弃」；`finished` 是「整个跑完」。

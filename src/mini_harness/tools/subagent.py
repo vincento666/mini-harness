@@ -126,12 +126,6 @@ async def _run_child(env: SessionEnv, *, task: str, cancel: asyncio.Event) -> tu
     return segment.stop_reason, segment.turns, segment.detail
 
 
-async def _forward_cancel(parent: asyncio.Event, child: asyncio.Event) -> None:
-    """父段的取消传播到本段派生的子会话（design D6）。"""
-    await parent.wait()
-    child.set()
-
-
 async def _run_subagent(args: SubagentArgs, context: DispatchContext) -> ToolResult:
     """深度与容量都是结果词；子会话的日志/过程只留在子会话自己那里。"""
     session = context.session
@@ -174,14 +168,12 @@ async def _run_subagent(args: SubagentArgs, context: DispatchContext) -> ToolRes
         approval_gate=UNAVAILABLE_APPROVAL_GATE,
     )
     child_cancel = asyncio.Event()
-    bridge: asyncio.Task[None] | None = None
-    if context.cancel is not None:
-        bridge = asyncio.create_task(_forward_cancel(context.cancel, child_cancel))
     delegation.active += 1
     task = asyncio.create_task(_run_child(child_env, task=args.task, cancel=child_cancel))
     try:
         try:
             # shield：父段取消不把子会话半路砍断，子会话自己按 ABORTED 收尾（design D6）。
+            # 父取消到达执行器的方式是 `CancelledError`，所以取消桥就只需要下面这一行。
             stop_reason, turns, _ = await asyncio.shield(task)
         except asyncio.CancelledError:
             child_cancel.set()
@@ -190,8 +182,6 @@ async def _run_subagent(args: SubagentArgs, context: DispatchContext) -> ToolRes
             raise
     finally:
         delegation.active -= 1
-        if bridge is not None:
-            bridge.cancel()
     if delegation.on_child_finished is not None:
         with contextlib.suppress(Exception):
             delegation.on_child_finished(child_env, turns)
