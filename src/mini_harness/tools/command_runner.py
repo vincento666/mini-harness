@@ -70,11 +70,13 @@ class _SubprocessRunner:
             )
             await killer.wait()
         else:
+            # POSIX 专属的名字用 `getattr` 取：Windows 上类型检查不会报缺失，
+            # POSIX 上也不会留下「无用的 ignore」——两端的门禁都要能跑。
+            killpg = getattr(os, "killpg")  # noqa: B009 — 跨平台的类型检查要它
+            getpgid = getattr(os, "getpgid")  # noqa: B009
+            sigkill = getattr(signal, "SIGKILL")  # noqa: B009
             with contextlib.suppress(ProcessLookupError):
-                os.killpg(  # type: ignore[attr-defined]
-                    os.getpgid(process.pid),  # type: ignore[attr-defined]
-                    signal.SIGKILL,  # type: ignore[attr-defined]
-                )
+                killpg(getpgid(process.pid), sigkill)
         await process.wait()
 
 
