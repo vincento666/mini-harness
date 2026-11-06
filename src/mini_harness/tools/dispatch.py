@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -117,7 +117,8 @@ async def dispatch_tool_call(
 
     stages("execute")
     try:
-        result = await definition.run(args, context)
+        # 每次调用都带上自己的身份：子会话的 `session/start` 靠它与父结果对上（M12）。
+        result = await definition.run(args, replace(context, tool_call_id=call.id))
     except TimeoutError as exc:
         # `TimeoutError` 是 `OSError` 的子类：这一条 MUST 排在 `OSError` 之前。
         return finished(

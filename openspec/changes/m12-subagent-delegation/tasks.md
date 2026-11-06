@@ -2,9 +2,9 @@
 
 ## 1. 工具与子会话
 
-- [ ] 1.1 seam ⑦：`test_subagent_writes_its_own_log`——子 session/start 带 entry=subagent/parent/depth
-- [ ] 1.2 seam ⑦：`test_parent_log_has_only_tool_pair`——父只有 tool/call + tool/result
-- [ ] 1.3 seam ⑦：`test_subagent_result_is_not_child_log`——结果是最终文本，不是子日志
+- [x] 1.1 seam ⑦：`test_subagent_writes_its_own_log`——子 session/start 带 entry=subagent/parent/depth
+- [x] 1.2 seam ⑦：`test_parent_log_has_only_tool_pair`——父只有 tool/call + tool/result
+- [x] 1.3 seam ⑦：`test_subagent_result_is_not_child_log`——结果是最终文本，不是子日志
 
 ## 2. 限制
 

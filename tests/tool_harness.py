@@ -121,6 +121,8 @@ def dispatch_context(
     sandbox: SandboxLevel = "workspace-write",
     approval: ApprovalMode = "auto",
     records: Iterable[EventRecord] | None = None,
+    session: SessionEnv | None = None,
+    cancel: asyncio.Event | None = None,
 ) -> DispatchContext:
     """seam ②③ 判据共用的围栏上下文。`SessionSettings` 只在这里构造一次。"""
     settings = SessionSettings(
@@ -131,7 +133,7 @@ def dispatch_context(
         approval=approval,
     )
     reads = None if records is None else reads_from_records(records, workspace)
-    return DispatchContext.from_settings(settings, reads=reads)
+    return DispatchContext.from_settings(settings, reads=reads, session=session, cancel=cancel)
 
 
 async def dispatch_call(
@@ -145,13 +147,22 @@ async def dispatch_call(
     registry: ToolRegistry | None = None,
     approval_gate: ApprovalGate | None = None,
     on_stage: Callable[[str], None] | None = None,
+    session: SessionEnv | None = None,
+    cancel: asyncio.Event | None = None,
 ) -> DispatchOutcome:
     """跑完一次派发判定。注册表与 approval 门都可注入。"""
     call = ToolCall(id="c1", name=name, arguments=arguments)
     return await dispatch_tool_call(
         call,
         file_registry() if registry is None else registry,
-        dispatch_context(workspace, sandbox=sandbox, approval=approval, records=records),
+        dispatch_context(
+            workspace,
+            sandbox=sandbox,
+            approval=approval,
+            records=records,
+            session=session,
+            cancel=cancel,
+        ),
         _ApprovingGate() if approval_gate is None else approval_gate,
         on_stage=on_stage,
     )

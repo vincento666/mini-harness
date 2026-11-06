@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, get_args
 
@@ -35,6 +35,7 @@ from mini_harness.provider.contract import (
     ToolCall,
     TurnDeltaSink,
 )
+from mini_harness.session.delegation import DelegationState
 from mini_harness.tools.dispatch import ApprovalAsked, DispatchOutcome, dispatch_tool_call
 from mini_harness.tools.fences import (
     STDIN_APPROVAL_GATE,
@@ -65,11 +66,12 @@ STOP_CONTEXT_WINDOW_EXCEEDED = "CONTEXT_WINDOW_EXCEEDED"
 STOP_REASONS: frozenset[str] = frozenset(get_args(StopReason))
 
 # 哪个入口开的这个会话：`session/start.payload.entry` 只有这四个值（design D1；H1 加 `host`）。
-SessionEntry = Literal["run", "chat", "serve", "host"]
+SessionEntry = Literal["run", "chat", "serve", "host", "subagent"]
 ENTRY_RUN: SessionEntry = "run"
 ENTRY_CHAT: SessionEntry = "chat"
 ENTRY_SERVE: SessionEntry = "serve"
 ENTRY_HOST: SessionEntry = "host"
+ENTRY_SUBAGENT: SessionEntry = "subagent"
 
 # provider 失败码里只有这一种触发请求级压缩与一次重试（ADR-0019）。
 PROVIDER_CONTEXT_OVERFLOW = "PROVIDER_CONTEXT_OVERFLOW"
@@ -105,6 +107,8 @@ class SessionEnv:
     settings: SessionSettings
     approval_gate: ApprovalGate = STDIN_APPROVAL_GATE
     on_delta: TurnDeltaSink | None = None
+    # 委派账本：活跃子代理数与宿主登记回调（M12）；每个会话一份。
+    delegation: DelegationState = field(default_factory=DelegationState)
 
 
 @dataclass(frozen=True)
@@ -213,6 +217,7 @@ async def _dispatch_batch(
     settings: SessionSettings,
     approval_gate: ApprovalGate,
     cancel: asyncio.Event,
+    session: SessionEnv | None = None,
 ) -> _BatchOutcome:
     """派发一个回合声明的工具调用批次：只读的并发、会改动文件的串行。
 
@@ -228,6 +233,8 @@ async def _dispatch_batch(
     context = DispatchContext.from_settings(
         settings,
         reads=reads_from_records(prefix, settings.workspace),
+        session=session,
+        cancel=cancel,
     )
 
     # `started` 是「轮到过：开始派发或放弃」；`finished` 是「整个跑完」。
@@ -810,6 +817,12 @@ def start_session(*, prompt: str, entry: SessionEntry, env: SessionEnv) -> Segme
     if settings.platform is not None:
         # 平台事实由入口填（ADR-0029）：`session/start` 原样写下去，折叠头部据此出运行环境块。
         start_payload["platform"] = dict(settings.platform)
+    if settings.parent_session_id is not None:
+        # 子会话的父子关系（M12）：根会话不写这两项，视图里回落成 null / 0。
+        start_payload["parent_session_id"] = settings.parent_session_id
+        start_payload["depth"] = settings.depth
+        if settings.parent_tool_call_id is not None:
+            start_payload["parent_tool_call_id"] = settings.parent_tool_call_id
     if settings.endpoint is not None:
         # 记的是密钥环境变量的名字，不是它的值（cli spec：密钥 MUST NOT 进 payload）。
         start_payload["base_url"] = settings.endpoint.base_url
@@ -1018,6 +1031,7 @@ async def _run_turns(
             settings=settings,
             approval_gate=approval_gate,
             cancel=cancel,
+            session=env,
         )
         if batch.failure is not None:
             return _segment_failure(batch.failure, turns)

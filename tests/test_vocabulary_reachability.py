@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+from dataclasses import replace
 from pathlib import Path
 from typing import get_args
 
@@ -15,7 +16,12 @@ import httpx
 from mini_harness.events import EventLog, read_events
 from mini_harness.events.fold import Message, fold
 from mini_harness.loop import STOP_REASONS
-from mini_harness.provider import AssistantTurn, ProviderFailure, load_fixture_provider
+from mini_harness.provider import (
+    AssistantTurn,
+    FixtureProvider,
+    ProviderFailure,
+    load_fixture_provider,
+)
 from mini_harness.provider.openai_compat import (
     CONTEXT_OVERFLOW_PHRASES,
     ContextOverflowPhrase,
@@ -30,6 +36,7 @@ from mini_harness.tools.fences import (
     FenceCode,
     StdinApprovalGate,
 )
+from mini_harness.tools.file_tools import file_tool_definitions
 from mini_harness.tools.registry import (
     ToolArgs,
     ToolDefinition,
@@ -37,9 +44,11 @@ from mini_harness.tools.registry import (
     ToolOutcome,
     ToolResult,
 )
+from mini_harness.tools.subagent import subagent_tool_definitions
 from paths import COMPACTION_SCENARIO
 from tool_harness import (
     DONE,
+    build_session_env,
     dispatch_call,
     file_registry,
     result_outcomes,
@@ -213,6 +222,16 @@ async def test_every_tool_outcome_is_reachable(tmp_path: Path) -> None:
         for message in fold(half).messages
         if message.role == "tool" and message.content in vocabulary
     )
+
+    # seam ⑦：委派的两个额度结果词——深度超限与容量耗尽。
+    _, delegation_env = build_session_env(
+        tmp_path, "s-reach-delegation", FixtureProvider(entries=[])
+    )
+    deep_env = replace(delegation_env, settings=replace(delegation_env.settings, depth=1))
+    delegating = ToolRegistry([*file_tool_definitions(), *subagent_tool_definitions()])
+    await run("subagent", {"task": "孙代理"}, registry=delegating, session=deep_env)
+    delegation_env.delegation.active = delegation_env.delegation.max_active
+    await run("subagent", {"task": "再来一个"}, registry=delegating, session=delegation_env)
 
     assert observed == set(get_args(ToolOutcome)), "有取值没被跑出来，或词表里多了跑不到的取值"
 
