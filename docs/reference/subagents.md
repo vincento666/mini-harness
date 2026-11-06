@@ -56,3 +56,13 @@
 - 子会话的 `max_turns` 默认继承还是独立？先独立默认 8，参数可覆盖。
 - 父取消是否级联取消所有子会话？先「取消当前段 → 取消该段派生的子会话」，已完成结果保留。
 - 子会话的 approval 一律 `UNAVAILABLE`，还是允许父会话代答？先一律不可用；父代答是提权通道，不做。
+
+## 6. 落成的形状（M12 实现对照）
+
+- **启动记录**：子 `session/start` 的 `entry` 是 `subagent`，另带 `parent_session_id`、`depth`、`parent_tool_call_id`。父日志里那条 `tool/call` 的 id 就是 `parent_tool_call_id`，父子两边靠它对上。
+- **结果**：父拿到的是子会话**最后一条非摘要 `model/response` 的正文**；没有正文时是一句「子会话 <id> 结束（<stop_reason>），没有最终文本」。子会话的 `model/*`、`tool/*` 与 delta 一条都不进父日志。
+- **额度**：`MAX_DEPTH = 1`、`MAX_ACTIVE_SUBAGENTS = 8`，常量住在 `session/delegation.py`；`DelegationState` 每个会话一份，活跃计数在子会话收尾时释放。两个超限都是 `tool/result` 的结果词（`DEPTH_EXCEEDED` / `ACTIVATION_LIMIT_REACHED`），不抛异常。
+- **审批**：子会话继承 `approval` **模式**（`auto` 这个钉定属于档位），但审批门固定 `UNAVAILABLE`。模式是 `ask` 时子会话写不了文件、也跑不了 `bash`（要问人 → 不可用 → `DENIED_BY_APPROVAL`），这是刻意的：父代答就是提权通道。
+- **并发与取消**：`subagent` 是 `parallel` 类别；父段取消经一条取消桥传到该段派生的子会话，子会话按 `ABORTED` 收尾，已完成的结果留在父日志。子任务用 `asyncio.shield` 保护，父取消不会把子会话半路砍断。
+- **Host**：子会话收尾时登记进 `HostState.index`，`GET /sessions` 与 `GET /sessions/{id}` 都能看到 `parent_session_id` / `depth`；父 SSE 流只有父自己的记录。
+

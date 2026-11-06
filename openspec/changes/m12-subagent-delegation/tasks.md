@@ -25,8 +25,8 @@
 
 ## 5. 文档与 UAT
 
-- [ ] 5.1 文档：subagent 参考文档更新
-- [ ] 5.2 UAT 骨架
+- [x] 5.1 文档：subagent 参考文档更新
+- [x] 5.2 UAT 骨架
 
 ## 6. 收尾四项 + DSH parity
 
