@@ -72,8 +72,32 @@ def _scan_session_index(defaults: AssemblyRequest) -> dict[str, dict[str, object
             "created_at": start.ts,
             "last_seq": records[-1].seq,
             "turns": turns,
+            # 父子关系（M12）：根会话是 null / 0，扫描旧的根日志时也是这两个值。
+            "parent_session_id": start.payload.get("parent_session_id"),
+            "depth": start.payload.get("depth", 0),
         }
     return index
+
+
+def register_child_session(state: HostState, env: SessionEnv, turns: int) -> None:
+    """子会话收尾时登记进列表（M12 design D7）：它已经结束，只读，单独一条日志。
+
+    父 SSE 流不转发子流：这里只登记列表条目，不订阅事件、也不进父会话的队列。
+    """
+    records = read_events(env.log.path)
+    created = (
+        records[0].ts if isinstance(records, list) and records else datetime.now(UTC).isoformat()
+    )
+    state.index[env.log.session_id] = {
+        "session_id": env.log.session_id,
+        "status": SESSION_ENDED,
+        "workspace": str(env.settings.workspace.resolve()),
+        "created_at": created,
+        "last_seq": env.log.last_seq,
+        "turns": turns,
+        "parent_session_id": env.settings.parent_session_id,
+        "depth": env.settings.depth,
+    }
 
 
 @dataclass
@@ -137,7 +161,10 @@ class HostSession:
                 queue.put_nowait(frame)
 
     def view(self) -> dict[str, object]:
-        """`GET /sessions` / `GET /sessions/{id}` 的一条：不返回密钥或 Authorization。"""
+        """`GET /sessions` / `GET /sessions/{id}` 的一条：不返回密钥或 Authorization。
+
+        `parent_session_id` / `depth` 是 M12 的父子字段：根会话是 `None` 与 0。
+        """
         return {
             "session_id": self.log.session_id,
             "status": self.status,
@@ -145,6 +172,8 @@ class HostSession:
             "created_at": self.created_at,
             "last_seq": self.last_seq,
             "turns": self.turns,
+            "parent_session_id": self.settings.parent_session_id,
+            "depth": self.settings.depth,
         }
 
 
@@ -210,6 +239,10 @@ def create_session(
         env,
         approval_gate=HostApprovalGate(handle),
         on_delta=handle.publish_delta,
+    )
+    # 本会话派生的子代理收尾时登记进列表（M12）；它们不占 `MAX_SESSIONS` 的额度。
+    handle.env.delegation.on_child_finished = lambda child_env, turns: register_child_session(
+        state, child_env, turns
     )
     prepared.log.subscribe(handle.publish_event)
     state.sessions[prepared.log.session_id] = handle

@@ -20,8 +20,8 @@
 
 ## 4. Host
 
-- [ ] 4.1 seam ⑥：`test_session_view_has_parent_and_depth`
-- [ ] 4.2 seam ⑥：`test_parent_sse_does_not_forward_child_events`
+- [x] 4.1 seam ⑥：`test_session_view_has_parent_and_depth`
+- [x] 4.2 seam ⑥：`test_parent_sse_does_not_forward_child_events`
 
 ## 5. 文档与 UAT
 
