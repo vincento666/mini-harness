@@ -21,5 +21,4 @@ class DelegationState:
     """一个会话的委派额度，外加「子会话收尾了」的宿主回调（根会话没有回调）。"""
 
     active: int = 0
-    max_active: int = MAX_ACTIVE_SUBAGENTS
-    on_child_finished: Callable[[SessionEnv, int], None] | None = None
+    on_child_finished: Callable[[SessionEnv], None] | None = None

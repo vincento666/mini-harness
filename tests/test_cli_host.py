@@ -1951,3 +1951,65 @@ def test_host_lists_ended_sessions_after_restart(tmp_path: Path) -> None:
         assert entries[session_id]["status"] == "ended"
     finally:
         _stop(second)
+
+
+def test_unknown_session_ids_are_404_on_every_route(tmp_path: Path) -> None:
+    """未登记的 id 在每条会话路由上都是同一个 404 信封，不是 500 或静默成功。"""
+    local = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(local))
+    missing = "0" * 32
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            requests = [
+                ("POST", f"/sessions/{missing}/messages", {"content": "任务"}),
+                ("POST", f"/sessions/{missing}/cancel", None),
+                ("POST", f"/sessions/{missing}/resume", None),
+                ("POST", f"/sessions/{missing}/approvals/c1", {"decision": "approve"}),
+                ("DELETE", f"/sessions/{missing}", None),
+                ("GET", f"/sessions/{missing}/events", None),
+            ]
+            for method, path, body in requests:
+                response = client.request(method, path, headers=_headers(), json=body)
+                assert response.status_code == 404, (method, path, response.text)
+                assert response.json()["error"]["code"] == "SESSION_NOT_FOUND"
+    finally:
+        _stop(process)
+
+
+def test_bad_json_and_bad_field_types_are_400(tmp_path: Path) -> None:
+    """请求体读不成 JSON、或形状/类型不对，都是 400 的 INVALID_ARGUMENT 信封。"""
+    local = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = _mock_fixture(tmp_path)
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(local))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(client, workspace, fixture)
+            broken = {"Authorization": f"Bearer {HOST_TOKEN}", "Content-Type": "application/json"}
+            for path in (
+                "/sessions",
+                f"/sessions/{session_id}/messages",
+                f"/sessions/{session_id}/approvals/c1",
+            ):
+                response = client.post(path, headers=broken, content=b"{not json")
+                assert response.status_code == 400, (path, response.text)
+                assert response.json()["error"]["code"] == "INVALID_ARGUMENT"
+
+            for body in ([1, 2], {"max_turns": "many"}):
+                response = client.post("/sessions", headers=_headers(), json=body)
+                assert response.status_code == 400, response.text
+                assert response.json()["error"]["code"] == "INVALID_ARGUMENT"
+    finally:
+        _stop(process)
+

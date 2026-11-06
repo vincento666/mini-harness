@@ -27,6 +27,7 @@ from mini_harness.provider.openai_compat import (
     ContextOverflowPhrase,
     OpenAICompatProvider,
 )
+from mini_harness.session.delegation import MAX_ACTIVE_SUBAGENTS
 from mini_harness.tools import DispatchOutcome, ToolRegistry
 from mini_harness.tools.bash_tools import bash_tool_definitions
 from mini_harness.tools.command_runner import CommandResult, SandboxUnavailable
@@ -230,7 +231,7 @@ async def test_every_tool_outcome_is_reachable(tmp_path: Path) -> None:
     deep_env = replace(delegation_env, settings=replace(delegation_env.settings, depth=1))
     delegating = ToolRegistry([*file_tool_definitions(), *subagent_tool_definitions()])
     await run("subagent", {"task": "孙代理"}, registry=delegating, session=deep_env)
-    delegation_env.delegation.active = delegation_env.delegation.max_active
+    delegation_env.delegation.active = MAX_ACTIVE_SUBAGENTS
     await run("subagent", {"task": "再来一个"}, registry=delegating, session=delegation_env)
 
     assert observed == set(get_args(ToolOutcome)), "有取值没被跑出来，或词表里多了跑不到的取值"

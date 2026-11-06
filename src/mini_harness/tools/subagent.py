@@ -1,6 +1,6 @@
 """`subagent` 工具：spawn 一个独立子会话，父日志只留一对 tool 记录（M12 design D1-D6）。
 
-工具层负责参数与结果词，内核负责子会话的 `run_session`、日志、深度/容量与取消。
+工具层负责参数与结果词，内核负责子会话的 `run_session_env`、日志、深度/容量与取消。
 父与子只共享工作区、围栏档位与 provider，不共享 approval 放行。
 """
 
@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from dataclasses import replace
-from pathlib import Path
+from pathlib import Path as FilePath
 
 from pydantic import Field, field_validator
 
@@ -17,16 +17,18 @@ from mini_harness.events import EventLog, LogReadFailure, LogWriteFailure, read_
 from mini_harness.loop.settings import SandboxLevel, SessionSettings
 from mini_harness.loop.turn_loop import (
     ENTRY_SUBAGENT,
-    STOP_ABORTED,
+    STOP_PROVIDER_ERROR,
     STOP_REASONS,
+    RunOutcome,
     SessionEnv,
-    end_session,
-    run_turn_segment,
-    start_session,
+    run_session_env,
 )
-from mini_harness.session.delegation import MAX_DEPTH, DelegationState
+from mini_harness.session.delegation import MAX_ACTIVE_SUBAGENTS, MAX_DEPTH, DelegationState
 from mini_harness.tools.fences import UNAVAILABLE_APPROVAL_GATE, DispatchContext
 from mini_harness.tools.registry import ToolArgs, ToolDefinition, ToolRegistry, ToolResult
+
+# 档位的宽窄顺序：子会话只能比父会话更窄，不能更宽（ADR-0036）。
+_SANDBOX_WIDTH: dict[str, int] = {"read-only": 0, "workspace-write": 1, "danger-full-access": 2}
 
 
 class SubagentArgs(ToolArgs):
@@ -35,7 +37,9 @@ class SubagentArgs(ToolArgs):
     task: str = Field(description="自足的任务提示词：子会话看不到父会话的历史")
     max_turns: int | None = Field(default=None, ge=1, description="子会话的回合上限")
     tools: list[str] | None = Field(default=None, description="子会话可用的工具名")
-    sandbox: SandboxLevel | None = Field(default=None, description="子会话的围栏档位")
+    sandbox: SandboxLevel | None = Field(
+        default=None, description="子会话的围栏档位：只能比父会话更窄"
+    )
 
     @field_validator("task")
     @classmethod
@@ -69,16 +73,25 @@ def _child_settings(
     depth: int,
     parent_session_id: str,
     parent_tool_call_id: str | None,
-) -> SessionSettings:
+) -> SessionSettings | ToolResult:
     """子会话继承档位/边界/provider 与 approval 模式，但审批门是 UNAVAILABLE（design D4）。
 
     模式（`auto` 钉定）是档位的一部分，随会话继承；一次性的「放行」不继承——
     子会话真要问人时只会得到不可用，不会由父代答、也不会自动放行。
+    `sandbox` 参数只能把档位收窄：放宽容许子会话绕过服务器级的许可（ADR-0036）。
     """
+    sandbox = parent.sandbox
+    if args.sandbox is not None:
+        if _SANDBOX_WIDTH[args.sandbox] > _SANDBOX_WIDTH[parent.sandbox]:
+            return ToolResult(
+                "TOOL_ARGS_INVALID",
+                f"子会话的档位不能比父会话宽：父是 {parent.sandbox}，请求 {args.sandbox}",
+            )
+        sandbox = args.sandbox
     return replace(
         parent,
         max_turns=parent.max_turns if args.max_turns is None else args.max_turns,
-        sandbox=parent.sandbox if args.sandbox is None else args.sandbox,
+        sandbox=sandbox,
         depth=depth,
         parent_session_id=parent_session_id,
         parent_tool_call_id=parent_tool_call_id,
@@ -100,7 +113,7 @@ def _child_registry(parent: ToolRegistry, args: SubagentArgs) -> ToolRegistry | 
     return ToolRegistry([d for d in parent.definitions() if d.name in wanted])
 
 
-def _final_text(log_path: Path) -> str:
+def _final_text(log_path: FilePath) -> str:
     """子会话的最终文本 = 最后一条非摘要 `model/response` 的正文；不把子日志交给父。"""
     records = read_events(log_path)
     if isinstance(records, LogReadFailure):
@@ -112,18 +125,23 @@ def _final_text(log_path: Path) -> str:
     return ""
 
 
-async def _run_child(env: SessionEnv, *, task: str, cancel: asyncio.Event) -> tuple[str, int, str]:
-    """跑一个子会话：开始 → 恰一个段 → 结束；返回（停止理由，回合数，detail）。"""
-    started = start_session(prompt=task, entry=ENTRY_SUBAGENT, env=env)
-    if started is not None:
-        return started.stop_reason, 0, started.detail
-    segment = await run_turn_segment(env=env, segment_id="s1", first_turn_index=1, cancel=cancel)
-    if segment.stop_reason not in STOP_REASONS:
-        return segment.stop_reason, segment.turns, segment.detail
-    ended = end_session(env=env, stop_reason=segment.stop_reason, turns=segment.turns)
-    if ended is not None:
-        return ended.stop_reason, ended.turns, ended.detail
-    return segment.stop_reason, segment.turns, segment.detail
+def _child_result(env: SessionEnv, outcome: RunOutcome) -> ToolResult:
+    """子会话收尾 → 父的结果。内核失败与模型失败都是失败，不能读成「成功了但没说话」。"""
+    session_id = env.log.session_id
+    if outcome.stop_reason == STOP_PROVIDER_ERROR:
+        return ToolResult(
+            "TOOL_IO_FAILED",
+            f"子会话 {session_id} 的模型调用失败（{outcome.failure_code}）：{outcome.detail}",
+        )
+    if outcome.stop_reason not in STOP_REASONS:
+        return ToolResult(
+            "TOOL_IO_FAILED",
+            f"子会话 {session_id} 内核失败（{outcome.stop_reason}）：{outcome.detail}",
+        )
+    text = _final_text(env.log.path)
+    if text:
+        return ToolResult("OK", text)
+    return ToolResult("OK", f"子会话 {session_id} 结束（{outcome.stop_reason}），没有最终文本")
 
 
 async def _run_subagent(args: SubagentArgs, context: DispatchContext) -> ToolResult:
@@ -141,15 +159,24 @@ async def _run_subagent(args: SubagentArgs, context: DispatchContext) -> ToolRes
             f"子代理的深度 {depth} 超过 maxDepth {MAX_DEPTH}：子代理不能再派子代理",
         )
     delegation: DelegationState = session.delegation
-    if delegation.active >= delegation.max_active:
+    if delegation.active >= MAX_ACTIVE_SUBAGENTS:
         return ToolResult(
             "ACTIVATION_LIMIT_REACHED",
-            f"每个父会话最多 {delegation.max_active} 个活跃子代理，"
+            f"每个父会话最多 {MAX_ACTIVE_SUBAGENTS} 个活跃子代理，"
             f"第 {delegation.active + 1} 个被拒绝",
         )
     child_registry = _child_registry(session.registry, args)
     if isinstance(child_registry, ToolResult):
         return child_registry
+    child_settings = _child_settings(
+        parent,
+        args,
+        depth=depth,
+        parent_session_id=session.log.session_id,
+        parent_tool_call_id=context.tool_call_id,
+    )
+    if isinstance(child_settings, ToolResult):
+        return child_settings
 
     child_log = EventLog.start(session.log.path.parent)
     if isinstance(child_log, LogWriteFailure):
@@ -158,23 +185,19 @@ async def _run_subagent(args: SubagentArgs, context: DispatchContext) -> ToolRes
         provider=session.provider,
         log=child_log,
         registry=child_registry,
-        settings=_child_settings(
-            parent,
-            args,
-            depth=depth,
-            parent_session_id=session.log.session_id,
-            parent_tool_call_id=context.tool_call_id,
-        ),
+        settings=child_settings,
         approval_gate=UNAVAILABLE_APPROVAL_GATE,
     )
     child_cancel = asyncio.Event()
     delegation.active += 1
-    task = asyncio.create_task(_run_child(child_env, task=args.task, cancel=child_cancel))
+    task = asyncio.create_task(
+        run_session_env(prompt=args.task, entry=ENTRY_SUBAGENT, env=child_env, cancel=child_cancel)
+    )
     try:
         try:
             # shield：父段取消不把子会话半路砍断，子会话自己按 ABORTED 收尾（design D6）。
             # 父取消到达执行器的方式是 `CancelledError`，所以取消桥就只需要下面这一行。
-            stop_reason, turns, _ = await asyncio.shield(task)
+            outcome = await asyncio.shield(task)
         except asyncio.CancelledError:
             child_cancel.set()
             with contextlib.suppress(asyncio.CancelledError, Exception):
@@ -182,13 +205,9 @@ async def _run_subagent(args: SubagentArgs, context: DispatchContext) -> ToolRes
             raise
     finally:
         delegation.active -= 1
-    if delegation.on_child_finished is not None:
-        with contextlib.suppress(Exception):
-            delegation.on_child_finished(child_env, turns)
-
-    if stop_reason == STOP_ABORTED:
-        return ToolResult("TOOL_CANCELLED", f"子会话 {child_log.session_id} 被取消")
-    text = _final_text(child_log.path)
-    if text:
-        return ToolResult("OK", text)
-    return ToolResult("OK", f"子会话 {child_log.session_id} 结束（{stop_reason}），没有最终文本")
+        finished = delegation.on_child_finished
+        if finished is not None:
+            # 被取消的子会话也要登记：它照样留下了一份完整的子日志（design D7）。
+            with contextlib.suppress(Exception):
+                finished(child_env)
+    return _child_result(child_env, outcome)

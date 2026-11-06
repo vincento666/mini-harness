@@ -12,6 +12,7 @@ from mini_harness.events.fold import Message
 from mini_harness.loop import RunOutcome
 from mini_harness.provider import FixtureProvider
 from mini_harness.provider.contract import AssistantTurn, DeltaSink, ToolCall, ToolSpec
+from mini_harness.session.delegation import MAX_ACTIVE_SUBAGENTS
 from mini_harness.tools import ToolRegistry
 from mini_harness.tools.bash_tools import bash_tool_definitions
 from mini_harness.tools.fences import ApprovalDecision
@@ -156,7 +157,7 @@ async def test_depth_exceeded_is_a_result(tmp_path: Path) -> None:
 async def test_activation_limit_is_a_result(tmp_path: Path) -> None:
     """每父会话 8 个活跃子代理：额度用完时是结果词，不是异常（design D3）。"""
     _, env = build_session_env(tmp_path, "s-parent", FixtureProvider(entries=[]))
-    env.delegation.active = env.delegation.max_active
+    env.delegation.active = MAX_ACTIVE_SUBAGENTS
 
     outcome = await dispatch_call(
         tmp_path,
@@ -167,9 +168,9 @@ async def test_activation_limit_is_a_result(tmp_path: Path) -> None:
     )
 
     assert outcome.result.outcome == "ACTIVATION_LIMIT_REACHED"
-    assert str(env.delegation.max_active) in outcome.result.content
+    assert str(MAX_ACTIVE_SUBAGENTS) in outcome.result.content
     # 被拒的调用既不动额度，也不建子日志。
-    assert env.delegation.active == env.delegation.max_active
+    assert env.delegation.active == MAX_ACTIVE_SUBAGENTS
     assert [path.name for path in tmp_path.glob("*.jsonl")] == ["s-parent.jsonl"]
 
 
@@ -374,3 +375,137 @@ async def test_a_completed_child_result_survives_parent_cancel(tmp_path: Path) -
     assert results["c1"]["content"] == "快任务完成"
     assert results["c2"]["outcome"] == "TOOL_CANCELLED"
 
+
+async def test_a_blank_task_is_an_argument_error(tmp_path: Path) -> None:
+    """`task` 必须自足且有内容：空白是入参错误，不是一次空委派。"""
+    _, env = build_session_env(tmp_path, "s-parent", FixtureProvider(entries=[]))
+
+    outcome = await dispatch_call(
+        tmp_path, "subagent", {"task": "   "}, registry=delegation_registry(), session=env
+    )
+
+    assert outcome.result.outcome == "TOOL_ARGS_INVALID"
+
+
+async def test_an_unknown_tool_name_is_an_argument_error(tmp_path: Path) -> None:
+    """`tools` 里写了未注册的名字是入参错误：不静默少一个工具，也不建子会话。"""
+    _, env = build_session_env(tmp_path, "s-parent", FixtureProvider(entries=[]))
+
+    outcome = await dispatch_call(
+        tmp_path,
+        "subagent",
+        {"task": "看文件", "tools": ["web_search"]},
+        registry=delegation_registry(),
+        session=env,
+    )
+
+    assert outcome.result.outcome == "TOOL_ARGS_INVALID"
+    assert "web_search" in outcome.result.content
+    assert [path.name for path in tmp_path.glob("*.jsonl")] == ["s-parent.jsonl"]
+
+
+async def test_the_tools_argument_restricts_the_child_registry(tmp_path: Path) -> None:
+    """`tools` 给的是子会话的**全部**工具：没列出来的在子会话里就是未注册。"""
+    (tmp_path / "a.md").write_text("内容\n", encoding="utf-8")
+    entries = [
+        tool_call_entry("subagent", "c1", task="只看文件", tools=["read"]),
+        tool_call_entry("bash", "c2", command="echo 不该跑"),
+        {"content": "子会话没有 bash", "finish_reason": "stop"},
+        DONE,
+    ]
+
+    _, outcome = await run_fixture_session(
+        tmp_path, "s-parent", entries, registry=delegation_registry(), prompt="父任务"
+    )
+
+    assert outcome.stop_reason == "MODEL_COMPLETED"
+    child = read_events(_child_paths(tmp_path)[0])
+    assert [record.payload["outcome"] for record in child if record.type == "tool/result"] == [
+        "UNKNOWN_TOOL"
+    ]
+
+
+async def test_a_child_without_final_text_still_returns_a_result(tmp_path: Path) -> None:
+    """子会话用完了回合数、最后一条回复没有正文时，父拿到的是一句说明，不是空串。"""
+    (tmp_path / "a.md").write_text("内容\n", encoding="utf-8")
+    entries = [
+        tool_call_entry("subagent", "c1", task="一直读", max_turns=1),
+        {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [{"id": "c2", "name": "read", "arguments": {"file_path": "a.md"}}],
+        },
+        DONE,
+    ]
+
+    log, outcome = await run_fixture_session(
+        tmp_path, "s-parent", entries, registry=delegation_registry(), prompt="父任务"
+    )
+
+    assert outcome.stop_reason == "MODEL_COMPLETED"
+    result = next(record for record in read_events(log.path) if record.type == "tool/result")
+    assert "没有最终文本" in result.payload["content"]
+    assert "MAX_TURNS" in result.payload["content"]
+
+
+async def test_the_tool_needs_a_session_runtime(tmp_path: Path) -> None:
+    """没有会话运行时的派发（例如将来的宿主内复用）是结果，不是异常。"""
+    outcome = await dispatch_call(
+        tmp_path, "subagent", {"task": "看文件"}, registry=delegation_registry()
+    )
+
+    assert outcome.result.outcome == "TOOL_IO_FAILED"
+    assert "会话运行时" in outcome.result.content
+
+
+async def test_the_child_sandbox_cannot_be_wider_than_the_parent(tmp_path: Path) -> None:
+    """`sandbox` 只能收窄：宽于父会话的请求是入参错误，不能绕过服务器级许可（ADR-0036）。"""
+    _, env = build_session_env(tmp_path, "s-parent", FixtureProvider(entries=[]))
+
+    outcome = await dispatch_call(
+        tmp_path,
+        "subagent",
+        {"task": "写文件", "sandbox": "danger-full-access"},
+        registry=delegation_registry(),
+        session=env,
+    )
+
+    assert outcome.result.outcome == "TOOL_ARGS_INVALID"
+    assert "不能比父会话宽" in outcome.result.content
+    assert [path.name for path in tmp_path.glob("*.jsonl")] == ["s-parent.jsonl"]
+
+
+async def test_the_child_sandbox_can_be_narrowed(tmp_path: Path) -> None:
+    """收窄是许可的：子会话在 read-only 下改文件，拒绝来自它自己的围栏。"""
+    entries = [
+        tool_call_entry("subagent", "c1", task="试着写", sandbox="read-only"),
+        tool_call_entry("write", "c2", file_path="out.md", content="写进去\n"),
+        {"content": "写不了", "finish_reason": "stop"},
+        DONE,
+    ]
+
+    _, outcome = await run_fixture_session(
+        tmp_path, "s-parent", entries, registry=delegation_registry(), prompt="父任务"
+    )
+
+    assert outcome.stop_reason == "MODEL_COMPLETED"
+    child = read_events(_child_paths(tmp_path)[0])
+    assert [record.payload["outcome"] for record in child if record.type == "tool/result"] == [
+        "DENIED_BY_FENCE"
+    ]
+    fence = next(record for record in child if record.type == "error/fence")
+    assert fence.payload["code"] == "SANDBOX_DENIES_WRITE"
+    assert not (tmp_path / "out.md").exists()
+
+
+async def test_a_child_model_failure_is_a_failure(tmp_path: Path) -> None:
+    """子会话的模型失败不能读成「成功了但没说话」：父拿到的是失败结果（不变量 B）。"""
+    entries = [tool_call_entry("subagent", "c1", task="干点活")]
+
+    log, outcome = await _run(tmp_path, entries)
+
+    assert outcome.stop_reason == "PROVIDER_ERROR"
+    result = next(record for record in read_events(log) if record.type == "tool/result")
+    assert result.payload["outcome"] == "TOOL_IO_FAILED"
+    assert "模型调用失败" in result.payload["content"]
+    assert "PROVIDER_EXHAUSTED" in result.payload["content"]

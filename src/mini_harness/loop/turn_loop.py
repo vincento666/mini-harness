@@ -1112,6 +1112,18 @@ async def run_session(
         approval_gate=approval_gate,
         on_delta=on_delta,
     )
+    return await run_session_env(prompt=prompt, entry=entry, env=env, cancel=cancel)
+
+
+async def run_session_env(
+    *, prompt: str, entry: SessionEntry, env: SessionEnv, cancel: asyncio.Event
+) -> RunOutcome:
+    """在已装配好的 `env` 上跑一次性会话：开始、恰一个段、结束。
+
+    `run` / `serve` 从 `run_session` 走到这里；`subagent` 直接带着子会话的 env 调用它——
+    「开始 → 恰一个段 → 结束」只有一份实现。
+    """
+    log = env.log
     started = start_session(prompt=prompt, entry=entry, env=env)
     if started is not None:
         return _run_outcome(log, started)

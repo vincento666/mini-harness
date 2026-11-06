@@ -29,6 +29,7 @@ from mini_harness.loop.turn_loop import (
     SessionEnv,
     end_session,
     run_session,
+    run_session_env,
     run_turn_segment,
     start_session,
 )
@@ -60,6 +61,7 @@ __all__ = [
     "SessionSettings",
     "end_session",
     "run_session",
+    "run_session_env",
     "run_turn_segment",
     "start_session",
 ]

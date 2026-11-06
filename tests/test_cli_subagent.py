@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -127,5 +128,79 @@ def test_the_parent_stream_does_not_forward_child_events(tmp_path: Path) -> None
             if frame["event"] == "session/start"
         ]
         assert [payload["entry"] for payload in starts] == ["host"]
+    finally:
+        _stop(process)
+
+
+def test_a_cancelled_child_is_still_listed(tmp_path: Path) -> None:
+    """被取消的子会话也登记进列表：它的日志是完整的 ABORTED 收尾（design D7）。"""
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = tmp_path / "slow-child.json"
+    fixture.write_text(
+        json.dumps(
+            [
+                {
+                    "content": "派一个慢的",
+                    "finish_reason": "tool_calls",
+                    "tool_calls": [
+                        {"id": "c1", "name": "subagent", "arguments": {"task": "慢任务"}}
+                    ],
+                },
+                {
+                    "content": "先跑一条慢命令",
+                    "finish_reason": "tool_calls",
+                    "tool_calls": [
+                        {
+                            "id": "c2",
+                            "name": "bash",
+                            "arguments": {"command": "sleep 5", "timeout_seconds": 5},
+                        }
+                    ],
+                },
+                {"content": "父结束", "finish_reason": "stop"},
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    port = _free_port()
+    process = _start_host(
+        tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir), "--allow-auto-approval"
+    )
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            root = _create_session(client, workspace, fixture, approval="auto")
+            client.post(f"/sessions/{root}/messages", headers=_headers(), json={"content": "任务"})
+
+            # 子会话的日志一建出来就取消父段：取消落在子代理还在跑的时候。
+            child_id: str | None = None
+            deadline = time.monotonic() + 15.0
+            while time.monotonic() < deadline:
+                others = [path.stem for path in session_dir.glob("*.jsonl") if path.stem != root]
+                if others:
+                    child_id = others[0]
+                    break
+                time.sleep(0.05)
+            assert child_id is not None, "子会话没有建出日志"
+
+            response = client.post(f"/sessions/{root}/cancel", headers=_headers())
+            assert response.status_code == 202, response.text
+            _wait_until_idle(client, root)
+
+            listed = client.get("/sessions", headers=_headers()).json()["sessions"]
+            child = next(item for item in listed if item["session_id"] == child_id)
+        assert child["parent_session_id"] == root
+        assert child["status"] == "ended"
+        records = [
+            json.loads(line)
+            for line in (session_dir / f"{child_id}.jsonl").read_text(encoding="utf-8").splitlines()
+        ]
+        assert records[-1]["type"] == "session/end"
+        assert records[-1]["payload"]["stop_reason"] == "ABORTED"
     finally:
         _stop(process)
