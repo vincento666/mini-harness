@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import time
+from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
 
 from mini_harness.events import read_events
+from mini_harness.events.fold import Message
 from mini_harness.loop import RunOutcome
 from mini_harness.provider import FixtureProvider
+from mini_harness.provider.contract import AssistantTurn, DeltaSink, ToolCall, ToolSpec
 from mini_harness.tools import ToolRegistry
 from mini_harness.tools.bash_tools import bash_tool_definitions
 from mini_harness.tools.fences import ApprovalDecision
@@ -16,8 +20,10 @@ from mini_harness.tools.subagent import subagent_tool_definitions
 from tool_harness import (
     DONE,
     build_session_env,
+    cancel_after,
     dispatch_call,
     run_fixture_session,
+    run_session_fixture,
     tool_call_entry,
 )
 
@@ -211,3 +217,161 @@ async def test_a_child_approval_is_unavailable(tmp_path: Path) -> None:
     # 子会话被拒也是父的结果：父回合继续，父日志那一条是 OK。
     parent_result = next(record for record in read_events(log.path) if record.type == "tool/result")
     assert parent_result.payload["outcome"] == "OK"
+
+
+Respond = Callable[[int, Sequence[Message]], Awaitable[AssistantTurn]]
+
+
+class _ScriptedProvider:
+    """按调用序号回放的桩：第 n 次 `generate` 交给 `respond` 决定（并发下序号由锁分配）。"""
+
+    def __init__(self, respond: Respond) -> None:
+        self._respond = respond
+        self._calls = 0
+        self._lock = asyncio.Lock()
+
+    async def generate(
+        self,
+        messages: Sequence[Message],
+        tools: Sequence[ToolSpec],
+        signal: asyncio.Event,
+        on_delta: DeltaSink | None = None,
+    ) -> AssistantTurn:
+        async with self._lock:
+            self._calls += 1
+            index = self._calls
+        return await self._respond(index, messages)
+
+
+def _turn(content: str = "", *, calls: Sequence[ToolCall] = ()) -> AssistantTurn:
+    return AssistantTurn(
+        content=content,
+        finish_reason="tool_calls" if calls else "stop",
+        tool_calls=list(calls),
+    )
+
+
+async def _run_with(
+    tmp_path: Path, provider: _ScriptedProvider, *, cancel: asyncio.Event | None = None
+) -> tuple[Path, RunOutcome]:
+    log, outcome = await run_session_fixture(
+        tmp_path,
+        "s-parent",
+        provider,
+        prompt="父任务",
+        registry=delegation_registry(),
+        cancel=cancel,
+    )
+    return log.path, outcome
+
+
+async def test_two_subagents_run_in_parallel(tmp_path: Path) -> None:
+    """同一批两个 `subagent` 真并发：wall-clock 小于串行基线，结果按完成顺序落盘。"""
+
+    async def respond(index: int, messages: Sequence[Message]) -> AssistantTurn:
+        if index == 1:
+            return _turn(
+                "派两个",
+                calls=[
+                    ToolCall(id="c1", name="subagent", arguments={"task": "子任务甲"}),
+                    ToolCall(id="c2", name="subagent", arguments={"task": "子任务乙"}),
+                ],
+            )
+        if index in (2, 3):
+            task = messages[-1].content or ""
+            await asyncio.sleep(0.2 if "甲" in task else 0.4)
+            return _turn(f"{task}做完了")
+        return _turn("父结束")
+
+    started = time.monotonic()
+    log_path, outcome = await _run_with(tmp_path, _ScriptedProvider(respond))
+    elapsed = time.monotonic() - started
+
+    assert outcome.stop_reason == "MODEL_COMPLETED"
+    # 串行基线是 0.2 + 0.4；真并发的话两者重叠。
+    assert elapsed < 0.55
+    results = [record.payload for record in read_events(log_path) if record.type == "tool/result"]
+    assert [(result["tool_call_id"], result["content"]) for result in results] == [
+        ("c1", "子任务甲做完了"),
+        ("c2", "子任务乙做完了"),
+    ]
+
+
+async def test_parent_cancel_cancels_the_child(tmp_path: Path) -> None:
+    """父段取消传播到子会话：子按 ABORTED 收尾，父那一条是 TOOL_CANCELLED。"""
+
+    async def respond(index: int, messages: Sequence[Message]) -> AssistantTurn:
+        if index == 1:
+            return _turn(
+                "派一个",
+                calls=[ToolCall(id="c1", name="subagent", arguments={"task": "长任务"})],
+            )
+        if index == 2:
+            return _turn(
+                "先跑一条慢命令",
+                calls=[
+                    ToolCall(
+                        id="c2",
+                        name="bash",
+                        arguments={"command": "sleep 5", "timeout_seconds": 5},
+                    )
+                ],
+            )
+        return _turn("不该走到这里")
+
+    cancel = asyncio.Event()
+    watcher = asyncio.create_task(cancel_after(cancel, 0.2))
+
+    log_path, outcome = await _run_with(tmp_path, _ScriptedProvider(respond), cancel=cancel)
+    await watcher
+
+    assert outcome.stop_reason == "ABORTED"
+    parent_result = next(record for record in read_events(log_path) if record.type == "tool/result")
+    assert parent_result.payload["outcome"] == "TOOL_CANCELLED"
+    child = read_events(_child_paths(tmp_path)[0])
+    end = next(record for record in child if record.type == "session/end")
+    assert end.payload["stop_reason"] == "ABORTED"
+
+
+async def test_a_completed_child_result_survives_parent_cancel(tmp_path: Path) -> None:
+    """取消只带走还在跑的子会话；已经完成的那条结果留在父日志里。"""
+
+    async def respond(index: int, messages: Sequence[Message]) -> AssistantTurn:
+        if index == 1:
+            return _turn(
+                "派两个",
+                calls=[
+                    ToolCall(id="c1", name="subagent", arguments={"task": "快任务"}),
+                    ToolCall(id="c2", name="subagent", arguments={"task": "慢任务"}),
+                ],
+            )
+        task = messages[-1].content or ""
+        if "快" in task:
+            return _turn("快任务完成")
+        return _turn(
+            "先跑一条慢命令",
+            calls=[
+                ToolCall(
+                    id="c3",
+                    name="bash",
+                    arguments={"command": "sleep 5", "timeout_seconds": 5},
+                )
+            ],
+        )
+
+    cancel = asyncio.Event()
+    watcher = asyncio.create_task(cancel_after(cancel, 0.3))
+
+    log_path, outcome = await _run_with(tmp_path, _ScriptedProvider(respond), cancel=cancel)
+    await watcher
+
+    assert outcome.stop_reason == "ABORTED"
+    results = {
+        record.payload["tool_call_id"]: record.payload
+        for record in read_events(log_path)
+        if record.type == "tool/result"
+    }
+    assert results["c1"]["outcome"] == "OK"
+    assert results["c1"]["content"] == "快任务完成"
+    assert results["c2"]["outcome"] == "TOOL_CANCELLED"
+

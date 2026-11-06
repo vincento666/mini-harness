@@ -14,9 +14,9 @@
 
 ## 3. 并发与取消
 
-- [ ] 3.1 seam ⑦：`test_two_subagents_run_in_parallel`——wall-clock 小于串行
-- [ ] 3.2 seam ⑦：`test_parent_cancel_cancels_child`
-- [ ] 3.3 seam ⑦：`test_completed_child_result_survives_parent_cancel`
+- [x] 3.1 seam ⑦：`test_two_subagents_run_in_parallel`——wall-clock 小于串行
+- [x] 3.2 seam ⑦：`test_parent_cancel_cancels_child`
+- [x] 3.3 seam ⑦：`test_completed_child_result_survives_parent_cancel`
 
 ## 4. Host
 
