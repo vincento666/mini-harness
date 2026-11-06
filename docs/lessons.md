@@ -905,6 +905,24 @@ ADR 到 9.2 才提交；已提交的 `tasks.md` 三处引用本分支不存在�
 - Promotion candidate: 与 L-069（adapter 边界）同族；本轮不占 AGENTS.md 额度
 - Status: inbox
 
+### L-071
+- Date: 2026-11-06
+- Context: M12 委派工具的取消传播
+- Observation: 实现里同时有两条「父取消 → 子取消」的路径：`_race_with_cancel` 会把工具任务 cancel 掉（到达执行器是 `CancelledError`），另外还起了一个监听父取消事件的桥。变异测试把桥删掉，全部判据仍绿——桥是死路径。存活变异不一定缺测试，也可能意味着实现里有一份同义的第二机制
+- Evidence: `docs/verification/m12-subagent-delegation-mutation.md` 的 S1；处理是删桥 + 删 `DispatchContext.cancel`（提交 `7372e05`），不是补一条测试
+- Next use: 写并发/取消这类「多条路径汇合」的代码前，先写清每条路径把事件送到**哪个形态**（异常、事件、返回值）；同一个事实只留一条送达路径，变异自然能杀死
+- Promotion candidate: 与 L-003（写下即绿）同族；本轮不占 AGENTS.md 额度
+- Status: inbox
+
+### L-072
+- Date: 2026-11-06
+- Context: 在 macOS 上跑全量门禁（项目 CI 矩阵只有 Windows + Linux）
+- Observation: 两条判据按操作系统名字猜平台能力，在 macOS 上都错：`test_a_differently_cased_path_folds_only_where_paths_fold` 假设「非 Windows ⇒ 大小写敏感」，而 APFS 默认折叠；`path_key` 也只在 `os.name == "nt"` 时 `normcase`，于是 macOS 上「读过 A 再改 a 的另一种写法」会被判 `WRITE_WITHOUT_READ`。另一条 `test_sigint_mid_segment_cancels_the_segment_not_the_session` 单跑绿、跟其它文件同跑红，是顺序/负载相关的抖动，尚未定位
+- Evidence: 全量 `573 passed / 6 skipped / 2 failed`；`os.path.realpath` 在 macOS 上不折叠大小写，`os.path.samefile` 认它们是同一个文件
+- Next use: 平台能力要**实测**（写探针文件、`samefile`、`getpgid` 存在性），不要用 `os.name` 推；CI 矩阵缺 macOS 时，本机的红要么修要么明确记为「未覆盖平台」
+- Promotion candidate: 与 L-020（平台适配层）同族；本轮不占 AGENTS.md 额度
+- Status: inbox
+
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 - 每个里程碑收尾扫一次，**允许输出 `NO-PROMOTION`**（没有可复用信号就不写条目）。
 - 收件箱条目超过 **15 条**必须先消化再收新的：合并同类、把已被代码或规格自证的条目删掉。
