@@ -18,6 +18,12 @@
 
 **D6 取消级联。** 父段 cancel 传播到该段创建的子 session cancel；子按 ABORTED 收尾；已完成结果保留。子 session 句柄挂在父段调用上下文，不跨段复用。
 
+**D8 会话额度与子代理额度分开。** 根会话上限 `MAX_SESSIONS = 4` 不变；每个根会话最多 8 个活跃子代理；子会话不占根会话额度，M12 也不设全局池上限（上界 4×8=32，单进程可接受）。注意：工具并发上限也是 8，所以**同一批 9 个 `subagent` 不会撞额度**（第 9 个等前 8 个之一完成就能跑）；额度今天是防御性的，真实触发要等 M13 的目标轮次或并发上限变化，判据用预置计数。
+
+**D9 档位只能收窄。** `subagent.sandbox` 只能比父会话窄（`read-only` < `workspace-write` < `danger-full-access`）；请求更宽是 `TOOL_ARGS_INVALID`——否则子会话会绕过服务器级的 `--allow-danger-full-access` 许可。
+
+**D10 子会话的失败是失败。** 子会话的模型失败与内核失败以 `TOOL_IO_FAILED` 回到父（带子会话的失败码与 detail），不读成「成功但没有正文」；取消是 `TOOL_CANCELLED`；其余停止理由（含 `MAX_TURNS` / `FENCE_DENIED` / `CONTEXT_WINDOW_EXCEEDED`）带上子会话的最终文本。
+
 **D7 Host 视图。** 会话视图加 `parent_session_id` / `depth`（根是 `null` / 0）；子会话收尾时登记进 `HostState.index`（只读一条、`GET /sessions/{id}` 回落到索引），父 SSE 不转发子流。
 
 ## Risks

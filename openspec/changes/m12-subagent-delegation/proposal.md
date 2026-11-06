@@ -29,6 +29,6 @@ fork 暂不做（ADR-0035）。
 
 ## Impact
 
-- 代码：`tools/subagent.py`、`tools/registry.py`、`loop/turn_loop.py`（取消/并发）、`session/assembly.py`、`session/host.py`、`cli/host.py`。
+- 代码：`tools/subagent.py`、`tools/registry.py`、`tools/dispatch.py`（每次调用带 `tool_call_id`）、`tools/fences.py`（派发上下文带会话运行时）、`loop/turn_loop.py`（`session/start` 父子字段、派发接会话、一次性会话形状）、`loop/settings.py`、`session/delegation.py`、`config/assembly.py`（内置工具表加 `subagent`）、`session/host.py`、`cli/host.py`。
 - 测试：seam ⑦（父子日志配对、并发 wall-clock、取消）。
 - 非目标：fork、跨进程子代理、父代答 approval。
