@@ -129,6 +129,7 @@ async def test_child_session_context_is_empty_but_for_the_task(tmp_path: Path) -
 
     child = read_events(_child_paths(tmp_path)[0])
     assembled = next(record for record in child if record.type == "context/assembled")
+    assert "被委派的子代理" in assembled.payload["messages"][0]["content"]
     roles = [message["role"] for message in assembled.payload["messages"]]
     assert roles == ["system", "user"]
     assert "父任务" not in str(assembled.payload["messages"])

@@ -12,7 +12,7 @@
 
 **D3 限制用结果词。** 深度 = 父 depth + 1；`depth > maxDepth` → `DEPTH_EXCEEDED`。每父会话活跃子数 ≥ `maxActiveSubagents` → `ACTIVATION_LIMIT_REACHED`。都不抛异常。
 
-**D4 approval 一律不可用。** 子 env 注入 `UNAVAILABLE` gate；不继承父的一次性放行，也不等父代答。approval **模式**（`auto` 这个钉定）随会话继承——它是档位的一部分，不是一次放行；模式是 `ask` 时，子会话的每一次提问都得到 `UNAVAILABLE`，于是 `DENIED_BY_APPROVAL`。
+**D4 approval 一律不可用。** 子 env 注入 `UNAVAILABLE` gate；不继承父的一次性放行，也不等父代答。approval **模式**（`auto` 这个钉定）随会话继承——它是档位的一部分，不是一次放行；模式是 `ask` 时，子会话的每一次提问都得到 `UNAVAILABLE`，于是 `DENIED_BY_APPROVAL`。子会话的受保护头部带一条委派声明（照 DSH `subagent:delegation`）：权限固定、被拒的操作不要重试、把限制写进回复——否则模型会像真实端点 S4 那样反复换措辞重试。
 
 **D5 并发类别 `parallel`。** 同批 `subagent` 由既有工具批调度并发；子会话内部工具并发独立。父结果按完成顺序写 `tool/result`。
 

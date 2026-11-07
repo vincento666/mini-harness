@@ -820,6 +820,9 @@ def start_session(*, prompt: str, entry: SessionEntry, env: SessionEnv) -> Segme
         # 子会话的父子关系（M12）：根会话不写这两项，视图里回落成 null / 0。
         start_payload["parent_session_id"] = settings.parent_session_id
         start_payload["depth"] = settings.depth
+        # 委派声明进受保护头部：子会话的权限范围固定、被拒的操作不要重试（照 DSH 的
+        # `subagent:delegation`）。落在 `session/start` 里，回放折叠的是同一份事实。
+        start_payload["delegated"] = True
         if settings.parent_tool_call_id is not None:
             start_payload["parent_tool_call_id"] = settings.parent_tool_call_id
     if settings.endpoint is not None:

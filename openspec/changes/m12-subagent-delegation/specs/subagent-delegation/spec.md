@@ -33,10 +33,17 @@
 
 子会话 SHALL 继承档位/边界；approval 问人时 MUST 返回 `UNAVAILABLE`，MUST NOT 由父代答或自动放行。结果词为 `DENIED_BY_APPROVAL` 或现有审批结果。
 
+子会话的运行时上下文 SHALL 带一条委派声明：权限范围在启动时固定、需要审批的操作会被自动拒绝、不要重试被拒绝的操作、把限制写进回复交给发起委派的代理。声明进受保护头部（`session/start.payload.delegated`），因此 `replay` 重算的是同一份头部。
+
 #### Scenario: 子会话问人不可用
 
 - **WHEN** 子会话的工具需要 approval
-- **THEN** 门返回 `UNAVAILABLE`，不阻塞等待父
+- **THEN** 门返回 `UNAVAILABLE`，不阻塞等待父；父拿到的那条 `tool/result` 也是 `DENIED_BY_APPROVAL`（带围栏码与子会话最后的文本）
+
+#### Scenario: 子会话被告知权限固定
+
+- **WHEN** 子会话装配上下文
+- **THEN** 受保护头部里有委派声明；根会话的头部里没有
 
 ### Requirement: subagent 同批真并发
 
