@@ -12,6 +12,6 @@
 | 子级工具作用域 | `scope.tools = 组合过滤(非授权继承)` | 默认继承父的工具表，`tools` 参数只能收窄、且不是权限边界 | simplified | 父的围栏档位仍是唯一约束；`tools` 是上下文经济选项，不是授权闸门 |
 | 同批并发 | 工具批调度里只读调用并发 | `subagent` 标 `parallel`，同批真并发、结果按完成顺序落盘 | aligned | M10 的批调度；判据 `test_two_subagents_run_in_parallel` |
 | 取消 | 运行结果永不拒绝，标记 `cancelled` | 父段取消 → 子会话按 `ABORTED` 收尾，父那条是 `TOOL_CANCELLED` | simplified | 取证材料没有写死「父取消是否级联所有子级」；mini 取「本段派生且仍在跑的才收」，已完成结果保留（design D6） |
-| 结果形状 | 子级最终结果（投递失败另有词） | 最后一条非摘要 `model/response` 的正文；没有正文时一句说明；模型/内核失败是 `TOOL_IO_FAILED` | simplified | 不返回产物清单与投递状态；产物路径若有会出现在正文里（ADR-0036） |
+| 结果形状 | 子级最终结果（投递失败另有词） | 最后一条非摘要 `model/response` 的正文；没有正文时一句说明；模型/内核失败是 `TOOL_IO_FAILED`；围栏拒绝是 `DENIED_BY_APPROVAL` / `DENIED_BY_FENCE` | simplified | 不返回产物清单与投递状态；产物路径若有会出现在正文里（ADR-0036）；拒绝词让父能分清「没做成」与「做成了」（design D10） |
 
 **判据**：每个 spec/design 里出现的 DSH 对照点都有一行；`simplified` 都写了代价，`deferred` 都写了触发条件。

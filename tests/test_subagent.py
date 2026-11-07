@@ -214,9 +214,10 @@ async def test_a_child_approval_is_unavailable(tmp_path: Path) -> None:
     assert not (tmp_path / "out.md").exists()
     # 子会话的提问没有转给父会话的问人门：父一次都没被问过。
     assert gate.asked == []
-    # 子会话被拒也是父的结果：父回合继续，父日志那一条是 OK。
+    # 子会话被拒，父拿到的也是拒绝结果词：父回合继续，但「没写成」不能被读成成功。
     parent_result = next(record for record in read_events(log.path) if record.type == "tool/result")
-    assert parent_result.payload["outcome"] == "OK"
+    assert parent_result.payload["outcome"] == "DENIED_BY_APPROVAL"
+    assert "APPROVAL_UNAVAILABLE" in parent_result.payload["content"]
 
 
 Respond = Callable[[int, Sequence[Message]], Awaitable[AssistantTurn]]
@@ -484,7 +485,7 @@ async def test_the_child_sandbox_can_be_narrowed(tmp_path: Path) -> None:
         DONE,
     ]
 
-    _, outcome = await run_fixture_session(
+    log, outcome = await run_fixture_session(
         tmp_path, "s-parent", entries, registry=delegation_registry(), prompt="父任务"
     )
 
@@ -496,6 +497,12 @@ async def test_the_child_sandbox_can_be_narrowed(tmp_path: Path) -> None:
     fence = next(record for record in child if record.type == "error/fence")
     assert fence.payload["code"] == "SANDBOX_DENIES_WRITE"
     assert not (tmp_path / "out.md").exists()
+    # 档位拒绝也回到父：它拿到的是围栏拒绝词，不是一句「写不了」的成功文本。
+    parent_result = next(
+        record for record in read_events(log.path) if record.type == "tool/result"
+    )
+    assert parent_result.payload["outcome"] == "DENIED_BY_FENCE"
+    assert "SANDBOX_DENIES_WRITE" in parent_result.payload["content"]
 
 
 async def test_a_child_model_failure_is_a_failure(tmp_path: Path) -> None:

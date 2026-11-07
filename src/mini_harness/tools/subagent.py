@@ -17,6 +17,7 @@ from mini_harness.events import EventLog, LogReadFailure, LogWriteFailure, read_
 from mini_harness.loop.settings import SandboxLevel, SessionSettings
 from mini_harness.loop.turn_loop import (
     ENTRY_SUBAGENT,
+    STOP_FENCE_DENIED,
     STOP_PROVIDER_ERROR,
     STOP_REASONS,
     RunOutcome,
@@ -25,7 +26,13 @@ from mini_harness.loop.turn_loop import (
 )
 from mini_harness.session.delegation import MAX_ACTIVE_SUBAGENTS, MAX_DEPTH, DelegationState
 from mini_harness.tools.fences import UNAVAILABLE_APPROVAL_GATE, DispatchContext
-from mini_harness.tools.registry import ToolArgs, ToolDefinition, ToolRegistry, ToolResult
+from mini_harness.tools.registry import (
+    ToolArgs,
+    ToolDefinition,
+    ToolOutcome,
+    ToolRegistry,
+    ToolResult,
+)
 
 # 档位的宽窄顺序：子会话只能比父会话更窄，不能更宽（ADR-0036）。
 _SANDBOX_WIDTH: dict[str, int] = {"read-only": 0, "workspace-write": 1, "danger-full-access": 2}
@@ -133,6 +140,18 @@ def _child_result(env: SessionEnv, outcome: RunOutcome) -> ToolResult:
             "TOOL_IO_FAILED",
             f"子会话 {session_id} 的模型调用失败（{outcome.failure_code}）：{outcome.detail}",
         )
+    if outcome.stop_reason == STOP_FENCE_DENIED:
+        # 子会话被围栏拒绝：父拿到的也是拒绝结果词，不能读成「成功了但没做成」。
+        # 父自己的回合不因此终止——被拒的是子会话，父还能决定换个做法。
+        code = outcome.failure_code or "DENIED_BY_FENCE"
+        denied: ToolOutcome = (
+            "DENIED_BY_APPROVAL" if code.startswith("APPROVAL_") else "DENIED_BY_FENCE"
+        )
+        content = f"子会话 {session_id} 被围栏拒绝（{code}）：{outcome.detail or code}"
+        text = _final_text(env.log.path)
+        if text:
+            content += f"\n子会话最后的文本：{text}"
+        return ToolResult(denied, content)
     if outcome.stop_reason not in STOP_REASONS:
         return ToolResult(
             "TOOL_IO_FAILED",

@@ -49,7 +49,7 @@ minihns run --provider deepseek -p "派一个 subagent，让它自己再派一�
 minihns run --provider deepseek -p "派一个 subagent 把 inbox.md 的内容写进 note.md"
 ```
 
-看：子会话的写请求得到 `UNAVAILABLE`（`DENIED_BY_APPROVAL` + `error/fence` 的 `APPROVAL_UNAVAILABLE`），`note.md` 没有被写出来；父会话自己的写请求仍会像以前一样问你。
+看：子会话的写请求得到 `UNAVAILABLE`（子日志里是 `DENIED_BY_APPROVAL` + `error/fence` 的 `APPROVAL_UNAVAILABLE`）；**父日志里那一条 `subagent` 的 `tool/result` 也是 `DENIED_BY_APPROVAL`**（内容带围栏码与子会话最后的文本），`note.md` 没有被写出来。父会话自己的写请求仍会像以前一样问你。
 
 ### S5 · 取消
 

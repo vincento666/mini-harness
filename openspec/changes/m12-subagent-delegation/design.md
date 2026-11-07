@@ -22,7 +22,7 @@
 
 **D9 档位只能收窄。** `subagent.sandbox` 只能比父会话窄（`read-only` < `workspace-write` < `danger-full-access`）；请求更宽是 `TOOL_ARGS_INVALID`——否则子会话会绕过服务器级的 `--allow-danger-full-access` 许可。
 
-**D10 子会话的失败是失败。** 子会话的模型失败与内核失败以 `TOOL_IO_FAILED` 回到父（带子会话的失败码与 detail），不读成「成功但没有正文」；取消是 `TOOL_CANCELLED`；其余停止理由（含 `MAX_TURNS` / `FENCE_DENIED` / `CONTEXT_WINDOW_EXCEEDED`）带上子会话的最终文本。
+**D10 子会话的失败是失败。** 子会话的模型失败与内核失败以 `TOOL_IO_FAILED` 回到父（带失败码与 detail）；围栏拒绝以 `DENIED_BY_APPROVAL` / `DENIED_BY_FENCE` 回到父（带围栏码、detail 与子会话最后的文本），父自己的回合不因此终止；取消是 `TOOL_CANCELLED`；`MODEL_COMPLETED` / `MAX_TURNS` / `CONTEXT_WINDOW_EXCEEDED` 带上子会话的最终文本。
 
 **D7 Host 视图。** 会话视图加 `parent_session_id` / `depth`（根是 `null` / 0）；子会话收尾时登记进 `HostState.index`（只读一条、`GET /sessions/{id}` 回落到索引），父 SSE 不转发子流。
 
