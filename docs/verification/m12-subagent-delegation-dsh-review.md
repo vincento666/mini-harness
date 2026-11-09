@@ -44,3 +44,43 @@
 
 **结论**：下一轮对齐不该是再给 subagent 加特性，而是把「沙箱阶梯」与「工具边界」两个原语各自定下来（各一个 ADR / change）。M13（目标轮次）与 Super-agent 轨都依赖它们；M12 的 spawn 形状可以不动。
 
+### 子代理工具的来源：DSH 的形状与对齐方案
+
+**DSH 事实**（[tool-subagent README](https://github.com/deepseek-ai/deepseek-harness/blob/fcc0ad462172522aaf5c93a7b2e01f6b9f0b0159/packages/subagent/tool-subagent/README.zh.md)）：
+
+- 工具配置有两项：`agentPreset`（默认子级 preset）与 `allowedAgentPresets`（非空白名单）。
+- 只有配了白名单，模型才在 schema 里多一个 `agent_preset` **枚举**；没有白名单时**模型不能覆盖**配置里的选择。
+- 工具 schema 里**没有 `tools` / 任意工具名列表**：preset 的内容（persona、`toolFilter`）在 preset 注册表里，不在工具参数里。
+- 选中的 preset 在启动子级时才解析；未知或加载不了的 preset 返回**出错的工具结果**，子级不启动。
+- 子级组装规则：本地 spawn 在「继承或独立选择的 preset」之下拥有自己的注册作用域，不导入父级的 Agent 局部工具限制。
+
+**mini 现状**：`subagent.tools` 是**父模型给的参数**（收窄父工具表），配置层另有会话级 `tools` 白名单；没有子级 preset。两者语义都是「组合过滤」，但来源不同（模型 vs 宿主）。
+
+**结论：暂不实现，按 DSH 形状在 M14 落地。** 方案草案（写在这里，避免下次重新推导）：
+
+```toml
+# mini.config.toml（草案；现在还没有这段）
+[subagent]
+preset = "reader"                    # 默认子级 preset
+allowed_presets = ["reader", "writer"]  # 有它才给模型 agent_preset 枚举
+
+[subagent.presets.reader]
+tools = ["read", "glob", "grep"]
+
+[subagent.presets.writer]
+tools = ["read", "write", "edit"]
+```
+
+- 子工具表 = **preset 工具 ∩ 父工具表**（永远不能比父宽）；preset 只做裁剪，不做授权。
+- 有 `allowed_presets` 时工具 schema 暴露 `agent_preset` 枚举；无白名单时模型不能选。
+- 未知 preset → `TOOL_ARGS_INVALID`（与现在的未知工具名同形），不建子会话。
+- `subagent.tools` 的处置二选一：删掉（完全对齐 DSH），或保留为「在 preset 之上再收窄」（超出 DSH，要单独记账）。
+
+**触发条件（写死，三条任一成立就做）**：
+
+1. **部署必须决定子代理能力**（安全 / 合规 / 成本），不能由模型选——这是本次讨论的起点；
+2. **M14 的 preset / persona 落地**（工具与 persona 同源，preset 注册表是现成的载体）；
+3. **子级冷恢复要落地**（preset 必须能写进 descriptor 并在恢复时还原，DSH 的 `restoring-child-composition` 就是这么做的）。
+
+**复杂度记账**（为什么不在 M12 顺手做）：配置要从扁平变嵌套（`SETTINGS_FIELDS` / `layering` / 校验错误码）、工具 schema 要按配置动态生成枚举、要新增 preset 注册表与未知 id 的拒绝路径、冷恢复还要写 descriptor；约等于一个 M14 子切片，且现在没有 persona 可装，先做只会得到一个「只有工具」的半套 preset。
+
