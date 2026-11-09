@@ -10,7 +10,7 @@
 | 容量 | `maxActiveSubagents` 默认 8，**按 subagent 树**计，根不占名额；耗尽 `ACTIVATION_LIMIT_REACHED`（浏览器消息 `subagent/delivery-unavailable`） | 每父会话 8 个活跃子代理；耗尽 `ACTIVATION_LIMIT_REACHED` | simplified | 深度 1 时「每树」与「每父」等价；没有 `subagent/delivery-unavailable`（无浏览器消息面）；工具并发上限也是 8，同一批 9 个撞不到额度（design D8） |
 | 审批 | 进程内子 agent 被**钉定为 `never`**：每次 ask 在任何应答者之前解析为 rejected；把子级 ask 路由给父级**已延后**；`subagent-acp` 的子侧自动应答是后端自己的 | approval 模式随会话继承（`auto` 继承），门固定 `UNAVAILABLE`；父拿到的也是拒绝结果词 | simplified | 差异在「无人值守」放在哪一轴：DSH 的 Auto 预设是 **full-access 沙箱**（正常写入不触发 ask），mini 的 `auto` 是「全部自动批准」。mini 的 ask 模式对每次会改动都问人，字面钉 `never` 会让子代理连 full-access 下也写不了——要等价，得先有「沙箱升级才问人」的语义（ADR-0036 记账） |
 | 子会话声明 | 受保护上下文带 `subagent:delegation`：权限启动时固定、需要审批的操作自动拒绝、**不要重试**、把限制写进回复给父级 | 同左（`DELEGATION_SCOPE_DECLARATION`，`session/start.payload.delegated`） | aligned | 文案是中文、措辞按 mini 的系统提示改写 |
-| 子级工具作用域 | `scope.tools = 组合过滤`，**不是授权继承**；`agentPreset` 决定 persona 与工具 | 默认继承父工具表，`tools` 参数收窄；不是权限边界 | simplified | 没有 `agentPreset`（persona/技能归 M14）；`tools` 与 DSH 同形（组合而非授权） |
+| 子级工具作用域 | `scope.tools = 组合过滤`，**不是授权继承**；工具集来自宿主配置的 `agentPreset`（persona + 工具） | 默认继承父工具表；`subagent.tools`（**父模型在工具调用里给的参数**）收窄；不是权限边界 | simplified | 来源不同：DSH 是宿主 preset，mini 是模型参数（只能收窄，不能加）。没有 `agentPreset`（persona/技能归 M14） |
 | 子级 agent 名称 | `agent-N`，根是 `lead`，路径形如 `reviewer/checker`；重名 `DUPLICATE_AGENT_NAME` | 用子会话 id，没有名字 | deferred | 触发条件：UI 要画任务树或需要人类可读的引用时 |
 | 同批并发 | 工具批调度里只读调用并发 | `subagent` 标 `parallel`，同批真并发、结果按完成顺序落盘 | aligned | M10 的批调度 |
 | 取消 | 调用方 signal 只取消未发布的工作；发布后 `dispose()` 取消并等待清理；宿主用 `drainDescendants([root])` | 父段取消 → 子会话按 `ABORTED` 收尾，已完成结果保留 | simplified | 我们只有「段取消」一种入口，没有 `dispose/drain` 生命周期 API；深度 1 下等价 |
@@ -31,4 +31,16 @@
 **连续性**：是。Super-agent 没有发明新的权限通道，它复用的是 DSH 已有的 session / preset / tool / approval 原语；「子级 ask 路由给父级」在核心仍是**延后**项，原型也没有做。真正变的是拓扑（Router/Worker/Thread/Watchdog）与**工具边界分域**，不是委派审批。
 
 **对 mini 的含义**：M12 的 spawn 形状是底座；将来若做 Worker，等价物是「会话 + preset + 收窄的工具表」，而不是给子代理加一条父代答通道。另外 `danger-full-access` 在这个原型里是**默认姿态**——它和 mini 的「默认 workspace-write + ask」是两种安全基线，抄拓扑时不能顺手抄这条。
+
+## 语义原语的差距（M12 之后）
+
+结构（spawn / 深度 / 容量 / 父只拿结果 / 取消 / 并发）已经对齐。剩下的差距不在结构，在三个原语的**粒度**：
+
+| 原语 | DSH | mini | 后果 | 什么时候对齐 |
+|---|---|---|---|---|
+| 沙箱与审批的关系 | 沙箱模式是**授权本身**（workspace-write 等），审批只处理**升级**（`sandbox_permissions`） | 沙箱回答「能碰哪儿」，审批回答「每次会改动都问不问」 | 子代理在 `ask` 下连 full-access 都写不了；DSH 的 `never` 钉定不能字面照搬 | 出现「同一次调用要超出会话档位的权限」的真实场景（bash 请求升级）时，立 fence 阶梯的 ADR |
+| 工具边界 | 工具**按数据边界授权**：ticket id 在构造工具时绑进闭包，越界读取被拒 | 只有**组合过滤**（收窄工具表），没有数据边界 | 子会话里任何注册工具都能碰工作区内的任何文件 | 出现「一个会话只能看一个工单 / 仓库子集」的需求（Super-agent 的 worker）时 |
+| 审批结果词与审计 | `allowed-once` / `rejected` / `cancelled` / `unavailable`，配 `approval/asked` + `approval/decided` | `APPROVED` / `DENIED` / `UNAVAILABLE`；取消走回合取消；配 `approval/request` + `approval/response` | 壳要做「允许一次 / 始终允许」或缺「取消」这个独立结论时对不上 | 宿主 UI 需要区分「取消」与「拒绝」，或需要 `allow_always` 的存储与撤销时 |
+
+**结论**：下一轮对齐不该是再给 subagent 加特性，而是把「沙箱阶梯」与「工具边界」两个原语各自定下来（各一个 ADR / change）。M13（目标轮次）与 Super-agent 轨都依赖它们；M12 的 spawn 形状可以不动。
 
