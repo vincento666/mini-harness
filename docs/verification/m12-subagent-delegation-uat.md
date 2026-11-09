@@ -1,6 +1,6 @@
 # M12 subagent UAT
 
-**状态**：等人跑（agent 不代跑 tty 场次，ADR-0025）。
+**状态**：S1–S4 已由人跑（2026-11-09），S5 待补（第一轮子会话太快，取消没落在运行中）。
 
 ## 跑前准备
 
@@ -49,16 +49,16 @@ minihns run --provider deepseek -p "派一个 subagent，让它自己再派一�
 minihns run --provider deepseek -p "派一个 subagent 把 inbox.md 的内容写进 note.md"
 ```
 
-看：子会话的写请求得到 `UNAVAILABLE`（子日志里是 `DENIED_BY_APPROVAL` + `error/fence` 的 `APPROVAL_UNAVAILABLE`）；**父日志里那一条 `subagent` 的 `tool/result` 也是 `DENIED_BY_APPROVAL`**（内容带围栏码与子会话最后的文本），`note.md` 没有被写出来。父会话自己的写请求仍会像以前一样问你。
+看：子会话的写请求得到 `UNAVAILABLE`（子日志里是 `DENIED_BY_APPROVAL` + `error/fence` 的 `APPROVAL_UNAVAILABLE`）；**父日志里那一条 `subagent` 的 `tool/result` 也是 `DENIED_BY_APPROVAL`**（内容带围栏码与子会话最后的文本）。父会话自己接着写时会照常问你——批准了它就是父写的，不是子会话写的。
 
 ### S5 · 取消
 
 ```bash
-minihns chat --provider deepseek --yes
-> 派一个 subagent 跑一条 30 秒的慢命令
+uv run minihns chat --provider deepseek --workspace /tmp/m12-uat --session-dir /tmp/m12-uat/s5 --yes
+> 派一个 subagent 跑一条 30 秒的慢命令（sleep 30），等它跑完再回来
 ```
 
-子代理跑起来之后按 Ctrl-C。
+**子代理真的跑起来之后**按 Ctrl-C（看 `[tool] subagent` 那一行之后、结果回来之前）。
 
 看：父回到提示符、退出码仍是 0；子日志最后是 `session/end(ABORTED)`；没有残留的 `sleep` 进程。
 
@@ -66,11 +66,11 @@ minihns chat --provider deepseek --yes
 
 | 场次 | 动作 | 预期 | 实际观察 | 结论 | 别扭在哪 |
 |---|---|---|---|---|---|
-| S1 | 单次委派 | 父只拿结果 | | | |
-| S2 | 并行 | 真并发 | | | |
-| S3 | 深度 | `DEPTH_EXCEEDED` | | | |
-| S4 | 子审批 | `APPROVAL_UNAVAILABLE` | | | |
-| S5 | 父取消 | 子 `ABORTED`、无孤儿 | | | |
+| S1 | 单次委派 | 父只拿结果 | 父先 `glob` 再 `subagent`；子会话 `entry=subagent` / `depth=1` / `delegated=True`，只做了一次 `read`；父拿到一句话总结（`bd4f8a7e…`） | 通过 | |
+| S2 | 并行 | 真并发 | 同一批两条 `subagent`；两个子会话各读一个文件；两条结果按完成顺序回来（`second.md` 先于 `inbox.md`）（`0beb6fb0…`） | 通过 | 结果顺序与声明顺序不同，读日志时要习惯 |
+| S3 | 深度 | `DEPTH_EXCEEDED` | 子会话里那次 `subagent` 是 `DEPTH_EXCEEDED`，子会话把这句限制写进最终回复，父回合照常继续（`6a6dd24d…`） | 通过 | |
+| S4 | 子审批 | `APPROVAL_UNAVAILABLE` | 子会话的 `bash` 与 `write` 都被拒（`APPROVAL_UNAVAILABLE`），父那两条 `tool/result` 都是 `DENIED_BY_APPROVAL`；父随后**自己** `write`，走人工批准后写成 `note.md`（`1ec75393…`） | 通过 | 子会话被拒两次后，父才换自己上；「我让子代理做，最后还是我批」的体感 |
+| S5 | 父取消 | 子 `ABORTED`、无孤儿 | 第一轮子会话只做了一次 `read` 就收尾，Ctrl-C 没落在运行中（`837270e1…`） | 待补 | |
 
 **至少一条「用起来别扭」**：_
 
