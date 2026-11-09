@@ -82,5 +82,9 @@ tools = ["read", "write", "edit"]
 2. **M14 的 preset / persona 落地**（工具与 persona 同源，preset 注册表是现成的载体）；
 3. **子级冷恢复要落地**（preset 必须能写进 descriptor 并在恢复时还原，DSH 的 `restoring-child-composition` 就是这么做的）。
 
+**没有 preset 时的回落（DSH 原文）**：两个选择字段都省略时，工具**不要求 preset 服务**；子级缺省「加入父方当前的 preset 代际」——也就是继承父的组合，派发照常工作。配置了但解析失败是另一回事：未知或加载不了的 preset 返回出错的工具结果、子级不启动。所以「没配置」= 继承，「配错了」= 报错，两者不能混。
+
+**折中方案的优先级**（若保留 `subagent.tools`）：preset ∩ 父工具表（**上界，部署决定**）→ 可选地再 ∩ 模型给的 `tools`（**只能减，不能加**）。模型只有在部署给了 `allowed_presets` 白名单时才能选 preset；否则它既不能换 preset，也不能超出上界。没有 preset 时就是父表 ∩ `tools`（今天的行为）。
+
 **复杂度记账**（为什么不在 M12 顺手做）：配置要从扁平变嵌套（`SETTINGS_FIELDS` / `layering` / 校验错误码）、工具 schema 要按配置动态生成枚举、要新增 preset 注册表与未知 id 的拒绝路径、冷恢复还要写 descriptor；约等于一个 M14 子切片，且现在没有 persona 可装，先做只会得到一个「只有工具」的半套 preset。
 
