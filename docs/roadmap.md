@@ -94,7 +94,7 @@ H1 / H2 是新增的宿主轨，不占用 M10–M15 的决策编号；M 编号�
 ### M12 委派（子代理）
 
 - **change**：`m12-subagent-delegation`
-- **状态**：✅ **2026-11-09 已归档**（`openspec/changes/archive/2026-11-09-m12-subagent-delegation`）：18/18 task；真实端点 S1–S4、人跑 UAT S1–S5、变异 3 条全杀 + 1 条存活定位到冗余实现、DSH parity review 全过；**待合入 `main`**。UAT 期间修掉 chat 的 SIGINT 唤醒缺陷（`2cb1234`）。
+- **状态**：✅ **2026-11-09 已合入 `main`**（合并 `4ff7226`）并归档在 `openspec/changes/archive/2026-11-09-m12-subagent-delegation`：18/18 task；真实端点 S1–S4、人跑 UAT S1–S5、变异 3 条全杀 + 1 条存活定位到冗余实现、DSH parity review 全过。UAT 期间修掉 chat 的 SIGINT 唤醒缺陷（`2cb1234`）。后续：子代理 preset（见「子代理 preset 与工具来源」）。
 - **层**：委派
 - **内容**：`subagent` 工具（spawn 形状，fork 暂不做，ADR-0035）；独立子 session、独立日志；父日志只有 `tool/call` + `tool/result`；子 session 继承档位与边界、**不继承 approval 放行**（子会话问人一律 `UNAVAILABLE`）；`maxDepth` 默认 1（深度 = 父 + 1，写进子 `session/start`）；**每个父会话 `maxActiveSubagents` 默认 8**；容量耗尽与深度超限都是结果词（`ACTIVATION_LIMIT_REACHED` / `DEPTH_EXCEEDED`），不是异常。底稿在 `docs/reference/subagents.md`。
 - **并发（强调）**：`subagent` 工具是 `parallel` 类别——同一批声明多个 `subagent` 时并发跑，结果按完成顺序落盘；父上下文只装子任务的最终结果，不装子会话的过程；子会话内部仍受每会话 8 个工具并发与自己的 `max_turns` 约束；host 的 `GET /sessions` 要能看出父子关系（M12 加字段）。
@@ -116,6 +116,14 @@ H1 / H2 是新增的宿主轨，不占用 M10–M15 的决策编号；M 编号�
 - **内容**：`SKILL.md` 目录发现（照 DSH 的六级优先级根：项目 / 项目共享 / 自定义 / 宿主 / 通用代理家目录 / 内置，同名高优先）；**清单注入 + 正文按需加载**——`session/start.payload.skills` 只放 `{name, description, rank, path}`，受保护头部只放紧凑清单，正文由 `skill` 工具按需读；**同一份命令面**给 CLI 与其它壳：CLI `chat` 的 `/skills`、`/skill <name>`，host 的 `GET /commands` 与 `POST /sessions/{id}/commands`；命令调用必须落一条可重放的事件（`command/invoked` 或 `user/message` 的结构化命令，M14 design 定）；外部触发塌成一条可重放的会话事件。底稿在 `docs/reference/skills-and-commands.md`。
 - **完成判据**：仓库内一个 skill 被列出并加载；同一 skill 在两级根里只出现一次且高优先胜出；正文不在 `session/start` 的清单里、只在按需加载后才进上下文；CLI 与 host 对同一 `/skill` 得到同一份正文与同一条日志；一条外部触发在日志里是一条事件、`replay` 仍相等。
 - **明确不做**：插件容器与热更新（ADR-0035）、MCP、hooks 的完整 allowlist、shell 自己发明一套绕过内核的命令。
+
+### 子代理 preset 与工具来源（`subagent-preset`，M12 的后续，不占 M 编号）
+
+- **状态**：未立 change。**触发条件**（任一成立就做）：① 部署必须决定子代理能力（安全 / 合规 / 成本），不能由模型选；② M14 的 preset / persona 落地；③ 子级冷恢复落地。决策与复杂度记账见 `docs/verification/m12-subagent-delegation-dsh-review.md` 的「子代理工具的来源：DSH 的形状与对齐方案」。
+- **内容**：`mini.config.toml` 增加 `[subagent]`：`preset`（默认）+ `allowed_presets`（白名单，配了才在工具 schema 里给模型 `agent_preset` 枚举）。每个 preset 的名字映射到工具白名单（+ 将来的 persona）。子工具表 = **preset 工具 ∩ 父工具表**（只裁剪、不授权）；未知 preset → `TOOL_ARGS_INVALID`，不建子会话；**没有 preset 时子级加入父的当前组合，派发照常**（照 DSH 的缺省，不是禁用）。
+- **`subagent.tools` 的处置（M14 落地后裁决）**：先落 preset，再看部署实践——部署普遍会配 preset 时，模型已经有「选 preset」这一手，`tools` 的边际价值很小，**删掉、完全对齐 DSH**；大量小配置场景根本不配 preset 时，它是模型唯一能裁剪的手段，**保留但语义写死为「只能在 preset ∩ 父表之内再减」**（DSH 没有这一层，要单独记账）。
+- **判据**：preset 决定上界、模型只能减；白名单外的 id 模型看不见；未知 preset 是结果词不是异常；无 preset 时派发不受影响；`replay` 逐点相等。
+- **明确不做**：模型提交任意工具名绕过白名单（DSH 没有，也不加）；子级权限随 preset 放宽（preset 只裁剪）。
 
 ### M14 之后的三小步（M14a–c，非核心、个人助理向）
 

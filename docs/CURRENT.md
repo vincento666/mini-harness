@@ -8,7 +8,7 @@
 - **H1 已合入并归档**：40/40 task；归档在 `openspec/changes/archive/2026-10-27-h1-host-session-api`。主规格新建 `host-api`，`cli` / `fences` delta 已 sync。GLOSSARY / roadmap / stage-map 的 K/R/S 分层口径已 cherry-pick（`9af5d3d`、`ad60a9d`）。
 - **H2 已合入并归档**：全部 task 勾完；真实端点 S1–S4、人跑 UAT S1–S5、变异四条、Learning Gate 全过。归档在 `openspec/changes/archive/2026-10-28-h2-streaming-and-event-echo`；主规格 `provider` / `host-api` 已 sync。
 - **M11 已合入并归档**：`m11-storage-resume-and-projection-cache` 23/23，`main` 合并 `c9c62ee`；EventLog 续写、chat/Host resume、schema 相邻迁移、Host session index、fold 缓存、投影三态、chat 工具事件行与 Host observer 已落成；主规格 4 个已 sync。归档在 `openspec/changes/archive/2026-11-05-m11-storage-resume-and-projection-cache`。
-- **M12 已归档（在 change 分支上），待合入 `main`**：`m12-subagent-delegation` 18/18 task；`subagent` 工具（spawn）、独立子会话与子日志、深度/容量结果词、子会话审批不可用、同批真并发、父取消级联、Host 父子字段、委派声明都已落成；真实端点 S1–S4、人跑 UAT S1–S5、变异 3+1 条、DSH parity review 全过。归档在 `openspec/changes/archive/2026-11-09-m12-subagent-delegation`；主规格 `subagent-delegation` 新建，`host-api` / `tool-pipeline` 已 sync。UAT 期间发现并修复了 chat 的 SIGINT 唤醒缺陷（`2cb1234`）。
+- **M12 已合入并归档**：合并 `4ff7226`；`m12-subagent-delegation` 18/18 task；`subagent` 工具（spawn）、独立子会话与子日志、深度/容量结果词、子会话审批不可用、同批真并发、父取消级联、Host 父子字段、委派声明都已落成；真实端点 S1–S4、人跑 UAT S1–S5、变异 3+1 条、DSH parity review 全过。归档在 `openspec/changes/archive/2026-11-09-m12-subagent-delegation`；主规格 `subagent-delegation` 新建，`host-api` / `tool-pipeline` 已 sync。UAT 期间发现并修复了 chat 的 SIGINT 唤醒缺陷（`2cb1234`）。子代理 preset 与 `subagent.tools` 的去留见 roadmap 的「子代理 preset 与工具来源」。
 - **P0 诊断完成**：`docs/verification/p0-budget-reading-diagnostic-2026-10-27.md`。当前 main 的 W1 四次遮蔽均下降、W2 未触发溢出；**不按旧 20 个 task 原样 apply**，需重新确认是否还有可复现症状。
 - **唯一未实现的修复分支**：`change/fix-post-compaction-budget-reading`（20 个 task 全未勾，只有 proposal / design / spec / tasks；不实现、不归档）。
 - 已合并但分支还没删的：`change/fix-small-window-compaction-dead-zone`、`change/add-key-driven-default-provider`、`change/fix-chat-screen-feedback`、`change/add-platform-facts-to-protected-header`、`change/fix-compaction-and-context-overflow`。
@@ -17,7 +17,7 @@
 
 ## 下一步
 
-1. **M12 待合入 `main`**：归档与规格 sync 已在 `change/m12-subagent-delegation` 完成；合并与推 `main` 需要人批准。
+1. **M12 已合入 `main`**（`4ff7226`）：归档与规格 sync 完成，`openspec validate` 19/19。下一步是 M13 / M14；M14 落地后裁决 `subagent.tools` 的去留（见 roadmap 的「子代理 preset 与工具来源」）。
 2. **M10 已完成并合入**：第一切片 `m10-compaction-parameters` 合入 `aa48ae7`；余下 `m10-tool-pipeline-and-concurrency` 26/26 task，`main` 合并 `856d368`，归档在 `openspec/changes/archive/2026-10-29-m10-tool-pipeline-and-concurrency`。六段管线、并发类别/barrier、CommandRunner、read 50 KiB/2000 字符窗口（不 spill）、bash/搜索 spill 都已落成。
 3. **思考模式与预算**：M10 之后、M11/M12 之前立 `reasoning-mode-and-budget`；durable `model/response` 用有序 content blocks（reasoning/text/tool-call）而不是单字段、实时 `reasoning/delta` ephemeral、reasoning tokens 属 output 不重复计；DSH 对照与暂缓项见 `docs/reference/reasoning-mode.md`。
 4. **P0**：`fix-post-compaction-budget-reading` 先不 apply——诊断（W1/W2）没有复现「遮蔽后 tokens 后 > 前」；要么补一次能稳定触发溢出的真实端点样本再决定是否修，要么把它降级为未复现的历史缺陷并记账。
@@ -33,7 +33,7 @@
 - **没有技能 / 斜杠命令 / 渐进披露**：M14；CLI 与 host 要同一份命令面。
 - **没有工作区契约 / 结果剪枝计量 / 助理 UX 工具**：M14a / M14b / M14c；非核心，但缺了个人助理不像。
 - **没有记忆**：MEM1（项目/用户 `MEMORY.md` + `memory` 工具）；MEM2 定时巩固在壳后。
-- **委派的三处语义原语未对齐**：子级审批仍继承父的 `approval` 模式 + 门 `UNAVAILABLE`（DSH 把进程内子级钉成 `never`）；没有「沙箱升级才问人」的阶梯；工具表只是组合过滤、没有数据边界授权；子级 preset 与异步完成通知都写了触发条件。见 `docs/verification/m12-subagent-delegation-dsh-review.md` 的「语义原语的差距」。
+- **委派的三处语义原语未对齐**：子级审批仍继承父的 `approval` 模式 + 门 `UNAVAILABLE`（DSH 把进程内子级钉成 `never`）；没有「沙箱升级才问人」的阶梯；工具表只是组合过滤、没有数据边界授权；子级 preset 与异步完成通知都写了触发条件，其中 preset 与 `subagent.tools` 的裁决路径在 roadmap 的「子代理 preset 与工具来源」。见 `docs/verification/m12-subagent-delegation-dsh-review.md` 的「语义原语的差距」。
 - **没有 OS 级沙箱**：M15a 进程收容是无人值守壳的硬前置；M15b 文件写拒绝可壳后。
 - **fork 与插件容器**：暂不做，见 ADR-0035；图上两项与 roadmap 的差异已写明。
 - **文档漂移已修**：`CURRENT` 的重复段、过期的“未归档”、ADR 计数 23 → 实际 30、门禁数字并列，都在 2026-10-26 这一轮清掉；`roadmap` 的重复判据段也已合并。

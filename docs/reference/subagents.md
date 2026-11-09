@@ -62,6 +62,7 @@
 - **启动记录**：子 `session/start` 的 `entry` 是 `subagent`，另带 `parent_session_id`、`depth`、`parent_tool_call_id`。父日志里那条 `tool/call` 的 id 就是 `parent_tool_call_id`，父子两边靠它对上。
 - **结果**：父拿到的是子会话**最后一条非摘要 `model/response` 的正文**；没有正文时是一句「子会话 <id> 结束（<stop_reason>），没有最终文本」。子会话的模型/内核失败是 `TOOL_IO_FAILED`（带失败码与 detail），围栏拒绝是 `DENIED_BY_APPROVAL` / `DENIED_BY_FENCE`（带围栏码、detail 与子会话最后文本），取消是 `TOOL_CANCELLED`——失败不会被读成「成功但没说话」。子会话的 `model/*`、`tool/*` 与 delta 一条都不进父日志。
 - **档位**：`subagent.sandbox` 只能比父会话窄，更宽是 `TOOL_ARGS_INVALID`（ADR-0036）。
+- **工具来源（M14 计划）**：部署用 `[subagent]` 的 preset + 白名单决定子代理能有什么（DSH 的 `agentPreset` / `allowedAgentPresets`），子工具表 = preset ∩ 父表；`subagent.tools` 的去留按 roadmap 的「子代理 preset 与工具来源」裁决。现在它只是模型侧的收窄旋钮，不是授权。
 - **委派声明**：子会话的受保护头部带一条固定声明（照 DSH 的 `subagent:delegation`）——权限在启动时固定、需要审批的操作会被自动拒绝、**不要重试被拒绝的操作**、把限制写进回复让父级处理。`session/start.payload.delegated` 记这条事实，`replay` 折叠同一份头部。
 - **额度**：`MAX_DEPTH = 1`、`MAX_ACTIVE_SUBAGENTS = 8`，常量住在 `session/delegation.py`；`DelegationState` 每个会话一份，活跃计数在子会话收尾时释放。两个超限都是 `tool/result` 的结果词（`DEPTH_EXCEEDED` / `ACTIVATION_LIMIT_REACHED`），不抛异常。工具并发上限也是 8，所以同一批 9 个 `subagent` 不会撞额度（第 9 个排队等前 8 个之一完成）；额度今天是防御性的。
 - **审批**：子会话继承 `approval` **模式**（`auto` 这个钉定属于档位），但审批门固定 `UNAVAILABLE`。模式是 `ask` 时子会话写不了文件、也跑不了 `bash`（要问人 → 不可用 → `DENIED_BY_APPROVAL`），这是刻意的：父代答就是提权通道。**推论**：想让子代理干活（写/跑命令），父会话要用 `auto`（`--yes`）；`ask` 模式下子代理只能做只读工作——这与 DSH「权限不继承、但沙箱覆盖与 `never` 钉定继承」是同一条取舍。
