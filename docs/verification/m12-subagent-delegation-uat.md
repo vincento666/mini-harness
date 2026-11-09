@@ -1,6 +1,6 @@
 # M12 subagent UAT
 
-**状态**：S1–S4 已由人跑（2026-11-09）；S5 第一轮子会话太快没赶上取消，第二轮暴露并修复了一个真缺陷，**待用修复后的版本重跑**。
+**状态**：S1–S5 已由人跑（2026-11-09）。S5 第二轮暴露并修复了一个真缺陷（Ctrl-C 延迟 30 s），修复后第三轮通过。
 
 ## 跑前准备
 
@@ -70,11 +70,11 @@ uv run minihns chat --provider deepseek --workspace /tmp/m12-uat --session-dir /
 | S2 | 并行 | 真并发 | 同一批两条 `subagent`；两个子会话各读一个文件；两条结果按完成顺序回来（`second.md` 先于 `inbox.md`）（`0beb6fb0…`） | 通过 | 结果顺序与声明顺序不同，读日志时要习惯 |
 | S3 | 深度 | `DEPTH_EXCEEDED` | 子会话里那次 `subagent` 是 `DEPTH_EXCEEDED`，子会话把这句限制写进最终回复，父回合照常继续（`6a6dd24d…`） | 通过 | |
 | S4 | 子审批 | `APPROVAL_UNAVAILABLE` | 子会话的 `bash` 与 `write` 都被拒（`APPROVAL_UNAVAILABLE`），父那两条 `tool/result` 都是 `DENIED_BY_APPROVAL`；父随后**自己** `write`，走人工批准后写成 `note.md`（`1ec75393…`） | 通过 | 子会话被拒两次后，父才换自己上；「我让子代理做，最后还是我批」的体感 |
-| S5 | 父取消 | 子 `ABORTED`、无孤儿 | 第一轮子会话只做了一次 `read` 就收尾，Ctrl-C 没落在运行中（`837270e1…`）；第二轮 Ctrl-C 后 bash 跑满 **30.04 s** 才 `TOOL_CANCELLED`——定位到 chat 的 SIGINT 处理器直接 `Event.set()`，没叫醒 selector（已修，见下） | 待重跑 | Ctrl-C 延迟是缺陷，不是体感；无孤儿进程（`pgrep` 为空） |
+| S5 | 父取消 | 子 `ABORTED`、无孤儿 | 第一轮子会话只做了一次 `read` 就收尾，Ctrl-C 没落在运行中（`837270e1…`）；第二轮 Ctrl-C 后 bash 跑满 **30.04 s** 才 `TOOL_CANCELLED`（缺陷，已修）；第三轮修复后：`^C` 当场 `TOOL_CANCELLED`，子会话 `session/end(ABORTED)`（`2f91e783…` / 子 `cbe8d7ed…`），上一轮 `pgrep -fl sleep` 为空 | 通过（修复后） | Ctrl-C 延迟是缺陷，不是体感 |
 
-**至少一条「用起来别扭」**：_
+**至少一条「用起来别扭」**：S4 里子会话被拒两次后父才换自己上——「我让子代理做，最后还是我批」；S2 两条结果按完成顺序回来，与声明顺序不同，读日志时要习惯。
 
-**结论**：通过 / 不通过：
+**结论**：通过（S1–S5；S5 的 Ctrl-C 延迟作为缺陷修复后复验）。
 
 ## 发现并修复的缺陷（S5 第二轮）
 

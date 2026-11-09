@@ -31,7 +31,7 @@
 ## 6. 收尾四项 + DSH parity
 
 - [x] 6.1 真实端点验收
-- [ ] 6.2 UAT 验收（人跑）
+- [x] 6.2 UAT 验收（人跑）
 - [x] 6.3 变异测试一轮
 - [x] 6.4 Learning Gate
 - [x] 6.5 DSH parity review：spawn/depth/capacity/approval/parallel/cancel 六项逐条对比，写 `docs/verification/m12-subagent-delegation-dsh-review.md`
