@@ -333,7 +333,7 @@ def _wait_until_log_contains(tmp_path: Path, process: Any, marker: str, what: st
 async def test_the_chat_handler_cancels_the_running_segment() -> None:
     """seam ⑥：段在跑时 Ctrl-C 只取消当前段——这条不看平台脸色。"""
     cancel = asyncio.Event()
-    signals = _ChatSignals(active=cancel)
+    signals = _ChatSignals(active=cancel, loop=asyncio.get_running_loop())
 
     _chat_sigint_handler(signals)(signal.SIGINT, None)
     await asyncio.sleep(0)
@@ -1065,3 +1065,32 @@ def test_resume_closes_hard_kill_gap_without_rewriting(tmp_path: Path) -> None:
     assert log.path.read_bytes().startswith(original), "旧记录必须逐字节保留"
     records = _records(tmp_path)
     assert records[-1]["type"] == "session/end"
+
+
+async def test_the_chat_handler_wakes_the_loop_instead_of_only_queueing() -> None:
+    """SIGINT 必须经 `call_soon_threadsafe` 叫醒循环，不能只 `Event.set()`。
+
+    直接置位只排一个回调；循环睡在 selector 里时不会醒——真实端点 UAT 里表现为
+    「Ctrl-C 之后 bash 还跑满 30 s」。这条锁住那条唤醒路径。
+    """
+
+    class _RecordingLoop:
+        def __init__(self) -> None:
+            self.scheduled: list[object] = []
+
+        def call_soon_threadsafe(self, callback: object, *args: object) -> None:
+            self.scheduled.append(callback)
+
+    cancel = asyncio.Event()
+    loop = _RecordingLoop()
+    signals = _ChatSignals(active=cancel, loop=loop)  # type: ignore[arg-type]
+
+    _chat_sigint_handler(signals)(signal.SIGINT, None)
+
+    # 处理器只调度，不直接动 asyncio 对象；调度到之后才置位。
+    assert cancel.is_set() is False
+    assert len(loop.scheduled) == 1
+    assert callable(loop.scheduled[0])
+    loop.scheduled[0]()
+    assert cancel.is_set() is True
+

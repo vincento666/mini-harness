@@ -1,6 +1,6 @@
 # M12 subagent UAT
 
-**状态**：S1–S4 已由人跑（2026-11-09），S5 待补（第一轮子会话太快，取消没落在运行中）。
+**状态**：S1–S4 已由人跑（2026-11-09）；S5 第一轮子会话太快没赶上取消，第二轮暴露并修复了一个真缺陷，**待用修复后的版本重跑**。
 
 ## 跑前准备
 
@@ -70,8 +70,24 @@ uv run minihns chat --provider deepseek --workspace /tmp/m12-uat --session-dir /
 | S2 | 并行 | 真并发 | 同一批两条 `subagent`；两个子会话各读一个文件；两条结果按完成顺序回来（`second.md` 先于 `inbox.md`）（`0beb6fb0…`） | 通过 | 结果顺序与声明顺序不同，读日志时要习惯 |
 | S3 | 深度 | `DEPTH_EXCEEDED` | 子会话里那次 `subagent` 是 `DEPTH_EXCEEDED`，子会话把这句限制写进最终回复，父回合照常继续（`6a6dd24d…`） | 通过 | |
 | S4 | 子审批 | `APPROVAL_UNAVAILABLE` | 子会话的 `bash` 与 `write` 都被拒（`APPROVAL_UNAVAILABLE`），父那两条 `tool/result` 都是 `DENIED_BY_APPROVAL`；父随后**自己** `write`，走人工批准后写成 `note.md`（`1ec75393…`） | 通过 | 子会话被拒两次后，父才换自己上；「我让子代理做，最后还是我批」的体感 |
-| S5 | 父取消 | 子 `ABORTED`、无孤儿 | 第一轮子会话只做了一次 `read` 就收尾，Ctrl-C 没落在运行中（`837270e1…`） | 待补 | |
+| S5 | 父取消 | 子 `ABORTED`、无孤儿 | 第一轮子会话只做了一次 `read` 就收尾，Ctrl-C 没落在运行中（`837270e1…`）；第二轮 Ctrl-C 后 bash 跑满 **30.04 s** 才 `TOOL_CANCELLED`——定位到 chat 的 SIGINT 处理器直接 `Event.set()`，没叫醒 selector（已修，见下） | 待重跑 | Ctrl-C 延迟是缺陷，不是体感；无孤儿进程（`pgrep` 为空） |
 
 **至少一条「用起来别扭」**：_
 
 **结论**：通过 / 不通过：
+
+## 发现并修复的缺陷（S5 第二轮）
+
+**症状**：Ctrl-C 之后 `[tool] subagent -> TOOL_CANCELLED` 要等约 30 秒才出现（正好是子会话 `bash` 的 `sleep 30`）。
+
+**根因**：chat 的 SIGINT 处理器直接调 `signals.active.set()`。`Event.set()` 只把回调排进 `_ready`，**不写循环的自管道**；事件循环此时睡在 selector 里（等 bash 的管道），于是要等管道有动静才醒——bash 退出时才处理取消。
+
+**实验**（同机、同循环，信号由线程在 1 s 时发出，循环正 await 一个 4 s 的子进程）：
+
+| 处理器写法 | 事件被观察到的时刻 |
+|---|---|
+| `Event.set()` 直调 | 4.01 s（子进程结束） |
+| `loop.call_soon_threadsafe(event.set)` | 1.01 s |
+
+**修复**：`_ChatSignals` 带循环句柄，处理器改走 `loop.call_soon_threadsafe(signals.active.set)`；与 `_await_session`（run/serve）和 host 的 `_stop_handler` 同一条规矩。回归用例：`test_the_chat_handler_wakes_the_loop_instead_of_only_queueing`（锁住「必须调度、不直接置位」），CLI 黑盒的 `test_sigint_mid_segment_cancels_the_segment_not_the_session` 从「全量里时红时绿」变为稳定通过。
+
