@@ -42,6 +42,8 @@ ToolOutcome = Literal[
     "TOOL_OUTCOME_UNKNOWN",
     "DENIED_BY_FENCE",
     "DENIED_BY_APPROVAL",
+    "DEPTH_EXCEEDED",
+    "ACTIVATION_LIMIT_REACHED",
 ]
 
 
@@ -84,6 +86,10 @@ class ToolRegistry:
 
     def lookup(self, name: str) -> ToolDefinition | None:
         return self._tools.get(name)
+
+    def definitions(self) -> list[ToolDefinition]:
+        """全部定义，按注册顺序；委派按它给子会话筛工具表。"""
+        return list(self._tools.values())
 
     def specs(self) -> list[ToolSpec]:
         return [

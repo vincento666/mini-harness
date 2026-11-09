@@ -218,9 +218,13 @@ class HostServer:
     async def _get_session(self, request: web.Request) -> web.Response:
         session_id = request.match_info["session_id"]
         handle = self._state.sessions.get(session_id)
-        if handle is None:
+        if handle is not None:
+            return web.json_response(handle.view())
+        indexed = self._state.index.get(session_id)
+        if indexed is None:
             return _error(404, "SESSION_NOT_FOUND", f"没有会话 {session_id}")
-        return web.json_response(handle.view())
+        # 子会话只登记在索引里（M12）：它是已结束的一条只读视图。
+        return web.json_response(indexed)
 
     async def _post_message(self, request: web.Request) -> web.Response:
         session_id = request.match_info["session_id"]

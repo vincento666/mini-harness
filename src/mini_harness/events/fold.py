@@ -39,6 +39,15 @@ _POSIX_SHELL_ADVICE = "真要跑 shell 命令时，用 ls -R / tail。"
 _DECODE_NOTE = "命令输出按 UTF-8 解码，不是合法 UTF-8 的字节会显示为替换字符。"
 
 
+# 子代理的委派声明（M12，照 DSH 的 `subagent:delegation`）：权限范围固定、别重试被拒的操作、
+# 把限制写进回复让父级去处理。它进受保护头部，不进任何一条用户消息。
+DELEGATION_SCOPE_DECLARATION = (
+    "你是被委派的子代理：权限范围在启动时已固定，不能在本会话里放宽——需要审批的操作会被自动拒绝。"
+    "这个任务需要超出该范围的访问时，不要重试被拒绝的操作；把这个限制写进你的回复，"
+    "让发起委派的代理去处理。"
+)
+
+
 def _environment_block(os_name: str, shell: str) -> str:
     shell_advice = _WINDOWS_SHELL_ADVICE if "cmd.exe" in shell else _POSIX_SHELL_ADVICE
     head = f"运行环境：os={os_name}，bash 经 {shell} 执行。"
@@ -66,6 +75,7 @@ def protected_header(
     append_system_prompt: str = "",
     tool_names: Sequence[str] = (),
     platform: Mapping[str, str] | None = None,
+    delegated: bool = False,
 ) -> list[Message]:
     """受保护头部：内置常量在前，只能追加不能替换。"""
     parts = [SYSTEM_PROMPT]
@@ -75,6 +85,8 @@ def protected_header(
         parts.append(
             _environment_block(str(platform.get("os", "")), str(platform.get("shell", "")))
         )
+    if delegated:
+        parts.append(DELEGATION_SCOPE_DECLARATION)
     if append_system_prompt:
         parts.append(append_system_prompt)
     return [Message(role="system", content="\n\n".join(parts))]
@@ -82,7 +94,7 @@ def protected_header(
 
 def _start_facts(
     events: Sequence[EventRecord],
-) -> tuple[list[str], str, dict[str, str] | None]:
+) -> tuple[list[str], str, dict[str, str] | None, bool]:
     """头部里的工具块、追加段与平台事实取自日志里的 `session/start`，不取自进程内注册表。
 
     这样实时装配与回放折叠的是同一份事实：注册表在回放时根本不存在。
@@ -101,8 +113,13 @@ def _start_facts(
             if isinstance(raw_platform, Mapping)
             else None
         )
-        return names, appended if isinstance(appended, str) else "", platform
-    return [], "", None
+        return (
+            names,
+            appended if isinstance(appended, str) else "",
+            platform,
+            event.payload.get("delegated") is True,
+        )
+    return [], "", None, False
 
 
 def _body_message(event: EventRecord) -> Message | None:
@@ -217,11 +234,12 @@ def fold(events: Sequence[EventRecord]) -> AssembledContext:
     cached = _FOLD_CACHE.get(key)
     if isinstance(cached, AssembledContext):
         return cached.model_copy(deep=True)
-    tool_names, append_system_prompt, platform = _start_facts(events)
+    tool_names, append_system_prompt, platform, delegated = _start_facts(events)
     header = protected_header(
         append_system_prompt=append_system_prompt,
         tool_names=tool_names,
         platform=platform,
+        delegated=delegated,
     )
     shadowed = shadowed_seqs(events)
     body: list[Message] = []

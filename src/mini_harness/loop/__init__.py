@@ -14,6 +14,7 @@ from mini_harness.loop.turn_loop import (
     ENTRY_HOST,
     ENTRY_RUN,
     ENTRY_SERVE,
+    ENTRY_SUBAGENT,
     STOP_ABORTED,
     STOP_CONTEXT_WINDOW_EXCEEDED,
     STOP_FENCE_DENIED,
@@ -28,6 +29,7 @@ from mini_harness.loop.turn_loop import (
     SessionEnv,
     end_session,
     run_session,
+    run_session_env,
     run_turn_segment,
     start_session,
 )
@@ -40,6 +42,7 @@ __all__ = [
     "ENTRY_HOST",
     "ENTRY_RUN",
     "ENTRY_SERVE",
+    "ENTRY_SUBAGENT",
     "PROVIDER_NAMES",
     "SANDBOX_LEVELS",
     "STOP_ABORTED",
@@ -58,6 +61,7 @@ __all__ = [
     "SessionSettings",
     "end_session",
     "run_session",
+    "run_session_env",
     "run_turn_segment",
     "start_session",
 ]

@@ -8,6 +8,7 @@ from mini_harness.config.load import ConfigFailure
 from mini_harness.tools import ToolRegistry
 from mini_harness.tools.bash_tools import bash_tool_definitions
 from mini_harness.tools.file_tools import file_tool_definitions
+from mini_harness.tools.subagent import subagent_tool_definitions
 
 
 def build_registry(whitelist: Sequence[str] | None) -> ToolRegistry | ConfigFailure:
@@ -15,7 +16,7 @@ def build_registry(whitelist: Sequence[str] | None) -> ToolRegistry | ConfigFail
 
     白名单里的未知名是一条配置失败：工具表不会悄悄少一个，也不会悄悄多一个。
     """
-    definitions = [*file_tool_definitions(), *bash_tool_definitions()]
+    definitions = [*file_tool_definitions(), *bash_tool_definitions(), *subagent_tool_definitions()]
     if whitelist is None:
         return ToolRegistry(definitions)
     known = {tool.name for tool in definitions}

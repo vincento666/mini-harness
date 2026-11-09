@@ -3,9 +3,7 @@
 ## Purpose
 
 工具执行的可观察契约：六段派发、平台命令 runner、并发类别与 barrier、read 窗口、bash/搜索预算与 spill、批内日志前缀复用。
-
 ## Requirements
-
 ### Requirement: 工具派发走六段管线
 
 系统 SHALL 按 `pre-execute → guard → execute → post-execute → finalizeContent → tools/result` 六段执行一次工具调用；每一段 SHALL 只产出「继续 / 结果」两种出口，失败也是结果，MUST NOT 抛出未捕获异常打断回合。`guard` SHALL 复用现有围栏与 approval 语义；`finalizeContent` 是 `bash` 的 16 KiB/尾部/spill 收尾点，`read`/`grep`/`glob` 的窗口与条数上限在各自工具内生效。
@@ -38,6 +36,8 @@
 
 `ToolDefinition` SHALL 声明 `ConcurrencyClass`：`parallel`（只读/无副作用）或 `exclusive`（会改动/需独占）。同一时刻在跑的 `parallel` SHALL ≤ 8；`exclusive` SHALL ≤ 1，并且是 barrier：它之前声明的调用先完成，之后声明的调用等它完成。`tool/call` SHALL 按声明顺序落盘，`tool/result` SHALL 按完成顺序落盘。
 
+`subagent` SHALL 是 `parallel` 类别：同一批声明的多个子代理 SHALL 并发执行，父会话只收它们各自的最终结果。额度耗尽（`ACTIVATION_LIMIT_REACHED`）与深度超限（`DEPTH_EXCEEDED`）SHALL 是 `tool/result` 的结果词，MUST NOT 抛出异常打断父回合。
+
 #### Scenario: 并行只读批次真并发
 
 - **WHEN** 同一批声明 4 个 `parallel` 调用，每个阻塞 0.1 s
@@ -52,6 +52,16 @@
 
 - **WHEN** 两个 `parallel` 调用完成顺序与声明顺序相反
 - **THEN** 两条 `tool/result` 按完成顺序落盘，`tool/call` 仍按声明顺序
+
+#### Scenario: 同批两个子代理并发
+
+- **WHEN** 同一批声明两个 `subagent`，两个子任务的模型回合各阻塞一段
+- **THEN** 两段阻塞重叠，父日志有两条 `tool/result`，按完成顺序落盘
+
+#### Scenario: 额度用尽仍是结果
+
+- **WHEN** 父会话的活跃子代理已经到了 `maxActiveSubagents`
+- **THEN** 该次调用的结果是 `ACTIVATION_LIMIT_REACHED`，父回合继续
 
 ### Requirement: read 是 capped window，不落 spill
 
@@ -113,3 +123,4 @@
 
 - **WHEN** 同一批有 4 个工具调用
 - **THEN** 日志前缀只读取一次，四个调用都使用同一份前缀
+

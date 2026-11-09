@@ -1,0 +1,519 @@
+"""seam ⑦：委派。子会话的日志与父会话的那一对 tool 记录是这一缝的中心。"""
+
+from __future__ import annotations
+
+import asyncio
+import time
+from collections.abc import Awaitable, Callable, Sequence
+from pathlib import Path
+
+from mini_harness.events import read_events
+from mini_harness.events.fold import Message
+from mini_harness.loop import RunOutcome
+from mini_harness.provider import FixtureProvider
+from mini_harness.provider.contract import AssistantTurn, DeltaSink, ToolCall, ToolSpec
+from mini_harness.session.delegation import MAX_ACTIVE_SUBAGENTS
+from mini_harness.tools import ToolRegistry
+from mini_harness.tools.bash_tools import bash_tool_definitions
+from mini_harness.tools.fences import ApprovalDecision
+from mini_harness.tools.file_tools import file_tool_definitions
+from mini_harness.tools.subagent import subagent_tool_definitions
+from tool_harness import (
+    DONE,
+    build_session_env,
+    cancel_after,
+    dispatch_call,
+    run_fixture_session,
+    run_session_fixture,
+    tool_call_entry,
+)
+
+
+def delegation_registry() -> ToolRegistry:
+    """父会话的工具表：五个文件工具、`bash` 与 `subagent`。"""
+    return ToolRegistry(
+        [*file_tool_definitions(), *bash_tool_definitions(), *subagent_tool_definitions()]
+    )
+
+
+async def _run(tmp_path: Path, entries: list[dict[str, object]]) -> tuple[Path, RunOutcome]:
+    log, outcome = await run_fixture_session(
+        tmp_path, "s-parent", entries, registry=delegation_registry(), prompt="父任务"
+    )
+    return log.path, outcome
+
+
+def _child_paths(tmp_path: Path) -> list[Path]:
+    return [path for path in sorted(tmp_path.glob("*.jsonl")) if path.stem != "s-parent"]
+
+
+async def test_subagent_writes_its_own_log(tmp_path: Path) -> None:
+    """子会话从空对话起步：自己的 `session/start` 带 entry / parent_session_id / depth。"""
+    entries = [
+        tool_call_entry("subagent", "c1", task="读 a.md 并总结"),
+        {"content": "子会话的最终答案", "finish_reason": "stop"},
+        DONE,
+    ]
+
+    _, outcome = await _run(tmp_path, entries)
+
+    assert outcome.stop_reason == "MODEL_COMPLETED"
+    children = _child_paths(tmp_path)
+    assert len(children) == 1
+    start = read_events(children[0])[0]
+    assert start.type == "session/start"
+    assert start.payload["entry"] == "subagent"
+    assert start.payload["parent_session_id"] == "s-parent"
+    assert start.payload["parent_tool_call_id"] == "c1"
+    assert start.payload["depth"] == 1
+    # spawn 不 fork：子会话的第一条内容就是它的任务，没有父会话的历史。
+    messages = read_events(children[0])
+    assert [record.type for record in messages[:3]] == [
+        "session/start",
+        "segment/start",
+        "turn/start",
+    ]
+
+
+async def test_parent_log_has_only_the_tool_pair(tmp_path: Path) -> None:
+    """子会话内部调了工具、调了两次模型，父日志里仍只有一对 subagent 记录。"""
+    (tmp_path / "a.md").write_text("内容\n", encoding="utf-8")
+    entries = [
+        tool_call_entry("subagent", "c1", task="读 a.md 并总结"),
+        tool_call_entry("read", "c2", file_path="a.md"),
+        {"content": "子会话读完了 a.md", "finish_reason": "stop"},
+        DONE,
+    ]
+
+    log_path, outcome = await _run(tmp_path, entries)
+
+    assert outcome.stop_reason == "MODEL_COMPLETED"
+    records = read_events(log_path)
+    assert [record.payload["name"] for record in records if record.type == "tool/call"] == [
+        "subagent"
+    ]
+    assert len([record for record in records if record.type == "tool/result"]) == 1
+    assert not any(record.type == "session/start" for record in records[1:])
+    # 子会话的模型回复与工具过程都在它自己的日志里。
+    child = read_events(_child_paths(tmp_path)[0])
+    assert [record.payload["name"] for record in child if record.type == "tool/call"] == ["read"]
+
+
+async def test_subagent_result_is_the_final_text_not_the_child_log(tmp_path: Path) -> None:
+    """父上下文只装子会话的最终文本：不是 JSONL、不是子会话的完整过程。"""
+    (tmp_path / "a.md").write_text("内容\n", encoding="utf-8")
+    entries = [
+        tool_call_entry("subagent", "c1", task="读 a.md 并总结"),
+        tool_call_entry("read", "c2", file_path="a.md"),
+        {"content": "子会话的结论：内容两个字", "finish_reason": "stop"},
+        DONE,
+    ]
+
+    log_path, _ = await _run(tmp_path, entries)
+
+    result = next(record for record in read_events(log_path) if record.type == "tool/result")
+    assert result.payload["content"] == "子会话的结论：内容两个字"
+    assert "session/start" not in str(result.payload["content"])
+    assert "tool_call_id" not in str(result.payload["content"])
+
+
+async def test_child_session_context_is_empty_but_for_the_task(tmp_path: Path) -> None:
+    """子会话的上下文只有受保护头部加任务本身：父会话的历史一个字都不进去。"""
+    entries = [
+        tool_call_entry("subagent", "c1", task="只做这一件事"),
+        {"content": "收到", "finish_reason": "stop"},
+        DONE,
+    ]
+
+    await _run(tmp_path, entries)
+
+    child = read_events(_child_paths(tmp_path)[0])
+    assembled = next(record for record in child if record.type == "context/assembled")
+    assert "被委派的子代理" in assembled.payload["messages"][0]["content"]
+    roles = [message["role"] for message in assembled.payload["messages"]]
+    assert roles == ["system", "user"]
+    assert "父任务" not in str(assembled.payload["messages"])
+    assert assembled.payload["messages"][-1]["content"] == "只做这一件事"
+
+
+async def test_depth_exceeded_is_a_result(tmp_path: Path) -> None:
+    """`maxDepth = 1`：子代理（depth 1）再派子代理得到结果词，父回合继续（design D3）。"""
+    entries = [
+        tool_call_entry("subagent", "c1", task="先派一个子代理"),
+        tool_call_entry("subagent", "c2", task="子代理又想派子代理"),
+        {"content": "我不该派子代理", "finish_reason": "stop"},
+        DONE,
+    ]
+
+    _, outcome = await _run(tmp_path, entries)
+
+    assert outcome.stop_reason == "MODEL_COMPLETED"
+    child = read_events(_child_paths(tmp_path)[0])
+    results = [record.payload for record in child if record.type == "tool/result"]
+    assert [result["outcome"] for result in results] == ["DEPTH_EXCEEDED"]
+    # 被拒的那次没有建出孙会话：目录里只有父子两份日志。
+    assert len(_child_paths(tmp_path)) == 1
+
+
+async def test_activation_limit_is_a_result(tmp_path: Path) -> None:
+    """每父会话 8 个活跃子代理：额度用完时是结果词，不是异常（design D3）。"""
+    _, env = build_session_env(tmp_path, "s-parent", FixtureProvider(entries=[]))
+    env.delegation.active = MAX_ACTIVE_SUBAGENTS
+
+    outcome = await dispatch_call(
+        tmp_path,
+        "subagent",
+        {"task": "再来一个"},
+        registry=delegation_registry(),
+        session=env,
+    )
+
+    assert outcome.result.outcome == "ACTIVATION_LIMIT_REACHED"
+    assert str(MAX_ACTIVE_SUBAGENTS) in outcome.result.content
+    # 被拒的调用既不动额度，也不建子日志。
+    assert env.delegation.active == MAX_ACTIVE_SUBAGENTS
+    assert [path.name for path in tmp_path.glob("*.jsonl")] == ["s-parent.jsonl"]
+
+
+class _RecordingGate:
+    """父会话的问人门：一律批准，并记下被问过哪些工具。"""
+
+    def __init__(self) -> None:
+        self.asked: list[str] = []
+
+    async def request(self, *, tool_call_id: str, tool_name: str, detail: str) -> ApprovalDecision:
+        self.asked.append(tool_name)
+        return "APPROVED"
+
+
+async def test_a_child_approval_is_unavailable(tmp_path: Path) -> None:
+    """子会话问人得到 UNAVAILABLE：不继承父的一次性放行，也不等父代答（design D4）。"""
+    entries = [
+        tool_call_entry("subagent", "c1", task="改一个文件"),
+        tool_call_entry("write", "c2", file_path="out.md", content="写进去\n"),
+        DONE,
+    ]
+
+    gate = _RecordingGate()
+    log, outcome = await run_fixture_session(
+        tmp_path,
+        "s-parent",
+        entries,
+        registry=delegation_registry(),
+        prompt="父任务",
+        approval="ask",
+        approval_gate=gate,
+    )
+
+    assert outcome.stop_reason == "MODEL_COMPLETED"
+    child = read_events(_child_paths(tmp_path)[0])
+    assert [record.payload["outcome"] for record in child if record.type == "tool/result"] == [
+        "DENIED_BY_APPROVAL"
+    ]
+    fence = next(record for record in child if record.type == "error/fence")
+    assert fence.payload["code"] == "APPROVAL_UNAVAILABLE"
+    assert not (tmp_path / "out.md").exists()
+    # 子会话的提问没有转给父会话的问人门：父一次都没被问过。
+    assert gate.asked == []
+    # 子会话被拒，父拿到的也是拒绝结果词：父回合继续，但「没写成」不能被读成成功。
+    parent_result = next(record for record in read_events(log.path) if record.type == "tool/result")
+    assert parent_result.payload["outcome"] == "DENIED_BY_APPROVAL"
+    assert "APPROVAL_UNAVAILABLE" in parent_result.payload["content"]
+
+
+Respond = Callable[[int, Sequence[Message]], Awaitable[AssistantTurn]]
+
+
+class _ScriptedProvider:
+    """按调用序号回放的桩：第 n 次 `generate` 交给 `respond` 决定（并发下序号由锁分配）。"""
+
+    def __init__(self, respond: Respond) -> None:
+        self._respond = respond
+        self._calls = 0
+        self._lock = asyncio.Lock()
+
+    async def generate(
+        self,
+        messages: Sequence[Message],
+        tools: Sequence[ToolSpec],
+        signal: asyncio.Event,
+        on_delta: DeltaSink | None = None,
+    ) -> AssistantTurn:
+        async with self._lock:
+            self._calls += 1
+            index = self._calls
+        return await self._respond(index, messages)
+
+
+def _turn(content: str = "", *, calls: Sequence[ToolCall] = ()) -> AssistantTurn:
+    return AssistantTurn(
+        content=content,
+        finish_reason="tool_calls" if calls else "stop",
+        tool_calls=list(calls),
+    )
+
+
+async def _run_with(
+    tmp_path: Path, provider: _ScriptedProvider, *, cancel: asyncio.Event | None = None
+) -> tuple[Path, RunOutcome]:
+    log, outcome = await run_session_fixture(
+        tmp_path,
+        "s-parent",
+        provider,
+        prompt="父任务",
+        registry=delegation_registry(),
+        cancel=cancel,
+    )
+    return log.path, outcome
+
+
+async def test_two_subagents_run_in_parallel(tmp_path: Path) -> None:
+    """同一批两个 `subagent` 真并发：wall-clock 小于串行基线，结果按完成顺序落盘。"""
+
+    async def respond(index: int, messages: Sequence[Message]) -> AssistantTurn:
+        if index == 1:
+            return _turn(
+                "派两个",
+                calls=[
+                    ToolCall(id="c1", name="subagent", arguments={"task": "子任务甲"}),
+                    ToolCall(id="c2", name="subagent", arguments={"task": "子任务乙"}),
+                ],
+            )
+        if index in (2, 3):
+            task = messages[-1].content or ""
+            await asyncio.sleep(0.2 if "甲" in task else 0.4)
+            return _turn(f"{task}做完了")
+        return _turn("父结束")
+
+    started = time.monotonic()
+    log_path, outcome = await _run_with(tmp_path, _ScriptedProvider(respond))
+    elapsed = time.monotonic() - started
+
+    assert outcome.stop_reason == "MODEL_COMPLETED"
+    # 串行基线是 0.2 + 0.4；真并发的话两者重叠。
+    assert elapsed < 0.55
+    results = [record.payload for record in read_events(log_path) if record.type == "tool/result"]
+    assert [(result["tool_call_id"], result["content"]) for result in results] == [
+        ("c1", "子任务甲做完了"),
+        ("c2", "子任务乙做完了"),
+    ]
+
+
+async def test_parent_cancel_cancels_the_child(tmp_path: Path) -> None:
+    """父段取消传播到子会话：子按 ABORTED 收尾，父那一条是 TOOL_CANCELLED。"""
+
+    async def respond(index: int, messages: Sequence[Message]) -> AssistantTurn:
+        if index == 1:
+            return _turn(
+                "派一个",
+                calls=[ToolCall(id="c1", name="subagent", arguments={"task": "长任务"})],
+            )
+        if index == 2:
+            return _turn(
+                "先跑一条慢命令",
+                calls=[
+                    ToolCall(
+                        id="c2",
+                        name="bash",
+                        arguments={"command": "sleep 5", "timeout_seconds": 5},
+                    )
+                ],
+            )
+        return _turn("不该走到这里")
+
+    cancel = asyncio.Event()
+    watcher = asyncio.create_task(cancel_after(cancel, 0.2))
+
+    log_path, outcome = await _run_with(tmp_path, _ScriptedProvider(respond), cancel=cancel)
+    await watcher
+
+    assert outcome.stop_reason == "ABORTED"
+    parent_result = next(record for record in read_events(log_path) if record.type == "tool/result")
+    assert parent_result.payload["outcome"] == "TOOL_CANCELLED"
+    child = read_events(_child_paths(tmp_path)[0])
+    end = next(record for record in child if record.type == "session/end")
+    assert end.payload["stop_reason"] == "ABORTED"
+
+
+async def test_a_completed_child_result_survives_parent_cancel(tmp_path: Path) -> None:
+    """取消只带走还在跑的子会话；已经完成的那条结果留在父日志里。"""
+
+    async def respond(index: int, messages: Sequence[Message]) -> AssistantTurn:
+        if index == 1:
+            return _turn(
+                "派两个",
+                calls=[
+                    ToolCall(id="c1", name="subagent", arguments={"task": "快任务"}),
+                    ToolCall(id="c2", name="subagent", arguments={"task": "慢任务"}),
+                ],
+            )
+        task = messages[-1].content or ""
+        if "快" in task:
+            return _turn("快任务完成")
+        return _turn(
+            "先跑一条慢命令",
+            calls=[
+                ToolCall(
+                    id="c3",
+                    name="bash",
+                    arguments={"command": "sleep 5", "timeout_seconds": 5},
+                )
+            ],
+        )
+
+    cancel = asyncio.Event()
+    watcher = asyncio.create_task(cancel_after(cancel, 0.3))
+
+    log_path, outcome = await _run_with(tmp_path, _ScriptedProvider(respond), cancel=cancel)
+    await watcher
+
+    assert outcome.stop_reason == "ABORTED"
+    results = {
+        record.payload["tool_call_id"]: record.payload
+        for record in read_events(log_path)
+        if record.type == "tool/result"
+    }
+    assert results["c1"]["outcome"] == "OK"
+    assert results["c1"]["content"] == "快任务完成"
+    assert results["c2"]["outcome"] == "TOOL_CANCELLED"
+
+
+async def test_a_blank_task_is_an_argument_error(tmp_path: Path) -> None:
+    """`task` 必须自足且有内容：空白是入参错误，不是一次空委派。"""
+    _, env = build_session_env(tmp_path, "s-parent", FixtureProvider(entries=[]))
+
+    outcome = await dispatch_call(
+        tmp_path, "subagent", {"task": "   "}, registry=delegation_registry(), session=env
+    )
+
+    assert outcome.result.outcome == "TOOL_ARGS_INVALID"
+
+
+async def test_an_unknown_tool_name_is_an_argument_error(tmp_path: Path) -> None:
+    """`tools` 里写了未注册的名字是入参错误：不静默少一个工具，也不建子会话。"""
+    _, env = build_session_env(tmp_path, "s-parent", FixtureProvider(entries=[]))
+
+    outcome = await dispatch_call(
+        tmp_path,
+        "subagent",
+        {"task": "看文件", "tools": ["web_search"]},
+        registry=delegation_registry(),
+        session=env,
+    )
+
+    assert outcome.result.outcome == "TOOL_ARGS_INVALID"
+    assert "web_search" in outcome.result.content
+    assert [path.name for path in tmp_path.glob("*.jsonl")] == ["s-parent.jsonl"]
+
+
+async def test_the_tools_argument_restricts_the_child_registry(tmp_path: Path) -> None:
+    """`tools` 给的是子会话的**全部**工具：没列出来的在子会话里就是未注册。"""
+    (tmp_path / "a.md").write_text("内容\n", encoding="utf-8")
+    entries = [
+        tool_call_entry("subagent", "c1", task="只看文件", tools=["read"]),
+        tool_call_entry("bash", "c2", command="echo 不该跑"),
+        {"content": "子会话没有 bash", "finish_reason": "stop"},
+        DONE,
+    ]
+
+    _, outcome = await run_fixture_session(
+        tmp_path, "s-parent", entries, registry=delegation_registry(), prompt="父任务"
+    )
+
+    assert outcome.stop_reason == "MODEL_COMPLETED"
+    child = read_events(_child_paths(tmp_path)[0])
+    assert [record.payload["outcome"] for record in child if record.type == "tool/result"] == [
+        "UNKNOWN_TOOL"
+    ]
+
+
+async def test_a_child_without_final_text_still_returns_a_result(tmp_path: Path) -> None:
+    """子会话用完了回合数、最后一条回复没有正文时，父拿到的是一句说明，不是空串。"""
+    (tmp_path / "a.md").write_text("内容\n", encoding="utf-8")
+    entries = [
+        tool_call_entry("subagent", "c1", task="一直读", max_turns=1),
+        {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [{"id": "c2", "name": "read", "arguments": {"file_path": "a.md"}}],
+        },
+        DONE,
+    ]
+
+    log, outcome = await run_fixture_session(
+        tmp_path, "s-parent", entries, registry=delegation_registry(), prompt="父任务"
+    )
+
+    assert outcome.stop_reason == "MODEL_COMPLETED"
+    result = next(record for record in read_events(log.path) if record.type == "tool/result")
+    assert "没有最终文本" in result.payload["content"]
+    assert "MAX_TURNS" in result.payload["content"]
+
+
+async def test_the_tool_needs_a_session_runtime(tmp_path: Path) -> None:
+    """没有会话运行时的派发（例如将来的宿主内复用）是结果，不是异常。"""
+    outcome = await dispatch_call(
+        tmp_path, "subagent", {"task": "看文件"}, registry=delegation_registry()
+    )
+
+    assert outcome.result.outcome == "TOOL_IO_FAILED"
+    assert "会话运行时" in outcome.result.content
+
+
+async def test_the_child_sandbox_cannot_be_wider_than_the_parent(tmp_path: Path) -> None:
+    """`sandbox` 只能收窄：宽于父会话的请求是入参错误，不能绕过服务器级许可（ADR-0036）。"""
+    _, env = build_session_env(tmp_path, "s-parent", FixtureProvider(entries=[]))
+
+    outcome = await dispatch_call(
+        tmp_path,
+        "subagent",
+        {"task": "写文件", "sandbox": "danger-full-access"},
+        registry=delegation_registry(),
+        session=env,
+    )
+
+    assert outcome.result.outcome == "TOOL_ARGS_INVALID"
+    assert "不能比父会话宽" in outcome.result.content
+    assert [path.name for path in tmp_path.glob("*.jsonl")] == ["s-parent.jsonl"]
+
+
+async def test_the_child_sandbox_can_be_narrowed(tmp_path: Path) -> None:
+    """收窄是许可的：子会话在 read-only 下改文件，拒绝来自它自己的围栏。"""
+    entries = [
+        tool_call_entry("subagent", "c1", task="试着写", sandbox="read-only"),
+        tool_call_entry("write", "c2", file_path="out.md", content="写进去\n"),
+        {"content": "写不了", "finish_reason": "stop"},
+        DONE,
+    ]
+
+    log, outcome = await run_fixture_session(
+        tmp_path, "s-parent", entries, registry=delegation_registry(), prompt="父任务"
+    )
+
+    assert outcome.stop_reason == "MODEL_COMPLETED"
+    child = read_events(_child_paths(tmp_path)[0])
+    assert [record.payload["outcome"] for record in child if record.type == "tool/result"] == [
+        "DENIED_BY_FENCE"
+    ]
+    fence = next(record for record in child if record.type == "error/fence")
+    assert fence.payload["code"] == "SANDBOX_DENIES_WRITE"
+    assert not (tmp_path / "out.md").exists()
+    # 档位拒绝也回到父：它拿到的是围栏拒绝词，不是一句「写不了」的成功文本。
+    parent_result = next(
+        record for record in read_events(log.path) if record.type == "tool/result"
+    )
+    assert parent_result.payload["outcome"] == "DENIED_BY_FENCE"
+    assert "SANDBOX_DENIES_WRITE" in parent_result.payload["content"]
+
+
+async def test_a_child_model_failure_is_a_failure(tmp_path: Path) -> None:
+    """子会话的模型失败不能读成「成功了但没说话」：父拿到的是失败结果（不变量 B）。"""
+    entries = [tool_call_entry("subagent", "c1", task="干点活")]
+
+    log, outcome = await _run(tmp_path, entries)
+
+    assert outcome.stop_reason == "PROVIDER_ERROR"
+    result = next(record for record in read_events(log) if record.type == "tool/result")
+    assert result.payload["outcome"] == "TOOL_IO_FAILED"
+    assert "模型调用失败" in result.payload["content"]
+    assert "PROVIDER_EXHAUSTED" in result.payload["content"]

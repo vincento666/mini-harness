@@ -16,6 +16,7 @@ from mini_harness.events.record import EventRecord
 if TYPE_CHECKING:
     # 只给类型检查看：运行时导入会绕成 fences → loop → tools.dispatch → fences 的环。
     from mini_harness.loop.settings import ApprovalMode, SandboxLevel, SessionSettings
+    from mini_harness.loop.turn_loop import SessionEnv
 
 FenceCode = Literal[
     "OUTSIDE_WORKSPACE",
@@ -39,22 +40,34 @@ class PriorRead:
 
 @dataclass(frozen=True)
 class DispatchContext:
-    """一次派发能看到的全部事实：工具只读它，不读进程内状态。"""
+    """一次派发能看到的全部事实：工具只读它，不读进程内状态。
+
+    `session` 是委派要的那一层（子会话需要父的日志、设置、注册表与 provider）；
+    `tool_call_id` 是这一次调用的身份，子会话的 `session/start` 靠它跟父结果对上。
+    父段取消不经过这里：它到达工具的方式是 `CancelledError`（ADR-0007）。
+    """
 
     workspace: Path
     sandbox: SandboxLevel
     approval: ApprovalMode
     reads: Mapping[str, PriorRead] = field(default_factory=dict)
+    session: SessionEnv | None = None
+    tool_call_id: str | None = None
 
     @classmethod
     def from_settings(
-        cls, settings: SessionSettings, *, reads: Mapping[str, PriorRead] | None = None
+        cls,
+        settings: SessionSettings,
+        *,
+        reads: Mapping[str, PriorRead] | None = None,
+        session: SessionEnv | None = None,
     ) -> DispatchContext:
         return cls(
             workspace=settings.workspace,
             sandbox=settings.sandbox,
             approval=settings.approval,
             reads=reads or {},
+            session=session,
         )
 
 
@@ -169,6 +182,16 @@ class StdinApprovalGate:
 
 
 STDIN_APPROVAL_GATE = StdinApprovalGate()
+
+
+class UnavailableApprovalGate:
+    """子代理的 approval 门：问人一律「不可用」，不继承父的放行（M12 design D4）。"""
+
+    async def request(self, *, tool_call_id: str, tool_name: str, detail: str) -> ApprovalDecision:
+        return "UNAVAILABLE"
+
+
+UNAVAILABLE_APPROVAL_GATE = UnavailableApprovalGate()
 
 
 def reads_from_records(records: Iterable[EventRecord], workspace: Path) -> dict[str, PriorRead]:

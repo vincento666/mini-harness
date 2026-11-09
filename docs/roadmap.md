@@ -94,6 +94,7 @@ H1 / H2 是新增的宿主轨，不占用 M10–M15 的决策编号；M 编号�
 ### M12 委派（子代理）
 
 - **change**：`m12-subagent-delegation`
+- **状态**：✅ **2026-11-09 已归档**（`openspec/changes/archive/2026-11-09-m12-subagent-delegation`）：18/18 task；真实端点 S1–S4、人跑 UAT S1–S5、变异 3 条全杀 + 1 条存活定位到冗余实现、DSH parity review 全过；**待合入 `main`**。UAT 期间修掉 chat 的 SIGINT 唤醒缺陷（`2cb1234`）。
 - **层**：委派
 - **内容**：`subagent` 工具（spawn 形状，fork 暂不做，ADR-0035）；独立子 session、独立日志；父日志只有 `tool/call` + `tool/result`；子 session 继承档位与边界、**不继承 approval 放行**（子会话问人一律 `UNAVAILABLE`）；`maxDepth` 默认 1（深度 = 父 + 1，写进子 `session/start`）；**每个父会话 `maxActiveSubagents` 默认 8**；容量耗尽与深度超限都是结果词（`ACTIVATION_LIMIT_REACHED` / `DEPTH_EXCEEDED`），不是异常。底稿在 `docs/reference/subagents.md`。
 - **并发（强调）**：`subagent` 工具是 `parallel` 类别——同一批声明多个 `subagent` 时并发跑，结果按完成顺序落盘；父上下文只装子任务的最终结果，不装子会话的过程；子会话内部仍受每会话 8 个工具并发与自己的 `max_turns` 约束；host 的 `GET /sessions` 要能看出父子关系（M12 加字段）。

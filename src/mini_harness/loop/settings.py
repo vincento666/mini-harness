@@ -91,3 +91,7 @@ class SessionSettings:
     endpoint: ProviderEndpoint | None = None
     # 平台事实（ADR-0029）：由入口填，`session/start` 原样写下去；`None` 就是「这次没有这份事实」。
     platform: dict[str, str] | None = None
+    # 委派关系（M12）：根会话是 depth 0 且没有父；子会话由 subagent 工具填这三项。
+    depth: int = 0
+    parent_session_id: str | None = None
+    parent_tool_call_id: str | None = None

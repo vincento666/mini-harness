@@ -42,6 +42,7 @@ def _one_turn_events(
     append_system_prompt: str = "",
     tools: tuple[str, ...] = (),
     platform: dict[str, str] | None = None,
+    delegated: bool = False,
 ) -> list[EventRecord]:
     start_payload: dict[str, Any] = {
         "append_system_prompt": append_system_prompt,
@@ -49,6 +50,8 @@ def _one_turn_events(
     }
     if platform is not None:
         start_payload["platform"] = platform
+    if delegated:
+        start_payload["delegated"] = True
     return [
         _rec(0, "session/start", start_payload),
         _rec(1, "turn/start", {"turn_id": "t1"}),
@@ -963,3 +966,17 @@ def test_overlapping_shadow_ranges_merge() -> None:
     ]
 
     assert shadowed_seqs(events) == {1, 2, 3, 4, 5}
+
+
+def test_a_delegated_session_carries_the_scope_declaration() -> None:
+    """子会话的受保护头部带委派声明：权限固定、别重试被拒的操作、把限制告诉父级（M12）。"""
+    delegated = fold(_one_turn_events(tools=("read",), delegated=True))
+    root = fold(_one_turn_events(tools=("read",)))
+
+    content = delegated.messages[0].content
+    assert "被委派的子代理" in content
+    assert "不要重试被拒绝的操作" in content
+    # 位置：工具块之后、追加文本之前；根会话一个字都没有。
+    assert content.index("可用工具") < content.index("被委派的子代理")
+    assert "被委派的子代理" not in root.messages[0].content
+    assert delegated.header_fingerprint != root.header_fingerprint

@@ -400,13 +400,19 @@ class _ChatSignals:
     """Ctrl-C 的落点：段在跑就取消那个段，没有段在跑就结束会话（design D7）。"""
 
     active: asyncio.Event | None = None
+    # 段跑起来之后才有的循环句柄：取消必须经它叫醒循环（见 handler 的注释）。
+    loop: asyncio.AbstractEventLoop | None = None
 
 
 def _chat_sigint_handler(signals: _ChatSignals) -> Callable[[int, FrameType | None], None]:
     def handle(signum: int, frame: FrameType | None) -> None:
-        if signals.active is not None:
+        loop = signals.loop
+        if signals.active is not None and loop is not None:
             # 段在跑：取消当前段，会话继续。
-            signals.active.set()
+            # MUST 走 `call_soon_threadsafe`：它顺带写循环的自管道，能把睡在 selector 里的
+            # 循环叫醒。直接 `Event.set()` 只排队一个回调，循环要等到下一次 I/O 或超时才处理——
+            # 真实端点 UAT 里表现为「Ctrl-C 之后 bash 还跑满 30 s」。
+            loop.call_soon_threadsafe(signals.active.set)
             return
         # 提示符上：没有段在跑，Ctrl-C 与 EOF 同一条路。
         raise KeyboardInterrupt
@@ -530,6 +536,7 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
     SIGINT 处理器由 `_chat` 装（design D7）：会话收尾也在它的覆盖范围里，
     取消落进「循环已经退出、`end_session` 还没开始」那道缝隙里也有人接。
     """
+    signals.loop = asyncio.get_running_loop()
     env = SessionEnv(
         provider=prepared.provider,
         log=prepared.log,
