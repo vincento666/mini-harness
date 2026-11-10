@@ -1,6 +1,6 @@
 # M12 DSH parity review
 
-**日期**：2026-11-06。对照点来自 `docs/reference/subagents.md` 与 `docs/dsh-reference/DSH运行时设计说明.html` 的委派章节。
+**日期**：2026-11-06（2026-11-10 按公开仓库更新）。对照点来自 `docs/reference/subagents.md`、公开仓库的 `dsh-subagent` / `dsh-tool-subagent` / 审批缝 Agent Note，以及 `docs/dsh-reference/DSH运行时设计说明.html` 的委派章节。术语与机制的系统说明见 [`docs/reference/dsh-subagent-design.md`](../reference/dsh-subagent-design.md)。
 
 | 行为 | DSH（公开仓库/文章） | mini | 结论 | 记账 |
 |---|---|---|---|---|

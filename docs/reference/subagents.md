@@ -1,5 +1,7 @@
 # 子代理与并发（M12 底稿）
 
+**延伸阅读**：DSH 侧的完整调研与术语表见 [`docs/reference/dsh-subagent-design.md`](dsh-subagent-design.md)——那份回答「DSH 怎么设计、为什么这么设计」，本文只写 mini 的落成形状与对照。
+
 **定位**：M12 开工前的设计底稿，不是规格。DSH 的事实来自 `docs/dsh-reference/DSH运行时设计说明.html` 的委派章节（`maxDepth` / `maxActiveSubagents` / spawn vs fork）与 `d07` / `d08` 图。
 
 ## 1. DSH 的形状

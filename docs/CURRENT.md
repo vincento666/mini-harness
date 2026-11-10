@@ -48,7 +48,7 @@
 - H1 的安全威胁模型：`docs/reference/host-security-threat-model.md`
 - M14 的技能 / 斜杠命令底稿：`docs/reference/skills-and-commands.md`
 - MEM1 / MEM2 的记忆底稿：`docs/reference/memory.md`
-- M12 的子代理与并发底稿：`docs/reference/subagents.md`
+- M12 的子代理与并发底稿：`docs/reference/subagents.md`；DSH 侧的系统调研：[`docs/reference/dsh-subagent-design.md`](reference/dsh-subagent-design.md)
 - 四层 / 段与回合 / 控制面说明：`docs/reference/runtime-layers-and-control-plane.md`
 - E2 组件接缝规划：`docs/reference/e2-component-seams.md`
 - G 轨服务化运行时：`docs/reference/g-track-service-runtime.md`
