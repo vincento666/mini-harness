@@ -26,6 +26,8 @@ SETTINGS_FIELDS: dict[str, tuple[type[Any], ...]] = {
     "sandbox": (str,),
     "approval": (str,),
     "tools": (list,),
+    # 子代理 preset：一张嵌套表，形状与校验细节在 config/assembly.build_registry 里。
+    "subagent": (dict,),
     "session_dir": (str,),
     "workspace": (str,),
 }

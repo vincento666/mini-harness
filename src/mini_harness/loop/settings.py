@@ -95,3 +95,5 @@ class SessionSettings:
     depth: int = 0
     parent_session_id: str | None = None
     parent_tool_call_id: str | None = None
+    # 子会话由哪一档部署 preset 创建（没选 preset 时是 None）；进子 session/start.payload。
+    subagent_preset: str | None = None

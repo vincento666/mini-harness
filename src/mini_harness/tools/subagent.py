@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from dataclasses import replace
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
 from pathlib import Path as FilePath
+from typing import Any, Literal
 
-from pydantic import Field, field_validator
+from pydantic import ConfigDict, Field, create_model, field_validator
 
 from mini_harness.events import EventLog, LogReadFailure, LogWriteFailure, read_events
 from mini_harness.loop.settings import SandboxLevel, SessionSettings
@@ -38,12 +40,32 @@ from mini_harness.tools.registry import (
 _SANDBOX_WIDTH: dict[str, int] = {"read-only": 0, "workspace-write": 1, "danger-full-access": 2}
 
 
+@dataclass(frozen=True)
+class SubagentPresets:
+    """部署定义的子会话 preset：默认档、模型可选的白名单、以及每档的工具表。
+
+    `registries` 里存的是**已编译好的**子工具表（从内置目录按 preset 的名字组合），
+    spawn 时只按 id 取用；这是「组合」，不是授权。
+    """
+
+    default: str | None
+    allowed: tuple[str, ...]
+    registries: Mapping[str, ToolRegistry]
+
+    def registry_for(self, preset_id: str) -> ToolRegistry | None:
+        return self.registries.get(preset_id)
+
+
 class SubagentArgs(ToolArgs):
-    """`subagent` 的入参：`task` 必须自足（spawn 不继承父会话的历史）。"""
+    """`subagent` 的入参：`task` 必须自足（spawn 不继承父会话的历史）。
+
+    `agent_preset` 只在部署配了白名单时由 `_args_model` 动态加上；没有任意工具名列表。
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     task: str = Field(description="自足的任务提示词：子会话看不到父会话的历史")
     max_turns: int | None = Field(default=None, ge=1, description="子会话的回合上限")
-    tools: list[str] | None = Field(default=None, description="子会话可用的工具名")
     sandbox: SandboxLevel | None = Field(
         default=None, description="子会话的围栏档位：只能比父会话更窄"
     )
@@ -56,18 +78,39 @@ class SubagentArgs(ToolArgs):
         return value
 
 
-def subagent_tool_definitions() -> list[ToolDefinition]:
+def _args_model(presets: SubagentPresets | None) -> type[SubagentArgs]:
+    """有白名单时把 `agent_preset` 加成枚举；没有白名单时字段不出现（模型不能选）。"""
+    if presets is None or not presets.allowed:
+        return SubagentArgs
+    literal = Literal[tuple(presets.allowed)]  # type: ignore[valid-type]
+    annotation: Any = literal | None
+    return create_model(
+        "SubagentArgsWithPreset",
+        __base__=SubagentArgs,
+        agent_preset=(
+            annotation,
+            Field(default=None, description="子会话的 preset id，取值是部署给的白名单"),
+        ),
+    )
+
+
+def subagent_tool_definitions(presets: SubagentPresets | None = None) -> list[ToolDefinition]:
     """一个 `subagent` 定义；`parallel` 类别让同批的多个子代理真并发（design D5）。"""
+    args_model = _args_model(presets)
+
+    async def run(args: SubagentArgs, context: DispatchContext) -> ToolResult:
+        return await _run_subagent(args, context, presets)
+
     return [
         ToolDefinition(
             name="subagent",
             description=(
                 "把一个自足的任务交给独立子会话执行，只取回它的最终文本（spawn）。"
-                "子会话看不到父会话的历史，也不会继承审批放行。"
+                "子会话看不到父会话的历史，也不会继承审批放行；工具面由部署的 preset 决定。"
             ),
-            args_model=SubagentArgs,
+            args_model=args_model,
             mutates=False,
-            run=_run_subagent,
+            run=run,
             concurrency="parallel",
         )
     ]
@@ -80,6 +123,7 @@ def _child_settings(
     depth: int,
     parent_session_id: str,
     parent_tool_call_id: str | None,
+    preset: str | None,
 ) -> SessionSettings | ToolResult:
     """子会话继承档位/边界/provider 与 approval 模式，但审批门是 UNAVAILABLE（design D4）。
 
@@ -102,22 +146,16 @@ def _child_settings(
         depth=depth,
         parent_session_id=parent_session_id,
         parent_tool_call_id=parent_tool_call_id,
+        subagent_preset=preset,
     )
 
 
-def _child_registry(parent: ToolRegistry, args: SubagentArgs) -> ToolRegistry | ToolResult:
-    """子会话的工具表默认继承父会话；`tools` 给了就按名字筛，未知名是入参错误。"""
-    if args.tools is None:
-        return parent
-    known = {definition.name for definition in parent.definitions()}
-    unknown = [name for name in args.tools if name not in known]
-    if unknown:
-        return ToolResult(
-            "TOOL_ARGS_INVALID",
-            f"子会话请求了未注册的工具：{' / '.join(unknown)}",
-        )
-    wanted = set(args.tools)
-    return ToolRegistry([d for d in parent.definitions() if d.name in wanted])
+def _chosen_preset(args: SubagentArgs, presets: SubagentPresets | None) -> str | None:
+    """模型选的白名单档 → 部署的默认档；都没有就是「继承父的组合」。"""
+    explicit = getattr(args, "agent_preset", None)
+    if isinstance(explicit, str) and explicit:
+        return explicit
+    return None if presets is None else presets.default
 
 
 def _final_text(log_path: FilePath) -> str:
@@ -163,7 +201,9 @@ def _child_result(env: SessionEnv, outcome: RunOutcome) -> ToolResult:
     return ToolResult("OK", f"子会话 {session_id} 结束（{outcome.stop_reason}），没有最终文本")
 
 
-async def _run_subagent(args: SubagentArgs, context: DispatchContext) -> ToolResult:
+async def _run_subagent(
+    args: SubagentArgs, context: DispatchContext, presets: SubagentPresets | None
+) -> ToolResult:
     """深度与容量都是结果词；子会话的日志/过程只留在子会话自己那里。"""
     session = context.session
     if session is None:
@@ -184,15 +224,21 @@ async def _run_subagent(args: SubagentArgs, context: DispatchContext) -> ToolRes
             f"每个父会话最多 {MAX_ACTIVE_SUBAGENTS} 个活跃子代理，"
             f"第 {delegation.active + 1} 个被拒绝",
         )
-    child_registry = _child_registry(session.registry, args)
-    if isinstance(child_registry, ToolResult):
-        return child_registry
+    preset = _chosen_preset(args, presets)
+    child_registry = session.registry
+    if preset is not None:
+        # preset 决定工具面：从部署 preset 编译好的表里取，不导入父的局部工具限制。
+        registry = None if presets is None else presets.registry_for(preset)
+        if registry is None:
+            return ToolResult("TOOL_ARGS_INVALID", f"未知的 preset：{preset}")
+        child_registry = registry
     child_settings = _child_settings(
         parent,
         args,
         depth=depth,
         parent_session_id=session.log.session_id,
         parent_tool_call_id=context.tool_call_id,
+        preset=preset,
     )
     if isinstance(child_settings, ToolResult):
         return child_settings

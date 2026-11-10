@@ -825,6 +825,9 @@ def start_session(*, prompt: str, entry: SessionEntry, env: SessionEnv) -> Segme
         start_payload["delegated"] = True
         if settings.parent_tool_call_id is not None:
             start_payload["parent_tool_call_id"] = settings.parent_tool_call_id
+        if settings.subagent_preset is not None:
+            # 子会话用哪一档部署 preset（M14）：回放不依赖配置，审计与对照要它。
+            start_payload["preset"] = settings.subagent_preset
     if settings.endpoint is not None:
         # 记的是密钥环境变量的名字，不是它的值（cli spec：密钥 MUST NOT 进 payload）。
         start_payload["base_url"] = settings.endpoint.base_url

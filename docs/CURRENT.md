@@ -9,6 +9,7 @@
 - **H2 已合入并归档**：全部 task 勾完；真实端点 S1–S4、人跑 UAT S1–S5、变异四条、Learning Gate 全过。归档在 `openspec/changes/archive/2026-10-28-h2-streaming-and-event-echo`；主规格 `provider` / `host-api` 已 sync。
 - **M11 已合入并归档**：`m11-storage-resume-and-projection-cache` 23/23，`main` 合并 `c9c62ee`；EventLog 续写、chat/Host resume、schema 相邻迁移、Host session index、fold 缓存、投影三态、chat 工具事件行与 Host observer 已落成；主规格 4 个已 sync。归档在 `openspec/changes/archive/2026-11-05-m11-storage-resume-and-projection-cache`。
 - **M12 已合入并归档**：合并 `4ff7226`；`m12-subagent-delegation` 18/18 task；`subagent` 工具（spawn）、独立子会话与子日志、深度/容量结果词、子会话审批不可用、同批真并发、父取消级联、Host 父子字段、委派声明都已落成；真实端点 S1–S4、人跑 UAT S1–S5、变异 3+1 条、DSH parity review 全过。归档在 `openspec/changes/archive/2026-11-09-m12-subagent-delegation`；主规格 `subagent-delegation` 新建，`host-api` / `tool-pipeline` 已 sync。UAT 期间发现并修复了 chat 的 SIGINT 唤醒缺陷（`2cb1234`）。子代理 preset 与 `subagent.tools` 的去留见 roadmap 的「子代理 preset 与工具来源」。
+- **`subagent-preset` 已归档（分支上），待合入 `main`**：14/14 task；`[subagent]` preset / 白名单 / 编译进子 registry、删除 `subagent.tools`；真实端点、UAT（agent 代跑，用户指示）、变异、Learning 全过。归档在 `openspec/changes/archive/2026-11-10-subagent-preset`；主规格 `subagent-delegation` / `config-layering` 已 sync。
 - **P0 诊断完成**：`docs/verification/p0-budget-reading-diagnostic-2026-10-27.md`。当前 main 的 W1 四次遮蔽均下降、W2 未触发溢出；**不按旧 20 个 task 原样 apply**，需重新确认是否还有可复现症状。
 - **唯一未实现的修复分支**：`change/fix-post-compaction-budget-reading`（20 个 task 全未勾，只有 proposal / design / spec / tasks；不实现、不归档）。
 - 已合并但分支还没删的：`change/fix-small-window-compaction-dead-zone`、`change/add-key-driven-default-provider`、`change/fix-chat-screen-feedback`、`change/add-platform-facts-to-protected-header`、`change/fix-compaction-and-context-overflow`。
@@ -33,7 +34,7 @@
 - **没有技能 / 斜杠命令 / 渐进披露**：M14；CLI 与 host 要同一份命令面。
 - **没有工作区契约 / 结果剪枝计量 / 助理 UX 工具**：M14a / M14b / M14c；非核心，但缺了个人助理不像。
 - **没有记忆**：MEM1（项目/用户 `MEMORY.md` + `memory` 工具）；MEM2 定时巩固在壳后。
-- **委派的三处语义原语未对齐**：子级审批仍继承父的 `approval` 模式 + 门 `UNAVAILABLE`（DSH 把进程内子级钉成 `never`）；没有「沙箱升级才问人」的阶梯；工具表只是组合过滤、没有数据边界授权；子级 preset 与异步完成通知都写了触发条件，其中 preset 与 `subagent.tools` 已定案（ADR-0037：M14 起完全对齐 DSH、删除 `tools`），见 roadmap 的「子代理 preset 与工具来源」。见 `docs/verification/m12-subagent-delegation-dsh-review.md` 的「语义原语的差距」。
+- **委派的三处语义原语未对齐**：子级审批仍继承父的 `approval` 模式 + 门 `UNAVAILABLE`（DSH 把进程内子级钉成 `never`）；没有「沙箱升级才问人」的阶梯；工具表只是组合过滤、没有数据边界授权；子级 preset 与异步完成通知都写了触发条件；preset 与 `subagent.tools` 已定案（ADR-0037）并落成（`change/subagent-preset`：`[subagent]` preset + 白名单、删除 `tools`，待四项收尾），见 roadmap 的「子代理 preset 与工具来源」。见 `docs/verification/m12-subagent-delegation-dsh-review.md` 的「语义原语的差距」。
 - **没有 OS 级沙箱**：M15a 进程收容是无人值守壳的硬前置；M15b 文件写拒绝可壳后。
 - **fork 与插件容器**：暂不做，见 ADR-0035；图上两项与 roadmap 的差异已写明。
 - **文档漂移已修**：`CURRENT` 的重复段、过期的“未归档”、ADR 计数 23 → 实际 30、门禁数字并列，都在 2026-10-26 这一轮清掉；`roadmap` 的重复判据段也已合并。
