@@ -33,7 +33,7 @@
 - **没有技能 / 斜杠命令 / 渐进披露**：M14；CLI 与 host 要同一份命令面。
 - **没有工作区契约 / 结果剪枝计量 / 助理 UX 工具**：M14a / M14b / M14c；非核心，但缺了个人助理不像。
 - **没有记忆**：MEM1（项目/用户 `MEMORY.md` + `memory` 工具）；MEM2 定时巩固在壳后。
-- **委派的三处语义原语未对齐**：子级审批仍继承父的 `approval` 模式 + 门 `UNAVAILABLE`（DSH 把进程内子级钉成 `never`）；没有「沙箱升级才问人」的阶梯；工具表只是组合过滤、没有数据边界授权；子级 preset 与异步完成通知都写了触发条件，其中 preset 与 `subagent.tools` 的裁决路径在 roadmap 的「子代理 preset 与工具来源」。见 `docs/verification/m12-subagent-delegation-dsh-review.md` 的「语义原语的差距」。
+- **委派的三处语义原语未对齐**：子级审批仍继承父的 `approval` 模式 + 门 `UNAVAILABLE`（DSH 把进程内子级钉成 `never`）；没有「沙箱升级才问人」的阶梯；工具表只是组合过滤、没有数据边界授权；子级 preset 与异步完成通知都写了触发条件，其中 preset 与 `subagent.tools` 已定案（ADR-0037：M14 起完全对齐 DSH、删除 `tools`），见 roadmap 的「子代理 preset 与工具来源」。见 `docs/verification/m12-subagent-delegation-dsh-review.md` 的「语义原语的差距」。
 - **没有 OS 级沙箱**：M15a 进程收容是无人值守壳的硬前置；M15b 文件写拒绝可壳后。
 - **fork 与插件容器**：暂不做，见 ADR-0035；图上两项与 roadmap 的差异已写明。
 - **文档漂移已修**：`CURRENT` 的重复段、过期的“未归档”、ADR 计数 23 → 实际 30、门禁数字并列，都在 2026-10-26 这一轮清掉；`roadmap` 的重复判据段也已合并。

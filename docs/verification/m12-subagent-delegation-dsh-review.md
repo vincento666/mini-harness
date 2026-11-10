@@ -10,7 +10,7 @@
 | 容量 | `maxActiveSubagents` 默认 8，**按 subagent 树**计，根不占名额；耗尽 `ACTIVATION_LIMIT_REACHED`（浏览器消息 `subagent/delivery-unavailable`） | 每父会话 8 个活跃子代理；耗尽 `ACTIVATION_LIMIT_REACHED` | simplified | 深度 1 时「每树」与「每父」等价；没有 `subagent/delivery-unavailable`（无浏览器消息面）；工具并发上限也是 8，同一批 9 个撞不到额度（design D8） |
 | 审批 | 进程内子 agent 被**钉定为 `never`**：每次 ask 在任何应答者之前解析为 rejected；把子级 ask 路由给父级**已延后**；`subagent-acp` 的子侧自动应答是后端自己的 | approval 模式随会话继承（`auto` 继承），门固定 `UNAVAILABLE`；父拿到的也是拒绝结果词 | simplified | 差异在「无人值守」放在哪一轴：DSH 的 Auto 预设是 **full-access 沙箱**（正常写入不触发 ask），mini 的 `auto` 是「全部自动批准」。mini 的 ask 模式对每次会改动都问人，字面钉 `never` 会让子代理连 full-access 下也写不了——要等价，得先有「沙箱升级才问人」的语义（ADR-0036 记账） |
 | 子会话声明 | 受保护上下文带 `subagent:delegation`：权限启动时固定、需要审批的操作自动拒绝、**不要重试**、把限制写进回复给父级 | 同左（`DELEGATION_SCOPE_DECLARATION`，`session/start.payload.delegated`） | aligned | 文案是中文、措辞按 mini 的系统提示改写 |
-| 子级工具作用域 | `scope.tools = 组合过滤`，**不是授权继承**；工具集来自宿主配置的 `agentPreset`（persona + 工具） | 默认继承父工具表；`subagent.tools`（**父模型在工具调用里给的参数**）收窄；不是权限边界 | simplified | 来源不同：DSH 是宿主 preset，mini 是模型参数（只能收窄，不能加）。没有 `agentPreset`（persona/技能归 M14） |
+| 子级工具作用域 | `scope.tools = 组合过滤`，**不是授权继承**；工具集来自宿主配置的 `agentPreset`（persona + 工具） | M12：默认继承父工具表 + `subagent.tools`（模型参数）收窄；**M14 起：部署 preset + 白名单，删除 `tools`**（ADR-0037） | simplified（M12）→ aligned（M14 计划） | 来源差异在 M14 消除；preset 只裁剪、不授权，与 DSH 同形 |
 | 子级 agent 名称 | `agent-N`，根是 `lead`，路径形如 `reviewer/checker`；重名 `DUPLICATE_AGENT_NAME` | 用子会话 id，没有名字 | deferred | 触发条件：UI 要画任务树或需要人类可读的引用时 |
 | 同批并发 | 工具批调度里只读调用并发 | `subagent` 标 `parallel`，同批真并发、结果按完成顺序落盘 | aligned | M10 的批调度 |
 | 取消 | 调用方 signal 只取消未发布的工作；发布后 `dispose()` 取消并等待清理；宿主用 `drainDescendants([root])` | 父段取消 → 子会话按 `ABORTED` 收尾，已完成结果保留 | simplified | 我们只有「段取消」一种入口，没有 `dispose/drain` 生命周期 API；深度 1 下等价 |
@@ -56,7 +56,7 @@
 
 **mini 现状**：`subagent.tools` 是**父模型给的参数**（收窄父工具表），配置层另有会话级 `tools` 白名单；没有子级 preset。两者语义都是「组合过滤」，但来源不同（模型 vs 宿主）。
 
-**结论：暂不实现，按 DSH 形状在 M14 落地。** 方案草案（写在这里，避免下次重新推导）：
+**结论：已定案，按 DSH 形状在 M14 落地，并删除 `subagent.tools`（ADR-0037）。** 方案（写在这里，避免下次重新推导）：
 
 ```toml
 # mini.config.toml（草案；现在还没有这段）
@@ -74,13 +74,9 @@ tools = ["read", "write", "edit"]
 - 子工具表 = **preset 工具 ∩ 父工具表**（永远不能比父宽）；preset 只做裁剪，不做授权。
 - 有 `allowed_presets` 时工具 schema 暴露 `agent_preset` 枚举；无白名单时模型不能选。
 - 未知 preset → `TOOL_ARGS_INVALID`（与现在的未知工具名同形），不建子会话。
-- `subagent.tools` 的处置二选一：删掉（完全对齐 DSH），或保留为「在 preset 之上再收窄」（超出 DSH，要单独记账）。
+- `subagent.tools` **删除**：无 preset 时子级继承父组合、派发不失效，模型侧裁剪不是必需品；preset + 白名单已经能表达同样的裁剪（ADR-0037）。
 
-**触发条件（写死，三条任一成立就做）**：
-
-1. **部署必须决定子代理能力**（安全 / 合规 / 成本），不能由模型选——这是本次讨论的起点；
-2. **M14 的 preset / persona 落地**（工具与 persona 同源，preset 注册表是现成的载体）；
-3. **子级冷恢复要落地**（preset 必须能写进 descriptor 并在恢复时还原，DSH 的 `restoring-child-composition` 就是这么做的）。
+**排期**：与 M14 同批——preset 的工具部分先落，`persona` 字段由 M14 补；子级冷恢复落地时把 preset 写进 descriptor 还原（DSH 的 `restoring-child-composition`）。
 
 **没有 preset 时的回落（DSH 原文）**：两个选择字段都省略时，工具**不要求 preset 服务**；子级缺省「加入父方当前的 preset 代际」——也就是继承父的组合，派发照常工作。配置了但解析失败是另一回事：未知或加载不了的 preset 返回出错的工具结果、子级不启动。所以「没配置」= 继承，「配错了」= 报错，两者不能混。
 

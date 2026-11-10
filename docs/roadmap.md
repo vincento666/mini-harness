@@ -119,9 +119,9 @@ H1 / H2 是新增的宿主轨，不占用 M10–M15 的决策编号；M 编号�
 
 ### 子代理 preset 与工具来源（`subagent-preset`，M12 的后续，不占 M 编号）
 
-- **状态**：未立 change。**触发条件**（任一成立就做）：① 部署必须决定子代理能力（安全 / 合规 / 成本），不能由模型选；② M14 的 preset / persona 落地；③ 子级冷恢复落地。决策与复杂度记账见 `docs/verification/m12-subagent-delegation-dsh-review.md` 的「子代理工具的来源：DSH 的形状与对齐方案」。
+- **状态**：**已定案**（ADR-0037）：M14 起完全对齐 DSH，新增本 change 并**删除 `subagent.tools`**。排期：与 M14 同批（preset 的工具部分可先落，`persona` 字段由 M14 补）。决策与复杂度记账见 `docs/verification/m12-subagent-delegation-dsh-review.md` 的「子代理工具的来源：DSH 的形状与对齐方案」。
 - **内容**：`mini.config.toml` 增加 `[subagent]`：`preset`（默认）+ `allowed_presets`（白名单，配了才在工具 schema 里给模型 `agent_preset` 枚举）。每个 preset 的名字映射到工具白名单（+ 将来的 persona）。子工具表 = **preset 工具 ∩ 父工具表**（只裁剪、不授权）；未知 preset → `TOOL_ARGS_INVALID`，不建子会话；**没有 preset 时子级加入父的当前组合，派发照常**（照 DSH 的缺省，不是禁用）。
-- **`subagent.tools` 的处置（M14 落地后裁决）**：先落 preset，再看部署实践——部署普遍会配 preset 时，模型已经有「选 preset」这一手，`tools` 的边际价值很小，**删掉、完全对齐 DSH**；大量小配置场景根本不配 preset 时，它是模型唯一能裁剪的手段，**保留但语义写死为「只能在 preset ∩ 父表之内再减」**（DSH 没有这一层，要单独记账）。
+- **`subagent.tools` 的处置（已定案）**：**删除，完全对齐 DSH**。理由：没有 preset 时子级加入父的当前组合（派发不失效），所以「模型侧临场裁剪」不是必需品；`tools` 是 DSH 没有的第三来源，保留等于长期维护两套「子能有什么」的解释。改由部署的 preset + 白名单表达裁剪。
 - **判据**：preset 决定上界、模型只能减；白名单外的 id 模型看不见；未知 preset 是结果词不是异常；无 preset 时派发不受影响；`replay` 逐点相等。
 - **明确不做**：模型提交任意工具名绕过白名单（DSH 没有，也不加）；子级权限随 preset 放宽（preset 只裁剪）。
 
