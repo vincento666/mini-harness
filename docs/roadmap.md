@@ -116,13 +116,14 @@ H1 / H2 是新增的宿主轨，不占用 M10–M15 的决策编号；M 编号�
 - **内容**：`SKILL.md` 目录发现（照 DSH 的六级优先级根：项目 / 项目共享 / 自定义 / 宿主 / 通用代理家目录 / 内置，同名高优先）；**清单注入 + 正文按需加载**——`session/start.payload.skills` 只放 `{name, description, rank, path}`，受保护头部只放紧凑清单，正文由 `skill` 工具按需读；**同一份命令面**给 CLI 与其它壳：CLI `chat` 的 `/skills`、`/skill <name>`，host 的 `GET /commands` 与 `POST /sessions/{id}/commands`；命令调用必须落一条可重放的事件（`command/invoked` 或 `user/message` 的结构化命令，M14 design 定）；外部触发塌成一条可重放的会话事件。底稿在 `docs/reference/skills-and-commands.md`。
 - **完成判据**：仓库内一个 skill 被列出并加载；同一 skill 在两级根里只出现一次且高优先胜出；正文不在 `session/start` 的清单里、只在按需加载后才进上下文；CLI 与 host 对同一 `/skill` 得到同一份正文与同一条日志；一条外部触发在日志里是一条事件、`replay` 仍相等。
 - **明确不做**：插件容器与热更新（ADR-0035）、MCP、hooks 的完整 allowlist、shell 自己发明一套绕过内核的命令。
+- **关联**：`subagent-preset`（M12 的后续，不占 M 编号）先落 preset 的 `tools`；本 change 补 `persona` 与技能加载，两者合起来才是 DSH 的 `agentPreset`（persona + toolFilter）。本 change 不改委派语义（spawn / 深度 / 容量 / 取消都不动）。
 
 ### 子代理 preset 与工具来源（`subagent-preset`，M12 的后续，不占 M 编号）
 
 - **状态**：**已实现并过真实端点 / 变异 / Learning**（`change/subagent-preset`）：`[subagent]` preset / 白名单 / 编译进子 registry、删除 `subagent.tools`、配置校验；**待 UAT 后归档**。`persona` 字段仍由 M14 补。决策与复杂度记账见 `docs/verification/m12-subagent-delegation-dsh-review.md` 的「子代理工具的来源：DSH 的形状与对齐方案」。
 - **内容**：`mini.config.toml` 增加 `[subagent]`：`preset`（默认）+ `allowed_presets`（白名单，配了才在工具 schema 里给模型 `agent_preset` 枚举）。模型的选择粒度是**整套 preset**（不是单个工具）。每个 preset 的名字映射到工具表（+ 将来的 persona），从**内置工具目录**取，**不导入父会话的局部工具限制**（否则 Super-agent 的 Router→Worker 做不出来；工具是能力，授权仍由围栏管）。未知 preset → `TOOL_ARGS_INVALID`，不建子会话；**没有 preset 时子级加入父的当前组合，派发照常**（照 DSH 的缺省，不是禁用）。
 - **`subagent.tools` 的处置（已定案）**：**删除，完全对齐 DSH**。理由：没有 preset 时子级加入父的当前组合（派发不失效），所以「模型侧临场裁剪」不是必需品；`tools` 是 DSH 没有的第三来源，保留等于长期维护两套「子能有什么」的解释。改由部署的 preset + 白名单表达裁剪。
-- **判据**：preset 决定上界、模型只能减；白名单外的 id 模型看不见；未知 preset 是结果词不是异常；无 preset 时派发不受影响；`replay` 逐点相等。
+- **判据**：preset 决定子工具表、模型只能选整套 preset（不能挑单个工具）；白名单外的 id 看不见；未知 preset 是结果词不是异常；无 preset 时派发照常；`replay` 逐点相等。
 - **明确不做**：模型提交任意工具名绕过白名单（DSH 没有，也不加）；把 preset 当授权（工具是能力，授权仍由档位/边界/审批判定）。
 
 ### M14 之后的三小步（M14a–c，非核心、个人助理向）
