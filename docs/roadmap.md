@@ -120,7 +120,7 @@ H1 / H2 是新增的宿主轨，不占用 M10–M15 的决策编号；M 编号�
 ### 子代理 preset 与工具来源（`subagent-preset`，M12 的后续，不占 M 编号）
 
 - **状态**：**已定案**（ADR-0037），已 propose `openspec/changes/subagent-preset`（待审）：M14 起完全对齐 DSH，**删除 `subagent.tools`**。排期：与 M14 同批（preset 的工具部分可先落，`persona` 字段由 M14 补）。决策与复杂度记账见 `docs/verification/m12-subagent-delegation-dsh-review.md` 的「子代理工具的来源：DSH 的形状与对齐方案」。
-- **内容**：`mini.config.toml` 增加 `[subagent]`：`preset`（默认）+ `allowed_presets`（白名单，配了才在工具 schema 里给模型 `agent_preset` 枚举）。每个 preset 的名字映射到工具表（+ 将来的 persona），从**内置工具目录**取，**不导入父会话的局部工具限制**（否则 Super-agent 的 Router→Worker 做不出来；工具是能力，授权仍由围栏管）。未知 preset → `TOOL_ARGS_INVALID`，不建子会话；**没有 preset 时子级加入父的当前组合，派发照常**（照 DSH 的缺省，不是禁用）。
+- **内容**：`mini.config.toml` 增加 `[subagent]`：`preset`（默认）+ `allowed_presets`（白名单，配了才在工具 schema 里给模型 `agent_preset` 枚举）。模型的选择粒度是**整套 preset**（不是单个工具）。每个 preset 的名字映射到工具表（+ 将来的 persona），从**内置工具目录**取，**不导入父会话的局部工具限制**（否则 Super-agent 的 Router→Worker 做不出来；工具是能力，授权仍由围栏管）。未知 preset → `TOOL_ARGS_INVALID`，不建子会话；**没有 preset 时子级加入父的当前组合，派发照常**（照 DSH 的缺省，不是禁用）。
 - **`subagent.tools` 的处置（已定案）**：**删除，完全对齐 DSH**。理由：没有 preset 时子级加入父的当前组合（派发不失效），所以「模型侧临场裁剪」不是必需品；`tools` 是 DSH 没有的第三来源，保留等于长期维护两套「子能有什么」的解释。改由部署的 preset + 白名单表达裁剪。
 - **判据**：preset 决定上界、模型只能减；白名单外的 id 模型看不见；未知 preset 是结果词不是异常；无 preset 时派发不受影响；`replay` 逐点相等。
 - **明确不做**：模型提交任意工具名绕过白名单（DSH 没有，也不加）；把 preset 当授权（工具是能力，授权仍由档位/边界/审批判定）。

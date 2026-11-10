@@ -10,6 +10,8 @@ M12 的 `subagent.tools` 是模型参数（只能收窄父表）；DSH 的工具
 
 **D2 解析顺序固定。** 模型给的 `agent_preset`（只有在白名单暴露时才能给）→ 配置的 `preset` → 父会话当前的组合。三步都空 = 继承父表，派发照常。这正是 DSH 的缺省语义。
 
+**D2a 选择的粒度是 preset，不是单个工具。** 模型能给的只有一个 preset id（白名单枚举），选中的 preset 的工具表由**部署**写死；模型 MUST NOT 在这个 preset 内部再挑几个工具、也 MUST NOT 排除几个。没有 preset 时子级拿到父的**整张表**，同样没有「再选子集」的入口——M12 的 `subagent.tools` 已删除。
+
 **D3 preset 决定组合，不是授权。** 子工具表 = preset 的 `tools` 从**内置工具目录**取，MUST NOT 被父会话的局部工具表收窄——DSH 的 spawn README 写明「子级……不导入父方的 Agent 局部工具限制」，否则 Super-agent 那种「Router 没有 bash、Worker 有全工具」的形状做不出来。preset 里的未知工具名在配置校验期报错（与 `tools` 白名单同形），不在运行期静默丢弃。
 
 工具只是能力：能不能用仍由子会话继承的档位/边界/审批判定。给 bash 但沙箱是 `read-only` 时，bash 照样在围栏处被拒。

@@ -4,7 +4,7 @@
 
 ### Requirement: subagent 是 spawn 工具
 
-系统 SHALL 提供 `subagent` 工具，参数至少 `task`（非空、自足提示词）、可选 `max_turns` / `sandbox` / `agent_preset`。`agent_preset` 只在部署配置了 `allowed_presets` 时出现，取值 SHALL 是该白名单的枚举；工具 MUST NOT 接受任意工具名列表（`tools` 参数已删除，见「子级工具集来自部署 preset」）。它 SHALL 创建一个独立子会话；MUST NOT 把父会话历史作为 seed（fork 不做）。结果 SHALL 是子会话最终文本（可含产物路径），MUST NOT 是子日志或完整过程。
+系统 SHALL 提供 `subagent` 工具，参数至少 `task`（非空、自足提示词）、可选 `max_turns` / `sandbox` / `agent_preset`。`agent_preset` 只在部署配置了 `allowed_presets` 时出现，取值 SHALL 是该白名单的枚举；它是**整套 preset 的选择**，模型 MUST NOT 在选中的 preset 内部再选择或排除单个工具。工具 MUST NOT 接受任意工具名列表（`tools` 参数已删除，见「子级工具集来自部署 preset」）。它 SHALL 创建一个独立子会话；MUST NOT 把父会话历史作为 seed（fork 不做）。结果 SHALL 是子会话最终文本（可含产物路径），MUST NOT 是子日志或完整过程。
 
 #### Scenario: 子会话独立起步
 
