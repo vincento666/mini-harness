@@ -218,7 +218,7 @@ def assemble(
         )
 
     # 工具表从装配来：内置六定义按配置的白名单筛，未知名与别的配置失败同形。
-    registry = build_registry(layered.tools)
+    registry = build_registry(layered.tools, layered.subagent)
     if isinstance(registry, ConfigFailure):
         return Failure("INVALID_ARGUMENT", registry.detail, EXIT_INVALID_ARGUMENT)
 

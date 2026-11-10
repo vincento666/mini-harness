@@ -46,6 +46,8 @@ BUILTIN_DEFAULTS: dict[str, Any] = {
     "approval": DEFAULT_APPROVAL,
     # 这三条的「没设置」本身就是有效状态：工具表全开、日志用默认位置、工作区用当前目录。
     "tools": None,
+    # 子代理 preset 只有配置文件一个来源（没有 CLI flag）；`None` 是「没配」。
+    "subagent": None,
     "session_dir": None,
     "workspace": None,
 }
@@ -77,6 +79,7 @@ class EffectiveSettings:
     sandbox: SandboxLevel
     approval: ApprovalMode
     tools: list[str] | None
+    subagent: dict[str, Any] | None
     session_dir: str | None
     workspace: str | None
 

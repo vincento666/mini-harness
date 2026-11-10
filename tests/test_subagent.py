@@ -7,6 +7,7 @@ import time
 from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
 
+from mini_harness.config import build_registry
 from mini_harness.events import read_events
 from mini_harness.events.fold import Message
 from mini_harness.loop import RunOutcome
@@ -17,7 +18,7 @@ from mini_harness.tools import ToolRegistry
 from mini_harness.tools.bash_tools import bash_tool_definitions
 from mini_harness.tools.fences import ApprovalDecision
 from mini_harness.tools.file_tools import file_tool_definitions
-from mini_harness.tools.subagent import subagent_tool_definitions
+from mini_harness.tools.subagent import SubagentPresets, subagent_tool_definitions
 from tool_harness import (
     DONE,
     build_session_env,
@@ -389,44 +390,6 @@ async def test_a_blank_task_is_an_argument_error(tmp_path: Path) -> None:
     assert outcome.result.outcome == "TOOL_ARGS_INVALID"
 
 
-async def test_an_unknown_tool_name_is_an_argument_error(tmp_path: Path) -> None:
-    """`tools` 里写了未注册的名字是入参错误：不静默少一个工具，也不建子会话。"""
-    _, env = build_session_env(tmp_path, "s-parent", FixtureProvider(entries=[]))
-
-    outcome = await dispatch_call(
-        tmp_path,
-        "subagent",
-        {"task": "看文件", "tools": ["web_search"]},
-        registry=delegation_registry(),
-        session=env,
-    )
-
-    assert outcome.result.outcome == "TOOL_ARGS_INVALID"
-    assert "web_search" in outcome.result.content
-    assert [path.name for path in tmp_path.glob("*.jsonl")] == ["s-parent.jsonl"]
-
-
-async def test_the_tools_argument_restricts_the_child_registry(tmp_path: Path) -> None:
-    """`tools` 给的是子会话的**全部**工具：没列出来的在子会话里就是未注册。"""
-    (tmp_path / "a.md").write_text("内容\n", encoding="utf-8")
-    entries = [
-        tool_call_entry("subagent", "c1", task="只看文件", tools=["read"]),
-        tool_call_entry("bash", "c2", command="echo 不该跑"),
-        {"content": "子会话没有 bash", "finish_reason": "stop"},
-        DONE,
-    ]
-
-    _, outcome = await run_fixture_session(
-        tmp_path, "s-parent", entries, registry=delegation_registry(), prompt="父任务"
-    )
-
-    assert outcome.stop_reason == "MODEL_COMPLETED"
-    child = read_events(_child_paths(tmp_path)[0])
-    assert [record.payload["outcome"] for record in child if record.type == "tool/result"] == [
-        "UNKNOWN_TOOL"
-    ]
-
-
 async def test_a_child_without_final_text_still_returns_a_result(tmp_path: Path) -> None:
     """子会话用完了回合数、最后一条回复没有正文时，父拿到的是一句说明，不是空串。"""
     (tmp_path / "a.md").write_text("内容\n", encoding="utf-8")
@@ -517,3 +480,103 @@ async def test_a_child_model_failure_is_a_failure(tmp_path: Path) -> None:
     assert result.payload["outcome"] == "TOOL_IO_FAILED"
     assert "模型调用失败" in result.payload["content"]
     assert "PROVIDER_EXHAUSTED" in result.payload["content"]
+
+
+async def test_no_preset_inherits_the_parent_tools(tmp_path: Path) -> None:
+    """没有 `[subagent]` 配置：子会话继承父的整张表，派发照常（DSH 的缺省）。"""
+    entries = [
+        tool_call_entry("subagent", "c1", task="做个小事"),
+        {"content": "好", "finish_reason": "stop"},
+        DONE,
+    ]
+
+    log, outcome = await run_fixture_session(
+        tmp_path, "s-parent", entries, registry=delegation_registry(), prompt="父任务"
+    )
+
+    assert outcome.stop_reason == "MODEL_COMPLETED"
+    parent = read_events(log.path)[0]
+    child = read_events(_child_paths(tmp_path)[0])[0]
+    assert child.payload["tools"] == parent.payload["tools"]
+    assert "preset" not in child.payload
+
+
+async def test_a_preset_decides_the_child_tools(tmp_path: Path) -> None:
+    """预设生效：子工具表是 preset 的那几个，preset 之外的在子会话里是 UNKNOWN_TOOL。"""
+    reader = ToolRegistry([d for d in file_tool_definitions() if d.name in {"read", "glob"}])
+    presets = SubagentPresets(default="reader", allowed=(), registries={"reader": reader})
+    registry = ToolRegistry(
+        [*file_tool_definitions(), *bash_tool_definitions(), *subagent_tool_definitions(presets)]
+    )
+    (tmp_path / "a.md").write_text("内容\n", encoding="utf-8")
+    entries = [
+        tool_call_entry("subagent", "c1", task="只看文件"),
+        tool_call_entry("write", "c2", file_path="out.md", content="x\n"),
+        {"content": "写不了", "finish_reason": "stop"},
+        DONE,
+    ]
+
+    _, outcome = await run_fixture_session(
+        tmp_path, "s-parent", entries, registry=registry, prompt="父任务"
+    )
+
+    assert outcome.stop_reason == "MODEL_COMPLETED"
+    child_log = read_events(_child_paths(tmp_path)[0])
+    assert child_log[0].payload["preset"] == "reader"
+    assert child_log[0].payload["tools"] == ["read", "glob"]
+    assert [r.payload["outcome"] for r in child_log if r.type == "tool/result"] == ["UNKNOWN_TOOL"]
+
+
+async def test_a_preset_can_give_a_tool_the_parent_lacks(tmp_path: Path) -> None:
+    """preset 从内置目录组合，不导入父的局部工具表：父只有 read/glob，子仍可有 bash。"""
+    registry = build_registry(
+        ["read", "glob", "subagent"],
+        {"preset": "runner", "presets": {"runner": {"tools": ["bash"]}}},
+    )
+    assert isinstance(registry, ToolRegistry)
+    entries = [
+        tool_call_entry("subagent", "c1", task="跑一条命令"),
+        tool_call_entry("bash", "c2", command="echo hi"),
+        {"content": "跑完了", "finish_reason": "stop"},
+        DONE,
+    ]
+
+    _, outcome = await run_fixture_session(
+        tmp_path, "s-parent", entries, registry=registry, prompt="父任务"
+    )
+
+    assert outcome.stop_reason == "MODEL_COMPLETED"
+    child_log = read_events(_child_paths(tmp_path)[0])
+    assert child_log[0].payload["tools"] == ["bash"]
+    assert [r.payload["outcome"] for r in child_log if r.type == "tool/result"] == ["OK"]
+
+
+async def test_an_unknown_preset_is_a_result(tmp_path: Path) -> None:
+    """运行期解析不到的 preset 是结果词，不建子会话（真理源是装配期的快照）。"""
+    presets = SubagentPresets(default="ghost", allowed=(), registries={})
+    registry = ToolRegistry([*file_tool_definitions(), *subagent_tool_definitions(presets)])
+    _, env = build_session_env(tmp_path, "s-parent", FixtureProvider(entries=[]))
+
+    outcome = await dispatch_call(
+        tmp_path, "subagent", {"task": "做个小事"}, registry=registry, session=env
+    )
+
+    assert outcome.result.outcome == "TOOL_ARGS_INVALID"
+    assert "ghost" in outcome.result.content
+    assert [path.name for path in tmp_path.glob("*.jsonl")] == ["s-parent.jsonl"]
+
+
+async def test_the_tools_argument_is_gone(tmp_path: Path) -> None:
+    """`subagent.tools` 已删除：schema 里没有它，传了是入参错误。"""
+    registry = build_registry(None)
+    assert isinstance(registry, ToolRegistry)
+    definition = registry.lookup("subagent")
+    assert definition is not None
+    schema = definition.args_model.model_json_schema()
+    assert "tools" not in schema["properties"]
+
+    outcome = await dispatch_call(
+        tmp_path, "subagent", {"task": "做个小事", "tools": ["read"]}, registry=registry
+    )
+    assert outcome.result.outcome == "TOOL_ARGS_INVALID"
+
