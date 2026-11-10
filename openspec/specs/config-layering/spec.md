@@ -3,9 +3,7 @@
 ## Purpose
 
 定义一次运行的设置从哪儿来：配置文件的发现顺序、可承载的字段、非法形状的结果形状、三层取值的优先级、工具白名单的筛选，以及必需项缺失时在 session 开始之前当场失败。
-
 ## Requirements
-
 ### Requirement: 配置文件的发现顺序
 系统 SHALL 按固定顺序找配置文件：`--config <path>` 显式指定的路径优先；未给 `--config` 时 SHALL 找 `--workspace` 解析后的目录里的 `mini.config.toml`；两处都没有时 SHALL 只用内置默认。配置文件 MUST NOT 从当前工作目录隐式读取（`--workspace` 未给时它等于当前目录，这一条随之成立）。
 
@@ -139,3 +137,42 @@
 #### Scenario: mock 预设没有端点三项
 - **WHEN** 生效 provider 为 `mock`
 - **THEN** `session/start` 的 payload 里没有 `base_url`、`model`、`api_key_env` 三格，与既有形状一致
+
+### Requirement: 子代理 preset 配置
+
+配置文件 SHALL 接受 `[subagent]` 段：`preset`（默认 preset id，字符串）、`allowed_presets`（非空字符串数组，模型可选的白名单）、`[subagent.presets.<id>].tools`（工具名数组）。`<id>` SHALL 非空且不重复。
+
+下列情形 SHALL 以退出码 2 结束、stderr 含 `INVALID_ARGUMENT` 与出问题的键，且 MUST NOT 创建 session 日志：`[subagent]` 段里的未知键；**`preset` 指向的 id 不在 `[subagent.presets]` 里**；`preset` 不在 `allowed_presets` 里（两者都配时）；**`allowed_presets` 里有不在 `[subagent.presets]` 里的 id**；preset 的 `tools` 里有内置工具之外的名字；preset id 为空或重复。没有 `[subagent]` 段 SHALL 合法，此时子代理继承父的工具表。
+
+`persona` 不属于本 change（由 M14 补），现在出现在 preset 里 SHALL 是未知键。
+
+#### Scenario: 未知键是参数错误
+
+- **WHEN** 配置文件写 `[subagent] unknown = 1`
+- **THEN** 退出码为 2，stderr 含 `INVALID_ARGUMENT` 与 `unknown`，且没有创建 session 日志
+
+#### Scenario: 默认 preset 必须在白名单里
+
+- **WHEN** 配置 `preset = "reader"`、`allowed_presets = ["writer"]`
+- **THEN** 退出码为 2，stderr 含 `INVALID_ARGUMENT`
+
+#### Scenario: 默认 preset 必须真的存在
+
+- **WHEN** 配置 `preset = "reader"`，但 `[subagent.presets]` 里没有 `reader`
+- **THEN** 退出码为 2，stderr 含 `INVALID_ARGUMENT`，且没有创建 session 日志
+
+#### Scenario: 白名单里的 id 必须真的存在
+
+- **WHEN** 配置 `allowed_presets = ["reader", "reviewer"]`，但 `presets` 里没有 `reviewer`
+- **THEN** 退出码为 2，stderr 含 `INVALID_ARGUMENT` 与 `reviewer`
+
+#### Scenario: preset 里的工具名必须内置
+
+- **WHEN** 配置 `[subagent.presets.reader] tools = ["read", "web_search"]`
+- **THEN** 退出码为 2，stderr 含 `INVALID_ARGUMENT` 与 `web_search`，且没有创建 session 日志
+
+#### Scenario: 没有配置段是合法的
+
+- **WHEN** 配置文件没有 `[subagent]` 段
+- **THEN** run 正常进行，子代理继承父的工具表
+

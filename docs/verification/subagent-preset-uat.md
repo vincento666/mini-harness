@@ -1,6 +1,6 @@
 # subagent-preset UAT
 
-**状态**：等人跑（agent 不代跑 tty 场次，ADR-0025）。
+**状态**：**agent 代跑**（用户明确指示，2026-11-10）。这是对 ADR-0025「人坐在终端前」那半的流程偏离：四场全部是 non-tty 的 CLI 运行，观察由 agent 记录；合并前由用户确认接受这笔偏离。
 
 ## 跑前准备
 
@@ -77,11 +77,11 @@ uv run minihns run --provider deepseek --workspace /tmp/preset-uat --session-dir
 
 | 场次 | 动作 | 预期 | 实际观察 | 结论 | 别扭在哪 |
 |---|---|---|---|---|---|
-| S1 | 白名单选 preset | 只能是 reader/writer | | | |
-| S2 | 无 preset | 继承父表、派发照常 | | | |
-| S3 | 配错 preset | 退出码 2、无日志 | | | |
-| S4 | read-only 下的写 | `DENIED_BY_FENCE` | | | |
+| S1 | 白名单选 preset | 只能是 reader/writer | 父七件套；子 `preset=reader`、`tools=read/glob`（模型选了 reader） | 通过 | |
+| S2 | 无 preset | 继承父表、派发照常 | 子没有 `preset` 字段、`tools` 与父的七件套一致；派发成功 | 通过 | |
+| S3 | 配错 preset | 退出码 2、无日志 | 退出码 **2**，`INVALID_ARGUMENT: [subagent] preset ghost 不在 presets 里`，`s3/` 目录不存在 | 通过 | |
+| S4 | read-only 下的写 | `DENIED_BY_FENCE` | 父第一次带 `sandbox=workspace-write` 被 `TOOL_ARGS_INVALID`（不能比父宽）；第二次不带 sandbox → 子 `preset=writer`、`tools=read/write/edit`，它的 `write` 是 `DENIED_BY_FENCE`（`SANDBOX_DENIES_WRITE`），`note.md` 没被创建 | 通过 | 模型先试了放宽档位、被拒后才收窄——正常，但读日志的人要知道这条 |
 
-**至少一条「用起来别扭」**：_
+**至少一条「用起来别扭」**：S4 里模型先尝试给子会话放宽沙箱（`workspace-write`），被 `TOOL_ARGS_INVALID` 拒了才改回不带 sandbox；「只能收窄」这条约束是运行时才知道的，工具描述里没有明说。
 
-**结论**：通过 / 不通过：
+**结论**：通过（S1–S4；agent 代跑，用户确认接受流程偏离）。
