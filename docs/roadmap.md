@@ -120,7 +120,7 @@ H1 / H2 是新增的宿主轨，不占用 M10–M15 的决策编号；M 编号�
 
 ### 子代理 preset 与工具来源（`subagent-preset`，M12 的后续，不占 M 编号）
 
-- **状态**：✅ **2026-11-10 已归档**（`openspec/changes/archive/2026-11-10-subagent-preset`）：14/14 task；真实端点 S1–S4、UAT（agent 代跑，用户明确指示并接受偏离）、变异 3 条全杀、Learning Gate 全过；主规格 `subagent-delegation` 与 `config-layering` 已 sync。**待合入 `main`**。`persona` 字段仍由 M14 补。
+- **状态**：✅ **2026-11-10 已合入 `main`**（合并 `b9bf3bd`）并归档在 `openspec/changes/archive/2026-11-10-subagent-preset`：14/14 task；真实端点 S1–S4、UAT（agent 代跑，用户明确指示并接受偏离）、变异 3 条全杀、Learning Gate 全过；主规格 `subagent-delegation` 与 `config-layering` 已 sync。`persona` 字段仍由 M14 补。
 - **内容**：`mini.config.toml` 增加 `[subagent]`：`preset`（默认）+ `allowed_presets`（白名单，配了才在工具 schema 里给模型 `agent_preset` 枚举）。模型的选择粒度是**整套 preset**（不是单个工具）。每个 preset 的名字映射到工具表（+ 将来的 persona），从**内置工具目录**取，**不导入父会话的局部工具限制**（否则 Super-agent 的 Router→Worker 做不出来；工具是能力，授权仍由围栏管）。未知 preset → `TOOL_ARGS_INVALID`，不建子会话；**没有 preset 时子级加入父的当前组合，派发照常**（照 DSH 的缺省，不是禁用）。
 - **`subagent.tools` 的处置（已定案）**：**删除，完全对齐 DSH**。理由：没有 preset 时子级加入父的当前组合（派发不失效），所以「模型侧临场裁剪」不是必需品；`tools` 是 DSH 没有的第三来源，保留等于长期维护两套「子能有什么」的解释。改由部署的 preset + 白名单表达裁剪。
 - **判据**：preset 决定子工具表、模型只能选整套 preset（不能挑单个工具）；白名单外的 id 看不见；未知 preset 是结果词不是异常；无 preset 时派发照常；`replay` 逐点相等。
