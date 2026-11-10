@@ -22,17 +22,22 @@
 
 子代理的工具集 SHALL 来自部署配置的 preset，而不是父模型的参数。解析顺序 SHALL 是：模型给的 `agent_preset`（仅白名单暴露时）→ 配置的 `subagent.preset` → 父会话当前的组合。三步都没有时，子会话 SHALL 继承父的工具表、派发照常（MUST NOT 因为没有 preset 而失败）。
 
-选中的 preset 的工具集 SHALL 与父工具表取交集（只裁剪、不授权）；preset 里出现父表没有的名字 SHALL 在配置校验期报错。未知或已被移除的 preset id SHALL 使该次调用返回 `TOOL_ARGS_INVALID`，MUST NOT 创建子会话。子 `session/start.payload` SHALL 记 `preset`（选中的 id；继承父组合时不写），`tools` SHALL 记实际生效的工具名。
+选中的 preset 的工具集 SHALL 从内置工具目录取，MUST NOT 被父会话的局部工具表收窄（「不导入父方的 Agent 局部工具限制」）；preset 里出现内置目录之外的名字 SHALL 在配置校验期报错。工具是能力而非授权：子会话继承的档位/边界/审批照常生效。未知或已被移除的 preset id SHALL 使该次调用返回 `TOOL_ARGS_INVALID`，MUST NOT 创建子会话。子 `session/start.payload` SHALL 记 `preset`（选中的 id；继承父组合时不写），`tools` SHALL 记实际生效的工具名。
 
 #### Scenario: 无配置时继承父组合
 
 - **WHEN** 配置文件没有 `[subagent]` 段
 - **THEN** 子会话的 `tools` 与父会话一致，派发照常
 
-#### Scenario: 默认 preset 收窄工具
+#### Scenario: 默认 preset 决定子会话的工具表
 
 - **WHEN** 配置 `[subagent] preset = "reader"`，`reader.tools = ["read", "glob"]`
-- **THEN** 子会话的工具表恰是两者的交集；子会话调用 `bash` 得到 `UNKNOWN_TOOL`
+- **THEN** 子会话的工具表恰是 `read` 与 `glob`；子会话调用 `bash` 得到 `UNKNOWN_TOOL`
+
+#### Scenario: preset 可以给出父会话没有的工具
+
+- **WHEN** 父会话的 `tools` 白名单只有 `["read"]`，子 preset 的 `tools` 是 `["read", "bash"]`
+- **THEN** 子会话的工具表含 `bash`（工具面独立于父的局部限制）；若子会话的沙箱是 `read-only`，bash 的调用在围栏处被拒
 
 #### Scenario: 白名单决定模型能选什么
 

@@ -10,7 +10,7 @@ M12 的子代理工具集默认继承父表、并允许**父模型**用 `subagen
 
 - `mini.config.toml` 新增 `[subagent]` 段：`preset`（默认 preset id）、`allowed_presets`（模型可选的白名单）、`[subagent.presets.<id>].tools`（该 preset 的工具名列表）。`persona` 字段留给 M14。
 - `subagent` 工具删掉 `tools` 参数；`allowed_presets` 存在时 schema 暴露 `agent_preset` **枚举**（白名单外的 id 模型看不见）。
-- 子级工具表 = **preset 工具 ∩ 父工具表**（只裁剪，不授权）；**没有 preset 时子级继承父的当前组合**；未知 preset → `TOOL_ARGS_INVALID`，不建子会话。
+- 子级工具表 = **preset 的 `tools`**，从**内置工具目录**取；**不导入父会话的局部工具表**（DSH：「不导入父方的 Agent 局部工具限制」）。**没有 preset 时子级继承父的当前组合**；未知 preset → `TOOL_ARGS_INVALID`，不建子会话。工具是能力而非授权：子会话继承的档位/边界/审批照常生效。
 - 子 `session/start.payload` 记 `preset` id（`tools` 仍然记实际工具名）。
 - 配置校验：`[subagent]` 的未知键、preset 里的未知工具名、`allowed_presets` 不含默认 `preset`、重复或空 id，都是 `INVALID_ARGUMENT`，且不产生 session 日志。
 

@@ -4,7 +4,7 @@ status: proposed
 
 # 子代理的工具集只由部署 preset 决定，`subagent.tools` 在 M14 删除
 
-DSH 的 `agentPreset` / `allowedAgentPresets` 是部署侧配置：**没有 preset 时子级加入父的当前组合，派发不会失效**，模型只能在白名单里选 preset。mini 的 `subagent.tools`（父模型在工具调用里给的收窄列表）在 M12 是安全的（只能减、不能加），但它把「子能有什么」的来源交给了模型；M14 用 preset + 白名单替代它，并删除该参数。
+DSH 的 `agentPreset` / `allowedAgentPresets` 是部署侧配置：**没有 preset 时子级加入父的当前组合，派发不会失效**，模型只能在白名单里选 preset。preset 的工具集从**内置工具目录**组合，不导入父会话的局部工具限制（Super-agent 的 Router 无 bash、Worker 全工具就靠这一点）。mini 的 `subagent.tools`（父模型在工具调用里给的收窄列表）在 M12 是安全的（只能减、不能加），但它把「子能有什么」的来源交给了模型；M14 用 preset + 白名单替代它，并删除该参数。工具是能力而非授权：能不能用仍由子会话继承的档位/边界/审批判定。
 
 Considered options：保留 `tools` 作为「preset 之上再减」——否，DSH 没有这一层，而部署已经能表达同样的裁剪，两套来源并存只会让「子能有什么」有两种解释；保留但只记账——否，同上；完全不配 preset 就禁用委派——否，DSH 的缺省是继承父组合，禁用是更差的产品行为。
 
