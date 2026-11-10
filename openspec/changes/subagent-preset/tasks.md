@@ -21,7 +21,7 @@
 
 ## 4. 收尾四项
 
-- [ ] 4.1 真实端点验收：一个 preset 子代理 + 一个无 preset 子代理各跑一次
+- [x] 4.1 真实端点验收：一个 preset 子代理 + 一个无 preset 子代理各跑一次
 - [ ] 4.2 UAT 验收（人跑）：配 `[subagent]` 后模型只能在白名单里选，且没配 preset 时子代理照常工作
-- [ ] 4.3 变异测试一轮：至少两条（把 preset 改成从父表取、去掉「无 preset 继承」）被杀
-- [ ] 4.4 Learning Gate
+- [x] 4.3 变异测试一轮：至少两条（把 preset 改成从父表取、去掉「无 preset 继承」）被杀
+- [x] 4.4 Learning Gate
