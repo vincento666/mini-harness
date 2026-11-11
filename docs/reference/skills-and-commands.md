@@ -69,6 +69,8 @@
 | host | `POST /sessions/{id}/commands` | 执行 `{name, args}`，返回 200 + `{output, cursor}`，不开段 |
 | UI | 同上 | 输入 `/` 弹出同一份清单，不另写一套 |
 
+DSH 的技能调用是**消息里的 `/name` token**（空白分隔、可在句中）：pre-step 监听器把技能正文注入当步，不落命令事件；mini 把它做成 chat 行首的 `/<技能名> [指令]` 命令，展开成一条 `user/message` 并落两件套（见 ADR-0038）。
+
 **命令调用落 `command/run` + `command/done` 两件套**（照 DSH）：前者在 handler 之前（`command_id` / `name` / `raw_input`），后者在结算之后（`command_id` / `ok` / `text?`）；只进日志、不进 transcript。语法/未知命令的 admission miss 不落日志。命令**不创建模型消息、不开启段**——这是人机直连的 UI 动作，不是往对话里塞话。
 
 **不做什么**：壳自己绕过内核直接读技能文件；技能正文只存在于壳的内存；命令产生的事件不进日志；命令伪装成用户消息去开段。
