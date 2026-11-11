@@ -10,4 +10,4 @@ DSH 的技能清单是第一个 `agent/pre-step` 注入的 user 角色 `<system-
 
 Considered options：清单改成 user 角色 reminder + 每步 digest 替换——否，M14 要动注入与 fold 的装配时机，收益只是会话中途可见，先记账；`skill` 做成插件——否，插件容器不在 MVP（ADR-0035）；preset 提到会话级——否，根会话的预设会牵动 `session/start` 契约与所有壳，超出本 change 的量级。
 
-Consequences：技能清单是 `session/start` 的一部分（指纹与回放都稳定，但不能热更新）；`skill` 工具对所有会话可见（除非 `tools` 白名单排除）；子会话能有人设、根不能。触发条件：需要会话中途增删技能即时可见；需要根会话也按 preset 配人设/工具；需要句中 `/技能名` 触发；或需要 `disable-model-invocation` / `user-invocable` 策略时。
+Consequences：技能清单是 `session/start` 的一部分（指纹与回放都稳定，但不能热更新）；`skill` 工具对所有会话可见（除非 `tools` 白名单排除）；子会话能有人设、根不能。触发条件：需要会话中途增删技能即时可见（watcher + digest 替换）；需要根会话也按 preset 配人设/工具；`user-invocable` / `disable-model-invocation` 策略位由 `skill-invocation-policy`（M14 之后、M14a 之前）补；句中 `/技能名` 由 `skill-inline-mention`（M14c 之后）补。
