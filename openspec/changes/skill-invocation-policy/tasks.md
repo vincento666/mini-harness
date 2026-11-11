@@ -30,7 +30,7 @@
 
 ## 3. 收尾四项
 
-- [ ] 3.1 真实端点：一个 `disable-model-invocation` 技能只能经 `/技能名` 注入，模型工具调不到
+- [x] 3.1 真实端点：一个 `disable-model-invocation` 技能只能经 `/技能名` 注入，模型工具调不到
 - [ ] 3.2 UAT（人跑）：三类技能各办一件小事
-- [ ] 3.3 变异测试一轮
-- [ ] 3.4 Learning Gate
+- [x] 3.3 变异测试一轮
+- [x] 3.4 Learning Gate

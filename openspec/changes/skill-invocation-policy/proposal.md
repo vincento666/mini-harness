@@ -60,11 +60,11 @@ M14 把所有发现到的技能都当成「模型可调 + 用户可调」。DSH 
 
 **建议（待人裁决）**：DSH 的 `/name` 消息手势保持简化（`skill-inline-mention`，M14c 之后）；本 change 的 user 面是行首 `/<技能名>` 与 `/skill`。
 
-## 待人裁决
+## 已裁决（2026-11-11）
 
-1. `/skill <名字>` 是否也要求 `user-invocable`（建议：是，它是人机入口，照 DSH 的 `/name` 面）；
-2. `description` 改必填（建议：对齐；代价是无 frontmatter 的扁平文件不再是技能）；
-3. 第 6/7 项的简化是否接受（建议：接受，触发条件已写）。
+1. `/skill <名字>` 要求 `user-invocable`——同意；
+2. `description` 改必填——同意；
+3. 第 6/7 项**也要对齐**（不是简化）——本 change 实现；`/name` 手势仍按 `skill-inline-mention` 排在 M14c 之后。
 
 ## Capabilities
 
