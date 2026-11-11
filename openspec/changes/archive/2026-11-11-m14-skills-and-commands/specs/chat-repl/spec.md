@@ -1,6 +1,14 @@
 # Spec Delta
 
-## MODIFIED Requirements
+## REMOVED Requirements
+
+### Requirement: chat 的 stdout 只打印模型回复正文
+
+**Reason**: 命令输出（`command/done.text`）也要上 stdout，旧标题把 stdout 限定成「只有模型回复」。
+
+**Migration**: 由下面新增的「chat 的 stdout 只打印模型回复正文与命令输出」取代，场景一并迁移。
+
+## ADDED Requirements
 
 ### Requirement: chat 的 stdout 只打印模型回复正文与命令输出
 

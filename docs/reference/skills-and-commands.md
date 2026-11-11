@@ -1,6 +1,6 @@
 # 技能、斜杠命令与渐进式披露（M14 底稿）
 
-**定位**：M14 开工前的设计底稿，不是规格。DSH 的事实来自 `docs/dsh-reference/` 的图集 `e06-extension-axes` 与 `e08-skill-discovery-ranks`；mini 的取舍在本文写清。
+**定位**：M14 的设计底稿，不是规格；**已落成**（`2026-11-11-m14-skills-and-commands`），正文保留 DSH 事实与当时的取舍。DSH 的事实来自 `docs/dsh-reference/` 的图集 `e06-extension-axes` 与 `e08-skill-discovery-ranks`；mini 的取舍在本文写清。
 
 ## 1. DSH 的三条扩展轴
 

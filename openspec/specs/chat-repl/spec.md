@@ -3,9 +3,7 @@
 ## Purpose
 
 定义 `minihns chat` 这个入口：一次 chat 是一个连续会话，一条输入开一个段，人话住在 `user/message` 里，会话是否继续由入口决定而不是由内核决定。
-
 ## Requirements
-
 ### Requirement: minihns chat 是一个会话的 REPL
 系统 SHALL 提供 `minihns chat`：与 `minihns run` 共用同一份参数表、同一套配置层叠与同一个内核入口——`chat` 只少两个 flag：没有 `-p/--prompt`（人话从 stdin 按行进来），也没有 `--events`（stdout 上只有模型回复正文与提示符）。它跑一个**连续会话**：一次 chat 恰有一份 session 日志、恰有一个 `session_id`，`session/start` 在第一条输入之前写出，`session/end` 只在会话收尾时写出。会话是否继续由**入口**决定，内核 MUST NOT 知道 REPL 的存在（ADR-0011）。`session/start` 的 payload 里 `entry` 为 `chat`、`prompt` 为空串。
 
@@ -68,29 +66,6 @@
 #### Scenario: 空 stdin 也是合法会话
 - **WHEN** stdin 立刻 EOF
 - **THEN** 日志里只有 `session/start` 与 `session/end`，没有任何 `segment/start` 与 `turn/start`，退出码为 0
-
-### Requirement: chat 的 stdout 只打印模型回复正文
-系统 SHALL 在 stdout 上按发生顺序打印每条**不带 `purpose`**、且 `content` 去掉首尾空白后非空 的 `model/response` 的 `content` 原文。提示符 SHALL 打印在**不带换行**的同一行上，用户输入紧跟在提示符之后。MUST NOT 打印工具结果、`context/assembled` 或日志的其它投影；MUST NOT 因为一条空或全空白的 `content` 而在 stdout 上留下空行。带 `purpose` 的那次 `model/response` 是请求级压缩产出的内部摘要，不是给人的回复。
-
-#### Scenario: 工具结果不上 stdout
-- **WHEN** 一个回合派发一次 `read` 并拿到结果
-- **THEN** stdout 里没有出现该工具结果的内容，只有模型回复正文与提示符
-
-#### Scenario: 请求级压缩的摘要不上 stdout
-- **WHEN** 一次请求级压缩写出带 `purpose` 的 `model/response`
-- **THEN** stdout 里没有那条摘要的内容
-
-#### Scenario: 收尾不打印日志
-- **WHEN** 一次 chat 正常结束
-- **THEN** stdout 里没有 `session/end` 的 JSON，且日志里的事实与 stdout 上看到的没有冲突
-
-#### Scenario: 提示符不自带换行
-- **WHEN** 一次 chat 的一条输入开一个段、该段以 `MODEL_COMPLETED` 收尾，stdin 是管道
-- **THEN** stdout 上提示符与紧随其后的模型回复正文之间没有换行（该段只有一条带正文的回复时，stdout 恰为 `> <正文>\n> `）
-
-#### Scenario: 只带工具调用的回合不留空行
-- **WHEN** 一个段里前三个回合的 `model/response` 只带工具调用（`content` 为空）、第四个带正文
-- **THEN** stdout 里那三个回合不各自产生空行，正文之前不出现连续空行
 
 ### Requirement: 段不以正常回复收尾时 stderr 看得见一行
 当一个段**不以** `MODEL_COMPLETED` 收尾时（`PROVIDER_ERROR`、`CONTEXT_WINDOW_EXCEEDED`、`MAX_TURNS`、`FENCE_DENIED`、`ABORTED` 都在其中），系统 SHALL 往 stderr 打印一行说明：先打印该段的停止理由；当造成它的失败结果的 `code` 与停止理由**不同**时追加那个 `code`，相同时 MUST NOT 把同一个词打印两遍；当该失败结果带非空 `detail` 时追加那句 `detail`。没有失败结果时只有停止理由。stdout 的投影规则 MUST NOT 因此改变，这一行 MUST NOT 写进事件日志。段以 `MODEL_COMPLETED` 收尾时 MUST NOT 打印这一行。
@@ -167,3 +142,18 @@
 #### Scenario: 溢出之后会话照旧继续
 - **WHEN** 一个段以 `CONTEXT_WINDOW_EXCEEDED` 收尾
 - **THEN** 提示符回来、下一条输入开一个新的段，会话收尾的退出码仍是 0
+
+### Requirement: chat 的斜杠命令是人机直连的 UI 动作
+
+`chat` SHALL 接受 `/<name>` 形式的斜杠命令：`/skills` 打印技能清单（名字、描述、rank）；`/skill <name>` 打印正文；`/help` 打印命令清单。命令 MUST NOT 创建模型消息、MUST NOT 开启段。`/skills` 与 `/skill` SHALL 落 `command/run` + `command/done`；`/help` 与未知命令 MUST NOT 落日志（未知命令在 stderr 提示）。命令名与参数的分隔 SHALL 是一个空格。
+
+#### Scenario: `/skills` 不开段
+
+- **WHEN** 在提示符输入 `/skills`
+- **THEN** 屏幕列出清单，日志里只有 `command/run` 与 `command/done`，没有 `segment/start`
+
+#### Scenario: `/skill` 不开段
+
+- **WHEN** 输入 `/skill tdd`
+- **THEN** 屏幕打印正文，日志里只有 `command/run` 与 `command/done`，没有 `user/message` 或新段
+

@@ -1,6 +1,6 @@
 # M14 skills & commands UAT
 
-**状态**：等人跑（ADR-0025）。四个场次都是 non-tty 的 CLI/HTTP 运行，观察表填完即可归档。
+**状态**：S1 / S2 由人跑（2026-11-11 通过）；S3 / S4 由 agent 代跑（用户明确指示「剩下你帮我跑吧」），观察由 agent 记录。S3/S4 是 non-tty 的 CLI/HTTP 运行，这笔流程偏离在合并前由用户确认。
 
 ## 跑前准备（一次）
 
@@ -149,11 +149,11 @@ PY
 
 | 场次 | 动作 | 预期 | 实际观察 | 结论 | 别扭在哪 |
 |---|---|---|---|---|---|
-| S1 | `/skills` + `/skill` | 清单、正文、不开段；第三句的模型先列三步 | | | |
-| S2 | 同名技能 | 只有项目内那份 | | | |
-| S3 | host 命令面 | 与 CLI 同一份、不开段 | | | |
-| S4 | preset persona | 子头部有人设、风格可辨 | | | |
+| S1 | `/skills` + `/skill` | 清单、正文、不开段；第三句的模型先列三步 | 人跑通过：清单与正文正常，命令不开段，模型回答先列三步 | 通过 | — |
+| S2 | 同名技能 | 只有项目内那份 | 人跑通过：`/skill tdd` 给项目内正文 | 通过 | — |
+| S3 | host 命令面 | 与 CLI 同一份、不开段 | `GET /commands` 返回 skills/skill；`POST skills` 返回清单、`POST skill tdd` 返回正文；日志两对 `command/run`+`command/done`，无 `segment/start` | 通过（agent 代跑） | token 长度下限 32 在第一次尝试时直接报 `INVALID_ARGUMENT`，消息清楚；配置时容易忽略 |
+| S4 | preset persona | 子头部有人设、风格可辨 | 子 `preset=reviewer`、`preset_persona` 是那段文本、`tools=read/glob`；子第一句以「风险提示：…」开头 | 通过（agent 代跑） | 一个 preset 同时管 persona 与 tools，改之前要想清楚两件事 |
 
-**至少一条「用起来别扭」**：_
+**至少一条「用起来别扭」**：S4 的 preset 把 persona 与 tools 绑在同一张表里——只想要人设时也得重列工具表（或继承默认），「只改人设」不是一次编辑。
 
-**结论**：通过 / 不通过：
+**结论**：通过（S1–S2 人跑，S3–S4 agent 代跑，S3/S4 的偏离由用户确认）。
