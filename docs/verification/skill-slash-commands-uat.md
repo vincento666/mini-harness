@@ -1,6 +1,6 @@
 # skill-slash-commands UAT
 
-**状态**：等人跑（ADR-0025）。三个场次都是 non-tty 的 CLI/HTTP 运行。
+**状态**：**agent 代跑**（用户明确指示，2026-11-11）。三场都是 non-tty 的 CLI/HTTP 运行，观察由 agent 记录；合并前由用户确认这笔偏离。
 
 ## 跑前准备
 
@@ -81,10 +81,10 @@ kill %1
 
 | 场次 | 动作 | 预期 | 实际观察 | 结论 | 别扭在哪 |
 |---|---|---|---|---|---|
-| S1 | `/tdd` + `/help` | 正文、`/tdd` 在清单里、不开段 | | | |
-| S2 | `/skills` 与 `/skill skills` | 内置优先 | | | |
-| S3 | host 会话级清单 | 带 `session_id` 才列技能 | | | |
+| S1 | `/tdd` + `/help` | 正文、`/tdd` 在清单里、不开段 | `/tdd` 打印「第一条：先写红判据。」；`/help` 是 `命令：/skills / /skill / /tdd`（叫 `skills` 的技能不在里面）；日志 `command/run name=tdd` + `command/done`，无 `segment/start` | 通过 | |
+| S2 | `/skills` 与 `/skill skills` | 内置优先 | `/skills` 列清单（含 tdd 与叫 skills 的技能）；`/skill skills` 打印「这是叫 skills 的技能正文。」；内置没被覆盖 | 通过 | `/skills` 的清单里会出现与内置同名的技能，但 `/help` 里不出现——同一会话两处清单不一致，容易困惑 |
+| S3 | host 会话级清单 | 带 `session_id` 才列技能 | 带 `session_id` 是 `skills`/`skill`/`tdd`；不带只有前两个；`POST {name:"tdd"}` 返回正文；日志一对 run/done | 通过（agent 代跑） | |
 
-**至少一条「用起来别扭」**：_
+**至少一条「用起来别扭」**：`/skills` 列出所有技能（含与内置同名的），`/help` 只列不冲突的技能命令——两处清单口径不同，第一眼会以为 `skills` 技能消失了。
 
-**结论**：通过 / 不通过：
+**结论**：通过（agent 代跑，S1–S3；偏离由用户确认）。
