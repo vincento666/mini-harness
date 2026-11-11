@@ -41,6 +41,13 @@ def test_host_commands_match_the_cli_and_do_not_open_a_segment(tmp_path: Path) -
 
             commands = client.get("/commands", headers=_headers()).json()["commands"]
             assert {command["name"] for command in commands} >= {"skills", "skill"}
+            # 不带会话时只有内置命令：技能是会话级发现，不该泄漏成进程级清单。
+            assert "tdd" not in {command["name"] for command in commands}
+
+            session_commands = client.get(
+                f"/commands?session_id={session_id}", headers=_headers()
+            ).json()["commands"]
+            assert "tdd" in {command["name"] for command in session_commands}
 
             listed = client.post(
                 f"/sessions/{session_id}/commands",
@@ -57,6 +64,14 @@ def test_host_commands_match_the_cli_and_do_not_open_a_segment(tmp_path: Path) -
             )
             assert loaded.status_code == 200, loaded.text
             assert "第一步：写红判据" in loaded.json()["output"]
+
+            direct = client.post(
+                f"/sessions/{session_id}/commands",
+                headers=_headers(),
+                json={"name": "tdd"},
+            )
+            assert direct.status_code == 200, direct.text
+            assert "第一步：写红判据" in direct.json()["output"]
 
             unknown = client.post(
                 f"/sessions/{session_id}/commands",
@@ -75,8 +90,8 @@ def test_host_commands_match_the_cli_and_do_not_open_a_segment(tmp_path: Path) -
 
             log = session_dir / f"{session_id}.jsonl"
             text = log.read_text(encoding="utf-8")
-            assert text.count('"command/run"') == 3
-            assert text.count('"command/done"') == 3
+            assert text.count('"command/run"') == 4
+            assert text.count('"command/done"') == 4
             assert '"segment/start"' not in text
     finally:
         _stop(process)

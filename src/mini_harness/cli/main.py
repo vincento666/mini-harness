@@ -18,7 +18,7 @@ from typing import NoReturn
 
 from mini_harness.cli.host import DEFAULT_HOST_PORT, host_main
 from mini_harness.cli.serve import DEFAULT_HOST, DEFAULT_PORT, SERVE_HOSTS, BindFailure, ServeServer
-from mini_harness.commands import COMMANDS, execute_command
+from mini_harness.commands import command_catalog, execute_command
 from mini_harness.events import EventLog, EventRecord, LogReadFailure, read_events
 from mini_harness.events.fold import assembled_payload, assembly_points, fold
 from mini_harness.loop import (
@@ -536,7 +536,8 @@ def _run_chat_command(prepared: Prepared, text: str) -> None:
     """提示符上的一条斜杠命令：落两件套事件、打印结果，不开段。"""
     name, _, arguments = text[1:].partition(" ")
     if name == "help":
-        listing = " / ".join(f"/{command.name}" for command in COMMANDS)
+        catalog = command_catalog(prepared.settings.skills)
+        listing = " / ".join(f"/{command.name}" for command in catalog)
         print(f"命令：{listing}")
         return
     outcome = execute_command(name, arguments, prepared.settings.skills)
