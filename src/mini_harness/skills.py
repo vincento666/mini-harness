@@ -152,6 +152,18 @@ def render_skill_catalog(skills: Sequence[Skill], *, budget: int = CATALOG_BUDGE
     return catalog_text([(skill.name, skill.description) for skill in skills], budget=budget)
 
 
+def skill_content(skill: Skill, instruction: str = "") -> str:
+    """DSH 同形的 XML 三段；`skill` 工具与命令展开共用，避免两处漂移。"""
+    body = read_skill_body(skill)
+    content = (
+        f'<skill_content name="{skill.name}">\n'
+        f"<skill_resources>\n- {skill.path}\n</skill_resources>\n"
+        f"<skill_instructions>\n{body}\n</skill_instructions>\n"
+        f"</skill_content>"
+    )
+    return content if not instruction else content + "\n\n" + instruction
+
+
 def read_skill_body(skill: Skill, *, limit: int = BODY_LIMIT) -> str:
     """读正文；超过上限截断并提示用 read 读全文（路径就是它）。"""
     try:

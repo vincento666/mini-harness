@@ -22,7 +22,7 @@ from typing import Any
 from aiohttp import web
 
 from mini_harness.cli.serve import SERVE_HOSTS, sse_frame
-from mini_harness.commands import COMMANDS
+from mini_harness.commands import command_catalog, direct_skill
 from mini_harness.events import LogReadFailure, read_events
 from mini_harness.events.fold import fold
 from mini_harness.session.assembly import (
@@ -36,12 +36,14 @@ from mini_harness.session.host import (
     cancel_session,
     close_session,
     create_session,
+    expand_skill_command,
     resolve_approval,
     resume_session,
     run_command,
     shutdown,
     submit_message,
 )
+from mini_harness.skills import Skill
 
 HOST_TOKEN_ENV = "MINIHNS_HOST_TOKEN"
 MIN_TOKEN_LENGTH = 32
@@ -232,11 +234,18 @@ class HostServer:
         return web.json_response(indexed)
 
     async def _list_commands(self, request: web.Request) -> web.Response:
+        session_id = request.query.get("session_id")
+        skills: tuple[Skill, ...] = ()
+        if session_id is not None:
+            handle = self._state.sessions.get(session_id)
+            if handle is None:
+                return _error(404, "SESSION_NOT_FOUND", f"没有会话 {session_id}")
+            skills = handle.settings.skills
         return web.json_response(
             {
                 "commands": [
                     {"name": command.name, "description": command.description}
-                    for command in COMMANDS
+                    for command in command_catalog(skills)
                 ]
             }
         )
@@ -254,6 +263,19 @@ class HostServer:
         arguments = body.get("arguments", "") if isinstance(body, dict) else ""
         if not isinstance(name, str) or not isinstance(arguments, str):
             return _error(400, "INVALID_ARGUMENT", "name 与 arguments 必须是字符串")
+        skill = direct_skill(name, handle.settings.skills)
+        if skill is not None and arguments.strip():
+            accepted = expand_skill_command(handle, skill, arguments)
+            if isinstance(accepted, Failure):
+                return _failure_response(accepted)
+            return web.json_response(
+                {
+                    "queued": accepted.queued,
+                    "segment_id": accepted.segment_id,
+                    "cursor": handle.last_seq,
+                },
+                status=202,
+            )
         response = run_command(handle, name, arguments)
         if isinstance(response, Failure):
             return _failure_response(response)

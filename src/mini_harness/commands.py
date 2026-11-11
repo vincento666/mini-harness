@@ -26,6 +26,28 @@ COMMANDS: tuple[CommandSpec, ...] = (
 )
 
 
+RESERVED = frozenset(command.name for command in COMMANDS) | {"help"}
+
+
+def command_catalog(skills: Sequence[Skill]) -> list[CommandSpec]:
+    """内置命令 + 技能命令；内置名优先（技能同名时不覆盖，仍可用 `/skill <名字>`）。"""
+    catalog = list(COMMANDS)
+    seen = set(RESERVED)
+    for skill in skills:
+        if skill.name in seen:
+            continue
+        seen.add(skill.name)
+        catalog.append(CommandSpec(skill.name, skill.description))
+    return catalog
+
+
+def direct_skill(name: str, skills: Sequence[Skill]) -> Skill | None:
+    """`/<技能名>` 命中的技能；内置命令名优先，返回 None。"""
+    if name in RESERVED:
+        return None
+    return next((candidate for candidate in skills if candidate.name == name), None)
+
+
 @dataclass(frozen=True)
 class CommandOutcome:
     """handler 的结果：成功与否 + 给 UI 的文本。"""
@@ -51,4 +73,12 @@ def execute_command(
         if skill is None:
             return CommandOutcome(False, f"未知技能：{target}")
         return CommandOutcome(True, read_skill_body(skill))
-    return None
+    if name in RESERVED:
+        # `help` 是壳本地的帮助，不在这里执行。
+        return None
+    direct = next((candidate for candidate in skills if candidate.name == name), None)
+    if direct is None:
+        return None
+    if arguments.strip():
+        return CommandOutcome(False, f"用法：/{name}")
+    return CommandOutcome(True, read_skill_body(direct))

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from cli_blackbox import _cli
+from mini_harness.commands import execute_command
 from mini_harness.config import build_registry
 from mini_harness.events import EventRecord
 from mini_harness.events.fold import fold
@@ -17,6 +18,7 @@ from mini_harness.skills import (
     catalog_text,
     discover_skills,
     read_skill_body,
+    skill_content,
 )
 from paths import HELLO_SCENARIO
 from tool_harness import dispatch_call
@@ -268,3 +270,157 @@ def test_chat_rejects_an_unknown_command_without_logging(tmp_path: Path) -> None
     assert "未知命令" in result.stderr
     records = _chat_log(workspace)
     assert [record["type"] for record in records if record["type"].startswith("command/")] == []
+
+
+def test_execute_command_supports_a_direct_skill_name(tmp_path: Path) -> None:
+    root = tmp_path / "ws" / ".minihns" / "skills"
+    _skill(root, "tdd", body="第一步：写红判据")
+    skills = discover_skills(tmp_path / "ws", {})
+
+    direct = execute_command("tdd", "", skills)
+    named = execute_command("skill", "tdd", skills)
+
+    assert direct is not None and direct.ok
+    assert named is not None and named.ok
+    assert direct.text == named.text
+    extra = execute_command("tdd", "多余参数", skills)
+    assert extra is not None and extra.ok is False
+
+
+def test_a_builtin_name_wins_over_a_skill(tmp_path: Path) -> None:
+    root = tmp_path / "ws" / ".minihns" / "skills"
+    _skill(root, "skills", body="这条是技能正文")
+    skills = discover_skills(tmp_path / "ws", {})
+
+    listed = execute_command("skills", "", skills)
+
+    assert listed is not None and listed.ok
+    assert "技能正文" not in listed.text
+    assert execute_command("help", "", skills) is None
+
+
+def test_chat_runs_a_skill_directly(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    _skill(workspace / ".minihns" / "skills", "tdd", body="第一步：写红判据")
+
+    result = _cli(
+        "chat",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        cwd=workspace,
+        stdin_text="/tdd\n",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "第一步：写红判据" in result.stdout
+    records = _chat_log(workspace)
+    run = next(record["payload"] for record in records if record["type"] == "command/run")
+    assert run["name"] == "tdd"
+    assert "segment/start" not in [record["type"] for record in records]
+
+
+def test_chat_help_lists_skill_commands(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    _skill(workspace / ".minihns" / "skills", "tdd", description="先写判据")
+
+    result = _cli(
+        "chat",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        cwd=workspace,
+        stdin_text="/help\n",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "/tdd" in result.stdout
+
+
+def test_progressive_disclosure_end_to_end(tmp_path: Path) -> None:
+    """第一轮上下文没有正文；`skill` 调用之后正文才作为工具结果进来。"""
+    workspace = tmp_path / "ws"
+    _skill(workspace / ".minihns" / "skills", "tdd", body="只在加载后才出现的正文")
+    fixture = tmp_path / "turns.json"
+    fixture.write_text(
+        json.dumps(
+            [
+                {
+                    "content": "",
+                    "finish_reason": "tool_calls",
+                    "tool_calls": [{"id": "c1", "name": "skill", "arguments": {"name": "tdd"}}],
+                },
+                {"content": "按技能做完了", "finish_reason": "stop"},
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(fixture),
+        cwd=workspace,
+    )
+
+    assert result.returncode == 0, result.stderr
+    records = _chat_log(workspace)
+    start = next(record["payload"] for record in records if record["type"] == "session/start")
+    assert "只在加载后才出现的正文" not in json.dumps(start, ensure_ascii=False)
+    assembled = [
+        json.dumps(record["payload"], ensure_ascii=False)
+        for record in records
+        if record["type"] == "context/assembled"
+    ]
+    assert assembled
+    assert "只在加载后才出现的正文" not in assembled[0]
+    assert any("只在加载后才出现的正文" in later for later in assembled[1:])
+    replies = [
+        str(record["payload"].get("content"))
+        for record in records
+        if record["type"] == "model/response" and record["payload"].get("purpose") is None
+    ]
+    assert "按技能做完了" in replies[-1]
+
+
+def test_skill_content_renders_the_instruction(tmp_path: Path) -> None:
+    skill = Skill(name="tdd", description="", rank=100, path=tmp_path / "tdd.md")
+    skill.path.write_text("---\nname: tdd\n---\n\n正文\n", encoding="utf-8")
+
+    rendered = skill_content(skill, "帮我改个函数")
+
+    assert "<skill_content" in rendered
+    assert "正文" in rendered
+    assert rendered.endswith("帮我改个函数")
+
+
+def test_chat_skill_command_with_an_instruction_opens_a_segment(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    _skill(workspace / ".minihns" / "skills", "tdd", body="第一步：写红判据")
+
+    result = _cli(
+        "chat",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        cwd=workspace,
+        stdin_text="/tdd 帮我改个函数\n",
+    )
+
+    assert result.returncode == 0, result.stderr
+    records = _chat_log(workspace)
+    types = [record["type"] for record in records]
+    assert types.count("command/run") == 1
+    assert types.count("command/done") == 1
+    assert "segment/start" in types
+    user = next(record["payload"] for record in records if record["type"] == "user/message")
+    assert "第一步：写红判据" in user["content"]
+    assert "帮我改个函数" in user["content"]
