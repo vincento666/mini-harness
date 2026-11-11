@@ -825,9 +825,22 @@ def start_session(*, prompt: str, entry: SessionEntry, env: SessionEnv) -> Segme
         start_payload["delegated"] = True
         if settings.parent_tool_call_id is not None:
             start_payload["parent_tool_call_id"] = settings.parent_tool_call_id
-        if settings.subagent_preset is not None:
-            # 子会话用哪一档部署 preset（M14）：回放不依赖配置，审计与对照要它。
-            start_payload["preset"] = settings.subagent_preset
+    if settings.skills:
+        # 技能清单（M14）：只有清单，正文按需由 `skill` 工具读；回放从这份快照折叠。
+        start_payload["skills"] = [
+            {
+                "name": skill.name,
+                "description": skill.description,
+                "rank": skill.rank,
+                "path": str(skill.path),
+            }
+            for skill in settings.skills
+        ]
+    if settings.subagent_preset is not None:
+        # 子会话用哪一档部署 preset（M14）：回放不依赖配置，审计与对照要它。
+        start_payload["preset"] = settings.subagent_preset
+    if settings.preset_persona is not None:
+        start_payload["preset_persona"] = settings.preset_persona
     if settings.endpoint is not None:
         # 记的是密钥环境变量的名字，不是它的值（cli spec：密钥 MUST NOT 进 payload）。
         start_payload["base_url"] = settings.endpoint.base_url

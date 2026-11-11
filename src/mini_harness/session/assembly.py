@@ -33,6 +33,7 @@ from mini_harness.loop.settings import ApprovalMode
 from mini_harness.provider import FixtureLoadFailure, load_fixture_provider
 from mini_harness.provider.contract import Provider
 from mini_harness.provider.openai_compat import OpenAICompatProvider, validate_base_url
+from mini_harness.skills import discover_skills
 from mini_harness.tools import ToolRegistry
 from mini_harness.tools.bash_tools import platform_facts
 
@@ -217,8 +218,12 @@ def assemble(
             EXIT_INVALID_ARGUMENT,
         )
 
-    # 工具表从装配来：内置六定义按配置的白名单筛，未知名与别的配置失败同形。
-    registry = build_registry(layered.tools, layered.subagent)
+    # 工作区在任何发现之前定下来：技能的四级根都相对它（用户级根相对 MINIHNS_HOME）。
+    workspace = Path(layered.workspace) if layered.workspace is not None else Path.cwd()
+    # 技能清单在装配期快照一次：会话中途新增/修改的技能下一会话才可见（M14 的简化）。
+    skills = discover_skills(workspace, environ)
+    # 工具表从装配来：内置定义按配置的白名单筛，未知名与别的配置失败同形。
+    registry = build_registry(layered.tools, layered.subagent, skills)
     if isinstance(registry, ConfigFailure):
         return Failure("INVALID_ARGUMENT", registry.detail, EXIT_INVALID_ARGUMENT)
 
@@ -286,7 +291,7 @@ def assemble(
         return Failure(log.code, log.detail, EXIT_INTERNAL_ERROR)
 
     settings = SessionSettings(
-        workspace=Path(layered.workspace) if layered.workspace is not None else Path.cwd(),
+        workspace=workspace,
         provider_name=provider_name,
         max_turns=max_turns,
         sandbox=layered.sandbox,
@@ -300,6 +305,7 @@ def assemble(
         compaction_retain_tokens=layered.compaction_retain_tokens,
         endpoint=endpoint,
         platform=platform_facts(),
+        skills=skills,
     )
     return Prepared(
         provider=provider,

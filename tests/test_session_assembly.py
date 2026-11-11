@@ -42,6 +42,7 @@ def test_assemble_returns_a_prepared_for_a_mock_request(tmp_path: Path) -> None:
         "grep",
         "bash",
         "subagent",
+        "skill",
     ]
 
 

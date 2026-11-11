@@ -11,13 +11,15 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from mini_harness.config.load import ConfigCode, ConfigFailure
+from mini_harness.skills import Skill
 from mini_harness.tools import ToolRegistry
 from mini_harness.tools.bash_tools import bash_tool_definitions
 from mini_harness.tools.file_tools import file_tool_definitions
+from mini_harness.tools.skill import skill_tool_definitions
 from mini_harness.tools.subagent import SubagentPresets, subagent_tool_definitions
 
 _SUBAGENT_KEYS = frozenset({"preset", "allowed_presets", "presets"})
-_PRESET_KEYS = frozenset({"tools"})
+_PRESET_KEYS = frozenset({"tools", "persona"})
 
 
 def _invalid(detail: str, code: ConfigCode = "CONFIG_INVALID_VALUE") -> ConfigFailure:
@@ -29,7 +31,7 @@ def _names_joined(names: Sequence[str]) -> str:
 
 
 def _presets(
-    value: Mapping[str, Any], known_tools: frozenset[str]
+    value: Mapping[str, Any], known_tools: frozenset[str], skills: Sequence[Skill]
 ) -> SubagentPresets | ConfigFailure:
     """`[subagent]` 段 → 已编译的 preset 表；任何形状/引用错误都是配置失败。"""
     unknown = sorted(set(value) - _SUBAGENT_KEYS)
@@ -54,6 +56,7 @@ def _presets(
     if not isinstance(raw_presets, dict):
         return _invalid("[subagent] presets 必须是一张表")
     tool_names: dict[str, tuple[str, ...]] = {}
+    personas: dict[str, str] = {}
     for preset_id, spec in raw_presets.items():
         if not isinstance(preset_id, str) or not preset_id:
             return _invalid("[subagent.presets] 的 id 必须是非空字符串")
@@ -74,6 +77,11 @@ def _presets(
                 f"preset {preset_id} 里有未注册的工具名：{_names_joined(unknown_tools)}",
                 "UNKNOWN_TOOL_NAME",
             )
+        persona = spec.get("persona")
+        if persona is not None and not isinstance(persona, str):
+            return _invalid(f"[subagent.presets.{preset_id}].persona 必须是字符串")
+        if isinstance(persona, str) and persona:
+            personas[preset_id] = persona
         tool_names[preset_id] = tuple(tools)
 
     if default is not None and default not in tool_names:
@@ -88,11 +96,14 @@ def _presets(
     # registries 先建空表再填充：subagent 自己的定义持有同一个 dict 的引用，递归包含
     # `subagent` 的 preset 因此也能建出（深度上限仍会挡住真正的递归调用）。
     registries: dict[str, ToolRegistry] = {}
-    presets = SubagentPresets(default=default, allowed=allowed, registries=registries)
+    presets = SubagentPresets(
+        default=default, allowed=allowed, registries=registries, personas=personas
+    )
     catalog = [
         *file_tool_definitions(),
         *bash_tool_definitions(),
         *subagent_tool_definitions(presets),
+        *skill_tool_definitions(skills),
     ]
     for preset_id, names in tool_names.items():
         registries[preset_id] = ToolRegistry([tool for tool in catalog if tool.name in names])
@@ -102,6 +113,7 @@ def _presets(
 def build_registry(
     whitelist: Sequence[str] | None,
     subagent: Mapping[str, Any] | None = None,
+    skills: Sequence[Skill] = (),
 ) -> ToolRegistry | ConfigFailure:
     """内置六定义（五个文件工具加 `bash`）；`None` 是全开，给了白名单就按内置顺序筛。
 
@@ -111,10 +123,11 @@ def build_registry(
     known_tools = frozenset(tool.name for tool in subagent_tool_definitions())
     known_tools = known_tools | frozenset(tool.name for tool in file_tool_definitions())
     known_tools = known_tools | frozenset(tool.name for tool in bash_tool_definitions())
+    known_tools = known_tools | frozenset(tool.name for tool in skill_tool_definitions(skills))
 
     presets: SubagentPresets | None = None
     if subagent is not None:
-        parsed = _presets(subagent, known_tools)
+        parsed = _presets(subagent, known_tools, skills)
         if isinstance(parsed, ConfigFailure):
             return parsed
         presets = parsed
@@ -123,6 +136,7 @@ def build_registry(
         *file_tool_definitions(),
         *bash_tool_definitions(),
         *subagent_tool_definitions(presets),
+        *skill_tool_definitions(skills),
     ]
     if whitelist is None:
         return ToolRegistry(definitions)

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import uuid
 from collections import deque
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
@@ -15,6 +16,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
+from mini_harness.commands import execute_command
 from mini_harness.events import EventLog, EventRecord, LogReadFailure, read_events
 from mini_harness.loop import (
     ENTRY_HOST,
@@ -121,6 +123,33 @@ def register_child_session(state: HostState, env: SessionEnv) -> None:
         parent_session_id=env.settings.parent_session_id,
         depth=env.settings.depth,
     )
+
+
+@dataclass(frozen=True)
+class CommandResponse:
+    """一条命令的结果：给客户端的文本、ok 与执行之后的游标。"""
+
+    ok: bool
+    text: str
+    cursor: int
+
+
+def run_command(handle: HostSession, name: str, arguments: str) -> CommandResponse | Failure:
+    """执行一条命令：写 `command/run` + `command/done`，不开段、不建模型消息（M14）。"""
+    if handle.status == SESSION_ENDED:
+        return Failure("SESSION_NOT_FOUND", "会话已经结束", EXIT_INVALID_ARGUMENT)
+    outcome = execute_command(name, arguments, handle.settings.skills)
+    if outcome is None:
+        return Failure("UNKNOWN_COMMAND", f"未知命令：{name}", EXIT_INVALID_ARGUMENT)
+    command_id = uuid.uuid4().hex
+    handle.log.append(
+        "command/run",
+        {"command_id": command_id, "name": name, "raw_input": f"/{name} {arguments}".rstrip()},
+    )
+    handle.log.append(
+        "command/done", {"command_id": command_id, "ok": outcome.ok, "text": outcome.text}
+    )
+    return CommandResponse(ok=outcome.ok, text=outcome.text, cursor=handle.last_seq)
 
 
 @dataclass

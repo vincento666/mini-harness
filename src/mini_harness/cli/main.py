@@ -9,6 +9,7 @@ import json
 import os
 import signal
 import sys
+import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,6 +18,7 @@ from typing import NoReturn
 
 from mini_harness.cli.host import DEFAULT_HOST_PORT, host_main
 from mini_harness.cli.serve import DEFAULT_HOST, DEFAULT_PORT, SERVE_HOSTS, BindFailure, ServeServer
+from mini_harness.commands import COMMANDS, execute_command
 from mini_harness.events import EventLog, EventRecord, LogReadFailure, read_events
 from mini_harness.events.fold import assembled_payload, assembly_points, fold
 from mini_harness.loop import (
@@ -530,6 +532,27 @@ def _print_shadow_feedback(log: EventLog, through: int) -> tuple[int, LogReadFai
     return latest, None
 
 
+def _run_chat_command(prepared: Prepared, text: str) -> None:
+    """提示符上的一条斜杠命令：落两件套事件、打印结果，不开段。"""
+    name, _, arguments = text[1:].partition(" ")
+    if name == "help":
+        listing = " / ".join(f"/{command.name}" for command in COMMANDS)
+        print(f"命令：{listing}")
+        return
+    outcome = execute_command(name, arguments, prepared.settings.skills)
+    if outcome is None:
+        print(f"未知命令：/{name}", file=sys.stderr)
+        return
+    command_id = uuid.uuid4().hex
+    prepared.log.append(
+        "command/run", {"command_id": command_id, "name": name, "raw_input": text}
+    )
+    prepared.log.append(
+        "command/done", {"command_id": command_id, "ok": outcome.ok, "text": outcome.text}
+    )
+    print(outcome.text)
+
+
 async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
     """读一行、开一个段、回到提示符；EOF 或提示符上的 Ctrl-C 收尾整个会话。
 
@@ -596,6 +619,10 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
                 text = line.strip()
                 if not text:
                     # 空白输入不写记录，也不开段。
+                    continue
+                if text.startswith("/"):
+                    # 斜杠命令是人机直连的 UI 动作：不写 user/message、不开段（M14）。
+                    _run_chat_command(prepared, text)
                     continue
                 segments += 1
                 cancel = asyncio.Event()

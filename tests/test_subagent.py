@@ -580,3 +580,29 @@ async def test_the_tools_argument_is_gone(tmp_path: Path) -> None:
     )
     assert outcome.result.outcome == "TOOL_ARGS_INVALID"
 
+
+async def test_the_child_header_carries_the_preset_persona(tmp_path: Path) -> None:
+    """preset 的 persona 进子 session/start.payload 与受保护头部（M14）。"""
+    reviewer = ToolRegistry([d for d in file_tool_definitions() if d.name == "read"])
+    presets = SubagentPresets(
+        default="reviewer",
+        allowed=(),
+        registries={"reviewer": reviewer},
+        personas={"reviewer": "你是一位严格的评审者，回答必须先指出风险。"},
+    )
+    registry = ToolRegistry([*file_tool_definitions(), *subagent_tool_definitions(presets)])
+    entries = [
+        tool_call_entry("subagent", "c1", task="看 a.md"),
+        {"content": "看完了", "finish_reason": "stop"},
+        DONE,
+    ]
+
+    _, outcome = await run_fixture_session(
+        tmp_path, "s-parent", entries, registry=registry, prompt="父任务"
+    )
+
+    assert outcome.stop_reason == "MODEL_COMPLETED"
+    child = read_events(_child_paths(tmp_path)[0])
+    assert child[0].payload["preset_persona"] == "你是一位严格的评审者，回答必须先指出风险。"
+    assembled = next(record for record in child if record.type == "context/assembled")
+    assert "严格的评审者" in assembled.payload["messages"][0]["content"]

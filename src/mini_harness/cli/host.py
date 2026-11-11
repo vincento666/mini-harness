@@ -22,6 +22,7 @@ from typing import Any
 from aiohttp import web
 
 from mini_harness.cli.serve import SERVE_HOSTS, sse_frame
+from mini_harness.commands import COMMANDS
 from mini_harness.events import LogReadFailure, read_events
 from mini_harness.events.fold import fold
 from mini_harness.session.assembly import (
@@ -37,6 +38,7 @@ from mini_harness.session.host import (
     create_session,
     resolve_approval,
     resume_session,
+    run_command,
     shutdown,
     submit_message,
 )
@@ -48,6 +50,7 @@ PROTOCOL_VERSION = 1
 
 HEALTH_PATH = "/health"
 SESSIONS_PATH = "/sessions"
+COMMANDS_PATH = "/commands"
 SESSION_ID_PATTERN = r"[0-9a-f]{32}"
 _SESSION_PATH = re.compile(r"^/sessions/([^/]+)")
 _CURSOR_DIGITS = re.compile(r"[0-9]+")
@@ -146,9 +149,11 @@ class HostServer:
         router = self._application.router
         router.add_get(HEALTH_PATH, self._health)
         router.add_get(SESSIONS_PATH, self._list_sessions)
+        router.add_get(COMMANDS_PATH, self._list_commands)
         router.add_post(SESSIONS_PATH, self._create_session)
         router.add_get(f"{SESSIONS_PATH}/{{session_id}}", self._get_session)
         router.add_post(f"{SESSIONS_PATH}/{{session_id}}/messages", self._post_message)
+        router.add_post(f"{SESSIONS_PATH}/{{session_id}}/commands", self._post_command)
         router.add_post(f"{SESSIONS_PATH}/{{session_id}}/cancel", self._cancel_session)
         router.add_post(f"{SESSIONS_PATH}/{{session_id}}/resume", self._resume_session)
         router.add_delete(f"{SESSIONS_PATH}/{{session_id}}", self._delete_session)
@@ -225,6 +230,36 @@ class HostServer:
             return _error(404, "SESSION_NOT_FOUND", f"没有会话 {session_id}")
         # 子会话只登记在索引里（M12）：它是已结束的一条只读视图。
         return web.json_response(indexed)
+
+    async def _list_commands(self, request: web.Request) -> web.Response:
+        return web.json_response(
+            {
+                "commands": [
+                    {"name": command.name, "description": command.description}
+                    for command in COMMANDS
+                ]
+            }
+        )
+
+    async def _post_command(self, request: web.Request) -> web.Response:
+        session_id = request.match_info["session_id"]
+        handle = self._state.sessions.get(session_id)
+        if handle is None:
+            return _error(404, "SESSION_NOT_FOUND", f"没有会话 {session_id}")
+        try:
+            body = await request.json()
+        except (ValueError, TypeError, web.HTTPBadRequest):
+            return _error(400, "INVALID_ARGUMENT", "请求体必须是 JSON 对象")
+        name = body.get("name") if isinstance(body, dict) else None
+        arguments = body.get("arguments", "") if isinstance(body, dict) else ""
+        if not isinstance(name, str) or not isinstance(arguments, str):
+            return _error(400, "INVALID_ARGUMENT", "name 与 arguments 必须是字符串")
+        response = run_command(handle, name, arguments)
+        if isinstance(response, Failure):
+            return _failure_response(response)
+        return web.json_response(
+            {"ok": response.ok, "output": response.text, "cursor": response.cursor}
+        )
 
     async def _post_message(self, request: web.Request) -> web.Response:
         session_id = request.match_info["session_id"]

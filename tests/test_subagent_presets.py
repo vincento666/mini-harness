@@ -55,6 +55,15 @@ def test_a_preset_may_include_the_subagent_tool() -> None:
     assert isinstance(registry, ToolRegistry)
 
 
+def test_a_preset_persona_is_accepted() -> None:
+    registry = build_registry(
+        None,
+        {"preset": "reviewer", "presets": {"reviewer": {"tools": ["read"], "persona": "严格"}}},
+    )
+
+    assert isinstance(registry, ToolRegistry)
+
+
 def test_an_empty_subagent_section_is_legal() -> None:
     assert isinstance(build_registry(None, {}), ToolRegistry)
 
@@ -68,7 +77,7 @@ def test_invalid_subagent_configs_are_failures() -> None:
         ({"preset": ["reader"]}, "CONFIG_INVALID_VALUE"),
         ({"presets": "reader"}, "CONFIG_INVALID_VALUE"),
         ({"presets": {"reader": {"tools": ["web_search"]}}}, "UNKNOWN_TOOL_NAME"),
-        ({"presets": {"reader": {"persona": "x"}}}, "CONFIG_UNKNOWN_KEY"),
+        ({"presets": {"reader": {"persona": 1}}}, "CONFIG_INVALID_VALUE"),
         ({"presets": {"reader": {"tools": "read"}}}, "CONFIG_INVALID_VALUE"),
         ({"presets": {"": {"tools": []}}}, "CONFIG_INVALID_VALUE"),
         (

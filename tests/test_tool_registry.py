@@ -241,7 +241,7 @@ async def test_invalid_arguments_are_caught_before_the_fence_is_consulted(tmp_pa
     assert outcome.fence_code is None
 
 
-_BUILTIN_TOOLS = ["read", "write", "edit", "glob", "grep", "bash", "subagent"]
+_BUILTIN_TOOLS = ["read", "write", "edit", "glob", "grep", "bash", "subagent", "skill"]
 
 
 def test_the_builtin_registry_has_its_definitions_in_order() -> None:
