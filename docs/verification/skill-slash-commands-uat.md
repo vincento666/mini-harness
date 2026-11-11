@@ -33,7 +33,7 @@ uv run minihns chat --provider deepseek --workspace /tmp/m14b-uat --yes
 > /help
 ```
 
-看：`/tdd` 打印「第一条：先写红判据。」；`/help` 列出 `/skills`、`/skill`、`/tdd`、`/skills`（技能）——**同名的那条仍列在内置清单之后**，但 `/skills` 命中内置。
+看：`/tdd` 打印「第一条：先写红判据。」；`/help` 列出 `/skills`、`/skill`、`/tdd`——**叫 `skills` 的技能不出现在清单里**（内置名优先），但它仍可用 `/skill skills` 调到。
 
 核对：
 
