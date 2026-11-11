@@ -4,7 +4,7 @@
 
 ### Requirement: 事件类型只取自当前事件词表
 
-系统 SHALL 只发出当前词表中的事件类型：`session/start`、`session/end`、`segment/start`、`segment/end`、`turn/start`、`turn/end`、`context/assembled`、`model/request`、`model/retry`、`model/response`、`user/message`、`tool/call`、`tool/result`、`tool/cancelled`、`approval/request`、`approval/response`、`compaction/summary`、`command/invoked`、`error/*`。`error/*` 用到的具体类型是 `error/model`、`error/internal`、`error/abort`、`error/fence`、`error/context`。词表外的事实 MUST NOT 通过临时新造类型表达。
+系统 SHALL 只发出当前词表中的事件类型：`session/start`、`session/end`、`segment/start`、`segment/end`、`turn/start`、`turn/end`、`context/assembled`、`model/request`、`model/retry`、`model/response`、`user/message`、`tool/call`、`tool/result`、`tool/cancelled`、`approval/request`、`approval/response`、`compaction/summary`、`command/run`、`command/done`、`error/*`。`error/*` 用到的具体类型是 `error/model`、`error/internal`、`error/abort`、`error/fence`、`error/context`。词表外的事实 MUST NOT 通过临时新造类型表达。
 
 #### Scenario: 一次带审批的写的事件序列
 
@@ -46,7 +46,12 @@
 - **WHEN** 一次 chat 里人提交一条非空输入
 - **THEN** 日志里恰有一条 `user/message`，payload 含 `segment_id` 与 `content`，它不被记为 `unrecognized_type`
 
-#### Scenario: 一次命令一条 command/invoked
+#### Scenario: 一次命令一对 command/run 与 command/done
 
 - **WHEN** 客户端执行一次 `skills` 或 `skill` 命令
-- **THEN** 日志里有一条 `command/invoked`，payload 含 `name`、`arguments` 与 `ok`，它不被记为 `unrecognized_type`
+- **THEN** 日志里有 `command/run`（含 `command_id`、`name`、`raw_input`）与配对的 `command/done`（含 `command_id`、`ok`），它们不被记为 `unrecognized_type`
+
+#### Scenario: 未知命令不产生记录
+
+- **WHEN** 一次输入是未知的斜杠命令
+- **THEN** 日志里没有任何 `command/*` 记录

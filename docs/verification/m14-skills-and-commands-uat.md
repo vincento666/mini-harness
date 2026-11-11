@@ -34,7 +34,7 @@ uv run minihns chat --provider deepseek --workspace /tmp/m14-uat --yes
 > 按 tdd 技能的步骤，说明你会怎么改一个函数
 ```
 
-看：`/skills` 列出 `tdd`（名字 + 描述），不开新段；`/skill tdd` 之后屏幕上出现正文，随后是一个新段；模型回答遵循「先写红判据」的步骤。
+看：`/skills` 列出 `tdd`（名字 + 描述）、不开新段；`/skill tdd` 打印正文、也不开新段；随后那句「按 tdd 技能的步骤…」是一个新段，模型会自己调 `skill` 工具拿到正文，回答遵循「先写红判据」的步骤。
 
 ### S2 · 同名技能高优先级
 
@@ -66,7 +66,7 @@ curl -H "Authorization: Bearer $TOKEN" -X POST \
   http://127.0.0.1:19410/sessions/<id>/commands
 ```
 
-看：`GET /commands` 与 `/skills` 同一份清单；`POST` 返回 202 且日志里是 `command/invoked` + 一条带正文的 `user/message`。
+看：`GET /commands` 与 `/skills` 同一份清单；`POST` 返回 200 与正文，日志里是 `command/run` + `command/done`，没有 `user/message`、没有新段。
 
 ### S4 · preset persona
 

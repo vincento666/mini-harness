@@ -15,8 +15,8 @@
 
 ## 3. 命令面（seam ⑥）
 
-- [ ] 3.1 seam ⑥：`test_chat_lists_skills`——`/skills` 打印清单并写一条 `command/invoked`，不开段
-- [ ] 3.2 seam ⑥：`test_chat_loads_a_skill`——`/skill x` 写 `command/invoked` + `user/message` 并开一个段
+- [ ] 3.1 seam ⑥：`test_chat_lists_skills`——`/skills` 打印清单并写 `command/run` + `command/done`，不开段
+- [ ] 3.2 seam ⑥：`test_chat_loads_a_skill`——`/skill x` 打印正文、落两件套事件，不写 `user/message`、不开段
 - [ ] 3.3 seam ⑥：`test_host_commands_match_the_cli`——`GET /commands` 与 `/skills` 同一份清单；`POST /commands` 与 `/skill` 同一份正文、同一条事件
 - [ ] 3.4 seam ⑥：`test_an_unknown_command_is_rejected`——未知命令 400 / 本地提示，不落日志
 
