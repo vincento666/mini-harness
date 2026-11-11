@@ -2,7 +2,7 @@
 
 个人实验版 agent harness 的 MVP。headless CLI 优先，架构决策照抄 DeepSeek Harness（DSH）的核心思想，用 OpenSpec 做规格（SDD）、用 TDD 做实现。
 
-**当前状态与门禁实测**见 `docs/CURRENT.md`；**里程碑与完成判据**见 `docs/roadmap.md`。`openspec-verify-change` 未装，规格 ↔ 实现的一致性由 `code-review` 技能（Standards / Spec 两轴）代劳。
+**当前状态与门禁实测**见 `docs/CURRENT.md`；**里程碑与完成判据**见 `docs/roadmap.md`。`openspec-verify-change` 未装。**任何新 proposal / change 落盘前先调研并对齐 DSH 的对应实现**——写清形状（数据与接口）、机制（谁在何时做什么）、语义（默认值、边界、错误）三层的对齐结论，再写规格；`code-review` 两轴只查**实现**是否符合规格。
 
 ---
 
