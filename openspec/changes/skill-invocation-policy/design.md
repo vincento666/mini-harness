@@ -14,6 +14,12 @@
 
 **D6 `description` 改为必填。** 与 DSH 的 filesystem provider 一致：`name` 与 `description` 必填，缺失/空即 malformed；无 frontmatter 的扁平文件不再是技能。这条会改变现有「无 frontmatter 的 flat.md 也能被发现」的行为，测试跟着改。
 
+**D7 发现完整性照 DSH 的 `complete`。** `discover_skills` 返回 `SkillDiscovery(skills, complete)`；只有「根目录本身读不了」才把 `complete` 置 false，单个文件坏掉仍按 malformed 跳过。`complete=false` 时 payload 写 `skills_incomplete: true`，头部在技能块后加一行「有一些技能目录没能检查到，只列确认的」；下一次装配重新发现。不引入「last-good 目录」——mini 的发现是装配期快照，没有会话内重读。
+
+**D8 preset 层用目录根表达。** DSH 的层来自 preset 挂载的 provider；mini 用 `[subagent.presets.<id>].skill_dirs` 表达同一件事。合并规则：先用全局四根建表，再按 `skill_dirs` 顺序扫入 preset 层，**同名直接覆盖**（层优先于 rank）；层内按目录顺序、同目录按名字。根会话没有 preset 层，子会话的 `settings.skills` 是合并后的视图。
+
+**D9 `skill_dirs` 在装配期校验。** 每个 preset 的 `skill_dirs` 必须是字符串数组；路径在 spawn 时相对 `settings.workspace` 解析（绝对路径原样）。目录不存在不是配置错误（发现时跳过并计入「不完整」）。
+
 ## Risks
 
 - **策略位写反**（`disable-model-invocation: false` 被当成禁用）会让技能从模型目录消失；判据要覆盖默认值与四种组合。
