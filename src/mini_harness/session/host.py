@@ -35,6 +35,7 @@ from mini_harness.session.assembly import (
     Failure,
     assemble,
 )
+from mini_harness.skills import Skill, skill_content
 from mini_harness.tools.fences import ApprovalDecision
 
 # 同时在跑的会话上限（H1 spec：默认 4）。
@@ -346,6 +347,24 @@ class MessageAccepted:
 
     segment_id: str | None
     queued: bool
+
+
+def expand_skill_command(
+    handle: HostSession, skill: Skill, instruction: str
+) -> MessageAccepted | Failure:
+    """技能命令 + 指令：写两件套，再把正文与指令作为一条消息投递（空闲起段、忙时排队）。"""
+    if handle.status == SESSION_ENDED:
+        return Failure("SESSION_NOT_FOUND", "会话已经结束", EXIT_INVALID_ARGUMENT)
+    command_id = uuid.uuid4().hex
+    handle.log.append(
+        "command/run",
+        {"command_id": command_id, "name": skill.name, "raw_input": f"/{skill.name} {instruction}"},
+    )
+    handle.log.append(
+        "command/done",
+        {"command_id": command_id, "ok": True, "text": f"已加载技能 {skill.name}"},
+    )
+    return submit_message(handle, skill_content(skill, instruction))
 
 
 def submit_message(handle: HostSession, content: str) -> MessageAccepted | Failure:

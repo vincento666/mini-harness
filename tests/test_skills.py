@@ -18,6 +18,7 @@ from mini_harness.skills import (
     catalog_text,
     discover_skills,
     read_skill_body,
+    skill_content,
 )
 from paths import HELLO_SCENARIO
 from tool_harness import dispatch_call
@@ -387,3 +388,39 @@ def test_progressive_disclosure_end_to_end(tmp_path: Path) -> None:
         if record["type"] == "model/response" and record["payload"].get("purpose") is None
     ]
     assert "按技能做完了" in replies[-1]
+
+
+def test_skill_content_renders_the_instruction(tmp_path: Path) -> None:
+    skill = Skill(name="tdd", description="", rank=100, path=tmp_path / "tdd.md")
+    skill.path.write_text("---\nname: tdd\n---\n\n正文\n", encoding="utf-8")
+
+    rendered = skill_content(skill, "帮我改个函数")
+
+    assert "<skill_content" in rendered
+    assert "正文" in rendered
+    assert rendered.endswith("帮我改个函数")
+
+
+def test_chat_skill_command_with_an_instruction_opens_a_segment(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    _skill(workspace / ".minihns" / "skills", "tdd", body="第一步：写红判据")
+
+    result = _cli(
+        "chat",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        cwd=workspace,
+        stdin_text="/tdd 帮我改个函数\n",
+    )
+
+    assert result.returncode == 0, result.stderr
+    records = _chat_log(workspace)
+    types = [record["type"] for record in records]
+    assert types.count("command/run") == 1
+    assert types.count("command/done") == 1
+    assert "segment/start" in types
+    user = next(record["payload"] for record in records if record["type"] == "user/message")
+    assert "第一步：写红判据" in user["content"]
+    assert "帮我改个函数" in user["content"]

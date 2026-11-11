@@ -63,6 +63,7 @@
 | CLI `chat` | `/skills` | 列清单（名字、描述、rank），不开段 |
 | CLI `chat` | `/skill <name>` | 打印正文，不开段；模型要用技能走 `skill` 工具 |
 | CLI `chat` | `/<技能名>` | 与 `/skill <技能名>` 等价；内置命令同名时内置优先 |
+| CLI `chat` | `/<技能名> <指令>` | 技能正文 + 指令拼成一条 `user/message` 并开段；host 同义（202，忙时排队） |
 | CLI `chat` | `/help` | 列可用命令（壳本地，不落日志） |
 | host | `GET /commands` | 列清单（与 `/skills` 同源） |
 | host | `POST /sessions/{id}/commands` | 执行 `{name, args}`，返回 200 + `{output, cursor}`，不开段 |

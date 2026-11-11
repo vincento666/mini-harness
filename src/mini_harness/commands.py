@@ -41,6 +41,13 @@ def command_catalog(skills: Sequence[Skill]) -> list[CommandSpec]:
     return catalog
 
 
+def direct_skill(name: str, skills: Sequence[Skill]) -> Skill | None:
+    """`/<技能名>` 命中的技能；内置命令名优先，返回 None。"""
+    if name in RESERVED:
+        return None
+    return next((candidate for candidate in skills if candidate.name == name), None)
+
+
 @dataclass(frozen=True)
 class CommandOutcome:
     """handler 的结果：成功与否 + 给 UI 的文本。"""

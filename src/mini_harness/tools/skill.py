@@ -9,7 +9,7 @@ from collections.abc import Sequence
 
 from pydantic import Field
 
-from mini_harness.skills import Skill, read_skill_body
+from mini_harness.skills import Skill, skill_content
 from mini_harness.tools.fences import DispatchContext
 from mini_harness.tools.registry import ToolArgs, ToolDefinition, ToolResult
 
@@ -27,13 +27,7 @@ def skill_tool_definitions(skills: Sequence[Skill]) -> list[ToolDefinition]:
         skill = next((candidate for candidate in skills if candidate.name == args.name), None)
         if skill is None:
             return ToolResult("TOOL_ARGS_INVALID", f"未知技能：{args.name}")
-        content = (
-            f'<skill_content name="{skill.name}">\n'
-            f"<skill_resources>\n- {skill.path}\n</skill_resources>\n"
-            f"<skill_instructions>\n{read_skill_body(skill)}\n</skill_instructions>\n"
-            f"</skill_content>"
-        )
-        return ToolResult("OK", content)
+        return ToolResult("OK", skill_content(skill))
 
     return [
         ToolDefinition(

@@ -18,7 +18,7 @@ from typing import NoReturn
 
 from mini_harness.cli.host import DEFAULT_HOST_PORT, host_main
 from mini_harness.cli.serve import DEFAULT_HOST, DEFAULT_PORT, SERVE_HOSTS, BindFailure, ServeServer
-from mini_harness.commands import command_catalog, execute_command
+from mini_harness.commands import command_catalog, direct_skill, execute_command
 from mini_harness.events import EventLog, EventRecord, LogReadFailure, read_events
 from mini_harness.events.fold import assembled_payload, assembly_points, fold
 from mini_harness.loop import (
@@ -60,6 +60,7 @@ from mini_harness.session.assembly import (
     assemble,
     request_from_args,
 )
+from mini_harness.skills import skill_content
 from mini_harness.tools import ToolRegistry
 
 EXIT_OK = 0
@@ -532,18 +533,29 @@ def _print_shadow_feedback(log: EventLog, through: int) -> tuple[int, LogReadFai
     return latest, None
 
 
-def _run_chat_command(prepared: Prepared, text: str) -> None:
-    """提示符上的一条斜杠命令：落两件套事件、打印结果，不开段。"""
+def _run_chat_command(prepared: Prepared, text: str) -> str | None:
+    """一条斜杠命令；返回非 None 表示它展开成了一条要开段的用户消息。"""
     name, _, arguments = text[1:].partition(" ")
     if name == "help":
         catalog = command_catalog(prepared.settings.skills)
         listing = " / ".join(f"/{command.name}" for command in catalog)
         print(f"命令：{listing}")
-        return
+        return None
+    skill = direct_skill(name, prepared.settings.skills)
+    if skill is not None and arguments.strip():
+        command_id = uuid.uuid4().hex
+        prepared.log.append(
+            "command/run", {"command_id": command_id, "name": name, "raw_input": text}
+        )
+        prepared.log.append(
+            "command/done",
+            {"command_id": command_id, "ok": True, "text": f"已加载技能 {name}"},
+        )
+        return skill_content(skill, arguments.strip())
     outcome = execute_command(name, arguments, prepared.settings.skills)
     if outcome is None:
         print(f"未知命令：/{name}", file=sys.stderr)
-        return
+        return None
     command_id = uuid.uuid4().hex
     prepared.log.append(
         "command/run", {"command_id": command_id, "name": name, "raw_input": text}
@@ -552,6 +564,7 @@ def _run_chat_command(prepared: Prepared, text: str) -> None:
         "command/done", {"command_id": command_id, "ok": outcome.ok, "text": outcome.text}
     )
     print(outcome.text)
+    return None
 
 
 async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
@@ -622,9 +635,11 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
                     # 空白输入不写记录，也不开段。
                     continue
                 if text.startswith("/"):
-                    # 斜杠命令是人机直连的 UI 动作：不写 user/message、不开段（M14）。
-                    _run_chat_command(prepared, text)
-                    continue
+                    # 命令本身不写 user/message；`/<技能名> 指令` 会展开成一条消息再开段。
+                    expanded = _run_chat_command(prepared, text)
+                    if expanded is None:
+                        continue
+                    text = expanded
                 segments += 1
                 cancel = asyncio.Event()
                 signals.active = cancel

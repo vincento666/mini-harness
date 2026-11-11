@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import time
 from pathlib import Path
 
 import httpx
@@ -12,9 +14,11 @@ from test_cli_host import (
     _free_port,
     _headers,
     _mock_fixture,
+    _slow_fixture,
     _start_host,
     _stop,
     _wait_for_health,
+    _wait_for_log,
 )
 
 
@@ -73,6 +77,28 @@ def test_host_commands_match_the_cli_and_do_not_open_a_segment(tmp_path: Path) -
             assert direct.status_code == 200, direct.text
             assert "第一步：写红判据" in direct.json()["output"]
 
+            expanded = client.post(
+                f"/sessions/{session_id}/commands",
+                headers=_headers(),
+                json={"name": "tdd", "arguments": "帮我改个函数"},
+            )
+            assert expanded.status_code == 202, expanded.text
+            assert expanded.json()["queued"] is False
+            log = session_dir / f"{session_id}.jsonl"
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
+                if '"user/message"' in log.read_text(encoding="utf-8"):
+                    break
+                time.sleep(0.05)
+            text = log.read_text(encoding="utf-8")
+            user = next(
+                record["payload"]
+                for record in map(json.loads, text.splitlines())
+                if record["type"] == "user/message"
+            )
+            assert "第一步：写红判据" in user["content"]
+            assert "帮我改个函数" in user["content"]
+
             unknown = client.post(
                 f"/sessions/{session_id}/commands",
                 headers=_headers(),
@@ -90,8 +116,46 @@ def test_host_commands_match_the_cli_and_do_not_open_a_segment(tmp_path: Path) -
 
             log = session_dir / f"{session_id}.jsonl"
             text = log.read_text(encoding="utf-8")
-            assert text.count('"command/run"') == 4
-            assert text.count('"command/done"') == 4
-            assert '"segment/start"' not in text
+            assert text.count('"command/run"') == 5
+            assert text.count('"command/done"') == 5
+            # 只有带指令的那条技能命令展开成一个段；其余命令都不开段。
+            assert text.count('"segment/start"') == 1
+    finally:
+        _stop(process)
+
+
+def test_a_skill_command_with_instruction_queues_while_running(tmp_path: Path) -> None:
+    """带指令的技能命令走消息同一条队列：段进行中投递是 202 + queued=true。"""
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    _write_skill(workspace)
+    fixture = _slow_fixture(workspace, tmp_path)
+    port = _free_port()
+    process = _start_host(
+        tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir), "--allow-auto-approval"
+    )
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(
+                client, workspace, fixture, provider="mock", approval="auto"
+            )
+            client.post(
+                f"/sessions/{session_id}/messages",
+                headers=_headers(),
+                json={"content": "第一句"},
+            )
+            log = session_dir / f"{session_id}.jsonl"
+            _wait_for_log(log, '"tool/call"')
+
+            queued = client.post(
+                f"/sessions/{session_id}/commands",
+                headers=_headers(),
+                json={"name": "tdd", "arguments": "帮我改个函数"},
+            )
+            assert queued.status_code == 202, queued.text
+            assert queued.json()["queued"] is True
     finally:
         _stop(process)
