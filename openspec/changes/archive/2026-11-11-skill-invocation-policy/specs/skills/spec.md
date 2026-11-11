@@ -84,7 +84,7 @@ CLI `chat` SHALL 提供 `/skills`、`/skill <name>`、`/help` 与 `/<技能名>`
 
 命令是人机直连的 UI 动作，MUST NOT 自己创建模型消息。命令调用 SHALL 落 `command/run`（handler 之前，`{command_id, name, raw_input}`）与 `command/done`（结算之后，`{command_id, ok, text?}`）两条只进日志的事件；语法错误或未知命令的 admission miss MUST NOT 落任何日志。`/help` 是壳本地的帮助，不落日志。
 
-`/<技能名>`（无指令）SHALL 打印正文、不开段；`/<技能名> <指令>` SHALL 把技能正文（XML 三段）与指令拼成一条 `user/message` 并开一个段——展开消息由命令的结果触发，命令本身仍只落两件套。host 的 `POST /sessions/{id}/commands {name:"<技能名>", arguments:"<指令>"}` SHALL 返回 202 与 `{queued, segment_id, cursor}`（空闲起段、忙时排队），与消息投递同一条队列。
+`/<技能名>`（无指令）SHALL 把技能正文（XML 三段）与一句默认指令（「用户调用了技能 X，请按技能执行」）拼成一条 `user/message` 并开一个段；`/<技能名> <指令>` SHALL 用指令替换默认句。`/skill <名字>` 是**查看路径**：打印正文、不开段。展开消息由命令的结果触发，命令本身仍只落两件套。host 的 `POST /sessions/{id}/commands {name:"<技能名>", arguments:"<指令>"}` SHALL 返回 202 与 `{queued, segment_id, cursor}`（空闲起段、忙时排队），与消息投递同一条队列。
 
 #### Scenario: 两个入口同一份清单
 
@@ -101,9 +101,14 @@ CLI `chat` SHALL 提供 `/skills`、`/skill <name>`、`/help` 与 `/<技能名>`
 - **WHEN** 一个技能写 `user-invocable: false`
 - **THEN** `/skills` 不列它；`/skill <名字>` 返回 `ok=false`
 
-#### Scenario: 不带指令只查看
+#### Scenario: 不带指令也执行
 
 - **WHEN** CLI 执行 `/tdd`
+- **THEN** 日志里两件套事件、一条含技能正文的 `user/message`，随后 `segment/start`（模型按技能执行）
+
+#### Scenario: 查看用 /skill
+
+- **WHEN** CLI 执行 `/skill tdd`
 - **THEN** 屏幕打印正文，日志里两件套事件，没有 `segment/start`
 
 #### Scenario: 带指令展开成消息

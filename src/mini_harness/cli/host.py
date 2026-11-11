@@ -264,7 +264,7 @@ class HostServer:
         if not isinstance(name, str) or not isinstance(arguments, str):
             return _error(400, "INVALID_ARGUMENT", "name 与 arguments 必须是字符串")
         skill = direct_skill(name, handle.settings.skills)
-        if skill is not None and arguments.strip():
+        if skill is not None:
             accepted = expand_skill_command(handle, skill, arguments)
             if isinstance(accepted, Failure):
                 return _failure_response(accepted)

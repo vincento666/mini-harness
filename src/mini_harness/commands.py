@@ -91,12 +91,5 @@ def execute_command(
         if not skill.user_invocable:
             return CommandOutcome(False, f"技能 {target} 不可由用户调用")
         return CommandOutcome(True, read_skill_body(skill))
-    if name in RESERVED:
-        # `help` 是壳本地的帮助，不在这里执行。
-        return None
-    direct = next((candidate for candidate in skills if candidate.name == name), None)
-    if direct is None:
-        return None
-    if arguments.strip():
-        return CommandOutcome(False, f"用法：/{name}")
-    return CommandOutcome(True, read_skill_body(direct))
+    # 直接技能名由壳走「注入 + 开段」的执行路径；这里只处理 /skills 与 /skill。
+    return None

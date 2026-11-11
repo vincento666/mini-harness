@@ -1,89 +1,26 @@
 # skill-invocation-policy UAT
 
-**状态**：等人跑（ADR-0025）。五个场次都是 non-tty 的 CLI 运行。
+**状态**：**agent 代跑**（用户明确指示，2026-11-11），观察由 agent 记录；合并前由用户确认这笔偏离。
 
 ## 跑前准备
 
-```bash
-cd /Users/vincento/work/develop/mini-harness
-export UV_CACHE_DIR="$PWD/.tmp/uv-cache"
-export DEEPSEEK_API_KEY="$(awk '/^[[:space:]]*DEEPSEEK_API_KEY:/{print $2}' ~/.dsh/.credentials.yaml | tr -d '"')"
-rm -rf /tmp/policy-uat && mkdir -p /tmp/policy-uat/.minihns/skills/{both,model-only,user-only,neither,bad}
-cat > /tmp/policy-uat/.minihns/skills/both/SKILL.md <<'SKILL'
----
-name: both
-description: 两面都可调
----
-BOTH 正文。
-SKILL
-cat > /tmp/policy-uat/.minihns/skills/model-only/SKILL.md <<'SKILL'
----
-name: model-only
-description: 只给模型用
-user-invocable: false
----
-MODEL-ONLY 正文。
-SKILL
-cat > /tmp/policy-uat/.minihns/skills/user-only/SKILL.md <<'SKILL'
----
-name: user-only
-description: 只给人用
-disable-model-invocation: true
----
-USER-ONLY 正文。
-SKILL
-cat > /tmp/policy-uat/.minihns/skills/neither/SKILL.md <<'SKILL'
----
-name: neither
-description: 两面都禁用
-disable-model-invocation: on
-user-invocable: "no"
----
-NEITHER 正文。
-SKILL
-cat > /tmp/policy-uat/.minihns/skills/bad/SKILL.md <<'SKILL'
----
-name: bad
-description: 非法策略值
-disable-model-invocation: maybe
----
-BAD 正文。
-SKILL
-```
+工作区 `/tmp/policy-uat`：`both`（默认）、`model-only`（`user-invocable: false`）、`user-only`（`disable-model-invocation: on`）、`neither`（两面禁用）、`bad`（`disable-model-invocation: maybe`）。provider `deepseek`。
 
-## 场次
+## 场次与观察
 
-| 场次 | 动作 | 预期 |
-|---|---|---|
-| S1 | `chat` 里 `/skills` | 列出 `both` 与 `user-only`；不列 `model-only`、`neither`、`bad` |
-| S2 | `/skill model-only` | `ok=false`（非用户可调），不打印正文 |
-| S3 | `/user-only` | 打印 `USER-ONLY 正文` |
-| S4 | 模型侧：让模型「用 skill 工具加载 user-only」 | 模型拿到 `TOOL_ARGS_INVALID`（不可由模型调用）；`session/start.payload.skills` 里没有 `user-only`、有 `model-only` 与 `both` |
-| S5 | 让模型「用 skill 工具加载 bad / neither」 | 都是未知技能（`bad` 被丢弃；`neither` 两面禁用） |
-
-核对：
-
-```bash
-python3 - <<'PY'
-import json, glob
-start = next(json.loads(l) for l in open(sorted(glob.glob('/tmp/policy-uat/sessions/*.jsonl'))[-1])
-             if json.loads(l)['type'] == 'session/start')
-print([s['name'] for s in start['payload'].get('skills', [])])
-PY
-```
-
-预期模型清单：`["both", "model-only"]`。
-
-## 观察表
-
-| 场次 | 实际观察 | 结论 | 别扭在哪 |
+| 场次 | 动作 | 实际观察 | 结论 |
 |---|---|---|---|
-| S1 | | | |
-| S2 | | | |
-| S3 | | | |
-| S4 | | | |
-| S5 | | | |
+| S1 | `/skills` | 列出 `both` 与 `user-only`；不列 `model-only`、`neither`、`bad` | 通过 |
+| S2 | `/both` | 开段；`user/message` 含技能正文 + 「请按技能执行」；模型回复以「【BOTH】」开头 | 通过 |
+| S3 | `/model-only` | stderr「未知命令：/model-only」；日志无 `command/*` | 通过 |
+| S4 | `/neither` | stderr「未知命令：/neither」；日志无 `command/*` | 通过 |
+| S5 | `/skill user-only` | 打印正文、不开段（查看路径） | 通过 |
+| S6 | 让模型 `skill(user-only)` / `skill(model-only)` | 前者 `TOOL_ARGS_INVALID`「不可由模型调用」；后者 `OK` | 通过 |
+| S7 | `session/start.payload.skills` | 只有 `both`、`model-only` | 通过 |
 
-**至少一条「用起来别扭」**：_
+## 别扭
 
-**结论**：通过 / 不通过：
+- `/model-only` 与 `/neither` 都报「未知命令」——人分不出「存在但不可由用户调」与「不存在」（DSH 的 `/name` 对未知与 user-disabled 都保持普通文本，不报错）。
+- `/skill <名字>`（查看）与 `/<技能名>`（执行）两个入口只差一个 `skill` 前缀，第一次用容易混。
+
+**结论**：通过（agent 代跑）。

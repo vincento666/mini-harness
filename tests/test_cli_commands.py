@@ -19,6 +19,7 @@ from test_cli_host import (
     _stop,
     _wait_for_health,
     _wait_for_log,
+    _wait_until_idle,
 )
 
 
@@ -30,7 +31,7 @@ def _write_skill(workspace: Path) -> None:
     )
 
 
-def test_host_commands_match_the_cli_and_do_not_open_a_segment(tmp_path: Path) -> None:
+def test_host_commands_match_the_cli_and_open_a_segment_for_skills(tmp_path: Path) -> None:
     session_dir = tmp_path / "sessions"
     workspace = tmp_path / "workspace"
     _write_skill(workspace)
@@ -74,8 +75,9 @@ def test_host_commands_match_the_cli_and_do_not_open_a_segment(tmp_path: Path) -
                 headers=_headers(),
                 json={"name": "tdd"},
             )
-            assert direct.status_code == 200, direct.text
-            assert "第一步：写红判据" in direct.json()["output"]
+            assert direct.status_code == 202, direct.text
+            assert direct.json()["queued"] is False
+            _wait_until_idle(client, session_id)
 
             expanded = client.post(
                 f"/sessions/{session_id}/commands",
@@ -91,13 +93,14 @@ def test_host_commands_match_the_cli_and_do_not_open_a_segment(tmp_path: Path) -
                     break
                 time.sleep(0.05)
             text = log.read_text(encoding="utf-8")
-            user = next(
+            users = [
                 record["payload"]
                 for record in map(json.loads, text.splitlines())
                 if record["type"] == "user/message"
-            )
-            assert "第一步：写红判据" in user["content"]
-            assert "帮我改个函数" in user["content"]
+            ]
+            assert "第一步：写红判据" in users[0]["content"]
+            assert "请按技能执行" in users[0]["content"]
+            assert "帮我改个函数" in users[-1]["content"]
 
             unknown = client.post(
                 f"/sessions/{session_id}/commands",
@@ -118,8 +121,8 @@ def test_host_commands_match_the_cli_and_do_not_open_a_segment(tmp_path: Path) -
             text = log.read_text(encoding="utf-8")
             assert text.count('"command/run"') == 5
             assert text.count('"command/done"') == 5
-            # 只有带指令的那条技能命令展开成一个段；其余命令都不开段。
-            assert text.count('"segment/start"') == 1
+            # 两条技能命令各展开成一个段；其余命令都不开段。
+            assert text.count('"segment/start"') == 2
     finally:
         _stop(process)
 

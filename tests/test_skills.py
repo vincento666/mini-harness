@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from cli_blackbox import _cli
-from mini_harness.commands import command_catalog, execute_command
+from mini_harness.commands import command_catalog, direct_skill, execute_command
 from mini_harness.config import build_registry
 from mini_harness.events import EventRecord, read_events
 from mini_harness.events.fold import fold
@@ -278,19 +278,15 @@ def test_chat_rejects_an_unknown_command_without_logging(tmp_path: Path) -> None
     assert [record["type"] for record in records if record["type"].startswith("command/")] == []
 
 
-def test_execute_command_supports_a_direct_skill_name(tmp_path: Path) -> None:
+def test_direct_skill_only_returns_user_invocable(tmp_path: Path) -> None:
     root = tmp_path / "ws" / ".minihns" / "skills"
-    _skill(root, "tdd", body="第一步：写红判据")
+    _skill(root, "tdd")
+    _raw_skill(root, "model-only", "name: model-only\ndescription: d\nuser-invocable: false")
     skills = discover_skills(tmp_path / "ws", {}).skills
 
-    direct = execute_command("tdd", "", skills)
-    named = execute_command("skill", "tdd", skills)
-
-    assert direct is not None and direct.ok
-    assert named is not None and named.ok
-    assert direct.text == named.text
-    extra = execute_command("tdd", "多余参数", skills)
-    assert extra is not None and extra.ok is False
+    assert direct_skill("tdd", skills) is not None
+    assert direct_skill("model-only", skills) is None
+    assert execute_command("tdd", "", skills) is None
 
 
 def test_a_builtin_name_wins_over_a_skill(tmp_path: Path) -> None:
@@ -320,11 +316,13 @@ def test_chat_runs_a_skill_directly(tmp_path: Path) -> None:
     )
 
     assert result.returncode == 0, result.stderr
-    assert "第一步：写红判据" in result.stdout
     records = _chat_log(workspace)
-    run = next(record["payload"] for record in records if record["type"] == "command/run")
-    assert run["name"] == "tdd"
-    assert "segment/start" not in [record["type"] for record in records]
+    types = [record["type"] for record in records]
+    assert types.count("command/run") == 1
+    assert "segment/start" in types
+    user = next(record["payload"] for record in records if record["type"] == "user/message")
+    assert "第一步：写红判据" in user["content"]
+    assert "请按技能执行" in user["content"]
 
 
 def test_chat_help_lists_skill_commands(tmp_path: Path) -> None:

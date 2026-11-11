@@ -358,13 +358,18 @@ def expand_skill_command(
     command_id = uuid.uuid4().hex
     handle.log.append(
         "command/run",
-        {"command_id": command_id, "name": skill.name, "raw_input": f"/{skill.name} {instruction}"},
+        {
+            "command_id": command_id,
+            "name": skill.name,
+            "raw_input": f"/{skill.name} {instruction}".rstrip(),
+        },
     )
     handle.log.append(
         "command/done",
         {"command_id": command_id, "ok": True, "text": f"已加载技能 {skill.name}"},
     )
-    return submit_message(handle, skill_content(skill, instruction))
+    prompt = instruction.strip() or f"（用户调用了技能 {skill.name}，请按技能执行。）"
+    return submit_message(handle, skill_content(skill, prompt))
 
 
 def submit_message(handle: HostSession, content: str) -> MessageAccepted | Failure:
