@@ -825,17 +825,22 @@ def start_session(*, prompt: str, entry: SessionEntry, env: SessionEnv) -> Segme
         start_payload["delegated"] = True
         if settings.parent_tool_call_id is not None:
             start_payload["parent_tool_call_id"] = settings.parent_tool_call_id
-    if settings.skills:
-        # 技能清单（M14）：只有清单，正文按需由 `skill` 工具读；回放从这份快照折叠。
+    model_skills = [skill for skill in settings.skills if skill.model_invocable]
+    if model_skills:
+        # 模型面只列模型可调的技能（skill-invocation-policy）；正文不进 payload。
         start_payload["skills"] = [
             {
                 "name": skill.name,
                 "description": skill.description,
                 "rank": skill.rank,
                 "path": str(skill.path),
+                "model_invocable": skill.model_invocable,
+                "user_invocable": skill.user_invocable,
             }
-            for skill in settings.skills
+            for skill in model_skills
         ]
+    if not settings.skills_complete:
+        start_payload["skills_incomplete"] = True
     if settings.subagent_preset is not None:
         # 子会话用哪一档部署 preset（M14）：回放不依赖配置，审计与对照要它。
         start_payload["preset"] = settings.subagent_preset

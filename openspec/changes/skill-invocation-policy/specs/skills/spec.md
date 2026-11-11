@@ -6,7 +6,7 @@
 
 系统 SHALL 从四个根发现技能：项目内 `<workspace>/.minihns/skills/`（rank 100）、项目共享 `<workspace>/.agents/skills/`（rank 200）、用户级 `$MINIHNS_HOME/skills/`（默认 `~/.mini-harness/skills/`，rank 400）、内置 `src/mini_harness/builtin_skills/`（rank 600）。300（自定义目录）与 500（agents 家目录）不在本 change。
 
-一个技能 SHALL 是 `<dir>/SKILL.md` 或扁平的 `<name>.md`，MUST NOT 递归发现子目录；名字 SHALL 匹配 kebab-case（`^[a-z0-9]+(?:-[a-z0-9]+)*$`）。frontmatter SHALL 提供非空的 `name` 与 `description`，并 MAY 提供 `disable-model-invocation` 与 `user-invocable` 两个策略键（缺省都为允许）。策略键的取值 SHALL 接受大小写不敏感的 `true/false`、`yes/no`、`on/off`、`1/0`；其它拼写或非布尔值 SHALL 丢弃整个技能，MUST NOT 静默放行任何一面。名字不合规、frontmatter 缺失、描述为空或读不出的条目 SHALL 跳过，MUST NOT 让会话启动失败。描述进清单前 SHALL 截到 500 字符。同名技能 SHALL 只保留一个，rank 数字小者胜出；发现结果 SHALL 按名字排序，保证确定性。
+一个技能 SHALL 是 `<dir>/SKILL.md` 或扁平的 `<name>.md`，MUST NOT 递归发现子目录；名字 SHALL 匹配 kebab-case（`^[a-z0-9]+(?:-[a-z0-9]+)*$`）。frontmatter SHALL 提供非空的 `name` 与 `description`，并 MAY 提供 `disable-model-invocation` 与 `user-invocable` 两个策略键（缺省都为允许）。策略键的取值 SHALL 接受大小写不敏感的 `true/false`、`yes/no`、`on/off`、`1/0`；其它拼写或非布尔值 SHALL 丢弃整个技能，MUST NOT 静默放行任何一面。名字不合规、frontmatter 缺失、描述为空或单个文件读不出的条目 SHALL 跳过，MUST NOT 让会话启动失败；**根目录本身扫不动**（`iterdir` 失败）SHALL 把这次发现标记为不完整（见「发现完整性」），MUST NOT 静默当作「没有技能」。描述进清单前 SHALL 截到 500 字符。同名技能 SHALL 只保留一个，rank 数字小者胜出；发现结果 SHALL 按名字排序，保证确定性。
 
 #### Scenario: 四级根各有一个技能
 
@@ -140,3 +140,45 @@ CLI `chat` SHALL 提供 `/skills`、`/skill <name>`、`/help` 与 `/<技能名>`
 
 - **WHEN** 技能同时写 `disable-model-invocation: true` 与 `user-invocable: false`
 - **THEN** 它不出现在任何清单、工具或命令出口
+
+### Requirement: 发现完整性
+
+`discover_skills` SHALL 返回技能清单与一个 `complete` 布尔。只有「根目录本身扫不动」或「preset 层目录本身扫不动」才把 `complete` 置为 `false`；单个文件坏掉、frontmatter 非法、目录不存在都 SHALL NOT 影响 `complete`。`complete=false` 时：
+
+- `session/start.payload` SHALL 写 `skills_incomplete: true`；
+- 受保护头部的技能块 SHALL 带一行「有一些技能目录没能检查到，只列确认的」，即使清单为空也 SHALL 出现；
+- 下一次装配 SHALL 重新发现（mini 的发现是装配期快照，「重试」即下一会话），MUST NOT 沿用上一次的结果。
+
+#### Scenario: 一个根读不了
+
+- **WHEN** 某个根目录的 `iterdir` 抛 `OSError`
+- **THEN** 其它根照常发现；`payload.skills_incomplete` 是 true；头部有警告行
+
+#### Scenario: 单个文件坏掉不算不完整
+
+- **WHEN** 一个 `SKILL.md` 读不出来、但根目录能扫
+- **THEN** 该文件被跳过；`skills_incomplete` 不出现
+
+#### Scenario: 修好之后下一次发现恢复
+
+- **WHEN** 上一会话因为根读不了而不完整，修好权限后开新会话
+- **THEN** 新会话的 `skills_incomplete` 不出现，技能正常列出
+
+### Requirement: preset 作用域技能层
+
+配置 SHALL 接受 `[subagent.presets.<id>].skill_dirs`（字符串数组）。子会话的技能视图 SHALL 是「全局四根」加「preset 的目录层」：按 `skill_dirs` 的顺序扫入，**preset 层的同名技能直接胜出**（MUST NOT 再看 rank）；层内按目录顺序、同目录按名字。根会话 MUST NOT 有 preset 层。目录不存在 SHALL 视为空层，MUST NOT 让会话启动失败。
+
+#### Scenario: preset 层覆盖同名技能
+
+- **WHEN** 全局有一个 `tdd`，preset 的 `skill_dirs` 里也有一个 `tdd`
+- **THEN** 子会话看到 preset 那份；父会话仍是全局那份
+
+#### Scenario: preset 层独有的技能
+
+- **WHEN** 一个技能只在 preset 的 `skill_dirs` 里
+- **THEN** 子会话的清单里有它，父会话没有
+
+#### Scenario: 不存在的目录是空层
+
+- **WHEN** `skill_dirs` 指向一个不存在的目录
+- **THEN** 子会话照常启动，没有该层的技能，`skills_incomplete` 不出现

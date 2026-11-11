@@ -221,7 +221,8 @@ def assemble(
     # 工作区在任何发现之前定下来：技能的四级根都相对它（用户级根相对 MINIHNS_HOME）。
     workspace = Path(layered.workspace) if layered.workspace is not None else Path.cwd()
     # 技能清单在装配期快照一次：会话中途新增/修改的技能下一会话才可见（M14 的简化）。
-    skills = discover_skills(workspace, environ)
+    discovery = discover_skills(workspace, environ)
+    skills = discovery.skills
     # 工具表从装配来：内置定义按配置的白名单筛，未知名与别的配置失败同形。
     registry = build_registry(layered.tools, layered.subagent, skills)
     if isinstance(registry, ConfigFailure):
@@ -306,6 +307,7 @@ def assemble(
         endpoint=endpoint,
         platform=platform_facts(),
         skills=skills,
+        skills_complete=discovery.complete,
     )
     return Prepared(
         provider=provider,

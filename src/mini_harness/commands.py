@@ -34,7 +34,7 @@ def command_catalog(skills: Sequence[Skill]) -> list[CommandSpec]:
     catalog = list(COMMANDS)
     seen = set(RESERVED)
     for skill in skills:
-        if skill.name in seen:
+        if not skill.user_invocable or skill.name in seen:
             continue
         seen.add(skill.name)
         catalog.append(CommandSpec(skill.name, skill.description))
@@ -42,9 +42,21 @@ def command_catalog(skills: Sequence[Skill]) -> list[CommandSpec]:
 
 
 def direct_skill(name: str, skills: Sequence[Skill]) -> Skill | None:
-    """`/<技能名>` 命中的技能；内置命令名优先，返回 None。"""
+    """`/<技能名>` 命中的用户可调技能；内置命令名优先，返回 None。"""
     if name in RESERVED:
         return None
+    return next(
+        (
+            candidate
+            for candidate in skills
+            if candidate.name == name and candidate.user_invocable
+        ),
+        None,
+    )
+
+
+def find_skill(name: str, skills: Sequence[Skill]) -> Skill | None:
+    """按名字找技能（不分策略），供命令面区分「未知」与「不可由用户调用」。"""
     return next((candidate for candidate in skills if candidate.name == name), None)
 
 
@@ -63,15 +75,21 @@ def execute_command(
     if name == "skills":
         if arguments.strip():
             return CommandOutcome(False, "用法：/skills")
-        lines = [f"- {skill.name}（rank {skill.rank}）：{skill.description}" for skill in skills]
+        lines = [
+            f"- {skill.name}（rank {skill.rank}）：{skill.description}"
+            for skill in skills
+            if skill.user_invocable
+        ]
         return CommandOutcome(True, "\n".join(lines) if lines else "（没有发现技能）")
     if name == "skill":
         target = arguments.strip()
         if not target:
             return CommandOutcome(False, "用法：/skill <name>")
-        skill = next((candidate for candidate in skills if candidate.name == target), None)
+        skill = find_skill(target, skills)
         if skill is None:
             return CommandOutcome(False, f"未知技能：{target}")
+        if not skill.user_invocable:
+            return CommandOutcome(False, f"技能 {target} 不可由用户调用")
         return CommandOutcome(True, read_skill_body(skill))
     if name in RESERVED:
         # `help` 是壳本地的帮助，不在这里执行。

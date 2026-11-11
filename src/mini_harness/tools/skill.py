@@ -27,6 +27,10 @@ def skill_tool_definitions(skills: Sequence[Skill]) -> list[ToolDefinition]:
         skill = next((candidate for candidate in skills if candidate.name == args.name), None)
         if skill is None:
             return ToolResult("TOOL_ARGS_INVALID", f"未知技能：{args.name}")
+        if not skill.model_invocable:
+            return ToolResult(
+                "TOOL_ARGS_INVALID", f"技能 {args.name} 不可由模型调用"
+            )
         return ToolResult("OK", skill_content(skill))
 
     return [

@@ -102,3 +102,5 @@ class SessionSettings:
     preset_persona: str | None = None
     # 装配期发现的技能清单（M14）：只放清单，正文按需由 `skill` 工具读。
     skills: tuple[Skill, ...] = ()
+    # 发现是否完整；根目录扫不动时为 False（skill-invocation-policy）。
+    skills_complete: bool = True
