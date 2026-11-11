@@ -79,6 +79,7 @@ def protected_header(
     platform: Mapping[str, str] | None = None,
     delegated: bool = False,
     persona: str | None = None,
+    incomplete: bool = False,
 ) -> list[Message]:
     """受保护头部：内置常量在前，只能追加不能替换。"""
     parts = [SYSTEM_PROMPT]
@@ -86,8 +87,13 @@ def protected_header(
         parts.append(persona)
     if tool_names:
         parts.append("可用工具：\n" + "\n".join(tool_names))
-    if skills:
-        parts.append("可用技能：\n" + catalog_text(skills))
+    if skills or incomplete:
+        block = "可用技能："
+        if incomplete:
+            block += "\n（有一些技能目录没能检查到，只列确认的）"
+        if skills:
+            block += "\n" + catalog_text(skills)
+        parts.append(block)
     if platform is not None:
         parts.append(
             _environment_block(str(platform.get("os", "")), str(platform.get("shell", "")))
@@ -101,7 +107,9 @@ def protected_header(
 
 def _start_facts(
     events: Sequence[EventRecord],
-) -> tuple[list[str], str, dict[str, str] | None, bool, list[tuple[str, str]], str | None]:
+) -> tuple[
+        list[str], str, dict[str, str] | None, bool, list[tuple[str, str]], str | None, bool
+    ]:
     """头部里的工具块、追加段与平台事实取自日志里的 `session/start`，不取自进程内注册表。
 
     这样实时装配与回放折叠的是同一份事实：注册表在回放时根本不存在。
@@ -139,8 +147,9 @@ def _start_facts(
             event.payload.get("delegated") is True,
             skills,
             persona if isinstance(persona, str) and persona else None,
+            event.payload.get("skills_incomplete") is True,
         )
-    return [], "", None, False, [], None
+    return [], "", None, False, [], None, False
 
 
 def _body_message(event: EventRecord) -> Message | None:
@@ -255,9 +264,15 @@ def fold(events: Sequence[EventRecord]) -> AssembledContext:
     cached = _FOLD_CACHE.get(key)
     if isinstance(cached, AssembledContext):
         return cached.model_copy(deep=True)
-    tool_names, append_system_prompt, platform, delegated, skills, persona = _start_facts(
-        events
-    )
+    (
+        tool_names,
+        append_system_prompt,
+        platform,
+        delegated,
+        skills,
+        persona,
+        incomplete,
+    ) = _start_facts(events)
     header = protected_header(
         append_system_prompt=append_system_prompt,
         tool_names=tool_names,
@@ -265,6 +280,7 @@ def fold(events: Sequence[EventRecord]) -> AssembledContext:
         platform=platform,
         delegated=delegated,
         persona=persona,
+        incomplete=incomplete,
     )
     shadowed = shadowed_seqs(events)
     body: list[Message] = []

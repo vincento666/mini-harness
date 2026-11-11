@@ -27,6 +27,7 @@ from mini_harness.loop.turn_loop import (
     run_session_env,
 )
 from mini_harness.session.delegation import MAX_ACTIVE_SUBAGENTS, MAX_DEPTH, DelegationState
+from mini_harness.skills import Skill, merge_skill_layer
 from mini_harness.tools.fences import UNAVAILABLE_APPROVAL_GATE, DispatchContext
 from mini_harness.tools.registry import (
     ToolArgs,
@@ -52,12 +53,16 @@ class SubagentPresets:
     allowed: tuple[str, ...]
     registries: Mapping[str, ToolRegistry]
     personas: Mapping[str, str] = field(default_factory=dict)
+    skill_dirs: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
 
     def registry_for(self, preset_id: str) -> ToolRegistry | None:
         return self.registries.get(preset_id)
 
     def persona_for(self, preset_id: str) -> str | None:
         return self.personas.get(preset_id)
+
+    def skill_dirs_for(self, preset_id: str) -> tuple[str, ...]:
+        return self.skill_dirs.get(preset_id, ())
 
 
 class SubagentArgs(ToolArgs):
@@ -129,6 +134,8 @@ def _child_settings(
     parent_tool_call_id: str | None,
     preset: str | None,
     persona: str | None,
+    skills: tuple[Skill, ...],
+    skills_complete: bool,
 ) -> SessionSettings | ToolResult:
     """子会话继承档位/边界/provider 与 approval 模式，但审批门是 UNAVAILABLE（design D4）。
 
@@ -153,6 +160,8 @@ def _child_settings(
         parent_tool_call_id=parent_tool_call_id,
         subagent_preset=preset,
         preset_persona=persona,
+        skills=skills,
+        skills_complete=skills_complete,
     )
 
 
@@ -232,6 +241,18 @@ async def _run_subagent(
         )
     preset = _chosen_preset(args, presets)
     persona = None if preset is None or presets is None else presets.persona_for(preset)
+    child_skills = parent.skills
+    child_complete = parent.skills_complete
+    if preset is not None and presets is not None:
+        directories = [
+            FilePath(directory)
+            if FilePath(directory).is_absolute()
+            else parent.workspace / directory
+            for directory in presets.skill_dirs_for(preset)
+        ]
+        if directories:
+            child_skills, layer_complete = merge_skill_layer(parent.skills, directories)
+            child_complete = child_complete and layer_complete
     child_registry = session.registry
     if preset is not None:
         # preset 决定工具面：从部署 preset 编译好的表里取，不导入父的局部工具限制。
@@ -247,6 +268,8 @@ async def _run_subagent(
         parent_tool_call_id=context.tool_call_id,
         preset=preset,
         persona=persona,
+        skills=child_skills,
+        skills_complete=child_complete,
     )
     if isinstance(child_settings, ToolResult):
         return child_settings

@@ -542,7 +542,7 @@ def _run_chat_command(prepared: Prepared, text: str) -> str | None:
         print(f"命令：{listing}")
         return None
     skill = direct_skill(name, prepared.settings.skills)
-    if skill is not None and arguments.strip():
+    if skill is not None:
         command_id = uuid.uuid4().hex
         prepared.log.append(
             "command/run", {"command_id": command_id, "name": name, "raw_input": text}
@@ -551,7 +551,8 @@ def _run_chat_command(prepared: Prepared, text: str) -> str | None:
             "command/done",
             {"command_id": command_id, "ok": True, "text": f"已加载技能 {name}"},
         )
-        return skill_content(skill, arguments.strip())
+        instruction = arguments.strip() or f"（用户调用了技能 {name}，请按技能执行。）"
+        return skill_content(skill, instruction)
     outcome = execute_command(name, arguments, prepared.settings.skills)
     if outcome is None:
         print(f"未知命令：/{name}", file=sys.stderr)

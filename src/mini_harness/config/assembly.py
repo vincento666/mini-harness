@@ -19,7 +19,7 @@ from mini_harness.tools.skill import skill_tool_definitions
 from mini_harness.tools.subagent import SubagentPresets, subagent_tool_definitions
 
 _SUBAGENT_KEYS = frozenset({"preset", "allowed_presets", "presets"})
-_PRESET_KEYS = frozenset({"tools", "persona"})
+_PRESET_KEYS = frozenset({"tools", "persona", "skill_dirs"})
 
 
 def _invalid(detail: str, code: ConfigCode = "CONFIG_INVALID_VALUE") -> ConfigFailure:
@@ -57,6 +57,7 @@ def _presets(
         return _invalid("[subagent] presets 必须是一张表")
     tool_names: dict[str, tuple[str, ...]] = {}
     personas: dict[str, str] = {}
+    skill_dirs: dict[str, tuple[str, ...]] = {}
     for preset_id, spec in raw_presets.items():
         if not isinstance(preset_id, str) or not preset_id:
             return _invalid("[subagent.presets] 的 id 必须是非空字符串")
@@ -77,6 +78,13 @@ def _presets(
                 f"preset {preset_id} 里有未注册的工具名：{_names_joined(unknown_tools)}",
                 "UNKNOWN_TOOL_NAME",
             )
+        dirs = spec.get("skill_dirs")
+        if dirs is not None and (
+            not isinstance(dirs, list) or not all(isinstance(item, str) for item in dirs)
+        ):
+            return _invalid(f"[subagent.presets.{preset_id}].skill_dirs 必须是字符串数组")
+        if isinstance(dirs, list):
+            skill_dirs[preset_id] = tuple(dirs)
         persona = spec.get("persona")
         if persona is not None and not isinstance(persona, str):
             return _invalid(f"[subagent.presets.{preset_id}].persona 必须是字符串")
@@ -97,7 +105,11 @@ def _presets(
     # `subagent` 的 preset 因此也能建出（深度上限仍会挡住真正的递归调用）。
     registries: dict[str, ToolRegistry] = {}
     presets = SubagentPresets(
-        default=default, allowed=allowed, registries=registries, personas=personas
+        default=default,
+        allowed=allowed,
+        registries=registries,
+        personas=personas,
+        skill_dirs=skill_dirs,
     )
     catalog = [
         *file_tool_definitions(),

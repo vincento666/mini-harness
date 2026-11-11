@@ -64,6 +64,13 @@ def test_a_preset_persona_is_accepted() -> None:
     assert isinstance(registry, ToolRegistry)
 
 
+def test_skill_dirs_must_be_a_string_array() -> None:
+    for value in ("skills", ["a", 1]):
+        result = build_registry(None, {"presets": {"reader": {"skill_dirs": value}}})
+        assert isinstance(result, ConfigFailure), value
+        assert result.code == "CONFIG_INVALID_VALUE"
+
+
 def test_an_empty_subagent_section_is_legal() -> None:
     assert isinstance(build_registry(None, {}), ToolRegistry)
 

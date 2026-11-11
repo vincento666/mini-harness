@@ -1,5 +1,6 @@
-"""技能发现与正文读取（M14）：四级根、kebab-case、清单注入。
+"""技能发现与正文读取（M14 / skill-invocation-policy）。
 
+四级根、kebab-case、必填 description、两个调用策略位、发现完整性与 preset 目录层。
 发现发生在装配期；清单进 `session/start.payload.skills` 与受保护头部，正文只在
 `skill` 工具被调用时读，并作为 `tool/result` 落日志（不变量 A：回放只认日志）。
 """
@@ -30,20 +31,36 @@ RANK_PROJECT = 100
 RANK_PROJECT_SHARED = 200
 RANK_USER = 400
 RANK_BUNDLED = 600
+# preset 层排在最前：同名直接胜出，rank 只在层内裁决。
+RANK_PRESET_LAYER = 50
+
+# DSH 的宽松布尔：大小写不敏感的 true/false、yes/no、on/off、1/0。
+_TRUE_WORDS = frozenset({"true", "yes", "on", "1"})
+_FALSE_WORDS = frozenset({"false", "no", "off", "0"})
 
 
 @dataclass(frozen=True)
 class Skill:
-    """发现到的一个技能：清单要的三个字段 + 正文所在路径。"""
+    """发现到的一个技能：清单字段、正文路径与两个独立的调用策略位。"""
 
     name: str
     description: str
     rank: int
     path: Path
+    model_invocable: bool = True
+    user_invocable: bool = True
+
+
+@dataclass(frozen=True)
+class SkillDiscovery:
+    """一次发现的清单与是否完整（根目录扫不动即不完整）。"""
+
+    skills: tuple[Skill, ...]
+    complete: bool
 
 
 def _frontmatter(text: str) -> dict[str, str]:
-    """只认 `name` 与 `description` 两个键，按 `key: value` 解析（不引入 YAML）。"""
+    """只认清单需要的四个键，按 `key: value` 解析（不引入 YAML）。"""
     lines = text.splitlines()
     if not lines or lines[0].strip() != "---":
         return {}
@@ -52,7 +69,12 @@ def _frontmatter(text: str) -> dict[str, str]:
         if line.strip() == "---":
             break
         key, separator, value = line.partition(":")
-        if separator and key.strip() in {"name", "description"}:
+        if separator and key.strip() in {
+            "name",
+            "description",
+            "disable-model-invocation",
+            "user-invocable",
+        }:
             fields[key.strip()] = value.strip().strip('"').strip("'")
     return fields
 
@@ -68,31 +90,57 @@ def _strip_frontmatter(text: str) -> str:
     return text
 
 
+def _policy(raw: str | None, *, default: bool) -> bool | None:
+    """缺省由调用方给；宽松布尔；非法拼写返回 None（丢弃整个技能）。"""
+    if raw is None:
+        return default
+    word = raw.strip().lower()
+    if word in _TRUE_WORDS:
+        return True
+    if word in _FALSE_WORDS:
+        return False
+    return None
+
+
 def _skill_at(path: Path, rank: int) -> Skill | None:
-    """读一个候选文件；名字不合规或读不出就是「没有这个技能」，不抛。"""
+    """读一个候选文件；任何不合法都是「没有这个技能」，不抛。"""
     try:
         text = path.read_text(encoding="utf-8")
     except OSError:
         return None
     fields = _frontmatter(text)
-    fallback = path.parent.name if path.name == "SKILL.md" else path.stem
-    name = fields.get("name") or fallback
-    if KEBAB_CASE.fullmatch(name) is None:
+    name = fields.get("name")
+    description = (fields.get("description") or "").strip()
+    if not name or KEBAB_CASE.fullmatch(name) is None or not description:
         return None
+    model_disabled = _policy(fields.get("disable-model-invocation"), default=False)
+    user_invocable = _policy(fields.get("user-invocable"), default=True)
+    if model_disabled is None or user_invocable is None:
+        return None
+    model_invocable = not model_disabled
     return Skill(
         name=name,
-        description=(fields.get("description") or "").strip()[:DESCRIPTION_MAX],
+        description=description[:DESCRIPTION_MAX],
         rank=rank,
         path=path,
+        model_invocable=model_invocable,
+        user_invocable=user_invocable,
     )
 
 
-def _scan(root: Path, rank: int) -> list[Skill]:
-    """一个根下的技能：目录式 `<name>/SKILL.md` 或扁平 `<name>.md`，不递归。"""
+def _scan(root: Path, rank: int) -> tuple[list[Skill], bool]:
+    """一个根下的技能：目录式 `<name>/SKILL.md` 或扁平 `<name>.md`，不递归。
+
+    返回 (技能, 完整)；目录本身扫不动才不完整，单个文件坏掉只跳过。
+    """
     if not root.is_dir():
-        return []
+        return [], True
+    try:
+        entries = sorted(root.iterdir())
+    except OSError:
+        return [], False
     found: list[Skill] = []
-    for entry in sorted(root.iterdir()):
+    for entry in entries:
         if entry.is_dir():
             candidate = entry / "SKILL.md"
             if not candidate.is_file():
@@ -104,7 +152,7 @@ def _scan(root: Path, rank: int) -> list[Skill]:
         skill = _skill_at(candidate, rank)
         if skill is not None:
             found.append(skill)
-    return found
+    return found, True
 
 
 def skill_roots(workspace: Path, environ: Mapping[str, str]) -> list[tuple[int, Path]]:
@@ -118,18 +166,42 @@ def skill_roots(workspace: Path, environ: Mapping[str, str]) -> list[tuple[int, 
     ]
 
 
-def discover_skills(workspace: Path, environ: Mapping[str, str]) -> tuple[Skill, ...]:
+def discover_skills(workspace: Path, environ: Mapping[str, str]) -> SkillDiscovery:
     """四级根合并：同名取 rank 小者（并列取路径小者），结果按名字排序。"""
     by_name: dict[str, Skill] = {}
+    complete = True
     for rank, root in skill_roots(workspace, environ):
-        for skill in _scan(root, rank):
+        found, ok = _scan(root, rank)
+        complete = complete and ok
+        for skill in found:
             current = by_name.get(skill.name)
             if current is None or (skill.rank, str(skill.path)) < (
                 current.rank,
                 str(current.path),
             ):
                 by_name[skill.name] = skill
-    return tuple(sorted(by_name.values(), key=lambda skill: skill.name))
+    return SkillDiscovery(
+        skills=tuple(sorted(by_name.values(), key=lambda skill: skill.name)),
+        complete=complete,
+    )
+
+
+def merge_skill_layer(
+    base: Sequence[Skill], directories: Sequence[Path]
+) -> tuple[tuple[Skill, ...], bool]:
+    """preset 层：按目录顺序扫入，同名直接覆盖全局；层内先到先得。"""
+    by_name = {skill.name: skill for skill in base}
+    layer_seen: set[str] = set()
+    complete = True
+    for index, directory in enumerate(directories):
+        found, ok = _scan(directory, RANK_PRESET_LAYER + index)
+        complete = complete and ok
+        for skill in found:
+            if skill.name in layer_seen:
+                continue
+            layer_seen.add(skill.name)
+            by_name[skill.name] = skill
+    return tuple(sorted(by_name.values(), key=lambda skill: skill.name)), complete
 
 
 def catalog_text(entries: Sequence[tuple[str, str]], *, budget: int = CATALOG_BUDGET) -> str:
@@ -152,6 +224,17 @@ def render_skill_catalog(skills: Sequence[Skill], *, budget: int = CATALOG_BUDGE
     return catalog_text([(skill.name, skill.description) for skill in skills], budget=budget)
 
 
+def read_skill_body(skill: Skill, *, limit: int = BODY_LIMIT) -> str:
+    """读正文；超过上限截断并提示用 read 读全文（路径就是它）。"""
+    try:
+        body = _strip_frontmatter(skill.path.read_text(encoding="utf-8"))
+    except OSError as error:
+        return f"（读不出技能正文：{error}）"
+    if len(body) <= limit:
+        return body
+    return body[:limit] + f"\n\n…（正文超过 {limit} 字符，已截断；用 read 读全文：{skill.path}）"
+
+
 def skill_content(skill: Skill, instruction: str = "") -> str:
     """DSH 同形的 XML 三段；`skill` 工具与命令展开共用，避免两处漂移。"""
     body = read_skill_body(skill)
@@ -162,14 +245,3 @@ def skill_content(skill: Skill, instruction: str = "") -> str:
         f"</skill_content>"
     )
     return content if not instruction else content + "\n\n" + instruction
-
-
-def read_skill_body(skill: Skill, *, limit: int = BODY_LIMIT) -> str:
-    """读正文；超过上限截断并提示用 read 读全文（路径就是它）。"""
-    try:
-        body = _strip_frontmatter(skill.path.read_text(encoding="utf-8"))
-    except OSError as error:
-        return f"（读不出技能正文：{error}）"
-    if len(body) <= limit:
-        return body
-    return body[:limit] + f"\n\n…（正文超过 {limit} 字符，已截断；用 read 读全文：{skill.path}）"

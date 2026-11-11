@@ -40,6 +40,12 @@
 
 300 / 500 本 change 不做。同名技能数字小者胜；发现结果按 `(rank, path)` 排序，保证确定性。每个技能是 `SKILL.md`（带 frontmatter：`name` / `description`）或一个扁平 `.md`；名字必须 kebab-case，不递归。
 
+## 2b. 调用策略、完整性与作用域层（skill-invocation-policy）
+
+- **策略位**：frontmatter 的 `disable-model-invocation` 与 `user-invocable`（缺省都允许；宽松布尔 `true/false`、`yes/no`、`on/off`、`1/0`；非法值丢弃整个技能）。模型面（payload/头部/`skill` 工具）只认模型可调，人机面（`/skills`、`/<技能名>`、`/skill`、host 命令清单）只认用户可调；两面都禁用的技能只留在 `settings.skills`。
+- **完整性**：根目录 `iterdir` 失败 → `complete=false`，payload 记 `skills_incomplete`、头部警告；单文件坏掉只跳过；下一次装配重新发现。
+- **preset 层**：`[subagent.presets.<id>].skill_dirs` 的目录根是 preset 作用域层；子会话 = 全局四根 + 该层，同名由层胜出；根会话没有层。
+
 ## 3. 内核：清单注入 + 正文按需
 
 **启动（mini 对 DSH 的简化）**：`session/start.payload.skills` 只放清单：
@@ -62,7 +68,8 @@
 |---|---|---|
 | CLI `chat` | `/skills` | 列清单（名字、描述、rank），不开段 |
 | CLI `chat` | `/skill <name>` | 打印正文，不开段；模型要用技能走 `skill` 工具 |
-| CLI `chat` | `/<技能名>` | 与 `/skill <技能名>` 等价；内置命令同名时内置优先 |
+| CLI `chat` | `/<技能名>` | **执行**：正文 + 默认指令拼成 `user/message` 并开段；带指令则替换默认句 |
+| CLI `chat` | `/skill <技能名>` | **查看**：打印正文、不开段 |
 | CLI `chat` | `/<技能名> <指令>` | 技能正文 + 指令拼成一条 `user/message` 并开段；host 同义（202，忙时排队） |
 | CLI `chat` | `/help` | 列可用命令（壳本地，不落日志） |
 | host | `GET /commands` | 列清单（与 `/skills` 同源） |
