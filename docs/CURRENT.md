@@ -18,7 +18,7 @@
 
 ## 下一步
 
-1. **M12 与 `subagent-preset` 已合入 `main`**（`4ff7226` / `b9bf3bd`）：归档与规格 sync 完成，`openspec validate` 19/19。**M14（技能 / 命令）已归档（`2026-11-11-m14-skills-and-commands`，18/18），待合入 `main`；下一步 M14a 工作区契约 → M14b → M14c（plan）→ M13 目标**（2026-11-10 裁决：M14 与 plan 提前，goal 后置）。
+1. **M12 与 `subagent-preset` 已合入 `main`**（`4ff7226` / `b9bf3bd`）：归档与规格 sync 完成，`openspec validate` 19/19。**M14（技能 / 命令）已合入并归档（合并 `1b6e831`，18/18）；下一步 M14a 工作区契约 → M14b → M14c（plan）→ M13 目标**（2026-11-10 裁决：M14 与 plan 提前，goal 后置）。
 2. **M10 已完成并合入**：第一切片 `m10-compaction-parameters` 合入 `aa48ae7`；余下 `m10-tool-pipeline-and-concurrency` 26/26 task，`main` 合并 `856d368`，归档在 `openspec/changes/archive/2026-10-29-m10-tool-pipeline-and-concurrency`。六段管线、并发类别/barrier、CommandRunner、read 50 KiB/2000 字符窗口（不 spill）、bash/搜索 spill 都已落成。
 3. **思考模式与预算**：M10 之后、M11/M12 之前立 `reasoning-mode-and-budget`；durable `model/response` 用有序 content blocks（reasoning/text/tool-call）而不是单字段、实时 `reasoning/delta` ephemeral、reasoning tokens 属 output 不重复计；DSH 对照与暂缓项见 `docs/reference/reasoning-mode.md`。
 4. **P0**：`fix-post-compaction-budget-reading` 先不 apply——诊断（W1/W2）没有复现「遮蔽后 tokens 后 > 前」；要么补一次能稳定触发溢出的真实端点样本再决定是否修，要么把它降级为未复现的历史缺陷并记账。
