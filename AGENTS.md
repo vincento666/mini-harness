@@ -60,7 +60,7 @@ uv run coverage report --fail-under=95 --show-missing   # 这三步不可拆，�
 
 ## 流程：每个里程碑一个 OpenSpec change
 
-一个 change 的顺序：**propose → 人审 proposal / specs / design / tasks → apply（按 tdd 技能，red → green 单切片，一次一个）→ `code-review` 两轴 + **对齐复核（每个 change 必做）**→ 收尾四项（见下 Learning Gate）→ 在 change 分支上 sync delta 进主规格 + 归档 → 代码与规格一次合入 main**。对齐复核是 code review 的一步：逐条核对实现 ↔ 提案（Why/What/Impact）、design 的决策、spec 的 Requirement/Scenario、tasks 的验收判据；有 DSH 对照的，再逐行核对 DSH 的形状/机制/语义。产物是 `<change-id>-dsh-review.md`（历史名字保留）。
+一个 change 的顺序：**propose → 人审 proposal / specs / design / tasks → apply（按 tdd 技能，red → green 单切片，一次一个）→ `code-review` 两轴 + **对齐复核（每个 change 必做）**→ 收尾四项（见下 Learning Gate）→ 在 change 分支上 sync delta 进主规格 + 归档 → 代码与规格一次合入 main**。对齐复核是 code review 的一步：逐条核对实现 ↔ 提案（Why/What/Impact）、design 的决策、spec 的 Requirement/Scenario、tasks 的验收判据；有 DSH 对照的，按 `docs/reference/dsh-alignment-checklist.md` 的十项逐条核对 DSH。产物是 `<change-id>-dsh-review.md`（历史名字保留）。
 
 分支纪律：每个 change 一个分支 `change/<id>`；**归档在分支上做**——sync 进主规格、移 `changeRoot`、`openspec validate --all --strict` 全绿，然后代码与规格一次合入 `main`。反过来（先合并再归档）会在主干上留下「代码已合、主规格还停在上一个里程碑」的窗口。**merge 与推 `main` 先征求人的批准、确认了才执行**；agent 可自行推 `change/<id>` 分支与归档提交。
 

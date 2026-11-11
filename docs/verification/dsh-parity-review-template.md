@@ -1,7 +1,7 @@
 # 对齐复核（alignment review）模板
 
 **何时跑**：**每个 change 必做**——它是 code review 的一步，不是 DSH 专项。  
-**对齐对象**：proposal 的 Why / What / Impact 与验收、design 的每条决策、spec 的每条 Requirement 与 Scenario、tasks 的完成判据；**有 DSH 对照的**，再逐行核对 DSH 的形状/机制/语义。
+**对齐对象**：proposal 的 Why / What / Impact 与验收、design 的每条决策、spec 的每条 Requirement 与 Scenario、tasks 的完成判据；**有 DSH 对照的**，按 `docs/reference/dsh-alignment-checklist.md` 的十项逐条核对。
 
 **调研与复核的分工**：调研在 propose 之前，产出「DSH 是什么 + 我们的建议」；复核在实现之后，逐条核对「实现是否兑现了提案/规格/验收」，并给建议标状态。**简化与弱化是建议，由人裁决**，agent 不得自行把建议写成结论。
 
