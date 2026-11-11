@@ -27,8 +27,8 @@
 
 ## 5. 收尾四项
 
-- [ ] 5.1 真实端点验收：一个项目技能被 `/skill` 加载后模型按正文回答
+- [x] 5.1 真实端点验收：一个项目技能被 `/skill` 加载后模型按正文回答
 - [ ] 5.2 UAT 验收（人跑）：斜杠命令与 host 命令面各办一件真事
-- [ ] 5.3 变异测试一轮：至少三条（顺序不排序、正文不落日志、persona 不注入）被杀
-- [ ] 5.4 Learning Gate
-- [ ] 5.5 DSH parity review：技能发现/清单注入/按需加载/命令面/preset persona 五项逐条对比，写 `docs/verification/m14-skills-and-commands-dsh-review.md`
+- [x] 5.3 变异测试一轮：至少三条（顺序不排序、正文不落日志、persona 不注入）被杀
+- [x] 5.4 Learning Gate
+- [x] 5.5 DSH parity review：技能发现/清单注入/按需加载/命令面/preset persona 五项逐条对比，写 `docs/verification/m14-skills-and-commands-dsh-review.md`

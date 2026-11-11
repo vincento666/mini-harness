@@ -40,14 +40,14 @@ def _names(skills: tuple[Skill, ...]) -> list[str]:
 def test_four_roots_are_discovered_in_rank_order(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     home = tmp_path / "home"
-    _skill(workspace / ".minihns" / "skills", "project")
-    _skill(workspace / ".agents" / "skills", "shared")
-    _skill(home / "skills", "user")
+    _skill(workspace / ".minihns" / "skills", "zeta")
+    _skill(workspace / ".agents" / "skills", "mid")
+    _skill(home / "skills", "alpha")
 
     skills = discover_skills(workspace, {"MINIHNS_HOME": str(home)})
 
-    assert _names(skills) == ["project", "shared", "user"]
-    assert [skill.rank for skill in skills] == [100, 200, 400]
+    assert _names(skills) == ["alpha", "mid", "zeta"]
+    assert [skill.rank for skill in skills] == [400, 200, 100]
 
 
 def test_same_name_prefers_the_lower_rank(tmp_path: Path) -> None:
