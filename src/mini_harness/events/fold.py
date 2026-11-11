@@ -10,6 +10,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from mini_harness.events.record import EventRecord
+from mini_harness.skills import catalog_text
 
 SYSTEM_PROMPT = (
     "你是 mini-harness 的 agent。在回合里先装配上下文，再调用工具或回答；"
@@ -74,13 +75,19 @@ def protected_header(
     *,
     append_system_prompt: str = "",
     tool_names: Sequence[str] = (),
+    skills: Sequence[tuple[str, str]] = (),
     platform: Mapping[str, str] | None = None,
     delegated: bool = False,
+    persona: str | None = None,
 ) -> list[Message]:
     """受保护头部：内置常量在前，只能追加不能替换。"""
     parts = [SYSTEM_PROMPT]
+    if persona:
+        parts.append(persona)
     if tool_names:
         parts.append("可用工具：\n" + "\n".join(tool_names))
+    if skills:
+        parts.append("可用技能：\n" + catalog_text(skills))
     if platform is not None:
         parts.append(
             _environment_block(str(platform.get("os", "")), str(platform.get("shell", "")))
@@ -94,7 +101,7 @@ def protected_header(
 
 def _start_facts(
     events: Sequence[EventRecord],
-) -> tuple[list[str], str, dict[str, str] | None, bool]:
+) -> tuple[list[str], str, dict[str, str] | None, bool, list[tuple[str, str]], str | None]:
     """头部里的工具块、追加段与平台事实取自日志里的 `session/start`，不取自进程内注册表。
 
     这样实时装配与回放折叠的是同一份事实：注册表在回放时根本不存在。
@@ -113,13 +120,27 @@ def _start_facts(
             if isinstance(raw_platform, Mapping)
             else None
         )
+        skills: list[tuple[str, str]] = []
+        raw_skills = event.payload.get("skills")
+        if isinstance(raw_skills, list):
+            for item in raw_skills:
+                if isinstance(item, Mapping):
+                    skills.append(
+                        (
+                            str(item.get("name", "")),
+                            str(item.get("description", "")),
+                        )
+                    )
+        persona = event.payload.get("preset_persona")
         return (
             names,
             appended if isinstance(appended, str) else "",
             platform,
             event.payload.get("delegated") is True,
+            skills,
+            persona if isinstance(persona, str) and persona else None,
         )
-    return [], "", None, False
+    return [], "", None, False, [], None
 
 
 def _body_message(event: EventRecord) -> Message | None:
@@ -234,12 +255,16 @@ def fold(events: Sequence[EventRecord]) -> AssembledContext:
     cached = _FOLD_CACHE.get(key)
     if isinstance(cached, AssembledContext):
         return cached.model_copy(deep=True)
-    tool_names, append_system_prompt, platform, delegated = _start_facts(events)
+    tool_names, append_system_prompt, platform, delegated, skills, persona = _start_facts(
+        events
+    )
     header = protected_header(
         append_system_prompt=append_system_prompt,
         tool_names=tool_names,
+        skills=skills,
         platform=platform,
         delegated=delegated,
+        persona=persona,
     )
     shadowed = shadowed_seqs(events)
     body: list[Message] = []

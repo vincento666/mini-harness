@@ -79,7 +79,16 @@ def test_no_config_file_means_builtin_defaults(tmp_path: Path) -> None:
     assert "base_url" not in payload
     assert "model" not in payload
     assert "api_key_env" not in payload
-    assert payload["tools"] == ["read", "write", "edit", "glob", "grep", "bash", "subagent"]
+    assert payload["tools"] == [
+        "read",
+        "write",
+        "edit",
+        "glob",
+        "grep",
+        "bash",
+        "subagent",
+        "skill",
+    ]
 
 
 def test_the_workspace_root_config_file_is_picked_up(tmp_path: Path) -> None:
@@ -461,6 +470,7 @@ def test_the_same_cli_under_two_config_files_yields_different_payloads(tmp_path:
         "grep",
         "bash",
         "subagent",
+        "skill",
     ]
 
 

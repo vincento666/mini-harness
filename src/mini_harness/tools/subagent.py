@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path as FilePath
 from typing import Any, Literal
 
@@ -51,9 +51,13 @@ class SubagentPresets:
     default: str | None
     allowed: tuple[str, ...]
     registries: Mapping[str, ToolRegistry]
+    personas: Mapping[str, str] = field(default_factory=dict)
 
     def registry_for(self, preset_id: str) -> ToolRegistry | None:
         return self.registries.get(preset_id)
+
+    def persona_for(self, preset_id: str) -> str | None:
+        return self.personas.get(preset_id)
 
 
 class SubagentArgs(ToolArgs):
@@ -124,6 +128,7 @@ def _child_settings(
     parent_session_id: str,
     parent_tool_call_id: str | None,
     preset: str | None,
+    persona: str | None,
 ) -> SessionSettings | ToolResult:
     """子会话继承档位/边界/provider 与 approval 模式，但审批门是 UNAVAILABLE（design D4）。
 
@@ -147,6 +152,7 @@ def _child_settings(
         parent_session_id=parent_session_id,
         parent_tool_call_id=parent_tool_call_id,
         subagent_preset=preset,
+        preset_persona=persona,
     )
 
 
@@ -225,6 +231,7 @@ async def _run_subagent(
             f"第 {delegation.active + 1} 个被拒绝",
         )
     preset = _chosen_preset(args, presets)
+    persona = None if preset is None or presets is None else presets.persona_for(preset)
     child_registry = session.registry
     if preset is not None:
         # preset 决定工具面：从部署 preset 编译好的表里取，不导入父的局部工具限制。
@@ -239,6 +246,7 @@ async def _run_subagent(
         parent_session_id=session.log.session_id,
         parent_tool_call_id=context.tool_call_id,
         preset=preset,
+        persona=persona,
     )
     if isinstance(child_settings, ToolResult):
         return child_settings

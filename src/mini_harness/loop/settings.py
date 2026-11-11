@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Literal
 
 from mini_harness.context import budget as context_budget
+from mini_harness.skills import Skill
 
 DEFAULT_COMPACTION_THRESHOLD_RATIO = context_budget.DEFAULT_COMPACTION_THRESHOLD_RATIO
 DEFAULT_COMPACTION_HEADROOM_TOKENS = context_budget.DEFAULT_COMPACTION_HEADROOM_TOKENS
@@ -97,3 +98,7 @@ class SessionSettings:
     parent_tool_call_id: str | None = None
     # 子会话由哪一档部署 preset 创建（没选 preset 时是 None）；进子 session/start.payload。
     subagent_preset: str | None = None
+    # 选中的 preset 的 persona（M14）：进子 session/start.payload 与受保护头部。
+    preset_persona: str | None = None
+    # 装配期发现的技能清单（M14）：只放清单，正文按需由 `skill` 工具读。
+    skills: tuple[Skill, ...] = ()

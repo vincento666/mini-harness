@@ -21,6 +21,8 @@ CONCRETE_EVENT_TYPES: frozenset[str] = frozenset(
         "approval/request",
         "approval/response",
         "compaction/summary",
+        "command/run",
+        "command/done",
     }
 )
 

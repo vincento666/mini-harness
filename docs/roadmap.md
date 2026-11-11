@@ -103,6 +103,7 @@ H1 / H2 是新增的宿主轨，不占用 M10–M15 的决策编号；M 编号�
 
 ### M14 技能、斜杠命令与渐进式披露
 
+- **状态**：✅ **2026-11-11 已归档**（`openspec/changes/archive/2026-11-11-m14-skills-and-commands`）：18/18 task；真实端点、UAT（S1/S2 人跑、S3/S4 agent 代跑）、变异 3 条、Learning、DSH parity 全过。**待合入 `main`**。
 - **change**：`m14-skills-and-commands`
 - **顺序**：**提前到 M13 之前**（2026-11-10 人裁决：M14 与 plan 先做，goal 后置到 plan 之后）。
 - **层**：扩展
