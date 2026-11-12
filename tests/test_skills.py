@@ -737,3 +737,51 @@ def test_a_preset_skill_layer_reaches_the_child_only(tmp_path: Path) -> None:
     parent_catalog = catalog(logs["run"])
     assert len(parent_catalog) == 1
     assert "extra" not in parent_catalog[0]["content"]
+
+
+def test_a_missing_preset_skill_directory_starts_the_child_anyway(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    _skill(workspace / ".minihns" / "skills", "tdd", description="全局")
+    (workspace / "mini.config.toml").write_text(
+        '[subagent]\npreset = "reader"\n\n'
+        '[subagent.presets.reader]\ntools = ["read"]\n'
+        '[subagent.presets.reader.skills]\nkind = "filesystem"\n'
+        'dirs = [".minihns/nope"]\n',
+        encoding="utf-8",
+    )
+    fixture = workspace / "turns.json"
+    fixture.write_text(
+        json.dumps(
+            [
+                {
+                    "content": "",
+                    "finish_reason": "tool_calls",
+                    "tool_calls": [{"id": "c1", "name": "subagent", "arguments": {"task": "看"}}],
+                },
+                {"content": "好", "finish_reason": "stop"},
+                {"content": "完", "finish_reason": "stop"},
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(fixture),
+        cwd=workspace,
+    )
+
+    child = next(
+        record["payload"]
+        for path in workspace.glob("sessions/*.jsonl")
+        for record in map(json.loads, path.read_text(encoding="utf-8").splitlines())
+        if record["type"] == "session/start" and record["payload"].get("entry") == "subagent"
+    )
+    assert [item["name"] for item in child["skills"]] == ["tdd"]
+    assert "skills_incomplete" not in child
