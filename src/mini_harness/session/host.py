@@ -35,6 +35,7 @@ from mini_harness.session.assembly import (
     Failure,
     assemble,
 )
+from mini_harness.skill_providers import skills_view
 from mini_harness.skills import Skill, skill_content
 from mini_harness.tools.fences import ApprovalDecision
 
@@ -135,11 +136,16 @@ class CommandResponse:
     cursor: int
 
 
+def visible_skills(handle: HostSession) -> tuple[Skill, ...]:
+    """命令面与模型目录同源：有注册表读快照，否则回落到装配快照。"""
+    return skills_view(handle.env.skills_registry, handle.settings.skills)
+
+
 def run_command(handle: HostSession, name: str, arguments: str) -> CommandResponse | Failure:
     """执行一条命令：写 `command/run` + `command/done`，不开段、不建模型消息（M14）。"""
     if handle.status == SESSION_ENDED:
         return Failure("SESSION_NOT_FOUND", "会话已经结束", EXIT_INVALID_ARGUMENT)
-    outcome = execute_command(name, arguments, handle.settings.skills)
+    outcome = execute_command(name, arguments, visible_skills(handle))
     if outcome is None:
         return Failure("UNKNOWN_COMMAND", f"未知命令：{name}", EXIT_INVALID_ARGUMENT)
     command_id = uuid.uuid4().hex

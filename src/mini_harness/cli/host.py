@@ -42,6 +42,7 @@ from mini_harness.session.host import (
     run_command,
     shutdown,
     submit_message,
+    visible_skills,
 )
 from mini_harness.skills import Skill
 
@@ -240,7 +241,7 @@ class HostServer:
             handle = self._state.sessions.get(session_id)
             if handle is None:
                 return _error(404, "SESSION_NOT_FOUND", f"没有会话 {session_id}")
-            skills = handle.settings.skills
+            skills = visible_skills(handle)
         return web.json_response(
             {
                 "commands": [
@@ -263,7 +264,7 @@ class HostServer:
         arguments = body.get("arguments", "") if isinstance(body, dict) else ""
         if not isinstance(name, str) or not isinstance(arguments, str):
             return _error(400, "INVALID_ARGUMENT", "name 与 arguments 必须是字符串")
-        skill = direct_skill(name, handle.settings.skills)
+        skill = direct_skill(name, visible_skills(handle))
         if skill is not None:
             accepted = expand_skill_command(handle, skill, arguments)
             if isinstance(accepted, Failure):

@@ -44,7 +44,7 @@
 
 - **策略位**：frontmatter 的 `disable-model-invocation` 与 `user-invocable`（缺省都允许；宽松布尔 `true/false`、`yes/no`、`on/off`、`1/0`；非法值丢弃整个技能）。模型面（payload/头部/`skill` 工具）只认模型可调，人机面（`/skills`、`/<技能名>`、`/skill`、host 命令清单）只认用户可调；两面都禁用的技能只留在 `settings.skills`。
 - **完整性**：根目录 `iterdir` 失败 → `complete=false`，payload 记 `skills_incomplete`、头部警告；单文件坏掉只跳过；下一次装配重新发现。
-- **preset 层**：`[subagent.presets.<id>].skill_dirs` 的目录根是 preset 作用域层；子会话 = 全局四根 + 该层，同名由层胜出；根会话没有层。
+- **preset 层（skill-providers 起）**：`[subagent.presets.<id>.skills]` 挂一层 filesystem provider（`kind = "filesystem"`、必填 `dirs`）；子会话 = 全局层 + 该层，**同名由近层胜出**（不再看 rank），层内按目录顺序；根会话只有全局层。目录不存在是空层。命令面与模型目录读同一份注册表快照，`skill` 工具的正文也由拥有这个名字的那一层提供（ADR-0040；ADR-0039 已被取代）。
 
 ## 3. 内核：清单注入 + 正文按需
 

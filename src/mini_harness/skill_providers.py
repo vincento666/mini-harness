@@ -90,6 +90,6 @@ class SkillRegistry:
         return None
 
 
-def visible_skills(registry: SkillRegistry | None, fallback: Sequence[Skill]) -> tuple[Skill, ...]:
+def skills_view(registry: SkillRegistry | None, fallback: Sequence[Skill]) -> tuple[Skill, ...]:
     """命令面与目录共用的视图：有注册表读快照，没有（裸 env / 旧测试）回落到装配快照。"""
     return registry.snapshot().skills if registry is not None else tuple(fallback)

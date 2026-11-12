@@ -60,7 +60,7 @@ from mini_harness.session.assembly import (
     assemble,
     request_from_args,
 )
-from mini_harness.skill_providers import SkillRegistry
+from mini_harness.skill_providers import SkillRegistry, skills_view
 from mini_harness.skills import skill_content
 from mini_harness.tools import ToolRegistry
 
@@ -539,13 +539,14 @@ def _print_shadow_feedback(log: EventLog, through: int) -> tuple[int, LogReadFai
 
 def _run_chat_command(prepared: Prepared, text: str) -> str | None:
     """一条斜杠命令；返回非 None 表示它展开成了一条要开段的用户消息。"""
+    skills = skills_view(prepared.skills_registry, prepared.settings.skills)
     name, _, arguments = text[1:].partition(" ")
     if name == "help":
-        catalog = command_catalog(prepared.settings.skills)
+        catalog = command_catalog(skills)
         listing = " / ".join(f"/{command.name}" for command in catalog)
         print(f"命令：{listing}")
         return None
-    skill = direct_skill(name, prepared.settings.skills)
+    skill = direct_skill(name, skills)
     if skill is not None:
         command_id = uuid.uuid4().hex
         prepared.log.append(
@@ -557,7 +558,7 @@ def _run_chat_command(prepared: Prepared, text: str) -> str | None:
         )
         instruction = arguments.strip() or f"（用户调用了技能 {name}，请按技能执行。）"
         return skill_content(skill, instruction)
-    outcome = execute_command(name, arguments, prepared.settings.skills)
+    outcome = execute_command(name, arguments, skills)
     if outcome is None:
         print(f"未知命令：/{name}", file=sys.stderr)
         return None

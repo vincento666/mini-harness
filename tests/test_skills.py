@@ -7,17 +7,23 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from cli_blackbox import _cli
+from mini_harness.cli.main import _run_chat_command
 from mini_harness.commands import command_catalog, direct_skill, execute_command
 from mini_harness.config import build_registry
 from mini_harness.events import EventRecord, read_events
 from mini_harness.events.fold import fold
 from mini_harness.loop import ENTRY_RUN, start_session
 from mini_harness.provider import FixtureProvider
+from mini_harness.session.assembly import AssemblyRequest, Prepared, assemble
+from mini_harness.skill_providers import SkillRegistry
 from mini_harness.skills import (
     BODY_LIMIT,
     DESCRIPTION_MAX,
     Skill,
+    SkillDiscovery,
     catalog_text,
     discover_skills,
     merge_skill_layer,
@@ -125,7 +131,41 @@ def test_body_is_capped(tmp_path: Path) -> None:
     assert len(body) < BODY_LIMIT + 200
 
 
-async def test_the_skill_tool_returns_xml(tmp_path: Path) -> None:
+class _BodyProvider:
+    """正文与文件不同：证明 `skill` 工具读的是 provider，不是就地读文件。"""
+
+    def __init__(self, skill: Skill, body: str) -> None:
+        self.name = "memory"
+        self._skill = skill
+        self._body = body
+
+    def list(self) -> SkillDiscovery:
+        return SkillDiscovery((self._skill,), True)
+
+    def get(self, skill: Skill) -> str:
+        return self._body
+
+
+async def test_the_skill_tool_reads_the_body_through_the_registry(tmp_path: Path) -> None:
+    root = tmp_path / "ws" / ".minihns" / "skills"
+    path = _skill(root, "tdd", body="文件里的正文")
+    skill = Skill(name="tdd", description="描述", rank=50, path=path)
+    _, env = build_session_env(
+        tmp_path, "s-skill-tool", FixtureProvider(entries=[]), workspace=tmp_path
+    )
+    env = replace(env, skills_registry=SkillRegistry(_BodyProvider(skill, "注册表的正文")))
+    registry = build_registry(None, skills=(skill,))
+
+    outcome = await dispatch_call(
+        tmp_path, "skill", {"name": "tdd"}, registry=registry, session=env
+    )
+
+    assert outcome.result.outcome == "OK"
+    assert "注册表的正文" in outcome.result.content
+    assert "文件里的正文" not in outcome.result.content
+
+
+async def test_the_skill_tool_falls_back_to_the_tuple_without_a_registry(tmp_path: Path) -> None:
     root = tmp_path / "ws" / ".minihns" / "skills"
     path = _skill(root, "tdd", description="先写判据", body="第一步：写红判据")
     registry = build_registry(None, skills=discover_skills(root.parent.parent, {}).skills)
@@ -136,6 +176,7 @@ async def test_the_skill_tool_returns_xml(tmp_path: Path) -> None:
     assert "<skill_content" in outcome.result.content
     assert "<skill_instructions>" in outcome.result.content
     assert "第一步：写红判据" in outcome.result.content
+    assert str(path) in outcome.result.content
     assert str(path) in outcome.result.content
 
 
@@ -322,6 +363,29 @@ def test_chat_runs_a_skill_directly(tmp_path: Path) -> None:
     user = next(record["payload"] for record in records if record["type"] == "user/message")
     assert "第一步：写红判据" in user["content"]
     assert "请按技能执行" in user["content"]
+
+
+def test_the_chat_command_face_reads_the_live_registry(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """命令面读注册表快照：会话开始之后新增的技能，下一条命令就能看见。"""
+    workspace = tmp_path / "ws"
+    _skill(workspace / ".minihns" / "skills", "tdd", description="先写判据")
+    prepared = assemble(
+        AssemblyRequest(
+            workspace=str(workspace),
+            provider="mock",
+            fixture=str(HELLO_SCENARIO),
+            session_dir=str(tmp_path / "sessions"),
+        ),
+        {"MINIHNS_HOME": str(tmp_path / "home")},
+    )
+    assert isinstance(prepared, Prepared)
+    _skill(workspace / ".minihns" / "skills", "review", description="复核")
+
+    assert _run_chat_command(prepared, "/skills") is None
+
+    assert "review" in capsys.readouterr().out
 
 
 def test_chat_help_lists_skill_commands(tmp_path: Path) -> None:

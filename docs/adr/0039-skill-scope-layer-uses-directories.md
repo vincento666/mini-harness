@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: superseded by ADR-0040
 ---
 
 # 技能的 preset 作用域层用目录根表达，发现完整性用装配期快照的 complete 位

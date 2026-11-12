@@ -302,9 +302,8 @@ def read_skill_body(skill: Skill, *, limit: int = BODY_LIMIT) -> str:
     return body[:limit] + f"\n\n…（正文超过 {limit} 字符，已截断；用 read 读全文：{skill.path}）"
 
 
-def skill_content(skill: Skill, instruction: str = "") -> str:
-    """DSH 同形的 XML 三段；`skill` 工具与命令展开共用，避免两处漂移。"""
-    body = read_skill_body(skill)
+def skill_content_body(skill: Skill, body: str, instruction: str = "") -> str:
+    """用给定的正文渲染 XML 三段（注册表的 `get` 提供正文时用）。"""
     content = (
         f'<skill_content name="{skill.name}">\n'
         f"<skill_resources>\n- {skill.path}\n</skill_resources>\n"
@@ -312,3 +311,8 @@ def skill_content(skill: Skill, instruction: str = "") -> str:
         f"</skill_content>"
     )
     return content if not instruction else content + "\n\n" + instruction
+
+
+def skill_content(skill: Skill, instruction: str = "") -> str:
+    """DSH 同形的 XML 三段；`skill` 工具与命令展开共用，避免两处漂移。"""
+    return skill_content_body(skill, read_skill_body(skill), instruction)
