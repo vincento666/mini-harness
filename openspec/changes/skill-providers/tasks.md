@@ -26,7 +26,7 @@
 
 ## 5. 收尾
 
-- [ ] 5.1 真实端点：preset provider 覆盖同名技能、命令面与模型目录一致
+- [x] 5.1 真实端点：preset provider 覆盖同名技能、命令面与模型目录一致
 - [ ] 5.2 UAT（人跑）
 - [x] 5.3 变异测试一轮
 - [x] 5.4 Learning Gate

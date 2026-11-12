@@ -20,7 +20,7 @@
 | 验收 | tasks 4.1–4.4 | 提交 `8ccae5b`；配置校验、`skill_dirs` 删除、子会话挂层、父会话不受影响 | aligned |
 | 验收 | task 5.3 变异一轮 | `docs/verification/skill-providers-mutation.md`：9 个变异全被杀（两个首轮存活，补判据后杀死） | aligned |
 | 验收 | task 5.6 ADR | 同上（ADR-0035 修订 + ADR-0040） | aligned |
-| 验收 | task 5.1 真实端点 | 本机无 `DEEPSEEK_API_KEY` / `MINIHNS_API_KEY`，未跑 | deferred |
+| 验收 | task 5.1 真实端点 | `docs/verification/skill-providers-real-endpoint.md`：子会话 preset 层覆盖同名、层独有技能、`skill` 正文来自该层；`/skills` 与目录消息两次观察一致 | aligned |
 | 验收 | task 5.2 UAT | 场次手册已立骨架，人未跑 | deferred |
 
 ## 规格
@@ -93,4 +93,4 @@ summary 字段的偏差说明（对应上表 simplified）：DSH 的摘要带来
 
 1. D7 的 `merge_skill_layer` 回落分支（`simplified`）：保留还是收掉 `SessionEnv.skills_registry` 的可选性；
 2. 摘要缺 `source`/`provider`（`simplified`）：现在加还是等远程 provider；
-3. `5.1` 真实端点与 `5.2` UAT（`deferred`）：本机无密钥、UAT 需人跑，归档前必须补上。
+3. `5.2` UAT（`deferred`）：需人坐终端跑，归档前必须补上。
