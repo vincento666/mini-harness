@@ -48,13 +48,13 @@
 
 ## 3. 内核：清单注入 + 正文按需
 
-**启动（mini 对 DSH 的简化）**：`session/start.payload.skills` 只放清单：
+**启动**：`session/start.payload.skills` 只放装配期清单（审计与命令面用）：
 
 ```json
 [{"name": "tdd", "description": "test-first ...", "rank": 100, "path": "..."}]
 ```
 
-受保护头部只放紧凑一行（名字 + 一句描述），**不放正文**；描述截到 500 字符、总预算 2000 字符，截断处留 marker。DSH 的做法是在第一个 `agent/pre-step` 注入一条 user 角色的 `<system-reminder>`，之后每步比对 digest、变了就追加完整替换；mini 先做启动快照，这条记为简化（触发条件：需要会话中途增删技能即时可见时）。
+模型目录是一条 **user 角色的 `<system-reminder>` 消息**（`source: skill-catalog`）：名字 + 转义后的描述，**不放正文**；描述截到 500 字符。每个 turn 装配前重新发现并比对指纹，变了追加完整替换；不完整发警告、下一步重试；清空追加空目录退休旧名字；压缩折掉后重建。受保护头部**不放**技能块。
 
 **按需加载**：`skill` 工具（`{name}`）读正文并返回；正文作为 `tool/result` 进日志与上下文。`skill` 工具是普通工具，走 ② 的注册/围栏/结果词；不需要新增长期上下文机制。
 

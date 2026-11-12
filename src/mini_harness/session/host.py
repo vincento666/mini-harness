@@ -279,6 +279,7 @@ def create_session(
         log=prepared.log,
         registry=prepared.registry,
         settings=prepared.settings,
+        skills_refresh=prepared.skills_refresh,
     )
     started = start_session(prompt="", entry=ENTRY_HOST, env=env)
     if started is not None:

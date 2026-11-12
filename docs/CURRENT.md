@@ -13,6 +13,7 @@
 - **`skill-slash-commands`（M14 的补丁）已合入并归档**（合并 `4a9fe04`）：直接 `/技能名` 与 `/skill 技能名` 等价、host `GET /commands?session_id=` 列会话技能、`/help` 列技能命令；含渐进式披露与技能执行结果的端到端判据；UAT agent 代跑。
 - **`skill-command-arguments`（M14 补丁的补丁）已合入并归档**（合并 `4a9fe04`）：`/<技能名> 指令` 把正文 + 指令展开成消息并开段，host 返回 202（忙时排队）；不含指令的 `/<技能名>` 仍只打印正文。含真实端点、变异 3 条、UAT（agent 代跑）、Learning。
 - **`skill-invocation-policy` 已合入并归档**（合并 `78ddaba`）：策略位（模型/人机两面）、发现完整性（`skills_incomplete` + 头部警告）、preset 目录层（`skill_dirs` 同名覆盖）、`/<技能名>` 执行与 `/skill` 查看；真实端点、UAT（agent 代跑）、变异、对齐复核全过。
+- **`skill-catalog-live` 已归档（分支上），待合入 `main`**：目录改为持久 user 消息、每 turn 指纹替换、不完整重试/恢复、清空退休、压缩重建、子会话重放 preset 层；真实端点（加/删/权限失败三场）、UAT（agent 代跑）、变异 4 条、对齐复核全过。
 - **P0 诊断完成**：`docs/verification/p0-budget-reading-diagnostic-2026-10-27.md`。当前 main 的 W1 四次遮蔽均下降、W2 未触发溢出；**不按旧 20 个 task 原样 apply**，需重新确认是否还有可复现症状。
 - **唯一未实现的修复分支**：`change/fix-post-compaction-budget-reading`（20 个 task 全未勾，只有 proposal / design / spec / tasks；不实现、不归档）。
 - 已合并但分支还没删的：`change/fix-small-window-compaction-dead-zone`、`change/add-key-driven-default-provider`、`change/fix-chat-screen-feedback`、`change/add-platform-facts-to-protected-header`、`change/fix-compaction-and-context-overflow`。
