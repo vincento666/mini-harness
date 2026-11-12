@@ -189,6 +189,21 @@ def discover_skills(workspace: Path, environ: Mapping[str, str]) -> SkillDiscove
     )
 
 
+def discover_skill_layer(directories: Sequence[Path]) -> SkillDiscovery:
+    """一个 scope 层：按目录顺序扫入，层内先到先得；complete 取与。"""
+    by_name: dict[str, Skill] = {}
+    complete = True
+    for index, directory in enumerate(directories):
+        found, ok = _scan(directory, RANK_PRESET_LAYER + index)
+        complete = complete and ok
+        for skill in found:
+            by_name.setdefault(skill.name, skill)
+    return SkillDiscovery(
+        skills=tuple(sorted(by_name.values(), key=lambda skill: skill.name)),
+        complete=complete,
+    )
+
+
 def merge_skill_layer(
     base: Sequence[Skill], directories: Sequence[Path]
 ) -> tuple[tuple[Skill, ...], bool]:
