@@ -705,33 +705,35 @@ def test_a_preset_skill_layer_reaches_the_child_only(tmp_path: Path) -> None:
         cwd=workspace,
     )
 
-    starts = [
-        record["payload"]
-        for path in workspace.glob("sessions/*.jsonl")
-        for record in map(json.loads, path.read_text(encoding="utf-8").splitlines())
-        if record["type"] == "session/start"
-    ]
-    parent = next(payload for payload in starts if payload.get("entry") == "run")
-    child = next(payload for payload in starts if payload.get("entry") == "subagent")
-    assert {item["name"]: item["description"] for item in parent["skills"]} == {"tdd": "全局"}
-    assert {item["name"]: item["description"] for item in child["skills"]} == {
+    logs: dict[str, Path] = {}
+    starts: dict[str, dict[str, Any]] = {}
+    for path in workspace.glob("sessions/*.jsonl"):
+        records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+        payload = next(
+            record["payload"] for record in records if record["type"] == "session/start"
+        )
+        logs[payload["entry"]] = path
+        starts[payload["entry"]] = payload
+    assert {item["name"]: item["description"] for item in starts["run"]["skills"]} == {
+        "tdd": "全局"
+    }
+    assert {item["name"]: item["description"] for item in starts["subagent"]["skills"]} == {
         "extra": "子会话独有",
         "tdd": "preset",
     }
-    child_log = next(
-        path
-        for path in workspace.glob("sessions/*.jsonl")
-        if any(
-            record["type"] == "session/start"
-            and record["payload"].get("entry") == "subagent"
+
+    def catalog(path: Path) -> list[dict[str, Any]]:
+        return [
+            record["payload"]
             for record in map(json.loads, path.read_text(encoding="utf-8").splitlines())
-        )
-    )
-    child_catalog = [
-        record["payload"]
-        for record in map(json.loads, child_log.read_text(encoding="utf-8").splitlines())
-        if record["type"] == "user/message"
-        and record["payload"].get("source") == "skill-catalog"
-    ]
+            if record["type"] == "user/message"
+            and record["payload"].get("source") == "skill-catalog"
+        ]
+
+    child_catalog = catalog(logs["subagent"])
     assert child_catalog and "extra" in child_catalog[0]["content"]
     assert "preset" in child_catalog[0]["content"]
+    # 子会话结束后父会话回到自己那一层：目录不因 spawn 多出 preset 技能。
+    parent_catalog = catalog(logs["run"])
+    assert len(parent_catalog) == 1
+    assert "extra" not in parent_catalog[0]["content"]

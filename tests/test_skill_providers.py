@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from mini_harness.skill_providers import FilesystemProvider, SkillRegistry
+from mini_harness.skill_providers import FilesystemProvider, SkillRegistry, skills_view
 from mini_harness.skills import RANK_PRESET_LAYER, Skill, SkillDiscovery
 
 
@@ -134,3 +134,11 @@ def test_a_missing_layer_directory_is_an_empty_complete_layer(tmp_path: Path) ->
 
     assert discovery.skills == ()
     assert discovery.complete
+
+
+def test_without_a_registry_the_command_face_uses_the_assembly_snapshot(
+    tmp_path: Path,
+) -> None:
+    skill = _skill(tmp_path, "tdd", 100)
+
+    assert skills_view(None, (skill,)) == (skill,)
