@@ -66,6 +66,8 @@ def test_the_near_layer_wins_by_name_across_ranks(tmp_path: Path) -> None:
     snapshot = registry.snapshot()
 
     assert [skill.name for skill in snapshot.skills] == ["tdd"]
+    # 胜出的必须是层里那份：全局那份 rank 更低也不作数。
+    assert snapshot.skills[0].rank == 600
     assert registry.get("tdd") == "preset 的正文"
 
 
