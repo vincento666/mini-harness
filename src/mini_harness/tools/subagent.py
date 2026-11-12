@@ -263,7 +263,9 @@ async def _run_subagent(
         child_complete = snapshot.complete
     elif directories:
         # 裸 env（没有注册表）仍走旧的目录层合并，判据不至于因为缺注册表而失明。
-        child_skills, layer_complete = merge_skill_layer(parent.skills, directories)
+        child_skills, layer_complete = merge_skill_layer(
+            parent.skills, directories, f"preset:{preset}"
+        )
         child_complete = child_complete and layer_complete
     child_registry = session.registry
     if preset is not None:

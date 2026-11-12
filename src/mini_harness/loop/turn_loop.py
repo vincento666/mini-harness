@@ -846,6 +846,7 @@ def start_session(*, prompt: str, entry: SessionEntry, env: SessionEnv) -> Segme
                 "name": skill.name,
                 "description": skill.description,
                 "rank": skill.rank,
+                "source": skill.source,
                 "path": str(skill.path),
                 "model_invocable": skill.model_invocable,
                 "user_invocable": skill.user_invocable,

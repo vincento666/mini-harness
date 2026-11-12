@@ -200,6 +200,15 @@ def _rec(seq: int, event_type: str, payload: dict[str, Any]) -> EventRecord:
     )
 
 
+def test_a_skill_records_which_root_it_came_from(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    _skill(workspace / ".minihns" / "skills", "tdd")
+
+    discovery = discover_skills(workspace, {"MINIHNS_HOME": str(tmp_path / "home")})
+
+    assert [(skill.name, skill.source) for skill in discovery.skills] == [("tdd", "project")]
+
+
 def test_the_catalog_message_carries_the_manifest_but_not_the_body() -> None:
     catalog = render_catalog_message(
         [Skill(name="tdd", description="先写判据", rank=100, path=Path("/ws/tdd"))], True
@@ -709,9 +718,7 @@ def test_a_preset_skill_layer_reaches_the_child_only(tmp_path: Path) -> None:
     starts: dict[str, dict[str, Any]] = {}
     for path in workspace.glob("sessions/*.jsonl"):
         records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
-        payload = next(
-            record["payload"] for record in records if record["type"] == "session/start"
-        )
+        payload = next(record["payload"] for record in records if record["type"] == "session/start")
         logs[payload["entry"]] = path
         starts[payload["entry"]] = payload
     assert {item["name"]: item["description"] for item in starts["run"]["skills"]} == {
@@ -720,6 +727,12 @@ def test_a_preset_skill_layer_reaches_the_child_only(tmp_path: Path) -> None:
     assert {item["name"]: item["description"] for item in starts["subagent"]["skills"]} == {
         "extra": "子会话独有",
         "tdd": "preset",
+    }
+    # 摘要带层名：父是 project 根，子是 preset provider 的名字。
+    assert {item["name"]: item["source"] for item in starts["run"]["skills"]} == {"tdd": "project"}
+    assert {item["name"]: item["source"] for item in starts["subagent"]["skills"]} == {
+        "extra": "preset:reader",
+        "tdd": "preset:reader",
     }
 
     def catalog(path: Path) -> list[dict[str, Any]]:

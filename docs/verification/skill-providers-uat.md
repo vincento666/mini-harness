@@ -15,8 +15,8 @@
 
 | 场次 | 实际观察 | 结论 | 别扭在哪 |
 |---|---|---|---|
-| S1 | 父 `/skills` 两次（spawn 前后）都只有 `tdd`=「全局的 tdd：项目根的测试驱动技能」；子会话 `3a05b9f3…` → `c969b241…` 的 `session/start.skills` 与目录消息都只有 `tdd`=「preset 的 tdd：reader 档的测试驱动技能」；模型自己指出「名称一致、描述不同」 | 通过 | 父会话看不到子会话的技能来自哪一层（摘要没有来源字段，见对齐复的 `simplified`） |
-| S2 | 父 `/skills` 两次都只有 `tdd`；子会话 `96d9f1d6…` → `7d9f1a4f…` 的目录是 `review`（「评审时先指出风险」）+ `tdd`；模型指出「子会话多一个 review」 | 通过 | 同上；另外 `review` 只在子会话可调，父会话里没有它，这一点界面上没有提示 |
+| S1 | 父 `/skills` 两次（spawn 前后）都只有 `tdd`=「全局的 tdd：项目根的测试驱动技能」；子会话 `3a05b9f3…` → `c969b241…` 的 `session/start.skills` 与目录消息都只有 `tdd`=「preset 的 tdd：reader 档的测试驱动技能」；模型自己指出「名称一致、描述不同」 | 通过 | 父会话看不到子会话的技能来自哪一层——本场跑完后按人裁决加了 `Skill.source`，现在 `session/start` 与目录消息都写层名 |
+| S2 | 父 `/skills` 两次都只有 `tdd`；子会话 `96d9f1d6…` → `7d9f1a4f…` 的目录是 `review`（「评审时先指出风险」）+ `tdd`；模型指出「子会话多一个 review」 | 通过 | 同上（本场之后已加 `source`）；另外 `review` 只在子会话可调，父会话里没有它，这一点界面上没有提示 |
 | S3 | 会话 `a7716fd8…`：第一次 `/skills` 只有 `tdd`；模型用 bash 写 `.minihns/skills/review/SKILL.md` 后，第二次 `/skills` 是 `review` + `tdd`；同一时刻模型目录消息从「tdd」变为「review + tdd」，`digest` 变化 | 通过 | 没有；命令面与目录同源这条读起来是直的 |
 | S4 | `minihns run` 退出码 **2**；stdout 空；stderr 为 `INVALID_ARGUMENT: [subagent.presets.reader].skills.kind 只接受 filesystem`；`--session-dir` 下 0 个文件 | 通过 | 错误指向 `kind` 且给出唯一合法值，够用 |
 

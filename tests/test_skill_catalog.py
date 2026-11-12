@@ -139,6 +139,20 @@ def test_a_shadowed_catalog_is_reinjected(tmp_path: Path) -> None:
     assert messages[0]["digest"] == first["digest"]
 
 
+def test_the_catalog_message_names_the_layer_a_skill_came_from() -> None:
+    skill = Skill(
+        name="tdd",
+        description="先写判据",
+        rank=600,
+        path=Path("/tmp/tdd.md"),
+        source="preset:reader",
+    )
+
+    content = render_catalog_message([skill], True)
+
+    assert "preset:reader" in content
+
+
 def test_render_catalog_escapes_and_truncates() -> None:
     skill = Skill(
         name="tdd",
@@ -159,6 +173,16 @@ def test_digest_includes_completeness() -> None:
     skills = (Skill(name="tdd", description="d", rank=100, path=Path("/tmp/tdd.md")),)
 
     assert catalog_digest(skills, True) != catalog_digest(skills, False)
+
+
+def test_digest_includes_the_layer_name() -> None:
+    """目录文本会写层名，指纹就得含层名，否则换了层不会重发。"""
+    project = (Skill(name="tdd", description="d", rank=100, path=Path("/a"), source="project"),)
+    preset = (
+        Skill(name="tdd", description="d", rank=600, path=Path("/b"), source="preset:reader"),
+    )
+
+    assert catalog_digest(project, True) != catalog_digest(preset, True)
 
 
 def test_the_loop_emits_the_catalog_each_turn(tmp_path: Path) -> None:

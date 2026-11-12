@@ -10,7 +10,7 @@
 | 形状 | `SkillProvider { name, list, get }`；注册表分层 | `skill_providers.py` 同名协议与 `SkillRegistry`（提案写 `skills_provider.py`，仅文件名差异） | aligned |
 | 机制 | 近层同名直接胜出，rank 只在层内裁决 | `snapshot()` 按 `(*scopes, global)` 顺序 `setdefault`；层内 rank 由 `discover_skills` / `discover_skill_layer` 自己裁决 | aligned |
 | 语义 | 未知/失败按结果词返回 | 未知技能 → `TOOL_ARGS_INVALID`；配置非法 → `CONFIG_*` + 退出码 2 | aligned |
-| 形状 | summary 带 `source` / `provider` / `rank` | `session/start.payload.skills` 只有 `name/description/rank/path/两个策略位`；层名只在 `FilesystemProvider.name`，不进摘要 | simplified |
+| 形状 | summary 带 `source` / `provider` / `rank` | `Skill.source` 记层名（`project` / `project-shared` / `user` / `bundled` / `preset:<id>`）；`session/start.payload.skills[].source` 与目录消息（`` `name`（source）: desc ``）都写它；`provider` 并入 `source`（一层一个名字），不另开字段 | aligned |
 | Impact | 代码清单 | `skill_providers.py` 新增；`skills.py`、`session/assembly.py`、`tools/subagent.py`、`tools/skill.py`、`cli/main.py`、`session/host.py`、`config/assembly.py` 改动；`commands.py` 未改（命令面改在调用侧） | aligned |
 | Impact | ADR-0035 加句 + ADR-0040 | 两份都在 `HEAD`；ADR-0039 标 `superseded by ADR-0040` | aligned |
 | 非目标 | 远程 provider、热插拔、插件容器 | 未做；`SKILL_KINDS = {"filesystem"}` | aligned |
@@ -21,7 +21,7 @@
 | 验收 | task 5.3 变异一轮 | `docs/verification/skill-providers-mutation.md`：9 个变异全被杀（两个首轮存活，补判据后杀死） | aligned |
 | 验收 | task 5.6 ADR | 同上（ADR-0035 修订 + ADR-0040） | aligned |
 | 验收 | task 5.1 真实端点 | `docs/verification/skill-providers-real-endpoint.md`：子会话 preset 层覆盖同名、层独有技能、`skill` 正文来自该层；`/skills` 与目录消息两次观察一致 | aligned |
-| 验收 | task 5.2 UAT | 场次手册已立骨架，人未跑 | deferred |
+| 验收 | task 5.2 UAT | `docs/verification/skill-providers-uat.md`：四场 agent 代跑（用户指示）全过 | aligned |
 
 ## 规格
 
@@ -66,15 +66,15 @@
 | D6 `skill` 工具走注册表 | `context.session.skills_registry` 找技能、`registry.get` 取正文；无注册表回落到构造元组 | aligned |
 | D7 删除目录糖 | 配置面已无 `skill_dirs`；`discover_skills` 成为 provider 内部实现。**`merge_skill_layer` 仍被 spawn 调用**——只在「裸 env 没有注册表」的回落分支 | simplified |
 
-D7 的偏差说明：`assemble` 总会建注册表，所以那条分支在生产路径不可达，只有直接构造 `SessionEnv` 的测试会走到；保留它是为了让裸 env 的判据不失明。代价是多一条无消费者的分支。**建议**：保留，或在下个 change 里把 `SessionEnv.skills_registry` 收成必填并删掉回落——由人裁决。
+D7 的偏差说明：`assemble` 总会建注册表，所以那条分支在生产路径不可达，只有直接构造 `SessionEnv` 的测试会走到；保留它是为了让裸 env 的判据不失明。代价是多一条无消费者的分支。**人已裁决（2026-11-12）：保留回落**，不收 `SessionEnv.skills_registry` 的可选性。
 
-summary 字段的偏差说明（对应上表 simplified）：DSH 的摘要带来源，mini 只带 `rank` 与 `path`，层名不进 payload。代价是审计里看不出一个技能来自哪一层；触发条件：远程或打包 provider 进来、同名的两个来源需要区分时再加 `source`。**由人裁决**。
+summary 字段的偏差说明：**人已裁决（2026-11-12）：现在就加 `source`**。`Skill.source` 记层名，`session/start` 与目录消息都写它；`provider` 不单列（一层的 `source` 就是 provider 名）。指纹随之含 `source`，换层会重发目录。
 
 ## DSH 十项
 
 | # | 项 | 结论 | 记账 |
 |---|---|---|---|
-| 1 | 形状 | simplified | provider 两方法同构；摘要缺 `source`/`provider`（见上） |
+| 1 | 形状 | aligned | provider 两方法同构；摘要带 `source`（层名）与 `rank`；`provider` 并入 `source` |
 | 2 | 机制 | aligned | DSH 在插件 `apply()` 同步注册、读时合并 scope 链；mini 在装配期建全局层、spawn 时挂层，读时合并。没有插件生命周期，触发点等价 |
 | 3 | 语义 | aligned | 近层胜、rank 只在层内；未知 kind 退出码 2；目录不存在是空层；`skill_dirs` 按未知键 |
 | 4 | 不变量 | aligned | A：目录仍是日志里的消息，正文不进日志；B：未知/不可调用是 `TOOL_ARGS_INVALID` 结果词；E：preset 的相对目录按 workspace 解析 |
@@ -87,10 +87,10 @@ summary 字段的偏差说明（对应上表 simplified）：DSH 的摘要带来
 
 ## 结论
 
-提案、规格、设计逐条兑现，实现与判据对得上：两条 Requirement 的十个 Scenario 每条都有判据，变异 9 个全杀。
+提案、规格、设计逐条兑现，实现与判据对得上：两条 Requirement 的十个 Scenario 每条都有判据，变异 9 个全杀。十项里 9 aligned、1 simplified（只有「全局 + 一层 preset」的组合面）。
 
-三处需要人裁决：
+三处曾需要人裁决，现两处已裁决、一处已补跑：
 
-1. D7 的 `merge_skill_layer` 回落分支（`simplified`）：保留还是收掉 `SessionEnv.skills_registry` 的可选性；
-2. 摘要缺 `source`/`provider`（`simplified`）：现在加还是等远程 provider；
-3. `5.2` UAT（`deferred`）：需人坐终端跑，归档前必须补上。
+1. D7 的 `merge_skill_layer` 回落分支：**保留**（人裁决）；
+2. 摘要缺 `source`/`provider`：**已加 `source`**（人裁决），`provider` 并入 `source`；
+3. `5.2` UAT：**已补跑**四场（agent 代跑，用户指示）。

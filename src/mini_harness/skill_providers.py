@@ -42,7 +42,7 @@ class FilesystemProvider:
 
     @classmethod
     def from_dirs(cls, name: str, directories: Sequence[Path]) -> FilesystemProvider:
-        return cls(name, lambda: discover_skill_layer(directories))
+        return cls(name, lambda: discover_skill_layer(directories, name))
 
     def list(self) -> SkillDiscovery:
         return self._load()

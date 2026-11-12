@@ -18,11 +18,11 @@
 | # | 对照点 | 结论 |
 |---|---|---|
 | S1 | 两条 Requirement、十个 Scenario | 对齐复 `skill-providers-dsh-review.md` 逐条核过，每条都有判据，无偏离 |
-| S2 | D7「`merge_skill_layer` 不再被 spawn 调用」 | 字面不符：`tools/subagent.py` 的 `elif directories:`（裸 env 无注册表）仍调它。已在对齐复标 `simplified`，待人裁决 |
+| S2 | D7「`merge_skill_layer` 不再被 spawn 调用」 | 字面不符：`tools/subagent.py` 的 `elif directories:`（裸 env 无注册表）仍调它。人裁决：**保留回落**，记 `simplified` |
 | S3 | `settings.skills` 只做 payload 快照 | 符合 D4：装配期取一次注册表快照写 `session/start`，目录与命令面读活视图 |
-| S4 | 摘要缺 `source` / `provider` | 已在对齐复标 `simplified`，待人裁决 |
+| S4 | 摘要缺 `source` / `provider` | 人裁决「现在就加」，已实现：`Skill.source` 记层名，`session/start.payload.skills[].source` 与目录消息都写它，指纹含 `source`；判据 `test_a_skill_records_which_root_it_came_from`、`test_the_catalog_message_names_the_layer_a_skill_came_from`、`test_digest_includes_the_layer_name` |
 | S5 | 判据质量 | 变异 9 条全杀（两条首轮存活已补判据）；真实端点两场、UAT 四场均通过 |
 
 ## 结论
 
-两轴无阻塞项：一处重复实现已修，五处记账（C2–C6），其中两处（S2、S4）是待人裁决的 `simplified`。
+两轴无阻塞项：一处重复实现已修（C1），五处记账（C2–C6）；两处待人裁决的都已裁：D7 保留回落、`source` 已加。
