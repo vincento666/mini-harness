@@ -125,7 +125,7 @@ H1 / H2 是新增的宿主轨，不占用 M10–M15 的决策编号；M 编号�
 M14 之后技能面的两个已记账缺口，排期如下（2026-11-11 裁）：
 
 - **`skill-invocation-policy`**：补 `user-invocable` / `disable-model-invocation` 两个 frontmatter 策略位（DSH 的 `SkillInvocationPolicy`）。**排在 M14 之后、M14a 之前**——✅ **2026-11-11 已归档**（`2026-11-11-skill-invocation-policy`）：策略位、发现完整性、preset 目录层、`/技能名` 执行（`/skill` 查看）；已合入 `main`（`78ddaba`）。改 `skills.py` 的解析与 `Skill` 形状、模型清单过滤、`/skills` 与 `/<技能名>` 的命令暴露；判据：model-only 技能不出现在 `/skills` 与命令清单、user-only 技能不出现在模型清单与 `skill` 工具、`/<技能名>` 对 user-only 可用、`/skill <名字>` 对所有技能可用。
-- **`skill-catalog-live`**：目录改为持久 user 消息 + 每 turn 指纹替换 + 不完整重试 + 清空退休 + 压缩重建（`skill-invocation-policy` 的第 6 项残留）。**✅ 2026-11-12 已归档**（`2026-11-12-skill-catalog-live`），待合入 `main`。
+- **`skill-catalog-live`**：目录改为持久 user 消息 + 每 turn 指纹替换 + 不完整重试 + 清空退休 + 压缩重建（`skill-invocation-policy` 的第 6 项残留）。**✅ 2026-11-12 已合入 `main`**（`9b0f8c1`）并归档。
 - **`skill-providers`**：provider 接口 + scope 层，preset 从目录糖换成挂载 provider（第 7 项残留）；待 propose。
 - **`skill-inline-mention`**：句中 `/技能名`（DSH 的消息手势：空白分隔 token 在消息任意位置，命中后把正文注入当步）。**排在 M14c 之后**；若壳的 composer/inline mention 先就绪，可提前。依赖 `skill-invocation-policy` 的 `user-invocable` 过滤；照 DSH 不落命令事件。
 
