@@ -245,6 +245,13 @@ async def _run_subagent(
     child_skills = parent.skills
     child_complete = parent.skills_complete
     directories: list[FilePath] = []
+    if preset is not None and presets is not None:
+        directories = [
+            FilePath(directory)
+            if FilePath(directory).is_absolute()
+            else parent.workspace / directory
+            for directory in presets.skill_dirs_for(preset)
+        ]
     child_skill_registry = session.skills_registry
     if directories and child_skill_registry is not None:
         child_skill_registry = child_skill_registry.scoped(

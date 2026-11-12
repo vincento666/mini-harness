@@ -64,11 +64,49 @@ def test_a_preset_persona_is_accepted() -> None:
     assert isinstance(registry, ToolRegistry)
 
 
-def test_skill_dirs_must_be_a_string_array() -> None:
-    for value in ("skills", ["a", 1]):
-        result = build_registry(None, {"presets": {"reader": {"skill_dirs": value}}})
-        assert isinstance(result, ConfigFailure), value
-        assert result.code == "CONFIG_INVALID_VALUE"
+def test_a_preset_skills_table_is_accepted() -> None:
+    registry = build_registry(
+        None,
+        {
+            "presets": {
+                "reader": {
+                    "tools": ["read"],
+                    "skills": {"kind": "filesystem", "dirs": ["sk"]},
+                }
+            }
+        },
+    )
+
+    assert isinstance(registry, ToolRegistry)
+
+
+def test_a_skills_table_needs_a_known_kind_and_string_dirs() -> None:
+    cases: list[tuple[Any, str, str]] = [
+        ({"kind": "remote", "dirs": ["sk"]}, "kind", "CONFIG_INVALID_VALUE"),
+        ({"dirs": ["sk"]}, "kind", "CONFIG_INVALID_VALUE"),
+        ({"kind": "filesystem", "dirs": "sk"}, "dirs", "CONFIG_INVALID_VALUE"),
+        ({"kind": "filesystem"}, "dirs", "CONFIG_INVALID_VALUE"),
+        ({"kind": "filesystem", "dirs": ["sk"], "extra": 1}, "extra", "CONFIG_UNKNOWN_KEY"),
+        (["filesystem"], "skills", "CONFIG_INVALID_VALUE"),
+    ]
+
+    for skills, key, code in cases:
+        result = build_registry(
+            None, {"presets": {"reader": {"tools": ["read"], "skills": skills}}}
+        )
+        assert isinstance(result, ConfigFailure), skills
+        assert result.code == code, (skills, result.code)
+        assert key in result.detail, (skills, result.detail)
+
+
+def test_skill_dirs_is_a_removed_key() -> None:
+    result = build_registry(
+        None, {"presets": {"reader": {"tools": ["read"], "skill_dirs": ["sk"]}}}
+    )
+
+    assert isinstance(result, ConfigFailure)
+    assert result.code == "CONFIG_UNKNOWN_KEY"
+    assert "skill_dirs" in result.detail
 
 
 def test_an_empty_subagent_section_is_legal() -> None:

@@ -609,7 +609,8 @@ def test_a_preset_skill_layer_reaches_the_child_only(tmp_path: Path) -> None:
     (workspace / "mini.config.toml").write_text(
         '[subagent]\npreset = "reader"\n\n'
         '[subagent.presets.reader]\ntools = ["read", "glob"]\n'
-        'skill_dirs = [".minihns/preset-skills"]\n',
+        '[subagent.presets.reader.skills]\nkind = "filesystem"\n'
+        'dirs = [".minihns/preset-skills"]\n',
         encoding="utf-8",
     )
     fixture = workspace / "turns.json"

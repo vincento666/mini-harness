@@ -19,7 +19,10 @@ from mini_harness.tools.skill import skill_tool_definitions
 from mini_harness.tools.subagent import SubagentPresets, subagent_tool_definitions
 
 _SUBAGENT_KEYS = frozenset({"preset", "allowed_presets", "presets"})
-_PRESET_KEYS = frozenset({"tools", "persona", "skill_dirs"})
+_PRESET_KEYS = frozenset({"tools", "persona", "skills"})
+# preset 的 skills 是一张挂 provider 的表；现在只有 filesystem 一种（ADR-0040）。
+_PRESET_SKILL_KEYS = frozenset({"kind", "dirs"})
+SKILL_KINDS = frozenset({"filesystem"})
 
 
 def _invalid(detail: str, code: ConfigCode = "CONFIG_INVALID_VALUE") -> ConfigFailure:
@@ -78,12 +81,26 @@ def _presets(
                 f"preset {preset_id} 里有未注册的工具名：{_names_joined(unknown_tools)}",
                 "UNKNOWN_TOOL_NAME",
             )
-        dirs = spec.get("skill_dirs")
-        if dirs is not None and (
-            not isinstance(dirs, list) or not all(isinstance(item, str) for item in dirs)
-        ):
-            return _invalid(f"[subagent.presets.{preset_id}].skill_dirs 必须是字符串数组")
-        if isinstance(dirs, list):
+        skills_spec = spec.get("skills")
+        if skills_spec is not None and not isinstance(skills_spec, dict):
+            return _invalid(f"[subagent.presets.{preset_id}].skills 必须是一张表")
+        if isinstance(skills_spec, dict):
+            extra_skill_keys = sorted(set(skills_spec) - _PRESET_SKILL_KEYS)
+            if extra_skill_keys:
+                return _invalid(
+                    f"[subagent.presets.{preset_id}].skills 里有未知的键："
+                    f"{_names_joined(extra_skill_keys)}",
+                    "CONFIG_UNKNOWN_KEY",
+                )
+            kind = skills_spec.get("kind")
+            if kind not in SKILL_KINDS:
+                return _invalid(
+                    f"[subagent.presets.{preset_id}].skills.kind 只接受 "
+                    f"{_names_joined(sorted(SKILL_KINDS))}"
+                )
+            dirs = skills_spec.get("dirs")
+            if not isinstance(dirs, list) or not all(isinstance(item, str) for item in dirs):
+                return _invalid(f"[subagent.presets.{preset_id}].skills.dirs 必须是字符串数组")
             skill_dirs[preset_id] = tuple(dirs)
         persona = spec.get("persona")
         if persona is not None and not isinstance(persona, str):
