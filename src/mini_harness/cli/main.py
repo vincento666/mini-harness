@@ -60,7 +60,8 @@ from mini_harness.session.assembly import (
     assemble,
     request_from_args,
 )
-from mini_harness.skills import SkillDiscovery, skill_content
+from mini_harness.skill_providers import SkillRegistry
+from mini_harness.skills import skill_content
 from mini_harness.tools import ToolRegistry
 
 EXIT_OK = 0
@@ -252,7 +253,7 @@ async def _await_session(
     settings: SessionSettings,
     log: EventLog,
     registry: ToolRegistry,
-    skills_refresh: Callable[[], SkillDiscovery] | None = None,
+    skills_registry: SkillRegistry | None = None,
 ) -> RunOutcome:
     """装好 Ctrl-C 处理器再跑内核：Ctrl-C 是取消，不是崩溃。"""
     cancel = asyncio.Event()
@@ -267,7 +268,7 @@ async def _await_session(
             registry=registry,
             settings=settings,
             cancel=cancel,
-            skills_refresh=skills_refresh,
+            skills_registry=skills_registry,
         )
     finally:
         signal.signal(signal.SIGINT, previous)
@@ -300,7 +301,7 @@ def _run(args: argparse.Namespace) -> int:
             settings=prepared.settings,
             log=prepared.log,
             registry=prepared.registry,
-            skills_refresh=prepared.skills_refresh,
+            skills_registry=prepared.skills_registry,
         )
     )
 
@@ -583,7 +584,7 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
         log=prepared.log,
         registry=prepared.registry,
         settings=prepared.settings,
-        skills_refresh=prepared.skills_refresh,
+        skills_registry=prepared.skills_registry,
     )
     if not prepared.resumed:
         started = start_session(prompt="", entry=ENTRY_CHAT, env=env)

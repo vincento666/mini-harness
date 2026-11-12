@@ -9,6 +9,7 @@ from mini_harness.config import build_registry
 from mini_harness.events import EventLog, read_events
 from mini_harness.loop.turn_loop import _maybe_emit_catalog, run_session_env
 from mini_harness.provider import FixtureProvider
+from mini_harness.skill_providers import FilesystemProvider, SkillRegistry
 from mini_harness.skills import (
     Skill,
     SkillDiscovery,
@@ -37,19 +38,23 @@ def _catalog_messages(log: EventLog) -> list[dict[str, object]]:
     ]
 
 
-def _env(tmp_path: Path, refresh) -> object:  # type: ignore[no-untyped-def]
+def _env(tmp_path: Path, load=None) -> object:  # type: ignore[no-untyped-def]
+    """一个带全局注册表的会话环境；`load` 覆盖发现，用来演「中途多/少/不完整」。"""
     workspace = tmp_path / "ws"
-    workspace.mkdir(exist_ok=True)
+    workspace.mkdir(parents=True, exist_ok=True)
     _, env = build_session_env(
         tmp_path, "s-catalog", FixtureProvider(entries=[]), workspace=workspace
     )
-    return replace(env, skills_refresh=refresh)
+    provider = FilesystemProvider(
+        "filesystem", (lambda: discover_skills(workspace, {})) if load is None else load
+    )
+    return replace(env, skills_registry=SkillRegistry(provider))
 
 
 def test_the_catalog_message_is_injected_once_and_not_repeated(tmp_path: Path) -> None:
     root = tmp_path / "ws" / ".minihns" / "skills"
     _write_skill(root, "tdd")
-    env = _env(tmp_path, lambda: discover_skills(tmp_path / "ws", {}))
+    env = _env(tmp_path)
 
     _maybe_emit_catalog(env, "s1")  # type: ignore[arg-type]
     _maybe_emit_catalog(env, "s1")  # type: ignore[arg-type]
@@ -63,7 +68,7 @@ def test_the_catalog_message_is_injected_once_and_not_repeated(tmp_path: Path) -
 def test_a_changed_catalog_appends_a_replacement(tmp_path: Path) -> None:
     root = tmp_path / "ws" / ".minihns" / "skills"
     _write_skill(root, "tdd")
-    env = _env(tmp_path, lambda: discover_skills(tmp_path / "ws", {}))
+    env = _env(tmp_path)
 
     _maybe_emit_catalog(env, "s1")  # type: ignore[arg-type]
     _write_skill(root, "review")
@@ -77,11 +82,10 @@ def test_a_changed_catalog_appends_a_replacement(tmp_path: Path) -> None:
 def test_an_empty_catalog_retires_the_old_names(tmp_path: Path) -> None:
     root = tmp_path / "ws" / ".minihns" / "skills"
     path = _write_skill(root, "tdd")
-    env = _env(tmp_path, lambda: discover_skills(tmp_path / "ws", {}))
+    env = _env(tmp_path)
 
     _maybe_emit_catalog(env, "s1")  # type: ignore[arg-type]
     path.unlink()
-    path.parent.rmdir()
     _maybe_emit_catalog(env, "s2")  # type: ignore[arg-type]
 
     messages = _catalog_messages(env.log)  # type: ignore[attr-defined]
@@ -115,7 +119,7 @@ def test_an_incomplete_catalog_warns_and_recovers(tmp_path: Path) -> None:
 def test_a_shadowed_catalog_is_reinjected(tmp_path: Path) -> None:
     root = tmp_path / "ws" / ".minihns" / "skills"
     _write_skill(root, "tdd")
-    env = _env(tmp_path, lambda: discover_skills(tmp_path / "ws", {}))
+    env = _env(tmp_path)
     _maybe_emit_catalog(env, "s1")  # type: ignore[arg-type]
     first = _catalog_messages(env.log)[0]  # type: ignore[attr-defined]
     seq = next(
@@ -181,7 +185,7 @@ def test_the_loop_emits_the_catalog_each_turn(tmp_path: Path) -> None:
         registry=build_registry(None),
     )
     (tmp_path / "ws" / "a.md").write_text("内容\n", encoding="utf-8")
-    env = replace(env, skills_refresh=refresh)
+    env = replace(env, skills_registry=SkillRegistry(FilesystemProvider("filesystem", refresh)))
     import asyncio
 
     outcome = asyncio.run(

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, get_args
@@ -36,6 +36,7 @@ from mini_harness.provider.contract import (
     TurnDeltaSink,
 )
 from mini_harness.session.delegation import DelegationState
+from mini_harness.skill_providers import SkillRegistry
 from mini_harness.skills import SkillDiscovery, catalog_digest, render_catalog_message
 from mini_harness.tools.dispatch import ApprovalAsked, DispatchOutcome, dispatch_tool_call
 from mini_harness.tools.fences import (
@@ -118,8 +119,8 @@ class SessionEnv:
     on_delta: TurnDeltaSink | None = None
     # 委派账本：活跃子代理数与宿主登记回调（M12）；每个会话一份。
     delegation: DelegationState = field(default_factory=DelegationState)
-    # 技能刷新闭包（skill-catalog-live）：每次装配前重新观察；None 时回落到 settings 快照。
-    skills_refresh: Callable[[], SkillDiscovery] | None = None
+    # 技能注册表（skill-providers）：目录与命令面都读它的快照；None 时回落到 settings。
+    skills_registry: SkillRegistry | None = None
     skill_catalog: SkillCatalogState = field(default_factory=SkillCatalogState)
 
 
@@ -951,10 +952,10 @@ def _adopt_catalog(env: SessionEnv, events: Sequence[EventRecord]) -> None:
 
 def _maybe_emit_catalog(env: SessionEnv, segment_id: str) -> LogWriteFailure | None:
     """装配前观察技能目录：首轮注入、指纹变了替换、清空退休、压缩后重建。"""
-    refresh = env.skills_refresh
+    registry = env.skills_registry
     discovery = (
-        refresh()
-        if refresh is not None
+        registry.snapshot()
+        if registry is not None
         else SkillDiscovery(env.settings.skills, env.settings.skills_complete)
     )
     model_skills = tuple(skill for skill in discovery.skills if skill.model_invocable)
@@ -1206,7 +1207,7 @@ async def run_session(
     cancel: asyncio.Event,
     approval_gate: ApprovalGate = STDIN_APPROVAL_GATE,
     on_delta: TurnDeltaSink | None = None,
-    skills_refresh: Callable[[], SkillDiscovery] | None = None,
+    skills_registry: SkillRegistry | None = None,
 ) -> RunOutcome:
     """一次性入口（`run` / `serve`）：开始会话、恰一个段、结束会话。
 
@@ -1219,7 +1220,7 @@ async def run_session(
         settings=settings,
         approval_gate=approval_gate,
         on_delta=on_delta,
-        skills_refresh=skills_refresh,
+        skills_registry=skills_registry,
     )
     return await run_session_env(prompt=prompt, entry=entry, env=env, cancel=cancel)
 
