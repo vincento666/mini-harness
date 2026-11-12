@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, get_args
@@ -36,6 +36,7 @@ from mini_harness.provider.contract import (
     TurnDeltaSink,
 )
 from mini_harness.session.delegation import DelegationState
+from mini_harness.skills import SkillDiscovery, catalog_digest, render_catalog_message
 from mini_harness.tools.dispatch import ApprovalAsked, DispatchOutcome, dispatch_tool_call
 from mini_harness.tools.fences import (
     STDIN_APPROVAL_GATE,
@@ -94,6 +95,14 @@ class RunOutcome:
     detail: str = ""
 
 
+@dataclass
+class SkillCatalogState:
+    """模型目录的状态：上次发出的指纹与消息 seq（M14+）。"""
+
+    last_digest: str | None = None
+    last_seq: int | None = None
+
+
 @dataclass(frozen=True)
 class SessionEnv:
     """一次会话的冻结环境：段调用不再一路结伴（ADR-0002 第 21 条）。
@@ -109,6 +118,9 @@ class SessionEnv:
     on_delta: TurnDeltaSink | None = None
     # 委派账本：活跃子代理数与宿主登记回调（M12）；每个会话一份。
     delegation: DelegationState = field(default_factory=DelegationState)
+    # 技能刷新闭包（skill-catalog-live）：每次装配前重新观察；None 时回落到 settings 快照。
+    skills_refresh: Callable[[], SkillDiscovery] | None = None
+    skill_catalog: SkillCatalogState = field(default_factory=SkillCatalogState)
 
 
 @dataclass(frozen=True)
@@ -886,7 +898,12 @@ async def run_turn_segment(
     if failure is not None:
         return _segment_failure(failure, 0)
 
-    outcome = await _run_turns(env=env, first_turn_index=first_turn_index, cancel=cancel)
+    outcome = await _run_turns(
+        env=env,
+        segment_id=segment_id,
+        first_turn_index=first_turn_index,
+        cancel=cancel,
+    )
     if outcome.stop_reason not in STOP_REASONS:
         # 内核坏了：写不出 `turn/end`，也就不写 `segment/end`。
         return outcome
@@ -908,8 +925,70 @@ async def run_turn_segment(
     return outcome
 
 
+def _catalog_shadowed(events: Sequence[EventRecord], seq: int) -> bool:
+    for event in events:
+        if event.type != "compaction/summary":
+            continue
+        shadowed = event.payload.get("shadowed_range")
+        if isinstance(shadowed, Mapping):
+            start = shadowed.get("start")
+            end = shadowed.get("end")
+            if isinstance(start, int) and isinstance(end, int) and start <= seq <= end:
+                return True
+    return False
+
+
+def _adopt_catalog(env: SessionEnv, events: Sequence[EventRecord]) -> None:
+    """续跑/回放时从最新的目录消息恢复指纹，避免重复注入。"""
+    for event in reversed(events):
+        if event.type == "user/message" and event.payload.get("source") == "skill-catalog":
+            digest = event.payload.get("digest")
+            if isinstance(digest, str):
+                env.skill_catalog.last_digest = digest
+                env.skill_catalog.last_seq = event.seq
+            return
+
+
+def _maybe_emit_catalog(env: SessionEnv, segment_id: str) -> LogWriteFailure | None:
+    """装配前观察技能目录：首轮注入、指纹变了替换、清空退休、压缩后重建。"""
+    refresh = env.skills_refresh
+    discovery = (
+        refresh()
+        if refresh is not None
+        else SkillDiscovery(env.settings.skills, env.settings.skills_complete)
+    )
+    model_skills = tuple(skill for skill in discovery.skills if skill.model_invocable)
+    digest = catalog_digest(model_skills, discovery.complete)
+    events = read_events(env.log.path)
+    if isinstance(events, LogReadFailure):
+        return None
+    state = env.skill_catalog
+    if state.last_digest is None and state.last_seq is None:
+        _adopt_catalog(env, events)
+    shadowed = state.last_seq is not None and _catalog_shadowed(events, state.last_seq)
+    if state.last_digest == digest and not shadowed:
+        return None
+    if not model_skills and discovery.complete and state.last_digest is None and not shadowed:
+        return None
+    record = env.log.append(
+        "user/message",
+        {
+            "segment_id": segment_id,
+            "content": render_catalog_message(model_skills, discovery.complete),
+            "source": "skill-catalog",
+            "incomplete": not discovery.complete,
+            "digest": digest,
+        },
+    )
+    if isinstance(record, LogWriteFailure):
+        return record
+    state.last_digest = digest
+    state.last_seq = record.seq
+    return None
+
+
 async def _run_turns(
-    *, env: SessionEnv, first_turn_index: int, cancel: asyncio.Event
+    *, env: SessionEnv, segment_id: str, first_turn_index: int, cancel: asyncio.Event
 ) -> SegmentOutcome:
     """段内的显式回合循环：记账 → 装配上下文 → 调模型 → 派发工具 → 判定停止。"""
     log = env.log
@@ -929,6 +1008,10 @@ async def _run_turns(
         text_sink = _forward_delta(env.on_delta, turn_id)
 
         failure = _append_all(log, [("turn/start", {"turn_id": turn_id})])
+        if failure is not None:
+            return _segment_failure(failure, turns)
+
+        failure = _maybe_emit_catalog(env, segment_id)
         if failure is not None:
             return _segment_failure(failure, turns)
 
@@ -1123,6 +1206,7 @@ async def run_session(
     cancel: asyncio.Event,
     approval_gate: ApprovalGate = STDIN_APPROVAL_GATE,
     on_delta: TurnDeltaSink | None = None,
+    skills_refresh: Callable[[], SkillDiscovery] | None = None,
 ) -> RunOutcome:
     """一次性入口（`run` / `serve`）：开始会话、恰一个段、结束会话。
 
@@ -1135,6 +1219,7 @@ async def run_session(
         settings=settings,
         approval_gate=approval_gate,
         on_delta=on_delta,
+        skills_refresh=skills_refresh,
     )
     return await run_session_env(prompt=prompt, entry=entry, env=env, cancel=cancel)
 

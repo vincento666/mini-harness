@@ -27,7 +27,7 @@ from mini_harness.loop.turn_loop import (
     run_session_env,
 )
 from mini_harness.session.delegation import MAX_ACTIVE_SUBAGENTS, MAX_DEPTH, DelegationState
-from mini_harness.skills import Skill, merge_skill_layer
+from mini_harness.skills import Skill, SkillDiscovery, merge_skill_layer
 from mini_harness.tools.fences import UNAVAILABLE_APPROVAL_GATE, DispatchContext
 from mini_harness.tools.registry import (
     ToolArgs,
@@ -243,6 +243,7 @@ async def _run_subagent(
     persona = None if preset is None or presets is None else presets.persona_for(preset)
     child_skills = parent.skills
     child_complete = parent.skills_complete
+    directories: list[FilePath] = []
     if preset is not None and presets is not None:
         directories = [
             FilePath(directory)
@@ -253,6 +254,15 @@ async def _run_subagent(
         if directories:
             child_skills, layer_complete = merge_skill_layer(parent.skills, directories)
             child_complete = child_complete and layer_complete
+    parent_refresh = session.skills_refresh
+    parent_snapshot = SkillDiscovery(parent.skills, parent.skills_complete)
+
+    def child_refresh() -> SkillDiscovery:
+        base = parent_refresh() if parent_refresh is not None else parent_snapshot
+        if not directories:
+            return base
+        merged, layer_complete = merge_skill_layer(base.skills, directories)
+        return SkillDiscovery(merged, base.complete and layer_complete)
     child_registry = session.registry
     if preset is not None:
         # preset 决定工具面：从部署 preset 编译好的表里取，不导入父的局部工具限制。
@@ -283,6 +293,7 @@ async def _run_subagent(
         registry=child_registry,
         settings=child_settings,
         approval_gate=UNAVAILABLE_APPROVAL_GATE,
+        skills_refresh=child_refresh,
     )
     child_cancel = asyncio.Event()
     delegation.active += 1

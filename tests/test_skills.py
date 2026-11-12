@@ -22,6 +22,7 @@ from mini_harness.skills import (
     discover_skills,
     merge_skill_layer,
     read_skill_body,
+    render_catalog_message,
     skill_content,
 )
 from paths import HELLO_SCENARIO
@@ -158,29 +159,27 @@ def _rec(seq: int, event_type: str, payload: dict[str, Any]) -> EventRecord:
     )
 
 
-def test_the_header_carries_the_catalog_but_not_the_body() -> None:
+def test_the_catalog_message_carries_the_manifest_but_not_the_body() -> None:
+    catalog = render_catalog_message(
+        [Skill(name="tdd", description="先写判据", rank=100, path=Path("/ws/tdd"))], True
+    )
     events = [
+        _rec(0, "session/start", {"prompt": "任务", "tools": ["skill"]}),
         _rec(
-            0,
-            "session/start",
-            {
-                "prompt": "任务",
-                "tools": ["skill"],
-                "skills": [
-                    {"name": "tdd", "description": "先写判据", "rank": 100, "path": "/ws/tdd"},
-                ],
-            },
+            1,
+            "user/message",
+            {"segment_id": "s1", "content": catalog, "source": "skill-catalog"},
         ),
-        _rec(1, "turn/start", {"turn_id": "t1"}),
-        _rec(2, "model/response", {"turn_id": "t1", "content": "好", "tool_calls": []}),
-        _rec(3, "turn/end", {"turn_id": "t1", "stop_reason": "MODEL_COMPLETED"}),
+        _rec(2, "turn/start", {"turn_id": "t1"}),
+        _rec(3, "model/response", {"turn_id": "t1", "content": "好", "tool_calls": []}),
+        _rec(4, "turn/end", {"turn_id": "t1", "stop_reason": "MODEL_COMPLETED"}),
     ]
 
-    header = fold(events).messages[0].content
+    folded = fold(events).messages
 
-    assert "可用技能" in header
-    assert "tdd：先写判据" in header
-    assert "第一步" not in header
+    assert "可用技能" not in folded[0].content
+    assert any("tdd" in message.content and "先写判据" in message.content for message in folded)
+    assert all("第一步" not in message.content for message in folded)
 
 
 def test_session_start_records_the_catalog(tmp_path: Path) -> None:
@@ -555,21 +554,10 @@ def test_incomplete_discovery_reaches_the_payload(tmp_path: Path) -> None:
     assert payload["skills_incomplete"] is True
 
 
-def test_the_header_warns_about_incomplete_discovery() -> None:
-    events = [
-        _rec(
-            0,
-            "session/start",
-            {"prompt": "任务", "tools": [], "skills_incomplete": True},
-        ),
-        _rec(1, "turn/start", {"turn_id": "t1"}),
-        _rec(2, "model/response", {"turn_id": "t1", "content": "好", "tool_calls": []}),
-        _rec(3, "turn/end", {"turn_id": "t1", "stop_reason": "MODEL_COMPLETED"}),
-    ]
+def test_the_catalog_message_warns_about_incomplete_discovery() -> None:
+    content = render_catalog_message([], False)
 
-    header = fold(events).messages[0].content
-
-    assert "没能检查到" in header
+    assert "一个技能都没确认到" in content
 
 
 def test_merge_skill_layer_overrides_and_adds(tmp_path: Path) -> None:
@@ -665,3 +653,20 @@ def test_a_preset_skill_layer_reaches_the_child_only(tmp_path: Path) -> None:
         "extra": "子会话独有",
         "tdd": "preset",
     }
+    child_log = next(
+        path
+        for path in workspace.glob("sessions/*.jsonl")
+        if any(
+            record["type"] == "session/start"
+            and record["payload"].get("entry") == "subagent"
+            for record in map(json.loads, path.read_text(encoding="utf-8").splitlines())
+        )
+    )
+    child_catalog = [
+        record["payload"]
+        for record in map(json.loads, child_log.read_text(encoding="utf-8").splitlines())
+        if record["type"] == "user/message"
+        and record["payload"].get("source") == "skill-catalog"
+    ]
+    assert child_catalog and "extra" in child_catalog[0]["content"]
+    assert "preset" in child_catalog[0]["content"]

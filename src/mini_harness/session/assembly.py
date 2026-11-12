@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 from argparse import Namespace
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -33,7 +33,7 @@ from mini_harness.loop.settings import ApprovalMode
 from mini_harness.provider import FixtureLoadFailure, load_fixture_provider
 from mini_harness.provider.contract import Provider
 from mini_harness.provider.openai_compat import OpenAICompatProvider, validate_base_url
-from mini_harness.skills import discover_skills
+from mini_harness.skills import SkillDiscovery, discover_skills
 from mini_harness.tools import ToolRegistry
 from mini_harness.tools.bash_tools import platform_facts
 
@@ -101,6 +101,8 @@ class Prepared:
     log: EventLog
     registry: ToolRegistry
     resumed: bool = False
+    # 技能刷新闭包（skill-catalog-live）：每次装配前重新观察；None 表示用 settings 快照。
+    skills_refresh: Callable[[], SkillDiscovery] | None = None
 
 
 @dataclass(frozen=True)
@@ -314,5 +316,6 @@ def assemble(
         settings=settings,
         log=log,
         registry=registry,
+        skills_refresh=lambda: discover_skills(workspace, environ),
         resumed=request.resume is not None,
     )

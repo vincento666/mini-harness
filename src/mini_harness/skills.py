@@ -7,10 +7,13 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from xml.sax.saxutils import escape
 
 # 名字照 DSH 的 kebab-case：小写字母/数字，单词之间一个连字符。
 KEBAB_CASE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -222,6 +225,55 @@ def catalog_text(entries: Sequence[tuple[str, str]], *, budget: int = CATALOG_BU
 
 def render_skill_catalog(skills: Sequence[Skill], *, budget: int = CATALOG_BUDGET) -> str:
     return catalog_text([(skill.name, skill.description) for skill in skills], budget=budget)
+
+
+def catalog_digest(skills: Sequence[Skill], complete: bool) -> str:
+    """模型目录的指纹：模型可调 `(name, description)` + 完整性。"""
+    entries = [(skill.name, skill.description) for skill in skills if skill.model_invocable]
+    payload = json.dumps(
+        {"entries": entries, "complete": complete}, ensure_ascii=False, sort_keys=True
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def render_catalog_message(skills: Sequence[Skill], complete: bool) -> str:
+    """DSH 同形的目录消息：只放名字 + 转义描述，结尾要求先加载再行动。"""
+    entries = [
+        (skill.name, skill.description[:DESCRIPTION_MAX])
+        for skill in skills
+        if skill.model_invocable
+    ]
+    if not entries:
+        if complete:
+            return (
+                "<system-reminder>\n"
+                "本会话当前没有可用技能。不要使用之前目录里的技能名。\n"
+                "</system-reminder>"
+            )
+        return (
+            "<system-reminder>\n"
+            "这次发现一个技能都没确认到。等下一次目录更新再调用 `skill`；"
+            "不要凭空目录推断。\n"
+            "</system-reminder>"
+        )
+    lines = [f"- `{name}`: {escape(description)}" for name, description in entries]
+    parts = [
+        "<system-reminder>",
+        "技能是一组可复用的任务指令。本会话可用的技能如下：",
+        "",
+        "<available_skills>",
+        *lines,
+        "</available_skills>",
+    ]
+    if not complete:
+        parts += ["", "（有一些技能目录没能检查到，只列确认的；下一次会重试。）"]
+    parts += [
+        "",
+        "如果用户点名一个技能，或任务明显匹配某个技能的描述，"
+        "先调用 `skill` 工具加载它的完整指令再行动。目录只是摘要，不要凭摘要推断技能内容。",
+        "</system-reminder>",
+    ]
+    return "\n".join(parts)
 
 
 def read_skill_body(skill: Skill, *, limit: int = BODY_LIMIT) -> str:

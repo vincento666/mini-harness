@@ -6,7 +6,7 @@
 
 **D2 指纹与状态。** `SkillCatalogState` 记住上次发出的指纹（模型可调 `(name, description)` 列表 + `complete`）与消息 seq。指纹变了或从未发过（且有模型可调技能或不完整）就追加一条替换。
 
-**D3 注入点。** 每个 turn 的 `context/assembled` 之前调用 `refresh`（闭包：重新发现全局四根 + 子会话的 preset 层），必要时追加目录消息。第一个 turn 的目录消息落在段内第一条 `user/message` 之前（模型先看到目录，再看到任务）。工具改了技能文件后，下一 turn 就生效（每 turn 扫描，不需要 watcher）。
+**D3 注入点。** 每个 turn 的 `context/assembled` 之前调用 `refresh`（闭包：重新发现全局四根 + 子会话的 preset 层），必要时追加目录消息。第一个 turn 的目录消息落在 `turn/start` 之后、`context/assembled` 之前（在用户消息之后，模型请求之前；与 DSH 的 pre-step 注入同位置）。工具改了技能文件后，下一 turn 就生效（每 turn 扫描，不需要 watcher）。
 
 **D4 不完整与重试。** 每次观察都重新发现；不完整 → 发 `incomplete: true` 的目录（确认条目 + 警告）；下一次观察到完整 → 指纹变化（complete 参与指纹）→ 追加无警告的替换。不做 last-good：确认条目就是当前视图。
 
