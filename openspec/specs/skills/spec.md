@@ -34,25 +34,6 @@ TBD - created by archiving change m14-skills-and-commands. Update Purpose after 
 - **WHEN** 某个技能写 `disable-model-invocation: maybe`
 - **THEN** 整个技能被跳过，而不是按默认值放行
 
-### Requirement: 清单注入，正文按需加载
-
-`session/start.payload.skills` SHALL 只放**模型可调**技能的清单项 `{name, description, rank, path, model_invocable, user_invocable}`，MUST NOT 含正文，MUST NOT 含用户独占或两面都禁用的技能。受保护头部 SHALL 放紧凑清单（名字 + 一句描述），并受字符预算约束（默认 2000 字符）；超出时截断并留「还有 N 个技能未列出」的 marker。正文 MUST NOT 进受保护头部；它只在 `skill` 工具被调用后作为 `tool/result` 进入上下文与日志。
-
-#### Scenario: 头部只有清单
-
-- **WHEN** 一个模型可调技能存在且会话启动
-- **THEN** `session/start.payload.skills` 有它的清单项；头部有名字与描述，没有正文
-
-#### Scenario: 用户独占技能不进模型清单
-
-- **WHEN** 一个技能写 `user-invocable: false`
-- **THEN** 它不出现在 `session/start.payload.skills` 与受保护头部
-
-#### Scenario: 超预算截断
-
-- **WHEN** 技能多到超过字符预算
-- **THEN** 头部只列前若干个，并带「还有 N 个技能未列出」
-
 ### Requirement: `skill` 工具按需读正文
 
 系统 SHALL 提供 `skill` 工具，参数 `{name}`，返回该技能的正文（单次上限 32 KiB，超出截断并提示用 `read` 读全文）。结果 SHALL 是 DSH 同形的 XML 三段：`<skill_content name=…>` 包 `<skill_resources>`（技能文件路径）与 `<skill_instructions>`（正文）。未知名字 SHALL 是 `TOOL_ARGS_INVALID`；**非模型可调**（`disable-model-invocation: true`）的名字 SHALL 也是 `TOOL_ARGS_INVALID`，文本与未知区分开，且 MUST NOT 读正文。正文 SHALL 作为 `tool/result` 落日志，`replay` MUST NOT 依赖磁盘上的当前文件内容。
@@ -186,4 +167,44 @@ CLI `chat` SHALL 提供 `/skills`、`/skill <name>`、`/help` 与 `/<技能名>`
 
 - **WHEN** `skill_dirs` 指向一个不存在的目录
 - **THEN** 子会话照常启动，没有该层的技能，`skills_incomplete` 不出现
+
+### Requirement: 目录消息与按需加载
+
+模型目录 SHALL 是一条 `user/message`，payload 含 `source: "skill-catalog"` 与 `incomplete: bool`；内容 SHALL 只含**模型可调**技能的 `name` 与截断到 500 字符的 `description`，MUST NOT 含正文、路径或来源。
+
+在第一个 turn 的 `context/assembled` 之前，若存在模型可调技能或发现不完整，系统 SHALL 注入初始目录；之后每个 turn 之前 SHALL 重新观察（全局四根 + 子会话的 preset 层）并计算指纹（模型可调 `(name, description)` 列表 + `complete`）。指纹变化 SHALL 追加一条完整替换；指纹不变 MUST NOT 重复注入。
+
+发现不完整 SHALL 发布「确认条目 + 警告」并标 `incomplete: true`，下一次观察 SHALL 重试；恢复完整 SHALL 追加无警告的替换。曾发过目录、现在模型可调条目为空且完整 SHALL 追加一条空目录消息，明确让模型不要使用旧名字；从未发过且为空 MUST NOT 注入。
+
+受保护头部 MUST NOT 再含技能目录。`session/start.payload.skills` MAY 保留装配期快照（审计与命令面），但模型目录 MUST NOT 从它折叠。压缩若把目录消息的 seq 折进 `compaction/summary.shadowed_range`，下一次装配 SHALL 重新注入。
+
+#### Scenario: 首个 turn 注入目录
+
+- **WHEN** 会话有模型可调技能，开第一个 turn
+- **THEN** `context/assembled` 之前有一条 `user/message`，`source` 是 `skill-catalog`，内容含 `<available_skills>`
+
+#### Scenario: 指纹不变不重复
+
+- **WHEN** 连续两个 turn 之间技能没有变化
+- **THEN** 第二个 turn 之前没有新的目录消息
+
+#### Scenario: 会话中途加技能
+
+- **WHEN** 第一个 turn 之后在根里新增一个技能，跑第二个 turn
+- **THEN** 第二个 turn 之前追加一条含新条目的替换目录
+
+#### Scenario: 不完整与恢复
+
+- **WHEN** 一次观察里某个根 `iterdir` 失败
+- **THEN** 目录带警告与 `incomplete: true`；下一次观察恢复后追加无警告的替换
+
+#### Scenario: 清空退休旧名字
+
+- **WHEN** 之前发过目录，现在所有技能都被删除
+- **THEN** 追加一条空目录消息，明确不要使用旧名字
+
+#### Scenario: 头部不再有技能
+
+- **WHEN** 任意会话启动
+- **THEN** 受保护头部里没有「可用技能」块；目录只在 `user/message` 里
 
