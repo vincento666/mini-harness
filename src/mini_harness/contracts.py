@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -145,6 +145,17 @@ def _truncate(
     notice = _notice(omitted, display, len(body.encode("utf-8")))
     text, scopes = _render([(scope, display, body)], notice)
     return text, tuple(replace(item, truncated=True) for item in scopes)
+
+
+def render_removed(paths: Sequence[str]) -> str:
+    """两份契约都没了时的退休通知。"""
+    joined = ", ".join(paths)
+    return (
+        "<system-reminder>\n"
+        f"Instructions removed: {joined}\n\n"
+        "The previously loaded instructions from these files no longer apply.\n"
+        "</system-reminder>"
+    )
 
 
 def load_contracts(workspace: Path, environ: Mapping[str, str]) -> ContractRender:

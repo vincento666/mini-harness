@@ -128,3 +128,113 @@ def test_a_source_file_over_one_mebibyte_is_unavailable(tmp_path: Path) -> None:
 
     assert render.text == ""
     assert render.scopes == ()
+
+
+def _session(tmp_path: Path):  # type: ignore[no-untyped-def]
+    from dataclasses import replace
+
+    from mini_harness.config import build_registry
+    from mini_harness.provider import FixtureProvider
+    from tool_harness import build_session_env
+
+    workspace = tmp_path / "ws"
+    workspace.mkdir(parents=True, exist_ok=True)
+    _, env = build_session_env(
+        tmp_path,
+        "s-contract",
+        FixtureProvider(entries=[{"content": "好", "finish_reason": "stop"}]),
+        workspace=workspace,
+        registry=build_registry(None),
+    )
+    return replace(env, contracts_home=_home(tmp_path))
+
+
+def _contract_messages(env) -> list[object]:  # type: ignore[no-untyped-def]
+    from mini_harness.events import read_events
+
+    return [
+        record
+        for record in read_events(env.log.path)
+        if record.type == "user/message"
+        and record.payload.get("source") == "workspace-instructions"
+    ]
+
+
+def test_the_contract_is_injected_before_the_first_assembled(tmp_path: Path) -> None:
+    import asyncio
+
+    from mini_harness.events import read_events
+    from mini_harness.loop.turn_loop import run_session_env
+
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    _write(workspace / "AGENTS.md", "项目约定")
+    env = _session(tmp_path)
+
+    asyncio.run(run_session_env(prompt="任务", entry="run", env=env, cancel=asyncio.Event()))
+
+    messages = _contract_messages(env)
+    assert len(messages) == 1
+    assembled = next(
+        record.seq for record in read_events(env.log.path) if record.type == "context/assembled"
+    )
+    assert messages[0].seq < assembled
+    assert "项目约定" in messages[0].payload["content"]
+
+
+def test_without_files_no_contract_message(tmp_path: Path) -> None:
+    from mini_harness.loop.turn_loop import _maybe_emit_contracts
+
+    env = _session(tmp_path)
+    _maybe_emit_contracts(env, "s1")
+
+    assert _contract_messages(env) == []
+
+
+def test_an_unchanged_contract_is_not_repeated(tmp_path: Path) -> None:
+    from mini_harness.loop.turn_loop import _maybe_emit_contracts
+
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    _write(workspace / "AGENTS.md", "项目约定")
+    env = _session(tmp_path)
+
+    _maybe_emit_contracts(env, "s1")
+    _maybe_emit_contracts(env, "s1")
+
+    assert len(_contract_messages(env)) == 1
+
+
+def test_a_changed_contract_appends_a_replacement(tmp_path: Path) -> None:
+    from mini_harness.loop.turn_loop import _maybe_emit_contracts
+
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    _write(workspace / "AGENTS.md", "旧约定")
+    env = _session(tmp_path)
+    _maybe_emit_contracts(env, "s1")
+
+    _write(workspace / "AGENTS.md", "新约定")
+    _maybe_emit_contracts(env, "s1")
+
+    messages = _contract_messages(env)
+    assert len(messages) == 2
+    assert "旧约定" in messages[0].payload["content"]
+    assert "新约定" in messages[1].payload["content"]
+
+
+def test_removing_both_files_appends_a_removal_notice(tmp_path: Path) -> None:
+    from mini_harness.loop.turn_loop import _maybe_emit_contracts
+
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    _write(workspace / "AGENTS.md", "项目约定")
+    env = _session(tmp_path)
+    _maybe_emit_contracts(env, "s1")
+
+    (workspace / "AGENTS.md").unlink()
+    _maybe_emit_contracts(env, "s1")
+
+    messages = _contract_messages(env)
+    assert len(messages) == 2
+    assert "Instructions removed: AGENTS.md" in messages[1].payload["content"]
