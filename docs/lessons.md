@@ -923,6 +923,15 @@ ADR 到 9.2 才提交；已提交的 `tasks.md` 三处引用本分支不存在�
 - Promotion candidate: AGENTS.md「覆盖率纪律」段的一句话（「combine 前不得跑 report，异常先数 partial 份数」），需按一进一出处理；本轮先记 inbox
 - Status: inbox
 
+### L-073
+- Date: 2026-11-13
+- Context: M14a 工作区契约 propose 前的 DSH 调研
+- Observation: 只查本地 `docs/dsh-reference/` 会把形状写错——那里关于 `agent-instructions` 只有一行配置（`maxBytes: 65536` 与候选文件名），看不出注入位置；查官方 README 才发现指令是**持久 user 消息** + `<system-reminder>` 框，还带着预算丢弃顺序、`Workspace instruction budget` notice 指名路径、无 watcher、`</system-reminder>` 转义等一整层语义。二手汇编能当索引，不能当依据
+- Evidence: `docs/reference/workspace-contract.md` 的一手对照；proposal 的注入位置因此从 roadmap 的「受保护头部」改成持久 user 消息
+- Next use: propose 前先搜上游仓库 / 包文档（引用带 URL 与 commit）；本地汇编只用来找锚点；两者冲突以一手为准
+- Promotion candidate: AGENTS.md「引用纪律」（已就地改）
+- Status: promoted
+
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 - 每个里程碑收尾扫一次，**允许输出 `NO-PROMOTION`**（没有可复用信号就不写条目）。
 - 收件箱条目超过 **15 条**必须先消化再收新的：合并同类、把已被代码或规格自证的条目删掉。
