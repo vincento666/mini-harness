@@ -2,7 +2,7 @@
 
 个人实验版 agent harness 的 MVP。headless CLI 优先，架构决策照抄 DeepSeek Harness（DSH）的核心思想，用 OpenSpec 做规格（SDD）、用 TDD 做实现。
 
-**当前状态与门禁实测**见 `docs/CURRENT.md`；**里程碑与完成判据**见 `docs/roadmap.md`。`openspec-verify-change` 未装。**任何新 proposal / change 落盘前先调研 DSH 的对应实现**——写清形状（数据与接口）、机制（谁在何时做什么）、语义（默认值、边界、错误）三层，再写规格；调研给出的简化/弱化只是**建议**，由人裁决，agent 不得自行定案。
+**当前状态与门禁实测**见 `docs/CURRENT.md`；**里程碑与完成判据**见 `docs/roadmap.md`。`openspec-verify-change` 未装。**任何新 proposal / change 落盘前先调研 DSH 的对应实现**——以官方一手资料为准（见「引用纪律」），写清形状（数据与接口）、机制（谁在何时做什么）、语义（默认值、边界、错误）三层，再写规格；调研给出的简化/弱化只是**建议**，由人裁决，agent 不得自行定案。
 
 ---
 
@@ -89,7 +89,7 @@ Python **>= 3.12** · **uv** · `src/mini_harness/` 布局 · **mypy strict** ·
 
 ## 引用纪律
 
-- DSH 的参考文档在本仓库 `docs/dsh-reference/`。**不要无差别先读**：只在照某个机制实现时去查对应章节或图的锚点（图集锚点形如 `#fig-<图名>`）。这些图只做过静态结构校验，**没有视觉复核**。
+- DSH 的参考以**官方一手资料**为准：上游仓库的 README / 包文档 / 源码，引用带 URL 与 commit（例：`deepseek-ai/deepseek-harness` 的 `47f9438`，`packages/context/agent-instructions`）。本仓库的 `docs/dsh-reference/` 是二手汇编，只当索引用——**不要无差别先读**，只在照某个机制实现时查对应章节或图的锚点（图集锚点形如 `#fig-<图名>`）；两者冲突以一手为准。这些图只做过静态结构校验，**没有视觉复核**。
 - 需要更细的出处时，只允许引 `S:\Develop\agent_harness\re\verified\dsh\` 与 `re\shell\`。**`re\full\` 是 8 字节偏移的损坏副本，永远不要引用**；不要 grep `rea/app-graph.json`（376 MB，分析时两次 OOM 被杀）。
 - 写规格时把「DSH 这么做」与「mini 版故意简化」分开写，简化处必须在 `docs/adr/` 里写明代价（用 `domain-modeling` 技能写 ADR）。
 - **ADR 的新增与读写一律照 `domain-modeling` 技能的 `ADR-FORMAT`**：`docs/adr/` 下顺序编号 `NNNN-slug.md`（编号扫现有最大号 +1，目录用到时才建），正文 1–3 句；三条判据（**难回退** / **无上下文会困惑** / **真实取舍**）同时成立才写；被重新审视的加 `Status` frontmatter，推翻就新开一份并在旧份标 `superseded`。**本文件不写死 ADR 编号**——欠账在哪份里看 `docs/CURRENT.md`。
