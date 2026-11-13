@@ -914,6 +914,15 @@ ADR 到 9.2 才提交；已提交的 `tasks.md` 三处引用本分支不存在�
 - Promotion candidate: 与 L-003（写下即绿）同族；本轮不占 AGENTS.md 额度
 - Status: inbox
 
+### L-072
+- Date: 2026-11-13
+- Context: `skill-providers` 收尾的覆盖率门禁
+- Observation: `coverage report` 会**消费（合并并删除）全部 `.coverage.*` partial**。只要在 `combine` 之前先跑过一次 `report`（哪怕只是想快速看一眼），下一轮 `combine` 的输入就少一批，报出假低覆盖率：233/282 份时 79%，282/282 份时 95%。`combine --keep` 只在 `report` 之前有效，门禁跑完文件已归零，「留着归档时清」不成立
+- Evidence: 四次整轮实测 282 份 → Combined 170 / skipped 112 → 95%（3761/186）；`.coverage.probe` 跑一次 report 后消失；`ADR-0002` 的覆盖率条目与 `docs/CURRENT.md` 的门禁记录
+- Next use: 覆盖率异常偏低时**先数 `.coverage.*` 的份数**（整轮约 282）再判断是不是真下降；不要为了「先看一眼」在 `combine` 前跑 `report`
+- Promotion candidate: AGENTS.md「覆盖率纪律」段的一句话（「combine 前不得跑 report，异常先数 partial 份数」），需按一进一出处理；本轮先记 inbox
+- Status: inbox
+
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 - 每个里程碑收尾扫一次，**允许输出 `NO-PROMOTION`**（没有可复用信号就不写条目）。
 - 收件箱条目超过 **15 条**必须先消化再收新的：合并同类、把已被代码或规格自证的条目删掉。
