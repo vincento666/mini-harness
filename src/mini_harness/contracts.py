@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 HOME_ENV = "MINIHNS_HOME"
@@ -111,10 +111,52 @@ def _render(
     return "\n".join(parts), tuple(scopes)
 
 
+def _notice(omitted: list[str], truncated: str, truncated_bytes: int) -> str:
+    parts: list[str] = []
+    if omitted:
+        parts.append(f"omitted {', '.join(omitted)}")
+    if truncated:
+        parts.append(f"truncated {truncated} to {truncated_bytes} bytes")
+    return "Workspace instruction budget: " + "; ".join(parts) + "."
+
+
+def _fits(text: str) -> bool:
+    return len(text.encode("utf-8")) <= CONTRACT_BUDGET
+
+
+def _truncate(
+    entry: tuple[str, str, str], omitted: list[str]
+) -> tuple[str, tuple[ContractScope, ...]]:
+    """把项目那段截到预算内；通知里的字节数取最终放进消息的字节数。"""
+    scope, display, content = entry
+    raw = _escape(content.strip()).encode("utf-8")
+    # 先用最宽的数字占位，二分出能放下的最长前缀；换回真实数字只会更短。
+    widest = _notice(omitted, display, CONTRACT_BUDGET)
+    low, high = 0, len(raw)
+    while low < high:
+        mid = (low + high + 1) // 2
+        body = raw[:mid].decode("utf-8", "ignore")
+        text, _ = _render([(scope, display, body)], widest)
+        if _fits(text):
+            low = mid
+        else:
+            high = mid - 1
+    body = raw[:low].decode("utf-8", "ignore")
+    notice = _notice(omitted, display, len(body.encode("utf-8")))
+    text, scopes = _render([(scope, display, body)], notice)
+    return text, tuple(replace(item, truncated=True) for item in scopes)
+
+
 def load_contracts(workspace: Path, environ: Mapping[str, str]) -> ContractRender:
-    """读两层契约并渲染；没有文件时返回空渲染。"""
+    """读两层契约并渲染；超预算先丢用户全局，再截断项目。"""
     entries = _candidates(workspace, environ)
     text, scopes = _render(entries)
+    if entries and not _fits(text):
+        omitted = [entries[0][1]] if len(entries) == 2 else []
+        rest = entries[1:] if len(entries) == 2 else entries
+        text, scopes = _render(rest, _notice(omitted, "", 0))
+        if rest and not _fits(text):
+            text, scopes = _truncate(rest[-1], omitted)
     return ContractRender(text=text, digest=_render_digest(text, scopes), scopes=scopes)
 
 

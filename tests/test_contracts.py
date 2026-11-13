@@ -89,3 +89,42 @@ def test_absolute_paths_never_reach_the_text(tmp_path: Path) -> None:
     render = load_contracts(workspace, {"MINIHNS_HOME": str(_home(tmp_path))})
 
     assert str(tmp_path) not in render.text
+
+
+def test_over_budget_drops_the_global_segment_before_truncating(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    _write(_home(tmp_path) / "AGENTS.md", "全局约定 " * 50)
+    _write(workspace / "AGENTS.md", "项目约定\n" * 3000)
+
+    render = load_contracts(workspace, {"MINIHNS_HOME": str(_home(tmp_path))})
+
+    assert len(render.text.encode("utf-8")) <= 16 * 1024
+    assert "Workspace instruction budget:" in render.text
+    assert "omitted ~/.mini-harness/AGENTS.md" in render.text
+    assert "truncated AGENTS.md" in render.text
+    assert [scope.scope for scope in render.scopes] == ["project"]
+    assert render.scopes[0].truncated is True
+
+
+def test_a_small_global_segment_is_kept_when_everything_fits(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    _write(_home(tmp_path) / "AGENTS.md", "全局")
+    _write(workspace / "AGENTS.md", "项目")
+
+    render = load_contracts(workspace, {"MINIHNS_HOME": str(_home(tmp_path))})
+
+    assert "Workspace instruction budget:" not in render.text
+    assert [scope.truncated for scope in render.scopes] == [False, False]
+
+
+def test_a_source_file_over_one_mebibyte_is_unavailable(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    _write(workspace / "AGENTS.md", "x" * (1024 * 1024 + 1))
+
+    render = load_contracts(workspace, {"MINIHNS_HOME": str(_home(tmp_path))})
+
+    assert render.text == ""
+    assert render.scopes == ()
