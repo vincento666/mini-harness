@@ -127,6 +127,41 @@ def test_host_commands_match_the_cli_and_open_a_segment_for_skills(tmp_path: Pat
         _stop(process)
 
 
+def test_the_host_command_face_sees_a_skill_added_mid_session(tmp_path: Path) -> None:
+    """命令面读注册表快照：会话建立之后写进去的技能，下一条命令就能看见。"""
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    _write_skill(workspace)
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(client, workspace, _mock_fixture(tmp_path))
+            late = workspace / ".minihns" / "skills" / "review"
+            late.mkdir()
+            (late / "SKILL.md").write_text(
+                "---\nname: review\ndescription: 复核\n---\n正文\n", encoding="utf-8"
+            )
+
+            commands = client.get(
+                f"/commands?session_id={session_id}", headers=_headers()
+            ).json()["commands"]
+            assert "review" in {command["name"] for command in commands}
+
+            listed = client.post(
+                f"/sessions/{session_id}/commands",
+                headers=_headers(),
+                json={"name": "skills"},
+            )
+            assert listed.status_code == 200, listed.text
+            assert "review" in listed.json()["output"]
+    finally:
+        _stop(process)
+
+
 def test_a_skill_command_with_instruction_queues_while_running(tmp_path: Path) -> None:
     """带指令的技能命令走消息同一条队列：段进行中投递是 202 + queued=true。"""
     session_dir = tmp_path / "sessions"

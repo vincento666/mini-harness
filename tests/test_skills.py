@@ -7,17 +7,23 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from cli_blackbox import _cli
+from mini_harness.cli.main import _run_chat_command
 from mini_harness.commands import command_catalog, direct_skill, execute_command
 from mini_harness.config import build_registry
 from mini_harness.events import EventRecord, read_events
 from mini_harness.events.fold import fold
 from mini_harness.loop import ENTRY_RUN, start_session
 from mini_harness.provider import FixtureProvider
+from mini_harness.session.assembly import AssemblyRequest, Prepared, assemble
+from mini_harness.skill_providers import SkillRegistry
 from mini_harness.skills import (
     BODY_LIMIT,
     DESCRIPTION_MAX,
     Skill,
+    SkillDiscovery,
     catalog_text,
     discover_skills,
     merge_skill_layer,
@@ -125,7 +131,41 @@ def test_body_is_capped(tmp_path: Path) -> None:
     assert len(body) < BODY_LIMIT + 200
 
 
-async def test_the_skill_tool_returns_xml(tmp_path: Path) -> None:
+class _BodyProvider:
+    """正文与文件不同：证明 `skill` 工具读的是 provider，不是就地读文件。"""
+
+    def __init__(self, skill: Skill, body: str) -> None:
+        self.name = "memory"
+        self._skill = skill
+        self._body = body
+
+    def list(self) -> SkillDiscovery:
+        return SkillDiscovery((self._skill,), True)
+
+    def get(self, skill: Skill) -> str:
+        return self._body
+
+
+async def test_the_skill_tool_reads_the_body_through_the_registry(tmp_path: Path) -> None:
+    root = tmp_path / "ws" / ".minihns" / "skills"
+    path = _skill(root, "tdd", body="文件里的正文")
+    skill = Skill(name="tdd", description="描述", rank=50, path=path)
+    _, env = build_session_env(
+        tmp_path, "s-skill-tool", FixtureProvider(entries=[]), workspace=tmp_path
+    )
+    env = replace(env, skills_registry=SkillRegistry(_BodyProvider(skill, "注册表的正文")))
+    registry = build_registry(None, skills=(skill,))
+
+    outcome = await dispatch_call(
+        tmp_path, "skill", {"name": "tdd"}, registry=registry, session=env
+    )
+
+    assert outcome.result.outcome == "OK"
+    assert "注册表的正文" in outcome.result.content
+    assert "文件里的正文" not in outcome.result.content
+
+
+async def test_the_skill_tool_falls_back_to_the_tuple_without_a_registry(tmp_path: Path) -> None:
     root = tmp_path / "ws" / ".minihns" / "skills"
     path = _skill(root, "tdd", description="先写判据", body="第一步：写红判据")
     registry = build_registry(None, skills=discover_skills(root.parent.parent, {}).skills)
@@ -136,6 +176,7 @@ async def test_the_skill_tool_returns_xml(tmp_path: Path) -> None:
     assert "<skill_content" in outcome.result.content
     assert "<skill_instructions>" in outcome.result.content
     assert "第一步：写红判据" in outcome.result.content
+    assert str(path) in outcome.result.content
     assert str(path) in outcome.result.content
 
 
@@ -157,6 +198,15 @@ def _rec(seq: int, event_type: str, payload: dict[str, Any]) -> EventRecord:
         ts=f"2026-11-11T00:00:{seq:02d}+00:00",
         payload=payload,
     )
+
+
+def test_a_skill_records_which_root_it_came_from(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    _skill(workspace / ".minihns" / "skills", "tdd")
+
+    discovery = discover_skills(workspace, {"MINIHNS_HOME": str(tmp_path / "home")})
+
+    assert [(skill.name, skill.source) for skill in discovery.skills] == [("tdd", "project")]
 
 
 def test_the_catalog_message_carries_the_manifest_but_not_the_body() -> None:
@@ -322,6 +372,29 @@ def test_chat_runs_a_skill_directly(tmp_path: Path) -> None:
     user = next(record["payload"] for record in records if record["type"] == "user/message")
     assert "第一步：写红判据" in user["content"]
     assert "请按技能执行" in user["content"]
+
+
+def test_the_chat_command_face_reads_the_live_registry(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """命令面读注册表快照：会话开始之后新增的技能，下一条命令就能看见。"""
+    workspace = tmp_path / "ws"
+    _skill(workspace / ".minihns" / "skills", "tdd", description="先写判据")
+    prepared = assemble(
+        AssemblyRequest(
+            workspace=str(workspace),
+            provider="mock",
+            fixture=str(HELLO_SCENARIO),
+            session_dir=str(tmp_path / "sessions"),
+        ),
+        {"MINIHNS_HOME": str(tmp_path / "home")},
+    )
+    assert isinstance(prepared, Prepared)
+    _skill(workspace / ".minihns" / "skills", "review", description="复核")
+
+    assert _run_chat_command(prepared, "/skills") is None
+
+    assert "review" in capsys.readouterr().out
 
 
 def test_chat_help_lists_skill_commands(tmp_path: Path) -> None:
@@ -609,7 +682,8 @@ def test_a_preset_skill_layer_reaches_the_child_only(tmp_path: Path) -> None:
     (workspace / "mini.config.toml").write_text(
         '[subagent]\npreset = "reader"\n\n'
         '[subagent.presets.reader]\ntools = ["read", "glob"]\n'
-        'skill_dirs = [".minihns/preset-skills"]\n',
+        '[subagent.presets.reader.skills]\nkind = "filesystem"\n'
+        'dirs = [".minihns/preset-skills"]\n',
         encoding="utf-8",
     )
     fixture = workspace / "turns.json"
@@ -640,33 +714,87 @@ def test_a_preset_skill_layer_reaches_the_child_only(tmp_path: Path) -> None:
         cwd=workspace,
     )
 
-    starts = [
-        record["payload"]
-        for path in workspace.glob("sessions/*.jsonl")
-        for record in map(json.loads, path.read_text(encoding="utf-8").splitlines())
-        if record["type"] == "session/start"
-    ]
-    parent = next(payload for payload in starts if payload.get("entry") == "run")
-    child = next(payload for payload in starts if payload.get("entry") == "subagent")
-    assert {item["name"]: item["description"] for item in parent["skills"]} == {"tdd": "全局"}
-    assert {item["name"]: item["description"] for item in child["skills"]} == {
+    logs: dict[str, Path] = {}
+    starts: dict[str, dict[str, Any]] = {}
+    for path in workspace.glob("sessions/*.jsonl"):
+        records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+        payload = next(record["payload"] for record in records if record["type"] == "session/start")
+        logs[payload["entry"]] = path
+        starts[payload["entry"]] = payload
+    assert {item["name"]: item["description"] for item in starts["run"]["skills"]} == {
+        "tdd": "全局"
+    }
+    assert {item["name"]: item["description"] for item in starts["subagent"]["skills"]} == {
         "extra": "子会话独有",
         "tdd": "preset",
     }
-    child_log = next(
-        path
-        for path in workspace.glob("sessions/*.jsonl")
-        if any(
-            record["type"] == "session/start"
-            and record["payload"].get("entry") == "subagent"
+    # 摘要带层名：父是 project 根，子是 preset provider 的名字。
+    assert {item["name"]: item["source"] for item in starts["run"]["skills"]} == {"tdd": "project"}
+    assert {item["name"]: item["source"] for item in starts["subagent"]["skills"]} == {
+        "extra": "preset:reader",
+        "tdd": "preset:reader",
+    }
+
+    def catalog(path: Path) -> list[dict[str, Any]]:
+        return [
+            record["payload"]
             for record in map(json.loads, path.read_text(encoding="utf-8").splitlines())
-        )
-    )
-    child_catalog = [
-        record["payload"]
-        for record in map(json.loads, child_log.read_text(encoding="utf-8").splitlines())
-        if record["type"] == "user/message"
-        and record["payload"].get("source") == "skill-catalog"
-    ]
+            if record["type"] == "user/message"
+            and record["payload"].get("source") == "skill-catalog"
+        ]
+
+    child_catalog = catalog(logs["subagent"])
     assert child_catalog and "extra" in child_catalog[0]["content"]
     assert "preset" in child_catalog[0]["content"]
+    # 子会话结束后父会话回到自己那一层：目录不因 spawn 多出 preset 技能。
+    parent_catalog = catalog(logs["run"])
+    assert len(parent_catalog) == 1
+    assert "extra" not in parent_catalog[0]["content"]
+
+
+def test_a_missing_preset_skill_directory_starts_the_child_anyway(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    _skill(workspace / ".minihns" / "skills", "tdd", description="全局")
+    (workspace / "mini.config.toml").write_text(
+        '[subagent]\npreset = "reader"\n\n'
+        '[subagent.presets.reader]\ntools = ["read"]\n'
+        '[subagent.presets.reader.skills]\nkind = "filesystem"\n'
+        'dirs = [".minihns/nope"]\n',
+        encoding="utf-8",
+    )
+    fixture = workspace / "turns.json"
+    fixture.write_text(
+        json.dumps(
+            [
+                {
+                    "content": "",
+                    "finish_reason": "tool_calls",
+                    "tool_calls": [{"id": "c1", "name": "subagent", "arguments": {"task": "看"}}],
+                },
+                {"content": "好", "finish_reason": "stop"},
+                {"content": "完", "finish_reason": "stop"},
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(fixture),
+        cwd=workspace,
+    )
+
+    child = next(
+        record["payload"]
+        for path in workspace.glob("sessions/*.jsonl")
+        for record in map(json.loads, path.read_text(encoding="utf-8").splitlines())
+        if record["type"] == "session/start" and record["payload"].get("entry") == "subagent"
+    )
+    assert [item["name"] for item in child["skills"]] == ["tdd"]
+    assert "skills_incomplete" not in child

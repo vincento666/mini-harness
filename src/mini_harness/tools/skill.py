@@ -9,7 +9,7 @@ from collections.abc import Sequence
 
 from pydantic import Field
 
-from mini_harness.skills import Skill, skill_content
+from mini_harness.skills import Skill, skill_content, skill_content_body
 from mini_harness.tools.fences import DispatchContext
 from mini_harness.tools.registry import ToolArgs, ToolDefinition, ToolResult
 
@@ -24,13 +24,25 @@ def skill_tool_definitions(skills: Sequence[Skill]) -> list[ToolDefinition]:
     """一个 `skill` 定义；结果用 DSH 同形的 XML 三段包正文。"""
 
     async def run(args: SkillArgs, context: DispatchContext) -> ToolResult:
+        session = context.session
+        registry = None if session is None else session.skills_registry
+        if registry is not None:
+            # 走注册表：正文由拥有这个名字的那一层给，模板参数从快照里取。
+            visible = registry.snapshot().skills
+            skill = next((candidate for candidate in visible if candidate.name == args.name), None)
+            if skill is None:
+                return ToolResult("TOOL_ARGS_INVALID", f"未知技能：{args.name}")
+            if not skill.model_invocable:
+                return ToolResult("TOOL_ARGS_INVALID", f"技能 {args.name} 不可由模型调用")
+            body = registry.get(args.name)
+            if body is None:
+                return ToolResult("TOOL_ARGS_INVALID", f"未知技能：{args.name}")
+            return ToolResult("OK", skill_content_body(skill, body))
         skill = next((candidate for candidate in skills if candidate.name == args.name), None)
         if skill is None:
             return ToolResult("TOOL_ARGS_INVALID", f"未知技能：{args.name}")
         if not skill.model_invocable:
-            return ToolResult(
-                "TOOL_ARGS_INVALID", f"技能 {args.name} 不可由模型调用"
-            )
+            return ToolResult("TOOL_ARGS_INVALID", f"技能 {args.name} 不可由模型调用")
         return ToolResult("OK", skill_content(skill))
 
     return [

@@ -752,3 +752,14 @@ Spec 轴查出的判据缺口，六条已在 seam ⑥ 补上（2026-10-24）：
 **触发后的最小 MVP**：先做一个最小投影（例如带类型过滤的查询，或独立的 `/ui/events`），保留日志镜像与 `seq` 游标；不照搬 DSH 的 27 条硬编码 allowlist。敏感字段在**写日志之前**挡住，不靠 UI 过滤。**现在不实现这个 MVP。**
 
 **代价**：UI 可能收到噪音，由客户端过滤/折叠；服务端在投影层落地前不承诺 UI 事件兼容性。
+
+## `skill-providers` 的流程欠账（2026-11-12，不改写历史，只记账）
+
+- **propose 时的 DSH 调研只写了三项**：`proposal.md` 的「DSH 对齐」只有形状 / 机制 / 语义，缺 `dsh-alignment-checklist.md` 要求的其余七项（不变量 / 面 / 失败与降级 / 组合与扩展 / 资源与约束 / 信任与授权 / 回放与确定性）。复核阶段十项是齐的；2026-11-12 已在 proposal 补录七项并注明补录时间。欠账的实质是把「广度」推到了复核，propose 时看不出组合面与信任面的分歧。
+- **两轴审查跑在变异轮、Learning Gate 与对齐复核之后**：AGENTS.md 的顺序是 apply → `code-review` 两轴 + 对齐复核 → 变异 + Learning Gate → 归档。本轮 5.3/5.4/5.5 先跑，两轴 13:19 才补（`505d222` 的记录里写明）。这次代价为零：两轴唯一改动 C1 是纯重构（`discover_skill_layer` 转发 `merge_skill_layer`），判据未变，不需要补一轮变异；若 C1 动了行为，9 条变异就得重跑。
+- **两处打包超过 3 个 task、没写理由**：`8ccae5b`（tasks 4.1–4.4）、`ca14fc7`（tasks 5.3–5.6）。AGENTS.md 只允许「同一 seam 上相邻的 3 个 task」，超过要在信息里写明打包理由；这两条只有内容说明。历史提交不改写。
+- **12 个提交里 11 个没有门禁行**：只有 `ca14fc7` 写了实测。四道门禁是「一次提交算完成」的定义，不分代码与文档；缺的是记录不是没跑（`5c0e6f1` / `4e67836` / `8ccae5b` / `113d161` 提交前都跑过 ruff、`mypy --strict` 与定向判据）。从这轮起，代码提交的信息里带「ruff / mypy / 定向判据」三行实测。
+- **覆盖率门禁曾误报红，已查明并修复跑法**：按 AGENTS.md 的 `coverage run`（pyproject 里 `parallel=true`）→ `combine` → `report` 跑整轮是 **79%**（3761 / 793）。根因在 `coverage/control.py`：`combine()` 调 `_init_data(suffix=None)` 只在 `self._data is None` 时创建数据对象、**不读已存在的 `.coverage`**，所以它从空开始重建；整轮跑里父进程的数据是其中一份 partial，合并后反而只剩子进程那部分。改用 `coverage.rc`（父进程 `parallel=false` 写主数据文件）→ `coverage report`（把子进程 partial 折进来）得到 **95%（3761 / 186），退出码 0**，连跑两次一致。**AGENTS.md 的三步流程需要改**：`combine` 这一步在父进程非并行时应删掉；这条改动等裁决，未擅自改。
+- **归档后发现 delta 漏改一条 Requirement**：`skills` 主规格的「目录消息与按需加载」写着目录 MUST NOT 含来源，与「摘要加 `source`」的裁决冲突；delta 只改了「preset 作用域技能层」。归档后就地改正该 Requirement 与指纹口径（`(name, description, source)`），CURRENT 记账。
+- **一条判据是绿着到的**：`test_a_missing_preset_skill_directory_starts_the_child_anyway` 写在实现之后、第一次就绿（对齐复核补的 Scenario 判据）。它判的行为已被两条单元判据覆盖，但按 TDD 属于「先有实现后有判据」，记在这里以免下一轮把守卫当成红绿对。
+- **UAT 由 agent 代跑**：ADR-0025 要求人坐在终端前；本轮按用户明示指示由 agent 在真实端点跑完四场，场次表里已标「agent 代跑」。人跑场次仍欠一次。

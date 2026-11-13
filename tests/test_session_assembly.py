@@ -46,6 +46,36 @@ def test_assemble_returns_a_prepared_for_a_mock_request(tmp_path: Path) -> None:
     ]
 
 
+def test_assemble_builds_one_registry_behind_the_settings_snapshot(tmp_path: Path) -> None:
+    """装配期只观察一次：注册表快照与 `settings.skills`（审计快照）是同一份。"""
+    workspace = tmp_path / "ws"
+    skill_dir = workspace / ".minihns" / "skills" / "tdd"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: tdd\ndescription: 先写判据\n---\n正文\n", encoding="utf-8"
+    )
+    fixture = tmp_path / "turns.json"
+    fixture.write_text(
+        json.dumps([{"content": "好", "finish_reason": "stop"}], ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    prepared = assemble(
+        AssemblyRequest(
+            workspace=str(workspace),
+            provider="mock",
+            fixture=str(fixture),
+            session_dir=str(tmp_path / "sessions"),
+        ),
+        {"MINIHNS_HOME": str(tmp_path / "home")},
+    )
+
+    assert isinstance(prepared, Prepared)
+    assert prepared.skills_registry is not None
+    assert prepared.skills_registry.snapshot().skills == prepared.settings.skills
+    assert [skill.name for skill in prepared.settings.skills] == ["tdd"]
+
+
 def test_assemble_failure_happens_before_any_log(tmp_path: Path) -> None:
     """配置、窗口、工具、provider/密钥的失败都在 `EventLog.start` 之前（design D10）。"""
     fixture = tmp_path / "turns.json"

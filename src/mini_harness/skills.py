@@ -52,6 +52,9 @@ class Skill:
     path: Path
     model_invocable: bool = True
     user_invocable: bool = True
+    # 来自哪一层（project / project-shared / user / bundled / preset:<id>）；
+    # 只做审计与目录提示，不参与胜出裁决。
+    source: str = ""
 
 
 @dataclass(frozen=True)
@@ -105,7 +108,7 @@ def _policy(raw: str | None, *, default: bool) -> bool | None:
     return None
 
 
-def _skill_at(path: Path, rank: int) -> Skill | None:
+def _skill_at(path: Path, rank: int, source: str) -> Skill | None:
     """读一个候选文件；任何不合法都是「没有这个技能」，不抛。"""
     try:
         text = path.read_text(encoding="utf-8")
@@ -128,10 +131,11 @@ def _skill_at(path: Path, rank: int) -> Skill | None:
         path=path,
         model_invocable=model_invocable,
         user_invocable=user_invocable,
+        source=source,
     )
 
 
-def _scan(root: Path, rank: int) -> tuple[list[Skill], bool]:
+def _scan(root: Path, rank: int, source: str) -> tuple[list[Skill], bool]:
     """一个根下的技能：目录式 `<name>/SKILL.md` 或扁平 `<name>.md`，不递归。
 
     返回 (技能, 完整)；目录本身扫不动才不完整，单个文件坏掉只跳过。
@@ -152,20 +156,20 @@ def _scan(root: Path, rank: int) -> tuple[list[Skill], bool]:
             candidate = entry
         else:
             continue
-        skill = _skill_at(candidate, rank)
+        skill = _skill_at(candidate, rank, source)
         if skill is not None:
             found.append(skill)
     return found, True
 
 
-def skill_roots(workspace: Path, environ: Mapping[str, str]) -> list[tuple[int, Path]]:
+def skill_roots(workspace: Path, environ: Mapping[str, str]) -> list[tuple[int, Path, str]]:
     """四个根与它们的 rank；`MINIHNS_HOME` 没给就用 `~/.mini-harness`。"""
     home = Path(environ.get(HOME_ENV) or Path.home() / DEFAULT_HOME_DIR)
     return [
-        (RANK_PROJECT, workspace / ".minihns" / "skills"),
-        (RANK_PROJECT_SHARED, workspace / ".agents" / "skills"),
-        (RANK_USER, home / "skills"),
-        (RANK_BUNDLED, Path(__file__).parent / BUNDLED_DIR),
+        (RANK_PROJECT, workspace / ".minihns" / "skills", "project"),
+        (RANK_PROJECT_SHARED, workspace / ".agents" / "skills", "project-shared"),
+        (RANK_USER, home / "skills", "user"),
+        (RANK_BUNDLED, Path(__file__).parent / BUNDLED_DIR, "bundled"),
     ]
 
 
@@ -173,8 +177,8 @@ def discover_skills(workspace: Path, environ: Mapping[str, str]) -> SkillDiscove
     """四级根合并：同名取 rank 小者（并列取路径小者），结果按名字排序。"""
     by_name: dict[str, Skill] = {}
     complete = True
-    for rank, root in skill_roots(workspace, environ):
-        found, ok = _scan(root, rank)
+    for rank, root, source in skill_roots(workspace, environ):
+        found, ok = _scan(root, rank, source)
         complete = complete and ok
         for skill in found:
             current = by_name.get(skill.name)
@@ -189,15 +193,21 @@ def discover_skills(workspace: Path, environ: Mapping[str, str]) -> SkillDiscove
     )
 
 
+def discover_skill_layer(directories: Sequence[Path], source: str = "") -> SkillDiscovery:
+    """一个 scope 层：按目录顺序扫入，层内先到先得；complete 取与。"""
+    skills, complete = merge_skill_layer((), directories, source)
+    return SkillDiscovery(skills, complete)
+
+
 def merge_skill_layer(
-    base: Sequence[Skill], directories: Sequence[Path]
+    base: Sequence[Skill], directories: Sequence[Path], source: str = ""
 ) -> tuple[tuple[Skill, ...], bool]:
     """preset 层：按目录顺序扫入，同名直接覆盖全局；层内先到先得。"""
     by_name = {skill.name: skill for skill in base}
     layer_seen: set[str] = set()
     complete = True
     for index, directory in enumerate(directories):
-        found, ok = _scan(directory, RANK_PRESET_LAYER + index)
+        found, ok = _scan(directory, RANK_PRESET_LAYER + index, source)
         complete = complete and ok
         for skill in found:
             if skill.name in layer_seen:
@@ -228,8 +238,10 @@ def render_skill_catalog(skills: Sequence[Skill], *, budget: int = CATALOG_BUDGE
 
 
 def catalog_digest(skills: Sequence[Skill], complete: bool) -> str:
-    """模型目录的指纹：模型可调 `(name, description)` + 完整性。"""
-    entries = [(skill.name, skill.description) for skill in skills if skill.model_invocable]
+    """模型目录的指纹：模型可调 `(name, description, source)` + 完整性。"""
+    entries = [
+        (skill.name, skill.description, skill.source) for skill in skills if skill.model_invocable
+    ]
     payload = json.dumps(
         {"entries": entries, "complete": complete}, ensure_ascii=False, sort_keys=True
     )
@@ -239,7 +251,7 @@ def catalog_digest(skills: Sequence[Skill], complete: bool) -> str:
 def render_catalog_message(skills: Sequence[Skill], complete: bool) -> str:
     """DSH 同形的目录消息：只放名字 + 转义描述，结尾要求先加载再行动。"""
     entries = [
-        (skill.name, skill.description[:DESCRIPTION_MAX])
+        (skill.name, skill.description[:DESCRIPTION_MAX], skill.source)
         for skill in skills
         if skill.model_invocable
     ]
@@ -256,7 +268,12 @@ def render_catalog_message(skills: Sequence[Skill], complete: bool) -> str:
             "不要凭空目录推断。\n"
             "</system-reminder>"
         )
-    lines = [f"- `{name}`: {escape(description)}" for name, description in entries]
+    lines = [
+        f"- `{name}`（{escape(source)}）: {escape(description)}"
+        if source
+        else f"- `{name}`: {escape(description)}"
+        for name, description, source in entries
+    ]
     parts = [
         "<system-reminder>",
         "技能是一组可复用的任务指令。本会话可用的技能如下：",
@@ -287,9 +304,8 @@ def read_skill_body(skill: Skill, *, limit: int = BODY_LIMIT) -> str:
     return body[:limit] + f"\n\n…（正文超过 {limit} 字符，已截断；用 read 读全文：{skill.path}）"
 
 
-def skill_content(skill: Skill, instruction: str = "") -> str:
-    """DSH 同形的 XML 三段；`skill` 工具与命令展开共用，避免两处漂移。"""
-    body = read_skill_body(skill)
+def skill_content_body(skill: Skill, body: str, instruction: str = "") -> str:
+    """用给定的正文渲染 XML 三段（注册表的 `get` 提供正文时用）。"""
     content = (
         f'<skill_content name="{skill.name}">\n'
         f"<skill_resources>\n- {skill.path}\n</skill_resources>\n"
@@ -297,3 +313,8 @@ def skill_content(skill: Skill, instruction: str = "") -> str:
         f"</skill_content>"
     )
     return content if not instruction else content + "\n\n" + instruction
+
+
+def skill_content(skill: Skill, instruction: str = "") -> str:
+    """DSH 同形的 XML 三段；`skill` 工具与命令展开共用，避免两处漂移。"""
+    return skill_content_body(skill, read_skill_body(skill), instruction)
