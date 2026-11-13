@@ -67,11 +67,11 @@ def _digest(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def _candidates(workspace: Path, environ: Mapping[str, str]) -> list[tuple[str, str, str]]:
+def _candidates(workspace: Path, home: Path) -> list[tuple[str, str, str]]:
     """按「用户全局 → 项目」返回 `(scope, display_path, content)`，空层不出现。"""
     entries: list[tuple[str, str, str]] = []
     for scope, path, display in (
-        ("user-global", contract_home(environ) / "AGENTS.md", GLOBAL_DISPLAY),
+        ("user-global", home / "AGENTS.md", GLOBAL_DISPLAY),
         ("project", workspace / "AGENTS.md", PROJECT_DISPLAY),
     ):
         content = _read(path)
@@ -158,9 +158,9 @@ def render_removed(paths: Sequence[str]) -> str:
     )
 
 
-def load_contracts(workspace: Path, environ: Mapping[str, str]) -> ContractRender:
+def load_contracts(workspace: Path, home: Path) -> ContractRender:
     """读两层契约并渲染；超预算先丢用户全局，再截断项目。"""
-    entries = _candidates(workspace, environ)
+    entries = _candidates(workspace, home)
     text, scopes = _render(entries)
     if entries and not _fits(text):
         omitted = [entries[0][1]] if len(entries) == 2 else []

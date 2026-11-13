@@ -983,7 +983,7 @@ def _adopt_contracts(env: SessionEnv, events: Sequence[EventRecord]) -> None:
 
 def _maybe_emit_contracts(env: SessionEnv, segment_id: str) -> LogWriteFailure | None:
     """装配前观察工作区契约：首轮注入、指纹变了替换、两份都没了退休。"""
-    render = load_contracts(env.settings.workspace, {"MINIHNS_HOME": str(env.contracts_home)})
+    render = load_contracts(env.settings.workspace, env.contracts_home)
     events = read_events(env.log.path)
     if isinstance(events, LogReadFailure):
         return None
