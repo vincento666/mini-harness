@@ -606,3 +606,34 @@ async def test_the_child_header_carries_the_preset_persona(tmp_path: Path) -> No
     assert child[0].payload["preset_persona"] == "你是一位严格的评审者，回答必须先指出风险。"
     assembled = next(record for record in child if record.type == "context/assembled")
     assert "严格的评审者" in assembled.payload["messages"][0]["content"]
+
+
+async def test_the_child_session_gets_its_own_contract_message(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    """子会话各自注入一份工作区契约（M14a）；父会话那份不受影响。"""
+
+    monkeypatch.setenv("MINIHNS_HOME", str(tmp_path / "home"))  # type: ignore[attr-defined]
+    (tmp_path / "home").mkdir()
+    (tmp_path / "home" / "AGENTS.md").write_text("全局约定\n", encoding="utf-8")
+    (tmp_path / "AGENTS.md").write_text("父工作区约定\n", encoding="utf-8")
+    entries = [
+        tool_call_entry("subagent", "c1", task="看 a.md"),
+        {"content": "完", "finish_reason": "stop"},
+        DONE,
+    ]
+
+    _, outcome = await run_fixture_session(
+        tmp_path, "s-parent", entries, prompt="父任务", registry=build_registry(None)
+    )
+
+    assert outcome.stop_reason == "MODEL_COMPLETED"
+    child_log = read_events(_child_paths(tmp_path)[0])
+    messages = [
+        record
+        for record in child_log
+        if record.type == "user/message"
+        and record.payload.get("source") == "workspace-instructions"
+    ]
+    assert len(messages) == 1
+    assert "父工作区约定" in messages[0].payload["content"]
