@@ -760,5 +760,6 @@ Spec 轴查出的判据缺口，六条已在 seam ⑥ 补上（2026-10-24）：
 - **两处打包超过 3 个 task、没写理由**：`8ccae5b`（tasks 4.1–4.4）、`ca14fc7`（tasks 5.3–5.6）。AGENTS.md 只允许「同一 seam 上相邻的 3 个 task」，超过要在信息里写明打包理由；这两条只有内容说明。历史提交不改写。
 - **12 个提交里 11 个没有门禁行**：只有 `ca14fc7` 写了实测。四道门禁是「一次提交算完成」的定义，不分代码与文档；缺的是记录不是没跑（`5c0e6f1` / `4e67836` / `8ccae5b` / `113d161` 提交前都跑过 ruff、`mypy --strict` 与定向判据）。从这轮起，代码提交的信息里带「ruff / mypy / 定向判据」三行实测。
 - **覆盖率门禁曾误报红，已查明并修复跑法**：按 AGENTS.md 的 `coverage run`（pyproject 里 `parallel=true`）→ `combine` → `report` 跑整轮是 **79%**（3761 / 793）。根因在 `coverage/control.py`：`combine()` 调 `_init_data(suffix=None)` 只在 `self._data is None` 时创建数据对象、**不读已存在的 `.coverage`**，所以它从空开始重建；整轮跑里父进程的数据是其中一份 partial，合并后反而只剩子进程那部分。改用 `coverage.rc`（父进程 `parallel=false` 写主数据文件）→ `coverage report`（把子进程 partial 折进来）得到 **95%（3761 / 186），退出码 0**，连跑两次一致。**AGENTS.md 的三步流程需要改**：`combine` 这一步在父进程非并行时应删掉；这条改动等裁决，未擅自改。
+- **归档后发现 delta 漏改一条 Requirement**：`skills` 主规格的「目录消息与按需加载」写着目录 MUST NOT 含来源，与「摘要加 `source`」的裁决冲突；delta 只改了「preset 作用域技能层」。归档后就地改正该 Requirement 与指纹口径（`(name, description, source)`），CURRENT 记账。
 - **一条判据是绿着到的**：`test_a_missing_preset_skill_directory_starts_the_child_anyway` 写在实现之后、第一次就绿（对齐复核补的 Scenario 判据）。它判的行为已被两条单元判据覆盖，但按 TDD 属于「先有实现后有判据」，记在这里以免下一轮把守卫当成红绿对。
 - **UAT 由 agent 代跑**：ADR-0025 要求人坐在终端前；本轮按用户明示指示由 agent 在真实端点跑完四场，场次表里已标「agent 代跑」。人跑场次仍欠一次。
