@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from mini_harness.events.record import EventRecord
 from mini_harness.metering import collect_usage
 
@@ -81,3 +84,40 @@ def test_the_last_response_of_a_turn_wins() -> None:
 
     assert len(turns) == 1
     assert total.input_uncached == 20
+
+
+def test_the_usage_command_prints_turns_and_total(tmp_path: Path) -> None:
+    from cli_blackbox import _cli
+
+    records = [
+        {
+            "schema_version": 1,
+            "type": "session/start",
+            "session_id": "s-usage",
+            "seq": 0,
+            "ts": "2026-11-14T00:00:00+00:00",
+            "payload": {"prompt": "任务"},
+        },
+        {
+            "schema_version": 1,
+            "type": "model/response",
+            "session_id": "s-usage",
+            "seq": 1,
+            "ts": "2026-11-14T00:00:01+00:00",
+            "payload": {
+                "turn_id": "t1",
+                "usage": {"input_tokens": 10, "output_tokens": 5},
+            },
+        },
+    ]
+    log = tmp_path / "s-usage.jsonl"
+    log.write_text("\n".join(json.dumps(item) for item in records) + "\n", encoding="utf-8")
+
+    result = _cli("usage", "s-usage", "--session-dir", str(tmp_path), cwd=tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    data = json.loads(result.stdout)
+    assert data["turns"][0]["turn_id"] == "t1"
+    assert data["total"]["input_uncached"] == 10
+    assert data["total"]["output"] == 5
+    assert data["cost"] is None

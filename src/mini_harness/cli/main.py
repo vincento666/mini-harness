@@ -50,6 +50,7 @@ from mini_harness.loop.settings import (
     DEFAULT_SANDBOX,
     DEFAULT_WINDOW,
 )
+from mini_harness.metering import collect_usage
 from mini_harness.provider.contract import Provider
 from mini_harness.session.assembly import (
     EXIT_INTERNAL_ERROR,
@@ -220,6 +221,10 @@ def build_parser() -> argparse.ArgumentParser:
     replay = subcommands.add_parser("replay", help="重放一个 session 的日志")
     replay.add_argument("session_id")
     replay.add_argument("--session-dir", default=None)
+
+    usage = subcommands.add_parser("usage", help="按回合汇总 token 用量（JSON）")
+    usage.add_argument("session_id")
+    usage.add_argument("--session-dir", default=None)
     return parser
 
 
@@ -757,6 +762,27 @@ def _replay(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _usage(args: argparse.Namespace) -> int:
+    session_id: str = args.session_id
+    session_dir = _session_dir(args.session_dir)
+    path = session_dir / f"{session_id}.jsonl"
+    if not path.is_file():
+        return _report_failure(
+            "SESSION_NOT_FOUND", f"找不到 session 日志：{path}", EXIT_INVALID_ARGUMENT
+        )
+    records = read_events(path)
+    if isinstance(records, LogReadFailure):
+        return _report_failure(records.code, records.detail, EXIT_INTERNAL_ERROR)
+    turns, total = collect_usage(records)
+    payload = {
+        "turns": [{"turn_id": turn.turn_id, **turn.usage.as_dict()} for turn in turns],
+        "total": total.as_dict(),
+        "cost": None,
+    }
+    print(json.dumps(payload, ensure_ascii=False))
+    return EXIT_OK
+
+
 def _reconfigure_streams() -> None:
     # stdin 也算：`chat` 按行读人的输入，编码不能看运行环境的脸色。
     for stream in (sys.stdin, sys.stdout, sys.stderr):
@@ -777,6 +803,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _chat(args)
     if args.command == "host":
         return host_main(args)
+    if args.command == "usage":
+        return _usage(args)
     return _replay(args)
 
 
