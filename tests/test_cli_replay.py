@@ -508,3 +508,17 @@ async def test_a_log_that_ended_in_overflow_replays_pointwise(tmp_path: Path) ->
     assert replay.returncode == 0
     assert _verified_seqs(replay.stdout) == _recorded_seqs(log_path)
     assert "REPLAY_MISMATCH" not in replay.stderr
+
+
+def test_replay_rebuilds_contract_messages_without_touching_disk(tmp_path: Path) -> None:
+    """契约在日志里；把磁盘上的 AGENTS.md 改掉再重放，仍逐点相等。"""
+    (tmp_path / "AGENTS.md").write_text("项目约定\n", encoding="utf-8")
+    session_id, log_path = _run_once(tmp_path)
+
+    first = _cli("replay", session_id, cwd=tmp_path)
+    assert first.returncode == 0, first.stderr
+
+    (tmp_path / "AGENTS.md").write_text("改过的约定\n", encoding="utf-8")
+    second = _cli("replay", session_id, cwd=tmp_path)
+    assert second.returncode == 0, second.stderr
+    assert "项目约定" in log_path.read_text(encoding="utf-8")

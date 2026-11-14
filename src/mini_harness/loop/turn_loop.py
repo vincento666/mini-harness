@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -15,6 +16,7 @@ from mini_harness.context.budget import (
     shadowed_range,
     trigger_line,
 )
+from mini_harness.contracts import contract_home, load_contracts, render_removed
 from mini_harness.events.fold import (
     PURPOSE_COMPACTION,
     AssembledContext,
@@ -104,6 +106,15 @@ class SkillCatalogState:
     last_seq: int | None = None
 
 
+@dataclass
+class ContractState:
+    """工作区契约的状态：上次发出的指纹、消息 seq 与路径（M14a）。"""
+
+    last_digest: str | None = None
+    last_seq: int | None = None
+    last_paths: tuple[str, ...] = ()
+
+
 @dataclass(frozen=True)
 class SessionEnv:
     """一次会话的冻结环境：段调用不再一路结伴（ADR-0002 第 21 条）。
@@ -122,6 +133,9 @@ class SessionEnv:
     # 技能注册表（skill-providers）：目录与命令面都读它的快照；None 时回落到 settings。
     skills_registry: SkillRegistry | None = None
     skill_catalog: SkillCatalogState = field(default_factory=SkillCatalogState)
+    # 工作区契约：每 turn 观察两份 AGENTS.md，指纹变了才重发；首页目录取自环境。
+    contracts_home: Path = field(default_factory=lambda: contract_home(os.environ))
+    contracts: ContractState = field(default_factory=ContractState)
 
 
 @dataclass(frozen=True)
@@ -951,6 +965,71 @@ def _adopt_catalog(env: SessionEnv, events: Sequence[EventRecord]) -> None:
             return
 
 
+def _adopt_contracts(env: SessionEnv, events: Sequence[EventRecord]) -> None:
+    """续跑/回放时从最新的契约消息恢复指纹，避免重复注入。"""
+    for event in reversed(events):
+        if event.type == "user/message" and event.payload.get("source") == "workspace-instructions":
+            digest = event.payload.get("digest")
+            if isinstance(digest, str):
+                env.contracts.last_digest = digest
+                env.contracts.last_seq = event.seq
+                scopes = event.payload.get("scopes")
+                if isinstance(scopes, list):
+                    env.contracts.last_paths = tuple(
+                        str(item.get("path")) for item in scopes if isinstance(item, dict)
+                    )
+            return
+
+
+def _maybe_emit_contracts(env: SessionEnv, segment_id: str) -> LogWriteFailure | None:
+    """装配前观察工作区契约：首轮注入、指纹变了替换、两份都没了退休。"""
+    render = load_contracts(env.settings.workspace, env.contracts_home)
+    events = read_events(env.log.path)
+    if isinstance(events, LogReadFailure):
+        return None
+    state = env.contracts
+    if state.last_digest is None and state.last_seq is None:
+        _adopt_contracts(env, events)
+    if render.text:
+        shadowed = state.last_seq is not None and _catalog_shadowed(events, state.last_seq)
+        if state.last_digest == render.digest and not shadowed:
+            return None
+        payload: dict[str, Any] = {
+            "segment_id": segment_id,
+            "content": render.text,
+            "source": "workspace-instructions",
+            "digest": render.digest,
+            "scopes": [
+                {
+                    "scope": item.scope,
+                    "path": item.path,
+                    "digest": item.digest,
+                    "bytes": item.bytes,
+                    "truncated": item.truncated,
+                }
+                for item in render.scopes
+            ],
+        }
+    else:
+        if state.last_digest is None or state.last_digest == render.digest:
+            return None
+        payload = {
+            "segment_id": segment_id,
+            "content": render_removed(state.last_paths or ("AGENTS.md",)),
+            "source": "workspace-instructions",
+            "removed": True,
+            "digest": render.digest,
+            "scopes": [],
+        }
+    record = env.log.append("user/message", payload)
+    if isinstance(record, LogWriteFailure):
+        return record
+    state.last_digest = render.digest
+    state.last_seq = record.seq
+    state.last_paths = tuple(item.path for item in render.scopes)
+    return None
+
+
 def _maybe_emit_catalog(env: SessionEnv, segment_id: str) -> LogWriteFailure | None:
     """装配前观察技能目录：首轮注入、指纹变了替换、清空退休、压缩后重建。"""
     registry = env.skills_registry
@@ -1010,6 +1089,10 @@ async def _run_turns(
         text_sink = _forward_delta(env.on_delta, turn_id)
 
         failure = _append_all(log, [("turn/start", {"turn_id": turn_id})])
+        if failure is not None:
+            return _segment_failure(failure, turns)
+
+        failure = _maybe_emit_contracts(env, segment_id)
         if failure is not None:
             return _segment_failure(failure, turns)
 

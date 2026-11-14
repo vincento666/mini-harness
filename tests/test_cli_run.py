@@ -1274,3 +1274,19 @@ def test_a_log_that_overflowed_before_any_assembly_still_replays(tmp_path: Path)
         line.startswith("turn ") and line.endswith(": CONTEXT_WINDOW_EXCEEDED") for line in printed
     )
     assert not any(line.startswith("final_context") for line in printed)
+
+
+def test_the_run_log_carries_the_workspace_contract(tmp_path: Path) -> None:
+    """seam ⑥：真实子进程里也读工作区 AGENTS.md，并把契约写进日志。"""
+    (tmp_path / "AGENTS.md").write_text("项目约定：先读 README\n", encoding="utf-8")
+
+    result = _cli(
+        "run", "-p", "任务", "--provider", "mock", "--fixture", str(HELLO_SCENARIO), cwd=tmp_path
+    )
+
+    assert result.returncode == 0, result.stderr
+    logs = _log_files(tmp_path)
+    assert len(logs) == 1
+    text = logs[0].read_text(encoding="utf-8")
+    assert '"source": "workspace-instructions"' in text
+    assert "项目约定：先读 README" in text
