@@ -1,6 +1,6 @@
 # m14a-workspace-contract UAT
 
-**状态**：等人跑（ADR-0025）。四场。
+**状态**：agent 代跑（用户指示，2026-11-14）。四场。环境 `--provider deepseek`（`deepseek-chat`），工作区 `.tmp/uat/m14a-s1`–`s4`，用户级目录用 `MINIHNS_HOME=.tmp/uat/m14a-home`。
 
 ## 场次
 
@@ -15,9 +15,14 @@
 
 | 场次 | 实际观察 | 结论 | 别扭在哪 |
 |---|---|---|---|
-| S1 | | | |
-| S2 | | | |
-| S3 | | | |
-| S4 | | | |
+| S1 | 契约消息 1 条、364 字节，`scopes` 为 `[(AGENTS.md, 24, False)]`；回复首句「收到，工作目录名是 `m14a-s1`」 | 通过 | 无 |
+| S2 | 契约消息 1 条、463 字节，`scopes` 顺序为 `~/.mini-harness/AGENTS.md` → `AGENTS.md`；回复是「[G] … [P]」，两条约定都生效 | 通过 | 显示路径恒为 `~/.mini-harness/AGENTS.md`，而本场实际用的是 `MINIHNS_HOME` 指到别处——标签与真实位置不符（code-review C2 已记账） |
+| S3 | 源文件 112817 字节；契约消息恰好 **16384** 字节，`scopes` 为 `[(AGENTS.md, 7097, True)]`，通知是 `Workspace instruction budget: truncated AGENTS.md to 16013 bytes.`；模型读到了前 172 条 | 通过 | 通知里的 16013 是**正文**字节数，容易读成整条消息的大小；措辞可以更明确（例如 `body truncated to …`） |
+| S4 | 契约消息 0 条；回复「你好。有什么我可以帮你的吗？」 | 通过 | 无 |
 
-**结论**：通过 / 不通过：
+**结论**：通过。
+
+## 附：人跑时可留意
+
+- S3 的截断点落在半句话上（第 173 条被切断），模型仍能理解前段；如果真实项目的约定把关键规则放在文件末尾，截断会把它们丢掉——这是预算方案本身的取舍，不是缺陷。
+- S2 的用户级路径显示与实际 `MINIHNS_HOME` 不一致，人跑时如果设置了自定义 home 会看到同样的标签。

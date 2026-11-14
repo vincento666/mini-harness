@@ -24,6 +24,6 @@
 ## 5. 收尾
 
 - [x] 5.1 真实端点：项目 `AGENTS.md` 的约定被模型读到并照做
-- [ ] 5.2 UAT（人跑，场次见 `docs/verification/m14a-workspace-contract-uat.md`）
+- [x] 5.2 UAT（人跑，场次见 `docs/verification/m14a-workspace-contract-uat.md`）
 - [x] 5.3 变异测试一轮
 - [x] 5.4 Learning Gate
