@@ -3,7 +3,7 @@
 ## 1. 剪枝与 spill（seam ②）
 
 - [ ] 1.1 `tools/dispatch.py` 收尾：非 bash 纯文本按码点剪枝（8192 / 4096 / 1024 + 标记），幂等
-- [ ] 1.2 全文写 `<workspace>/.mini-harness/spill/<tool>-<digest16>.txt`，结果留相对路径与取回指引；越界拒绝
+- [ ] 1.2 全文写 `<workspace>/.mini-harness/spill/<tool>-<digest16>.txt`，结果留相对路径与取回指引；越界拒绝；payload 记 `pruned: {chars, digest, spill}`
 - [ ] 1.3 spill 写失败保留内联，追加 `spill/failed` 事件（工具名 + 原因）
 
 ## 2. 计量（seam ①④）
