@@ -8,9 +8,9 @@
 
 被剪枝的全文 SHALL 写进 `<workspace>/.mini-harness/spill/<tool>-<digest16>.txt`，结果文本 SHALL 只给**相对路径**与一句取回指引（用 `read` 带 offset/limit，或用 `grep` 搜该路径），MUST NOT 写绝对路径。路径越出工作区 SHALL 拒绝写入。`tool/result` 的 payload SHALL 附带 `pruned: {chars, digest, spill}`，其中 `digest` 是剪前全文的 sha256，使日志不存全文也能核对 spill 文件与原文一致。
 
-spill 写入失败时 SHALL 保留内联结果（MUST NOT 把成功调用变成失败），并 SHALL 追加一条 `spill/failed` 事件记录工具名与原因。
+spill 写入失败时 SHALL 保留内联结果（MUST NOT 把成功调用变成失败），并 SHALL 在 `pruned` 里记 `spill: null` 与 `error` 说明原因。
 
-bash 的结果 MUST NOT 走这条剪枝，它保留现有的「尾部 + spill」策略。
+bash 的结果 MUST NOT 走这条剪枝，它保留现有的「尾部 + spill」策略。`read` 的结果 MUST NOT 走这条剪枝：它有自己的 capped window + `offset` 续读约定，剪枝会造成 read → spill → read 循环。`read` 的结果 MUST NOT 走这条剪枝：它有自己的 capped window + `offset` 续读约定，剪枝会造成 read → spill → read 循环。
 
 #### Scenario: 超大结果被剪短且给出去向
 
@@ -32,6 +32,16 @@ bash 的结果 MUST NOT 走这条剪枝，它保留现有的「尾部 + spill」
 - **WHEN** 对同一份已经被剪过的结果再跑一次剪枝
 - **THEN** 结果不再变化
 
+#### Scenario: read 不受影响
+
+- **WHEN** `read` 返回一个很大的窗口
+- **THEN** 结果仍是 read 自己的 capped window + 续读提示，没有剪枝标记与 spill
+
+#### Scenario: read 不受影响
+
+- **WHEN** `read` 返回一个很大的窗口
+- **THEN** 结果仍是 read 自己的 capped window + 续读提示，没有剪枝标记与 spill
+
 #### Scenario: bash 不受影响
 
 - **WHEN** bash 返回超过 16 KiB 的输出
@@ -40,7 +50,7 @@ bash 的结果 MUST NOT 走这条剪枝，它保留现有的「尾部 + spill」
 #### Scenario: spill 写失败保留内联
 
 - **WHEN** spill 目录不可写
-- **THEN** 结果仍是完整内联文本，日志里有 `spill/failed` 事件，调用不被判为失败
+- **THEN** 结果仍是完整内联文本，payload 的 `pruned.error` 非空、`pruned.spill` 为 null，调用不被判为失败
 
 ### Requirement: 剪枝结果与回放
 

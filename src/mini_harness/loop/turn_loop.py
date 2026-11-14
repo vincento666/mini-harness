@@ -358,17 +358,15 @@ async def _dispatch_batch(
                     },
                 )
             )
-        written.append(
-            (
-                "tool/result",
-                {
-                    "turn_id": turn_id,
-                    "tool_call_id": call.id,
-                    "outcome": dispatched.result.outcome,
-                    "content": dispatched.result.content,
-                },
-            ),
-        )
+        result_payload: dict[str, Any] = {
+            "turn_id": turn_id,
+            "tool_call_id": call.id,
+            "outcome": dispatched.result.outcome,
+            "content": dispatched.result.content,
+        }
+        if dispatched.result.meta is not None:
+            result_payload.update(dispatched.result.meta)
+        written.append(("tool/result", result_payload))
         if dispatched.result.outcome in CANCELLED_OUTCOMES:
             written.append(
                 (
