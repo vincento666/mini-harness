@@ -1,0 +1,83 @@
+"""seam ①④：token 四桶计量（M14b）。"""
+
+from __future__ import annotations
+
+from mini_harness.events.record import EventRecord
+from mini_harness.metering import collect_usage
+
+
+def _rec(seq: int, event_type: str, payload: dict[str, object]) -> EventRecord:
+    return EventRecord(
+        schema_version=1,
+        session_id="s-usage",
+        seq=seq,
+        ts=f"2026-11-14T00:00:{seq:02d}+00:00",
+        type=event_type,
+        payload=payload,
+    )
+
+
+def test_four_buckets_are_summed() -> None:
+    records = [
+        _rec(0, "session/start", {"prompt": "任务"}),
+        _rec(
+            1,
+            "model/response",
+            {
+                "turn_id": "t1",
+                "usage": {"input_tokens": 100, "cache_read_tokens": 20, "output_tokens": 30},
+            },
+        ),
+        _rec(
+            2,
+            "model/response",
+            {"turn_id": "t2", "usage": {"input_tokens": 50, "output_tokens": 10}},
+        ),
+    ]
+
+    turns, total = collect_usage(records)
+
+    assert [turn.turn_id for turn in turns] == ["t1", "t2"]
+    # input_tokens 含缓存命中，四桶不重叠：150 总输入 = 130 未缓存 + 20 命中。
+    assert total.input_uncached == 130
+    assert total.cache_read == 20
+    assert total.cache_write == 0
+    assert total.output == 40
+
+
+def test_reasoning_is_not_added_twice() -> None:
+    records = [
+        _rec(
+            0,
+            "model/response",
+            {"turn_id": "t1", "usage": {"output_tokens": 30, "reasoning_tokens": 12}},
+        )
+    ]
+
+    _, total = collect_usage(records)
+
+    assert total.output == 30
+
+
+def test_a_turn_without_usage_is_skipped() -> None:
+    records = [
+        _rec(0, "model/response", {"turn_id": "t1"}),
+        _rec(1, "model/response", {"turn_id": "t2", "usage": {"input_tokens": 5}}),
+    ]
+
+    turns, total = collect_usage(records)
+
+    assert [turn.turn_id for turn in turns] == ["t2"]
+    assert total.input_uncached == 5
+
+
+def test_the_last_response_of_a_turn_wins() -> None:
+    records = [
+        _rec(0, "model/response", {"turn_id": "t1", "usage": {"input_tokens": 10}}),
+        _rec(1, "model/response", {"turn_id": "t1", "usage": {"input_tokens": 20}}),
+    ]
+
+    turns, total = collect_usage(records)
+
+    assert len(turns) == 1
+    assert total.input_uncached == 20
