@@ -93,7 +93,44 @@ propose 后、每个切片提交后、三半收尾后、归档前。每次三行
 - 全自动 merge 与自动改 AGENTS.md（人裁是安全边界）；
 - 自造 grill / explore 工具（增加维护面，收益与「六问清单」重叠）。
 
-## 7. 落地最小集
+## 7. 借自 schedule-workbench 的三处（只借缺的）
+
+2026-11-16 对照 `/Users/vincento/work/develop/schedule-workbench` 的 `loop/`（9 份文档、约 1660 行）。只借本流程缺的，不复制结构。
+
+### 8.1 升级清单（human-in-the-loop 的六类触发）
+
+平时是 **human-on-the-loop**：在已接受的范围里自己诊断、补红、修技术问题、重跑门禁。出现以下六类才升级到人裁：
+
+1. 值或行为无法从已接受的事实推导；
+2. 范围或优先级要变；
+3. 架构、公开契约、数据、权限、安全、成本、外部依赖需要实质决策；
+4. 不可逆或生产动作需要授权；
+5. 出现高影响事故；
+6. 有界、有证据的尝试仍无法推进。
+
+### 8.2 读量规则（他们的 context-pack 的极简替代）
+
+- `docs/CURRENT.md` 是状态唯一权威，只读「现在」与「开放缺口」两节；
+- `docs/lessons.md` 只读 Active Lessons（5 条）；
+- `docs/CURRENT-history.md` 与 `docs/lessons-archive.md` **不读**；
+- 其它文档（roadmap、reference、verification）只在有具体依赖、歧义或风险时展开对应一节。
+
+**不引入 `context-pack.sh`**：他们的脚本要维护角色与节选映射，mini 只有 3 份热文档，规则写成两行就够；加脚本是机制成本大于省下的读量。
+
+### 8.3 归并即删 + 归档指针
+
+已在 `docs/lessons.md` 执行：29 条原文移入 `docs/lessons-archive.md`，收件箱只留 9 条合并后的条目。纪律写进 `## 收敛纪律`。
+
+### 8.4 明确不借的四项
+
+| 不借 | 理由 |
+|---|---|
+| 机读 `CURRENT`（`status` / `checker` / `reviewer` / 指纹 + 写闸 hook） | mini 没有 hook 层；没有写闸时这些字段只是维护负担 |
+| `VERIFIERS.md` 注册表（546 行） | 判据就在 `tests/` 里，注册表会成为第二真源 |
+| 分角色文档（builder / checker / reviewer） | 单 agent + 七缝，角色文档只会膨胀读量 |
+| RepoWiki / spec-flow 分层 | mini 的规格在 `openspec/`，再叠一层会重复 |
+
+## 8. 落地最小集
 
 1. 本文件进 `docs/process/`；
 2. `AGENTS.md` 加一句指针（一进一出：压缩「命令」段里的覆盖率注释）；

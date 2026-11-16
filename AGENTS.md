@@ -12,6 +12,8 @@
 2. **`docs/lessons.md`** —— 教训的收件箱与活跃区；Active Lessons 每次接手都读。
 3. **`docs/CURRENT.md`** —— 当前进度、门禁实测、已知缺口。
 
+**读量**：只读 `CURRENT` 的「现在」与「开放缺口」、`lessons` 的 Active；`CURRENT-history.md` / `lessons-archive.md` 不读；其它文档只在有具体依赖、歧义或风险时展开对应一节。
+
 **接手先核实时状态**：先 `git status --short` 与 `git log --oneline -3`。跟 `docs/CURRENT.md` 对不上时以仓库实况为准并报告偏差——不要相信上一段会话的叙事。
 
 ---
@@ -44,7 +46,7 @@ uv run coverage report --fail-under=95 --show-missing   # 这三步不可拆，�
 
 一次提交算「完成」= **测试、覆盖率地板、`mypy --strict`、ruff** 四道全绿，通过信号都是**退出码 0**（覆盖率那道额外看 `TOTAL`）；规格结构、规格 ↔ 实现（`code-review` 两轴）、变异测试是里程碑收尾时跑的。**里程碑验收另有第五道门禁：UAT 验收**（ADR-0025，见下「完成判据」）。地板数值与规则在 `pyproject.toml`。
 
-**覆盖率纪律**：seam ⑥ 是真实子进程，每个子进程各写一份 partial，所以上面那三步不可拆。combine 只认内容不认新旧，旧 partial 混进这一轮是**看不见的**。要抬地板就补低覆盖处的判据，不要凑低价值测试。
+**覆盖率纪律**：seam ⑥ 的每个子进程各写一份 partial，三步不可拆；`report` 会消费 partial，别在 `combine` 前跑它。要抬地板就补低覆盖处的判据，不要凑测试。
 
 **ruff 的例外只有两处**：中文全角标点与 `docs/tools/` 下的文档与图表构建脚本——门禁只跑 `src` 与 `tests`。
 
@@ -62,7 +64,7 @@ uv run coverage report --fail-under=95 --show-missing   # 这三步不可拆，�
 
 一个 change 的顺序：**propose → 人审 proposal / specs / design / tasks → apply（按 tdd 技能，red → green 单切片，一次一个）→ `code-review` 两轴 + **对齐复核（每个 change 必做）**→ 收尾四项（见下 Learning Gate）→ 在 change 分支上 sync delta 进主规格 + 归档 → 代码与规格一次合入 main**。对齐复核是 code review 的一步：逐条核对实现 ↔ 提案（Why/What/Impact）、design 的决策、spec 的 Requirement/Scenario、tasks 的验收判据；有 DSH 对照的，按 `docs/reference/dsh-alignment-checklist.md` 的十项逐条核对 DSH。产物是 `<change-id>-dsh-review.md`（历史名字保留）。
 
-分支纪律：每个 change 一个分支 `change/<id>`；**归档在分支上做**——sync 进主规格、移 `changeRoot`、`openspec validate --all --strict` 全绿，然后代码与规格一次合入 `main`。反过来（先合并再归档）会在主干上留下「代码已合、主规格还停在上一个里程碑」的窗口。**merge 与推 `main` 先征求人的批准、确认了才执行**；agent 可自行推 `change/<id>` 分支与归档提交。
+分支纪律：每个 change 一个分支 `change/<id>`；**归档在分支上做**——sync 进主规格、移 `changeRoot`、`openspec validate --all --strict` 全绿，然后代码与规格一次合入 `main`。反过来（先合并再归档）会在主干上留下「代码已合、主规格还停在上一个里程碑」的窗口。**merge 与推 `main` 先征求人的批准、确认了才执行**；agent 可自行推 `change/<id>` 分支与归档提交。升级到人裁的六类触发见 `docs/process/devops-loop.md`。
 
 **完成判据有三半，三半都通过才算验收**（ADR-0024 + ADR-0025）：mock 那一半是上面那四道门禁——mock 桩只负责单元测试与冒烟，mock 全绿不算完成；**真实那一半是接上真实端点把本里程碑的判据跑一遍并通过**，不进 CI、不替代门禁那四道；**UAT 那一半是人坐在终端前拿它办一件真事**（不是跑判据），场次与观察表在 `docs/verification/<change-id>-uat.md`，**那张表没填完这个 change 不得归档、不得合入 `main`**，tty 场次 agent 不得代跑。CI 层的判据用真实端点回过的产物做 fixture（ADR-0022），补的是形状不是验收。
 
