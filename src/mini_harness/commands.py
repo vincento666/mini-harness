@@ -9,6 +9,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from mini_harness.events.projection import project
+from mini_harness.events.record import EventRecord
 from mini_harness.skills import Skill, read_skill_body
 
 
@@ -24,6 +26,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
     CommandSpec("skills", "列出可用技能"),
     CommandSpec("skill", "加载一个技能的正文"),
     CommandSpec("plan", "进入计划模式；`/plan off` 退出"),
+    CommandSpec("todo", "打印当前待办表"),
 )
 
 
@@ -66,7 +69,12 @@ class CommandOutcome:
     plan_active: bool | None = None
 
 
-def execute_command(name: str, arguments: str, skills: Sequence[Skill]) -> CommandOutcome | None:
+def execute_command(
+    name: str,
+    arguments: str,
+    skills: Sequence[Skill],
+    records: Sequence[EventRecord] = (),
+) -> CommandOutcome | None:
     """执行一条命令；未知命令返回 `None`（admission miss，不落日志）。"""
     if name == "skills":
         if arguments.strip():
@@ -94,5 +102,13 @@ def execute_command(name: str, arguments: str, skills: Sequence[Skill]) -> Comma
         if target:
             return CommandOutcome(False, "用法：/plan 或 /plan off")
         return CommandOutcome(True, "已进入计划模式：批准计划前，写类工具不可用", plan_active=True)
+    if name == "todo":
+        if arguments.strip():
+            return CommandOutcome(False, "用法：/todo")
+        items = project(records, "todos")["value"]
+        if not items:
+            return CommandOutcome(True, "（没有待办）")
+        lines = [f"- [{item['status']}] {item['id']} {item['text']}" for item in items]
+        return CommandOutcome(True, "\n".join(lines))
     # 直接技能名由壳走「注入 + 开段」的执行路径；这里只处理内置命令。
     return None

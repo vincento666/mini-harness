@@ -236,6 +236,14 @@ async def _race_with_cancel(
     raise settled[0]
 
 
+def _todo_event_payload(call: ToolCall, outcome: str) -> dict[str, Any] | None:
+    """`todo` 成功的调用落一条整表事件；其它工具或失败调用返回 None。"""
+    if call.name != "todo" or outcome != "OK":
+        return None
+    items = call.arguments.get("items")
+    return {"items": items} if isinstance(items, list) else None
+
+
 def _approval_request_payload(turn_id: str, call: ToolCall) -> dict[str, Any]:
     """`approval/request` 的形状；计划复核额外带 `purpose` 与计划正文（M14c）。"""
     payload: dict[str, Any] = {
@@ -375,6 +383,9 @@ async def _dispatch_batch(
         written.append(("tool/result", result_payload))
         if dispatched.plan_exit:
             written.append(("plan/mode", {"active": False}))
+        todo_payload = _todo_event_payload(call, dispatched.result.outcome)
+        if todo_payload is not None:
+            written.append(("todo/updated", todo_payload))
         if dispatched.result.outcome in CANCELLED_OUTCOMES:
             written.append(
                 (

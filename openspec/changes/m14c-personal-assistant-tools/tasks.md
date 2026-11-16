@@ -6,9 +6,9 @@
 
 ## 1. todo（seam ②④⑥）
 
-- [ ] 1.1 `todo` 工具：add / update / complete，整表写 `todo/updated`
-- [ ] 1.2 `fold` 取最后一张表；`replay` 相等
-- [ ] 1.3 `/todo` 命令：只打印，不写事件
+- [x] 1.1 `todo` 工具：add / update / complete，整表写 `todo/updated`
+- [x] 1.2 `fold` 取最后一张表；`replay` 相等
+- [x] 1.3 `/todo` 命令：只打印，不写事件
 
 ## 2. plan（seam ①②④⑥）
 

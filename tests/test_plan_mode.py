@@ -177,3 +177,71 @@ def test_todo_projection_clears_on_segment_start() -> None:
 
     cleared = project([*records, _rec(4, "segment/start", {"segment_id": "s2"})], "todos")["value"]
     assert cleared == []
+
+
+async def test_todo_tool_reports_counts(tmp_path) -> None:
+    from mini_harness.config import build_registry
+    from mini_harness.provider.contract import ToolCall
+    from mini_harness.tools.dispatch import dispatch_tool_call
+    from mini_harness.tools.fences import DispatchContext
+
+    async def never(call, detail):
+        raise AssertionError("todo 不该触发审批")
+
+    outcome = await dispatch_tool_call(
+        ToolCall(
+            id="c1",
+            name="todo",
+            arguments={
+                "items": [
+                    {"id": "t1", "text": "写判据", "status": "completed"},
+                    {"id": "t2", "text": "实现", "status": "in_progress"},
+                ]
+            },
+        ),
+        build_registry(None),
+        DispatchContext(workspace=tmp_path, sandbox="workspace-write", approval="auto"),
+        never,
+    )
+
+    assert outcome.result.outcome == "OK"
+    assert "0 待办" in outcome.result.content
+    assert "1 进行中" in outcome.result.content
+    assert "1 完成" in outcome.result.content
+
+
+def test_todo_event_payload_only_for_successful_todo() -> None:
+    from mini_harness.loop.turn_loop import _todo_event_payload
+    from mini_harness.provider.contract import ToolCall
+
+    call = ToolCall(id="c1", name="todo", arguments={"items": [{"id": "t1"}]})
+    assert _todo_event_payload(call, "OK") == {"items": [{"id": "t1"}]}
+    assert _todo_event_payload(call, "TOOL_ARGS_INVALID") is None
+    assert (
+        _todo_event_payload(ToolCall(id="c2", name="write", arguments={"items": []}), "OK") is None
+    )
+
+
+def test_todo_command_prints_the_latest_table() -> None:
+    records = [
+        _rec(0, "segment/start", {"segment_id": "s1"}),
+        _rec(
+            1,
+            "todo/updated",
+            {"items": [{"id": "t1", "text": "写判据", "status": "completed"}]},
+        ),
+    ]
+
+    outcome = execute_command("todo", "", [], records)
+
+    assert outcome is not None
+    assert outcome.ok is True
+    assert "[completed] t1 写判据" in outcome.text
+    assert execute_command("todo", "多余参数", [], records).ok is False
+
+
+def test_todo_command_is_empty_without_events() -> None:
+    outcome = execute_command("todo", "", [])
+
+    assert outcome is not None
+    assert outcome.text == "（没有待办）"

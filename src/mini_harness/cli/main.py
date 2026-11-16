@@ -565,7 +565,10 @@ def _run_chat_command(prepared: Prepared, text: str) -> str | None:
         )
         instruction = arguments.strip() or f"（用户调用了技能 {name}，请按技能执行。）"
         return skill_content(skill, instruction)
-    outcome = execute_command(name, arguments, skills)
+    records = read_events(prepared.log.path)
+    outcome = execute_command(
+        name, arguments, skills, [] if isinstance(records, LogReadFailure) else records
+    )
     if outcome is None:
         print(f"未知命令：/{name}", file=sys.stderr)
         return None

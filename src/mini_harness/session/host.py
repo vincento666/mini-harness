@@ -145,7 +145,13 @@ def run_command(handle: HostSession, name: str, arguments: str) -> CommandRespon
     """执行一条命令：写 `command/run` + `command/done`，不开段、不建模型消息（M14）。"""
     if handle.status == SESSION_ENDED:
         return Failure("SESSION_NOT_FOUND", "会话已经结束", EXIT_INVALID_ARGUMENT)
-    outcome = execute_command(name, arguments, visible_skills(handle))
+    records = read_events(handle.log.path)
+    outcome = execute_command(
+        name,
+        arguments,
+        visible_skills(handle),
+        [] if isinstance(records, LogReadFailure) else records,
+    )
     if outcome is None:
         return Failure("UNKNOWN_COMMAND", f"未知命令：{name}", EXIT_INVALID_ARGUMENT)
     command_id = uuid.uuid4().hex
