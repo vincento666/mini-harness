@@ -48,7 +48,7 @@ class TodoProjection:
         return state
 
 
-UNITS: dict[str, ProjectionUnit] = {"todos": TodoProjection()}
+UNITS = {"todos": TodoProjection()}
 
 
 def project(records: Sequence[EventRecord], name: str) -> dict[str, Any]:
