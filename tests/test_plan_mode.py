@@ -261,3 +261,59 @@ def test_question_pairs_fold() -> None:
     folded = fold_questions(records)
     assert folded[0]["answer"] == "A"
     assert folded[1]["answer"] is None
+
+
+class _QGate:
+    def __init__(self, answer: str | None) -> None:
+        self.answer = answer
+
+    async def request(self, *, question_id, question, options):
+        return self.answer
+
+
+async def _dispatch_ask(tmp_path, gate):
+    from types import SimpleNamespace
+
+    from mini_harness.config import build_registry
+    from mini_harness.events import EventLog, read_events
+    from mini_harness.provider.contract import ToolCall
+    from mini_harness.tools.dispatch import dispatch_tool_call
+    from mini_harness.tools.fences import DispatchContext
+
+    log = EventLog.create(tmp_path, session_id="s-ask")
+    context = DispatchContext(
+        workspace=tmp_path,
+        sandbox="workspace-write",
+        approval="auto",
+        session=SimpleNamespace(log=log),
+    )
+    if gate is not None:
+        object.__setattr__(context, "question_gate", gate)
+    outcome = await dispatch_tool_call(
+        ToolCall(
+            id="c1",
+            name="ask_user",
+            arguments={"question": "用 A 还是 B", "options": ["A", "B"]},
+        ),
+        build_registry(None),
+        context,
+        _QGate(None),
+    )
+    return outcome, read_events(log.path)
+
+
+async def test_ask_user_records_pair(tmp_path) -> None:
+    outcome, records = await _dispatch_ask(tmp_path, _QGate("A"))
+
+    assert outcome.result.outcome == "OK"
+    assert outcome.result.content == "A"
+    assert [r.type for r in records] == ["question/asked", "question/answered"]
+    assert fold_questions(records)[0]["answer"] == "A"
+
+
+async def test_ask_user_unavailable_leaves_question_open(tmp_path) -> None:
+    outcome, records = await _dispatch_ask(tmp_path, None)
+
+    assert outcome.result.outcome == "QUESTION_UNAVAILABLE"
+    assert [r.type for r in records] == ["question/asked"]
+    assert fold_questions(records)[0]["answer"] is None

@@ -6,7 +6,7 @@ import asyncio
 import os
 import sys
 import threading
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Protocol, TextIO
@@ -38,6 +38,26 @@ class PriorRead:
     content: str
 
 
+class QuestionGate(Protocol):
+    """问一次普通问题 → 答案文本；问不到人返回 None（M14c）。"""
+
+    async def request(
+        self, *, question_id: str, question: str, options: Sequence[str]
+    ) -> str | None: ...
+
+
+class UnavailableQuestionGate:
+    """无人值守时的默认门：立即说问不到人，不伪造答案。"""
+
+    async def request(
+        self, *, question_id: str, question: str, options: Sequence[str]
+    ) -> str | None:
+        return None
+
+
+UNAVAILABLE_QUESTION_GATE: QuestionGate = UnavailableQuestionGate()
+
+
 @dataclass(frozen=True)
 class DispatchContext:
     """一次派发能看到的全部事实：工具只读它，不读进程内状态。
@@ -55,6 +75,7 @@ class DispatchContext:
     tool_call_id: str | None = None
     # 计划模式（M14c）：派发前拦写类工具；由回合循环按日志算好传进来。
     plan_active: bool = False
+    question_gate: QuestionGate = UNAVAILABLE_QUESTION_GATE
 
     @classmethod
     def from_settings(
@@ -64,6 +85,7 @@ class DispatchContext:
         reads: Mapping[str, PriorRead] | None = None,
         session: SessionEnv | None = None,
         plan_active: bool = False,
+        question_gate: QuestionGate | None = None,
     ) -> DispatchContext:
         return cls(
             workspace=settings.workspace,
@@ -72,6 +94,7 @@ class DispatchContext:
             reads=reads or {},
             session=session,
             plan_active=plan_active,
+            question_gate=UNAVAILABLE_QUESTION_GATE if question_gate is None else question_gate,
         )
 
 

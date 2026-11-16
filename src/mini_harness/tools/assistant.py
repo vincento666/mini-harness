@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -14,6 +15,31 @@ class ExitPlanModeArgs(ToolArgs):
     """提交计划正文；批准由 dispatch 里的审批分支完成。"""
 
     plan: str = Field(description="完整计划正文，供人复核")
+
+
+class AskUserArgs(ToolArgs):
+    """一个普通问题；`options` 为空表示自由回答。"""
+
+    question: str = Field(description="要问人的问题，一句话")
+    options: list[str] = Field(default_factory=list, description="可选项；空表示自由回答")
+
+
+async def _ask_user(args: AskUserArgs, context: DispatchContext) -> ToolResult:
+    question_id = context.tool_call_id or uuid.uuid4().hex
+    log = context.session.log if context.session is not None else None
+    if log is not None:
+        log.append(
+            "question/asked",
+            {"question_id": question_id, "question": args.question, "options": args.options},
+        )
+    answer = await context.question_gate.request(
+        question_id=question_id, question=args.question, options=args.options
+    )
+    if answer is None:
+        return ToolResult("QUESTION_UNAVAILABLE", "没有问不到人的答案：问题保持未决")
+    if log is not None:
+        log.append("question/answered", {"question_id": question_id, "answer": answer})
+    return ToolResult("OK", answer, meta={"question_id": question_id})
 
 
 async def _exit_plan_mode(args: ExitPlanModeArgs, context: DispatchContext) -> ToolResult:
@@ -55,6 +81,14 @@ def assistant_tool_definitions() -> list[ToolDefinition]:
             mutates=False,
             concurrency="parallel",
             run=_exit_plan_mode,
+        ),
+        ToolDefinition(
+            name="ask_user",
+            description="向人提一个普通问题并等待回答；问不到人时返回 QUESTION_UNAVAILABLE。",
+            args_model=AskUserArgs,
+            mutates=False,
+            concurrency="exclusive",
+            run=_ask_user,
         ),
         ToolDefinition(
             name="todo",
