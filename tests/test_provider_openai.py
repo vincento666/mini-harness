@@ -839,3 +839,55 @@ async def test_the_provider_still_accepts_no_key_and_sends_no_header() -> None:
         "signal",
         "on_delta",
     ]
+
+
+async def test_stream_usage_carries_deepseek_cache_buckets() -> None:
+    """DeepSeek 报 hit/miss 两个数：未缓存输入取 miss，命中进 cache_read。"""
+
+    async def sink(text: str) -> None:
+        return None
+
+    stream = (
+        'data: {"choices":[{"delta":{"content":"好"},"finish_reason":null}]}\n\n'
+        'data: {"choices":[],"usage":{"prompt_tokens":100,"completion_tokens":40,'
+        '"prompt_cache_hit_tokens":60,"prompt_cache_miss_tokens":40}}\n\n'
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'
+        "data: [DONE]\n\n"
+    )
+    provider, _ = _provider(
+        handler=lambda request: httpx.Response(
+            200, text=stream, headers={"content-type": "text/event-stream"}
+        )
+    )
+
+    turn = await provider.generate([], [], asyncio.Event(), on_delta=sink)
+
+    assert isinstance(turn, AssistantTurn)
+    assert turn.usage.input_tokens == 40
+    assert turn.usage.cache_read_tokens == 60
+
+
+async def test_stream_usage_reads_openai_cached_tokens_details() -> None:
+    """OpenAI 把缓存命中放在 prompt_tokens_details.cached_tokens。"""
+
+    async def sink(text: str) -> None:
+        return None
+
+    stream = (
+        'data: {"choices":[{"delta":{"content":"好"},"finish_reason":null}]}\n\n'
+        'data: {"choices":[],"usage":{"prompt_tokens":100,"completion_tokens":10,'
+        '"prompt_tokens_details":{"cached_tokens":30}}}\n\n'
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'
+        "data: [DONE]\n\n"
+    )
+    provider, _ = _provider(
+        handler=lambda request: httpx.Response(
+            200, text=stream, headers={"content-type": "text/event-stream"}
+        )
+    )
+
+    turn = await provider.generate([], [], asyncio.Event(), on_delta=sink)
+
+    assert isinstance(turn, AssistantTurn)
+    assert turn.usage.input_tokens == 70
+    assert turn.usage.cache_read_tokens == 30

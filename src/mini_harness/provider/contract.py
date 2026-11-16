@@ -23,9 +23,11 @@ class ToolCall(BaseModel):
 
 
 class Usage(BaseModel):
-    """一次模型调用的用量。"""
+    """一次模型调用的用量。`input_tokens` 是**未缓存**输入；缓存命中单列。"""
 
     input_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
     output_tokens: int = 0
 
 

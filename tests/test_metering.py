@@ -41,8 +41,8 @@ def test_four_buckets_are_summed() -> None:
     turns, total = collect_usage(records)
 
     assert [turn.turn_id for turn in turns] == ["t1", "t2"]
-    # input_tokens 含缓存命中，四桶不重叠：150 总输入 = 130 未缓存 + 20 命中。
-    assert total.input_uncached == 130
+    # 适配器的 input_tokens 已是未缓存部分；命中单列在 cache_read。
+    assert total.input_uncached == 150
     assert total.cache_read == 20
     assert total.cache_write == 0
     assert total.output == 40

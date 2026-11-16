@@ -53,8 +53,11 @@ def usage_from_payload(payload: Mapping[str, object]) -> Usage | None:
     if not isinstance(raw, dict):
         return None
     cached = _int(raw.get("cache_read_tokens") or raw.get("prompt_cache_hit_tokens"))
-    total_in = _int(raw.get("input_tokens") or raw.get("prompt_tokens"))
-    uncached = max(total_in - cached, 0) if cached else total_in
+    if isinstance(raw.get("input_tokens"), int):
+        # 适配器给的 input_tokens 已经是未缓存部分，不再减。
+        uncached = _int(raw.get("input_tokens"))
+    else:
+        uncached = max(_int(raw.get("prompt_tokens")) - cached, 0)
     return Usage(
         input_uncached=uncached,
         cache_read=cached,
