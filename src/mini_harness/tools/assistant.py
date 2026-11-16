@@ -7,6 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from mini_harness.events.writer import LogWriteFailure
 from mini_harness.tools.fences import DispatchContext
 from mini_harness.tools.registry import ToolArgs, ToolDefinition, ToolResult
 
@@ -28,17 +29,21 @@ async def _ask_user(args: AskUserArgs, context: DispatchContext) -> ToolResult:
     question_id = context.tool_call_id or uuid.uuid4().hex
     log = context.session.log if context.session is not None else None
     if log is not None:
-        log.append(
+        asked = log.append(
             "question/asked",
             {"question_id": question_id, "question": args.question, "options": args.options},
         )
+        if isinstance(asked, LogWriteFailure):
+            return ToolResult("TOOL_IO_FAILED", "问题写不进日志，没有向人提问")
     answer = await context.question_gate.request(
         question_id=question_id, question=args.question, options=args.options
     )
     if answer is None:
         return ToolResult("QUESTION_UNAVAILABLE", "没有问不到人的答案：问题保持未决")
     if log is not None:
-        log.append("question/answered", {"question_id": question_id, "answer": answer})
+        answered = log.append("question/answered", {"question_id": question_id, "answer": answer})
+        if isinstance(answered, LogWriteFailure):
+            return ToolResult("TOOL_IO_FAILED", "答案写不进日志，本次问答作废")
     return ToolResult("OK", answer, meta={"question_id": question_id})
 
 

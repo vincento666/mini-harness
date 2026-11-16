@@ -45,3 +45,26 @@
 ## 待裁决
 
 已裁：计划期一律拒绝（含 `bash` 与 `subagent` 子会话）；批准复用 approval gate；计划正文放复核请求。
+
+
+---
+
+## 切片 2：todo（2026-11-17 补）
+
+**目标**：模型用整表更新推进多步任务，进度可从日志恢复与回显。
+
+**可观察行为**：`todo(items)` 成功 → `todo/updated {items}`，缺省 `status` 规范为 `pending`；`/todo` 打印投影；`segment/start` 清空投影；`segment/end` 保留。
+
+**判据**：工具计数与结果；事件形状（含缺省规范）；`/todo` 空表与非空；投影清空/保留；快照接口。**坏法**：省略 `status` 导致 `/todo` KeyError；整表未替换；投影不随 segment 清空；事件缺失。
+
+## 切片 3：ask_user
+
+**目标**：模型能问一个普通问题，答案进日志并回给模型；问不到人不伪造。
+
+**可观察行为**：`question/asked` → 答案 → `question/answered`；无答案返回 `QUESTION_UNAVAILABLE`；日志写不进返回 `TOOL_IO_FAILED`。**判据**：事件顺序、答案回传、不可用、写失败。**坏法**：先返回答案再写日志；把关闭当成批准；日志失败仍返回答案。
+
+## 切片 4：present
+
+**目标**：把工作区内产物交给壳。
+
+**可观察行为**：合法路径 → `present/artifact {path, title}`；越界/缺失 → `PRESENT_INVALID_PATH`。**判据**：工作区内文件、已存在的工作区外文件、缺失文件。**坏法**：只检查存在不检查越界；目录被当成产物；事件路径为绝对路径。

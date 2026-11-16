@@ -255,7 +255,20 @@ def _todo_event_payload(call: ToolCall, outcome: str) -> dict[str, Any] | None:
     if call.name != "todo" or outcome != "OK":
         return None
     items = call.arguments.get("items")
-    return {"items": items} if isinstance(items, list) else None
+    if not isinstance(items, list):
+        return None
+    normalized: list[dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            return None
+        normalized.append(
+            {
+                "id": item.get("id"),
+                "text": item.get("text"),
+                "status": item.get("status", "pending"),
+            }
+        )
+    return {"items": normalized}
 
 
 def _approval_request_payload(turn_id: str, call: ToolCall) -> dict[str, Any]:

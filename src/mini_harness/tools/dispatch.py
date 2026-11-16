@@ -100,7 +100,12 @@ async def dispatch_tool_call(
         if plan_approval != "APPROVED":
             return finished(
                 DispatchOutcome(
-                    ToolResult("DENIED_BY_APPROVAL", "计划未获批准，仍在计划模式"),
+                    ToolResult(
+                        "DENIED_BY_APPROVAL",
+                        "人拒绝了这份计划，仍在计划模式"
+                        if plan_approval == "DENIED"
+                        else "问不到人复核计划，仍在计划模式",
+                    ),
                     approval=plan_approval,
                     fence_code=_approval_denial_code(plan_approval),
                 )

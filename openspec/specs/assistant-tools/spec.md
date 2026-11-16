@@ -1,10 +1,11 @@
-# Spec Delta: assistant-tools
+# assistant-tools Specification
 
-## ADDED Requirements
-
+## Purpose
+TBD - created by archiving change m14c-personal-assistant-tools. Update Purpose after archive.
+## Requirements
 ### Requirement: `todo` 工具维护会话待办
 
-系统 SHALL 提供 `todo` 工具，支持新增、更新状态与完成；每次变更 SHALL 以整表替换写一条 `todo/updated`，条目形状为 `{id, text, status}`，`status` 取值 `pending` / `in_progress` / `completed`。折叠 SHALL 取最后一张表。
+系统 SHALL 提供 `todo` 工具，支持新增、更新状态与完成；每次变更 SHALL 以整表替换写一条 `todo/updated`，条目形状为 `{id, text, status}`，`status` 取值 `pending` / `in_progress` / `completed`，缺省 SHALL 为 `pending`。纯折叠 SHALL 取最后一张表；投影的生命周期见「todos 投影」Requirement。
 
 #### Scenario: 新增与完成
 
@@ -74,7 +75,7 @@
 
 ### Requirement: `ask_user` 提问
 
-系统 SHALL 提供 `ask_user(question, options?)`；提问与回答 SHALL 分别写 `question/asked` 与 `question/answered`，答案 SHALL 作为工具结果返回。`ask_user` MUST NOT 改变任何审批状态。问不到人时 SHALL 返回 `QUESTION_UNAVAILABLE`，MUST NOT 伪造答案。
+系统 SHALL 提供 `ask_user(question, options?)`；提问与回答 SHALL 分别写 `question/asked` 与 `question/answered`，答案 SHALL 作为工具结果返回。`ask_user` MUST NOT 改变任何审批状态。问不到人时 SHALL 返回 `QUESTION_UNAVAILABLE`，MUST NOT 伪造答案。任一记录写不进日志时 MUST 返回 `TOOL_IO_FAILED`：问题写不进就不问人，答案写不进就作废。
 
 #### Scenario: 答案进日志并回给模型
 
@@ -85,6 +86,11 @@
 
 - **WHEN** 提问无人回答
 - **THEN** 工具结果为 `QUESTION_UNAVAILABLE`
+
+#### Scenario: 日志写不进
+
+- **WHEN** `question/asked` 写入失败
+- **THEN** 工具结果为 `TOOL_IO_FAILED`，且没有向人提问
 
 ### Requirement: `present` 交付产物
 
@@ -100,6 +106,25 @@
 - **WHEN** `present` 指向工作区外的路径
 - **THEN** 结果为 `PRESENT_INVALID_PATH`，不写事件
 
+### Requirement: `todos` 投影
+
+系统 SHALL 提供 `todos` 投影：`todo/updated` 整表替换；`segment/start` SHALL 清空为 `[]`；`segment/end` SHALL 保留最后一张表；其它事件不改变状态。投影 SHALL 可从日志重建（`project(records, name)`），并通过 host 快照接口 `GET /sessions/{id}/projections/todos` 与 SSE `session/projection` 帧提供给 UI。
+
+#### Scenario: 跨段清空
+
+- **WHEN** 一段里有 `todo/updated`，下一段以 `segment/start` 开始
+- **THEN** 投影值为 `[]`
+
+#### Scenario: 段内保留
+
+- **WHEN** `segment/end` 之后再次投影
+- **THEN** 仍是最后一张表
+
+#### Scenario: 快照接口
+
+- **WHEN** 客户端 GET `/sessions/{id}/projections/todos`
+- **THEN** 返回 `{name, state_version, value}`；未知名字 404
+
 ### Requirement: CLI 与 host 共用命令面
 
 `/todo`、`/plan`、`/plan off` SHALL 在 CLI 与 host 上语义一致；host 的命令列表 SHALL 包含它们。
@@ -108,3 +133,4 @@
 
 - **WHEN** 客户端请求命令列表
 - **THEN** 返回里有 `/todo`、`/plan`
+

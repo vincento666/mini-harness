@@ -113,6 +113,24 @@
 - Next use: 每次提交前按 AGENTS.md 的四道顺序跑，`ruff format --diff` 在最前
 - Status: inbox
 
+### L-084
+- Seen: 1（2026-11-17）
+- Date: 2026-11-17
+- Context: M14c 两轴复核，子代理指出判据只断言实现内部字段
+- Observation: 判据要断言「日志里的事件」或「外部可观察行为」，不要断言 `plan_exit`、私有 helper 返回值这类内部字段；否则改坏真实写入路径测试仍然全绿
+- Evidence: 复核第二轮 5/6/7/8 条；已补 `_dispatch_batch` 日志级判据
+- Next use: 新判据先问「删掉实现里哪一行，它会红」
+- Status: inbox
+
+### L-084
+- Seen: 1（2026-11-17）
+- Date: 2026-11-17
+- Context: M14c 两轴复核，子代理指出判据只断言实现内部字段
+- Observation: 判据要断言「日志里的事件」或「外部可观察行为」，不要断言 `plan_exit`、私有 helper 返回值这类内部字段；否则改坏真实写入路径测试仍然全绿
+- Evidence: 复核第二轮 5/6/7/8 条；已补 `_dispatch_batch` 日志级判据
+- Next use: 新判据先问「删掉实现里哪一行，它会红」
+- Status: inbox
+
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 - 每个里程碑收尾扫一次，**允许输出 `NO-PROMOTION`**（没有可复用信号就不写条目）。
 - 收件箱条目超过 **15 条**必须先消化再收新的：合并同类、把已被代码或规格自证的条目删掉。

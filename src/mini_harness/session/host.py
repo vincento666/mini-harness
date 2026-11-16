@@ -17,7 +17,13 @@ from pathlib import Path
 from typing import Literal
 
 from mini_harness.commands import execute_command
-from mini_harness.events import EventLog, EventRecord, LogReadFailure, read_events
+from mini_harness.events import (
+    EventLog,
+    EventRecord,
+    LogReadFailure,
+    LogWriteFailure,
+    read_events,
+)
 from mini_harness.loop import (
     ENTRY_HOST,
     STOP_MODEL_COMPLETED,
@@ -145,6 +151,10 @@ def run_command(handle: HostSession, name: str, arguments: str) -> CommandRespon
     """执行一条命令：写 `command/run` + `command/done`，不开段、不建模型消息（M14）。"""
     if handle.status == SESSION_ENDED:
         return Failure("SESSION_NOT_FOUND", "会话已经结束", EXIT_INVALID_ARGUMENT)
+    if name == "plan" and handle.status == SESSION_RUNNING:
+        return Failure(
+            "SESSION_BUSY", "会话运行中不能切换计划模式", EXIT_INVALID_ARGUMENT
+        )
     records = read_events(handle.log.path)
     outcome = execute_command(
         name,
@@ -163,7 +173,9 @@ def run_command(handle: HostSession, name: str, arguments: str) -> CommandRespon
         "command/done", {"command_id": command_id, "ok": outcome.ok, "text": outcome.text}
     )
     if outcome.plan_active is not None:
-        handle.log.append("plan/mode", {"active": outcome.plan_active})
+        written = handle.log.append("plan/mode", {"active": outcome.plan_active})
+        if isinstance(written, LogWriteFailure):
+            return Failure("INTERNAL", "计划状态写不进日志", EXIT_INTERNAL_ERROR)
     return CommandResponse(ok=outcome.ok, text=outcome.text, cursor=handle.last_seq)
 
 

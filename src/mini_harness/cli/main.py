@@ -20,7 +20,13 @@ from mini_harness.cli.host import DEFAULT_HOST_PORT, host_main
 from mini_harness.cli.serve import DEFAULT_HOST, DEFAULT_PORT, SERVE_HOSTS, BindFailure, ServeServer
 from mini_harness.commands import command_catalog, direct_skill, execute_command
 from mini_harness.config.load import ConfigFailure, discover_config, load_config
-from mini_harness.events import EventLog, EventRecord, LogReadFailure, read_events
+from mini_harness.events import (
+    EventLog,
+    EventRecord,
+    LogReadFailure,
+    LogWriteFailure,
+    read_events,
+)
 from mini_harness.events.fold import assembled_payload, assembly_points, fold
 from mini_harness.loop import (
     ENTRY_CHAT,
@@ -579,7 +585,10 @@ def _run_chat_command(prepared: Prepared, text: str) -> str | None:
         "command/done", {"command_id": command_id, "ok": outcome.ok, "text": outcome.text}
     )
     if outcome.plan_active is not None:
-        prepared.log.append("plan/mode", {"active": outcome.plan_active})
+        written = prepared.log.append("plan/mode", {"active": outcome.plan_active})
+        if isinstance(written, LogWriteFailure):
+            print("计划状态写不进日志", file=sys.stderr)
+            return None
     print(outcome.text)
     return None
 

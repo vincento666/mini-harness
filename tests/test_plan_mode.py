@@ -214,8 +214,10 @@ def test_todo_event_payload_only_for_successful_todo() -> None:
     from mini_harness.loop.turn_loop import _todo_event_payload
     from mini_harness.provider.contract import ToolCall
 
-    call = ToolCall(id="c1", name="todo", arguments={"items": [{"id": "t1"}]})
-    assert _todo_event_payload(call, "OK") == {"items": [{"id": "t1"}]}
+    call = ToolCall(id="c1", name="todo", arguments={"items": [{"id": "t1", "text": "x"}]})
+    assert _todo_event_payload(call, "OK") == {
+        "items": [{"id": "t1", "text": "x", "status": "pending"}]
+    }
     assert _todo_event_payload(call, "TOOL_ARGS_INVALID") is None
     assert (
         _todo_event_payload(ToolCall(id="c2", name="write", arguments={"items": []}), "OK") is None
@@ -423,3 +425,98 @@ def test_command_usage_errors_cover_edges() -> None:
     assert execute_command("skills", "多余", []).ok is False
     assert execute_command("skill", "", []).ok is False
     assert execute_command("skill", "不存在", []).ok is False
+
+
+async def test_present_rejects_existing_file_outside(tmp_path) -> None:
+    outside = tmp_path.parent / "escape-present.md"
+    outside.write_text("x", encoding="utf-8")
+
+    outcome = await _dispatch_present(tmp_path, "../escape-present.md")
+
+    assert outcome.result.outcome == "PRESENT_INVALID_PATH"
+
+
+async def test_write_is_allowed_when_plan_is_inactive(tmp_path) -> None:
+    from mini_harness.config import build_registry
+    from mini_harness.provider.contract import ToolCall
+    from mini_harness.tools.dispatch import dispatch_tool_call
+    from mini_harness.tools.fences import DispatchContext
+
+    async def never(call, detail):
+        raise AssertionError("写新文件不该触发审批")
+
+    outcome = await dispatch_tool_call(
+        ToolCall(id="c1", name="write", arguments={"file_path": "a.txt", "content": "x"}),
+        build_registry(None),
+        DispatchContext(workspace=tmp_path, sandbox="workspace-write", approval="auto"),
+        never,
+    )
+
+    assert outcome.result.outcome == "OK"
+    assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "x"
+
+
+def test_cli_plan_command_writes_event(tmp_path) -> None:
+    from types import SimpleNamespace
+
+    from mini_harness.cli.main import _run_chat_command
+    from mini_harness.events import EventLog, read_events
+
+    log = EventLog.create(tmp_path, session_id="s-cli-plan")
+    prepared = SimpleNamespace(
+        log=log, skills_registry=None, settings=SimpleNamespace(skills={})
+    )
+    _run_chat_command(prepared, "/plan")
+    assert fold_plan_mode(read_events(log.path)) is True
+
+    _run_chat_command(prepared, "/plan off")
+    assert fold_plan_mode(read_events(log.path)) is False
+
+
+async def test_dispatch_batch_reads_plan_state_from_log(tmp_path) -> None:
+    import asyncio
+
+    from mini_harness.config import build_registry
+    from mini_harness.events import EventLog, read_events
+    from mini_harness.loop.settings import SessionSettings
+    from mini_harness.loop.turn_loop import _dispatch_batch
+    from mini_harness.provider.contract import ToolCall
+
+    log = EventLog.create(tmp_path, session_id="s-batch")
+    log.append("plan/mode", {"active": True})
+    settings = SessionSettings(
+        workspace=tmp_path,
+        provider_name="mock",
+        max_turns=8,
+        sandbox="workspace-write",
+        approval="auto",
+    )
+    gate = _Gate("APPROVED")
+    call = ToolCall(id="c1", name="write", arguments={"file_path": "a.txt", "content": "x"})
+
+    first = await _dispatch_batch(
+        log=log,
+        turn_id="t1",
+        calls=[call],
+        registry=build_registry(None),
+        settings=settings,
+        approval_gate=gate,
+        cancel=asyncio.Event(),
+    )
+    assert first.failure is None
+    results = [r.payload for r in read_events(log.path) if r.type == "tool/result"]
+    assert results[-1]["outcome"] == "DENIED_BY_PLAN"
+    assert not (tmp_path / "a.txt").exists()
+
+    log.append("plan/mode", {"active": False})
+    second = await _dispatch_batch(
+        log=log,
+        turn_id="t2",
+        calls=[ToolCall(id="c2", name="write", arguments={"file_path": "a.txt", "content": "x"})],
+        registry=build_registry(None),
+        settings=settings,
+        approval_gate=gate,
+        cancel=asyncio.Event(),
+    )
+    assert second.failure is None
+    assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "x"
