@@ -178,13 +178,13 @@ propose 后、每个切片提交后、三半收尾后、归档前。每次三行
 
 禁止只给结论、只给代号（例如只说「surfaceOp」）、或把「我的建议」写成「已经定了」。
 
-## 12. 本机技能布局
+## 11. 本机技能布局
 
 - **实体只放一处**：`~/.agents/skills`。`~/.claude/skills`、`~/.workbuddy/skills`、`~/.dsh/skills` 都是指向它的符号链接。
 - **更新**：matt 库用 `uv run python scripts/sync_matt_skills.py`（幂等）；DSH 自带技能由 DSH 应用更新，链接自动跟随。
 - **原则**：新技能先落 `~/.agents/skills`，再由各 harness 链接；禁止在两个 harness 目录各存一份实体。
 
-## 11. 落地最小集
+## 12. 落地最小集
 
 1. 本文件进 `docs/process/`；
 2. `AGENTS.md` 加一句指针（一进一出：压缩「命令」段里的覆盖率注释）；
