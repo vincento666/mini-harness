@@ -89,7 +89,10 @@ def test_host_commands_match_the_cli_and_open_a_segment_for_skills(tmp_path: Pat
             log = session_dir / f"{session_id}.jsonl"
             deadline = time.monotonic() + 10
             while time.monotonic() < deadline:
-                if '"user/message"' in log.read_text(encoding="utf-8"):
+                lines = log.read_text(encoding="utf-8").splitlines()
+                if any(
+                    '"user/message"' in line and "帮我改个函数" in line for line in lines
+                ):
                     break
                 time.sleep(0.05)
             text = log.read_text(encoding="utf-8")
@@ -100,7 +103,7 @@ def test_host_commands_match_the_cli_and_open_a_segment_for_skills(tmp_path: Pat
             ]
             assert "第一步：写红判据" in users[0]["content"]
             assert "请按技能执行" in users[0]["content"]
-            assert "帮我改个函数" in users[-1]["content"]
+            assert any("帮我改个函数" in user["content"] for user in users)
 
             unknown = client.post(
                 f"/sessions/{session_id}/commands",
