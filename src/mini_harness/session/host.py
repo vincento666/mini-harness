@@ -152,9 +152,7 @@ def run_command(handle: HostSession, name: str, arguments: str) -> CommandRespon
     if handle.status == SESSION_ENDED:
         return Failure("SESSION_NOT_FOUND", "会话已经结束", EXIT_INVALID_ARGUMENT)
     if name == "plan" and handle.status == SESSION_RUNNING:
-        return Failure(
-            "SESSION_BUSY", "会话运行中不能切换计划模式", EXIT_INVALID_ARGUMENT
-        )
+        return Failure("SESSION_BUSY", "会话运行中不能切换计划模式", EXIT_INVALID_ARGUMENT)
     records = read_events(handle.log.path)
     outcome = execute_command(
         name,

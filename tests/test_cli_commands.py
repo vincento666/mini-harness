@@ -90,9 +90,7 @@ def test_host_commands_match_the_cli_and_open_a_segment_for_skills(tmp_path: Pat
             deadline = time.monotonic() + 10
             while time.monotonic() < deadline:
                 lines = log.read_text(encoding="utf-8").splitlines()
-                if any(
-                    '"user/message"' in line and "帮我改个函数" in line for line in lines
-                ):
+                if any('"user/message"' in line and "帮我改个函数" in line for line in lines):
                     break
                 time.sleep(0.05)
             text = log.read_text(encoding="utf-8")

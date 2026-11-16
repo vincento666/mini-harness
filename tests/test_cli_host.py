@@ -2028,18 +2028,14 @@ def test_projections_endpoint_returns_todos(tmp_path: Path) -> None:
             trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
         ) as client:
             session_id = _create_session(client, workspace, fixture)
-            listed = client.get(
-                f"/sessions/{session_id}/projections/todos", headers=_headers()
-            )
+            listed = client.get(f"/sessions/{session_id}/projections/todos", headers=_headers())
             assert listed.status_code == 200, listed.text
             body = listed.json()
             assert body["name"] == "todos"
             assert body["state_version"] == 1
             assert body["value"] == []
 
-            unknown = client.get(
-                f"/sessions/{session_id}/projections/nope", headers=_headers()
-            )
+            unknown = client.get(f"/sessions/{session_id}/projections/nope", headers=_headers())
             assert unknown.status_code == 404
     finally:
         _stop(process)
@@ -2062,9 +2058,7 @@ def test_events_emit_todo_projection_frame(tmp_path: Path) -> None:
                             "id": "c1",
                             "name": "todo",
                             "arguments": {
-                                "items": [
-                                    {"id": "t1", "text": "写判据", "status": "pending"}
-                                ]
+                                "items": [{"id": "t1", "text": "写判据", "status": "pending"}]
                             },
                         }
                     ],

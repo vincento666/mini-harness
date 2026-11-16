@@ -359,9 +359,7 @@ async def test_host_question_gate_resolves() -> None:
 
     handle = _Handle()
     gate = HostQuestionGate(handle, timeout=1.0)  # type: ignore[arg-type]
-    task = asyncio.create_task(
-        gate.request(question_id="q1", question="用 A 吗", options=["A"])
-    )
+    task = asyncio.create_task(gate.request(question_id="q1", question="用 A 吗", options=["A"]))
     await asyncio.sleep(0)
     assert resolve_question(handle, "q1", answer="A") is True  # type: ignore[arg-type]
     assert await task == "A"
@@ -463,9 +461,7 @@ def test_cli_plan_command_writes_event(tmp_path) -> None:
     from mini_harness.events import EventLog, read_events
 
     log = EventLog.create(tmp_path, session_id="s-cli-plan")
-    prepared = SimpleNamespace(
-        log=log, skills_registry=None, settings=SimpleNamespace(skills={})
-    )
+    prepared = SimpleNamespace(log=log, skills_registry=None, settings=SimpleNamespace(skills={}))
     _run_chat_command(prepared, "/plan")
     assert fold_plan_mode(read_events(log.path)) is True
 

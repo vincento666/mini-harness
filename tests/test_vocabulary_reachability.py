@@ -199,9 +199,7 @@ async def test_every_tool_outcome_is_reachable(tmp_path: Path) -> None:
     observed.add(denied.result.outcome)
     await run("stub", {}, registry=_raising_registry("stub", _raise_timeout))
     await run("stub", {}, registry=_raising_registry("stub", _raise_cancelled))
-    assistant_registry = ToolRegistry(
-        [*file_tool_definitions(), *assistant_tool_definitions()]
-    )
+    assistant_registry = ToolRegistry([*file_tool_definitions(), *assistant_tool_definitions()])
     await run(
         "present",
         {"path": "missing.md", "title": "x"},
