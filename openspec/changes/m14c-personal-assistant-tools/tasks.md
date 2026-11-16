@@ -22,7 +22,7 @@
 
 ## 3. ask_user（seam ①②④）
 
-- [ ] 3.1 `question/asked` / `question/answered` 事件与配对折叠
+- [x] 3.1 `question/asked` / `question/answered` 事件与配对折叠
 - [ ] 3.2 超时 → `QUESTION_UNAVAILABLE`，不伪造答案
 
 ## 4. present（seam ②④）

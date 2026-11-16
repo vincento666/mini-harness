@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from mini_harness.commands import execute_command
-from mini_harness.events.fold import fold_plan_mode
+from mini_harness.events.fold import fold_plan_mode, fold_questions
 from mini_harness.events.record import EventRecord
 
 
@@ -245,3 +245,19 @@ def test_todo_command_is_empty_without_events() -> None:
 
     assert outcome is not None
     assert outcome.text == "（没有待办）"
+
+
+def test_question_pairs_fold() -> None:
+    records = [
+        _rec(
+            0,
+            "question/asked",
+            {"question_id": "q1", "question": "用 A 还是 B", "options": ["A", "B"]},
+        ),
+        _rec(1, "question/asked", {"question_id": "q2", "question": "继续吗", "options": []}),
+        _rec(2, "question/answered", {"question_id": "q1", "answer": "A"}),
+    ]
+
+    folded = fold_questions(records)
+    assert folded[0]["answer"] == "A"
+    assert folded[1]["answer"] is None
