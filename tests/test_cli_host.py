@@ -2012,3 +2012,122 @@ def test_bad_json_and_bad_field_types_are_400(tmp_path: Path) -> None:
                 assert response.json()["error"]["code"] == "INVALID_ARGUMENT"
     finally:
         _stop(process)
+
+
+def test_projections_endpoint_returns_todos(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    session_dir.mkdir()
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = _mock_fixture(tmp_path)
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(client, workspace, fixture)
+            listed = client.get(f"/sessions/{session_id}/projections/todos", headers=_headers())
+            assert listed.status_code == 200, listed.text
+            body = listed.json()
+            assert body["name"] == "todos"
+            assert body["state_version"] == 1
+            assert body["value"] == []
+
+            unknown = client.get(f"/sessions/{session_id}/projections/nope", headers=_headers())
+            assert unknown.status_code == 404
+    finally:
+        _stop(process)
+
+
+def test_events_emit_todo_projection_frame(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    session_dir.mkdir()
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = tmp_path / "todo.json"
+    fixture.write_text(
+        json.dumps(
+            [
+                {
+                    "content": "先记一笔",
+                    "finish_reason": "tool_calls",
+                    "tool_calls": [
+                        {
+                            "id": "c1",
+                            "name": "todo",
+                            "arguments": {
+                                "items": [{"id": "t1", "text": "写判据", "status": "pending"}]
+                            },
+                        }
+                    ],
+                },
+                {"content": "完", "finish_reason": "stop"},
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(client, workspace, fixture)
+            client.post(
+                f"/sessions/{session_id}/messages",
+                headers=_headers(),
+                json={"content": "任务"},
+            )
+            _wait_until_idle(client, session_id)
+            with client.stream(
+                "GET", f"/sessions/{session_id}/events", headers=_headers()
+            ) as response:
+                assert response.status_code == 200
+                seen: dict[str, str] = {}
+                for line in response.iter_lines():
+                    if line == "":
+                        if seen.get("event") == "session/projection":
+                            break
+                        seen = {}
+                    elif line.startswith("event: "):
+                        seen["event"] = line[len("event: ") :]
+                    elif line.startswith("data: "):
+                        seen["data"] = line[len("data: ") :]
+                assert seen.get("event") == "session/projection"
+                assert "t1" in seen.get("data", "")
+    finally:
+        _stop(process)
+
+
+def test_question_endpoint_rejects_unknown_id(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    session_dir.mkdir()
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = _mock_fixture(tmp_path)
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(client, workspace, fixture)
+            response = client.post(
+                f"/sessions/{session_id}/questions/nope",
+                headers=_headers(),
+                json={"answer": "A"},
+            )
+            assert response.status_code == 404
+            bad = client.post(
+                f"/sessions/{session_id}/questions/nope",
+                headers=_headers(),
+                json={"answer": ""},
+            )
+            assert bad.status_code == 400
+    finally:
+        _stop(process)

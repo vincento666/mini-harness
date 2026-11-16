@@ -336,3 +336,32 @@ def assembly_points(events: Sequence[EventRecord]) -> list[AssemblyPoint]:
                 AssemblyPoint(record=event, prefix=tuple(events[:index]), turn_id=turn_id)
             )
     return points
+
+
+def fold_plan_mode(events: Sequence[EventRecord]) -> bool:
+    """计划模式取最后一条 `plan/mode` 的值；缺省 false（M14c）。"""
+    active = False
+    for event in events:
+        if event.type == "plan/mode" and isinstance(event.payload.get("active"), bool):
+            active = event.payload["active"]
+    return active
+
+
+def fold_questions(events: Sequence[EventRecord]) -> list[dict[str, Any]]:
+    """按提问顺序折叠问答对；没有答案的问题 `answer` 为 None（M14c）。"""
+    questions: dict[str, dict[str, Any]] = {}
+    for event in events:
+        if event.type == "question/asked":
+            question_id = event.payload.get("question_id")
+            if isinstance(question_id, str):
+                questions[question_id] = {
+                    "question_id": question_id,
+                    "question": event.payload.get("question", ""),
+                    "options": event.payload.get("options", []),
+                    "answer": None,
+                }
+        elif event.type == "question/answered":
+            question_id = event.payload.get("question_id")
+            if isinstance(question_id, str) and question_id in questions:
+                questions[question_id]["answer"] = event.payload.get("answer")
+    return list(questions.values())

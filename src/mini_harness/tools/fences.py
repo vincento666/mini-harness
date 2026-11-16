@@ -6,7 +6,7 @@ import asyncio
 import os
 import sys
 import threading
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Protocol, TextIO
@@ -38,6 +38,26 @@ class PriorRead:
     content: str
 
 
+class QuestionGate(Protocol):
+    """问一次普通问题 → 答案文本；问不到人返回 None（M14c）。"""
+
+    async def request(
+        self, *, question_id: str, question: str, options: Sequence[str]
+    ) -> str | None: ...
+
+
+class UnavailableQuestionGate:
+    """无人值守时的默认门：立即说问不到人，不伪造答案。"""
+
+    async def request(
+        self, *, question_id: str, question: str, options: Sequence[str]
+    ) -> str | None:
+        return None
+
+
+UNAVAILABLE_QUESTION_GATE: QuestionGate = UnavailableQuestionGate()
+
+
 @dataclass(frozen=True)
 class DispatchContext:
     """一次派发能看到的全部事实：工具只读它，不读进程内状态。
@@ -53,6 +73,9 @@ class DispatchContext:
     reads: Mapping[str, PriorRead] = field(default_factory=dict)
     session: SessionEnv | None = None
     tool_call_id: str | None = None
+    # 计划模式（M14c）：派发前拦写类工具；由回合循环按日志算好传进来。
+    plan_active: bool = False
+    question_gate: QuestionGate = UNAVAILABLE_QUESTION_GATE
 
     @classmethod
     def from_settings(
@@ -61,6 +84,8 @@ class DispatchContext:
         *,
         reads: Mapping[str, PriorRead] | None = None,
         session: SessionEnv | None = None,
+        plan_active: bool = False,
+        question_gate: QuestionGate | None = None,
     ) -> DispatchContext:
         return cls(
             workspace=settings.workspace,
@@ -68,6 +93,8 @@ class DispatchContext:
             approval=settings.approval,
             reads=reads or {},
             session=session,
+            plan_active=plan_active,
+            question_gate=UNAVAILABLE_QUESTION_GATE if question_gate is None else question_gate,
         )
 
 
@@ -182,6 +209,38 @@ class StdinApprovalGate:
 
 
 STDIN_APPROVAL_GATE = StdinApprovalGate()
+
+
+class StdinQuestionGate:
+    """tty 上问一个普通问题；非 tty 立即「问不到人」。
+
+    不做定时器：超时后 `input()` 线程仍会消费下一行，把下一条输入吃掉。
+    无人值守由非 tty 覆盖；人走开时用 Ctrl-C 取消这一次调用。
+    """
+
+    def __init__(
+        self, *, stream: TextIO | None = None, prompt_stream: TextIO | None = None
+    ) -> None:
+        self._stream = stream
+        self._prompt_stream = prompt_stream
+
+    async def request(
+        self, *, question_id: str, question: str, options: Sequence[str]
+    ) -> str | None:
+        answers = sys.stdin if self._stream is None else self._stream
+        if not answers.isatty():
+            return None
+        prompt = sys.stderr if self._prompt_stream is None else self._prompt_stream
+        suffix = f"（{'/'.join(options)}）" if options else ""
+        prompt.write(f"\n问题：{question}{suffix}\n> ")
+        prompt.flush()
+        answer = await _await_readline(answers)
+        if answer == "":
+            return None
+        return answer.strip() or None
+
+
+STDIN_QUESTION_GATE: QuestionGate = StdinQuestionGate()
 
 
 class UnavailableApprovalGate:

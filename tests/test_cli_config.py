@@ -88,6 +88,10 @@ def test_no_config_file_means_builtin_defaults(tmp_path: Path) -> None:
         "bash",
         "subagent",
         "skill",
+        "exit_plan_mode",
+        "present",
+        "ask_user",
+        "todo",
     ]
 
 
@@ -471,6 +475,10 @@ def test_the_same_cli_under_two_config_files_yields_different_payloads(tmp_path:
         "bash",
         "subagent",
         "skill",
+        "exit_plan_mode",
+        "present",
+        "ask_user",
+        "todo",
     ]
 
 

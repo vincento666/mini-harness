@@ -23,6 +23,7 @@ from mini_harness.events.fold import (
     Message,
     assembled_payload,
     fold,
+    fold_plan_mode,
     fold_range,
 )
 from mini_harness.events.reader import LogReadFailure, read_events
@@ -43,8 +44,10 @@ from mini_harness.skills import SkillDiscovery, catalog_digest, render_catalog_m
 from mini_harness.tools.dispatch import ApprovalAsked, DispatchOutcome, dispatch_tool_call
 from mini_harness.tools.fences import (
     STDIN_APPROVAL_GATE,
+    UNAVAILABLE_QUESTION_GATE,
     ApprovalGate,
     DispatchContext,
+    QuestionGate,
     reads_from_records,
 )
 from mini_harness.tools.registry import ToolRegistry, ToolResult
@@ -127,6 +130,7 @@ class SessionEnv:
     registry: ToolRegistry
     settings: SessionSettings
     approval_gate: ApprovalGate = STDIN_APPROVAL_GATE
+    question_gate: QuestionGate = UNAVAILABLE_QUESTION_GATE
     on_delta: TurnDeltaSink | None = None
     # 委派账本：活跃子代理数与宿主登记回调（M12）；每个会话一份。
     delegation: DelegationState = field(default_factory=DelegationState)
@@ -235,6 +239,52 @@ async def _race_with_cancel(
     raise settled[0]
 
 
+def _present_payload(call: ToolCall, result: ToolResult) -> dict[str, Any] | None:
+    """`present` 成功时落一条产物事件；路径与标题来自工具 meta。"""
+    if call.name != "present" or result.outcome != "OK" or result.meta is None:
+        return None
+    path = result.meta.get("present_path")
+    title = result.meta.get("present_title")
+    if not isinstance(path, str) or not isinstance(title, str):
+        return None
+    return {"path": path, "title": title}
+
+
+def _todo_event_payload(call: ToolCall, outcome: str) -> dict[str, Any] | None:
+    """`todo` 成功的调用落一条整表事件；其它工具或失败调用返回 None。"""
+    if call.name != "todo" or outcome != "OK":
+        return None
+    items = call.arguments.get("items")
+    if not isinstance(items, list):
+        return None
+    normalized: list[dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            return None
+        normalized.append(
+            {
+                "id": item.get("id"),
+                "text": item.get("text"),
+                "status": item.get("status", "pending"),
+            }
+        )
+    return {"items": normalized}
+
+
+def _approval_request_payload(turn_id: str, call: ToolCall) -> dict[str, Any]:
+    """`approval/request` 的形状；计划复核额外带 `purpose` 与计划正文（M14c）。"""
+    payload: dict[str, Any] = {
+        "turn_id": turn_id,
+        "tool_call_id": call.id,
+        "name": call.name,
+        "arguments": call.arguments,
+    }
+    if call.name == "exit_plan_mode":
+        payload["purpose"] = "plan-review"
+        payload["plan"] = call.arguments.get("plan", "")
+    return payload
+
+
 async def _dispatch_batch(
     *,
     log: EventLog,
@@ -261,6 +311,8 @@ async def _dispatch_batch(
         settings,
         reads=reads_from_records(prefix, settings.workspace),
         session=session,
+        plan_active=fold_plan_mode(prefix),
+        question_gate=None if session is None else session.question_gate,
     )
 
     # `started` 是「轮到过：开始派发或放弃」；`finished` 是「整个跑完」。
@@ -281,12 +333,7 @@ async def _dispatch_batch(
             [
                 (
                     "tool/call",
-                    {
-                        "turn_id": turn_id,
-                        "tool_call_id": call.id,
-                        "name": call.name,
-                        "arguments": call.arguments,
-                    },
+                    _approval_request_payload(turn_id, call),
                 )
             ],
         )
@@ -307,12 +354,7 @@ async def _dispatch_batch(
             [
                 (
                     "approval/request",
-                    {
-                        "turn_id": turn_id,
-                        "tool_call_id": call.id,
-                        "name": call.name,
-                        "arguments": call.arguments,
-                    },
+                    _approval_request_payload(turn_id, call),
                 )
             ],
         )
@@ -367,6 +409,14 @@ async def _dispatch_batch(
         if dispatched.result.meta is not None:
             result_payload.update(dispatched.result.meta)
         written.append(("tool/result", result_payload))
+        if dispatched.plan_exit:
+            written.append(("plan/mode", {"active": False}))
+        todo_payload = _todo_event_payload(call, dispatched.result.outcome)
+        if todo_payload is not None:
+            written.append(("todo/updated", todo_payload))
+        present_payload = _present_payload(call, dispatched.result)
+        if present_payload is not None:
+            written.append(("present/artifact", present_payload))
         if dispatched.result.outcome in CANCELLED_OUTCOMES:
             written.append(
                 (

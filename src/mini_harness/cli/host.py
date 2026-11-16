@@ -25,6 +25,7 @@ from mini_harness.cli.serve import SERVE_HOSTS, sse_frame
 from mini_harness.commands import command_catalog, direct_skill
 from mini_harness.events import LogReadFailure, read_events
 from mini_harness.events.fold import fold
+from mini_harness.events.projection import UNITS, project
 from mini_harness.session.assembly import (
     EXIT_INVALID_ARGUMENT,
     AssemblyRequest,
@@ -38,6 +39,7 @@ from mini_harness.session.host import (
     create_session,
     expand_skill_command,
     resolve_approval,
+    resolve_question,
     resume_session,
     run_command,
     shutdown,
@@ -135,6 +137,12 @@ def _snapshot_frame(payload: dict[str, object]) -> bytes:
     return f"event: snapshot\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
 
 
+def _projection_frame(payload: dict[str, object]) -> bytes:
+    return (
+        f"event: session/projection\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
+    )
+
+
 def _delta_frame(payload: dict[str, object]) -> bytes:
     """ephemeral 帧：不带 `id`，不参与 `Last-Event-ID`，也不落日志。"""
     return f"event: model/delta\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
@@ -164,6 +172,11 @@ class HostServer:
             f"{SESSIONS_PATH}/{{session_id}}/approvals/{{tool_call_id}}",
             self._post_approval,
         )
+        router.add_post(
+            f"{SESSIONS_PATH}/{{session_id}}/questions/{{question_id}}",
+            self._post_question,
+        )
+        router.add_get(f"{SESSIONS_PATH}/{{session_id}}/projections/{{name}}", self._get_projection)
         router.add_get(f"{SESSIONS_PATH}/{{session_id}}/events", self._events)
         self._runner: web.AppRunner | None = None
 
@@ -354,6 +367,38 @@ class HostServer:
             return _error(404, "SESSION_NOT_FOUND", f"没有待决的审批：{tool_call_id}")
         return web.json_response({"resolved": True}, status=200)
 
+    async def _get_projection(self, request: web.Request) -> web.Response:
+        session_id = request.match_info["session_id"]
+        handle = self._state.sessions.get(session_id)
+        if handle is None:
+            return _error(404, "SESSION_NOT_FOUND", f"没有会话 {session_id}")
+        records = read_events(handle.log.path)
+        if isinstance(records, LogReadFailure):
+            return _error(500, "INTERNAL", records.detail)
+        name = request.match_info["name"]
+        try:
+            value = project(records, name)
+        except KeyError:
+            return _error(404, "SESSION_NOT_FOUND", f"没有投影：{name}")
+        return web.json_response(value, status=200)
+
+    async def _post_question(self, request: web.Request) -> web.Response:
+        session_id = request.match_info["session_id"]
+        handle = self._state.sessions.get(session_id)
+        if handle is None:
+            return _error(404, "SESSION_NOT_FOUND", f"没有会话 {session_id}")
+        try:
+            body = await request.json()
+        except (ValueError, TypeError, web.HTTPBadRequest):
+            return _error(400, "INVALID_ARGUMENT", "请求体必须是 JSON 对象")
+        answer = body.get("answer") if isinstance(body, dict) else None
+        if not isinstance(answer, str) or not answer.strip():
+            return _error(400, "INVALID_ARGUMENT", "answer 必须是非空字符串")
+        question_id = request.match_info["question_id"]
+        if not resolve_question(handle, question_id, answer=answer):
+            return _error(404, "SESSION_NOT_FOUND", f"没有待决的问题：{question_id}")
+        return web.json_response({"resolved": True}, status=200)
+
     async def _events(self, request: web.Request) -> web.StreamResponse:
         session_id = request.match_info["session_id"]
         handle = self._state.sessions.get(session_id)
@@ -398,10 +443,28 @@ class HostServer:
             backlog = read_events(handle.log.path)
             if isinstance(backlog, LogReadFailure):
                 return response
+            todos_unit = UNITS["todos"]
+            todo_state = todos_unit.init()
+            for prior in backlog:
+                if prior.seq <= after:
+                    todo_state = todos_unit.apply(todo_state, prior)
             for record in backlog:
                 if record.seq > after:
                     await response.write(sse_frame(record))
                     after = record.seq
+                    if record.type == "todo/updated" or (
+                        record.type == "segment/start" and todo_state
+                    ):
+                        todo_state = todos_unit.apply(todo_state, record)
+                        await response.write(
+                            _projection_frame(
+                                {
+                                    "name": "todos",
+                                    "state_version": todos_unit.state_version,
+                                    "value": todos_unit.view(todo_state),
+                                }
+                            )
+                        )
             while True:
                 transport = request.transport
                 if transport is None or transport.is_closing():
@@ -416,6 +479,19 @@ class HostServer:
                                 await response.write(_delta_frame(deltas.get_nowait()))
                         await response.write(sse_frame(record))
                         after = record.seq
+                        if record.type == "todo/updated" or (
+                            record.type == "segment/start" and todo_state
+                        ):
+                            todo_state = todos_unit.apply(todo_state, record)
+                            await response.write(
+                                _projection_frame(
+                                    {
+                                        "name": "todos",
+                                        "state_version": todos_unit.state_version,
+                                        "value": todos_unit.view(todo_state),
+                                    }
+                                )
+                            )
                     while not deltas.empty():
                         await response.write(_delta_frame(deltas.get_nowait()))
                 except ConnectionResetError:

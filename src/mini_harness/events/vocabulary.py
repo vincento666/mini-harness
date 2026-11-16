@@ -23,6 +23,11 @@ CONCRETE_EVENT_TYPES: frozenset[str] = frozenset(
         "compaction/summary",
         "command/run",
         "command/done",
+        "plan/mode",
+        "todo/updated",
+        "question/asked",
+        "question/answered",
+        "present/artifact",
     }
 )
 

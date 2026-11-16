@@ -11,9 +11,11 @@
 
 ## 下一步
 
-0. **本周冲刺（2026-W47）**：`docs/plan-2026-W47.md`，7 个里程碑按天排到 11-21；每日 09:00 观察任务读它。
+0. **本周冲刺（2026-W47）**：`docs/plan-2026-W47.md`；M14c 已完成，下一项 M13。
 
-1. **M14c 个人助理 UX 工具（含 plan）**：按 `docs/process/devops-loop.md` 先做阶段进入六问，再按官方一手资料调研 DSH，然后 propose。
+1. **M14c 个人助理 UX 工具——已完成**（`2026-11-16-m14c-personal-assistant-tools`）：todo/plan/ask_user/present、投影框架与快照/SSE；23 份主规格 validate 绿；全量 728 passed / 6 skipped（macOS 上 1 条大小写折叠用例失败，属平台假设）。
+
+1. **M13 目标轮次**：按 `docs/process/devops-loop.md` 先做阶段进入六问，再按官方一手资料调研 DSH，然后 propose。
 2. 之后 **M13 目标轮次**（plan 在 goal 之前，2026-11-10 裁决），再 M15a 进程收容 → MEM1 基础记忆。
 3. 并行支撑轨：E1 评测（`scripts/eval/` 只有 README，无 runner）；E2 组件接缝在 M 核心之后。
 

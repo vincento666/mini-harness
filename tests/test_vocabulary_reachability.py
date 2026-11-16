@@ -29,6 +29,7 @@ from mini_harness.provider.openai_compat import (
 )
 from mini_harness.session.delegation import MAX_ACTIVE_SUBAGENTS
 from mini_harness.tools import DispatchOutcome, ToolRegistry
+from mini_harness.tools.assistant import assistant_tool_definitions
 from mini_harness.tools.bash_tools import bash_tool_definitions
 from mini_harness.tools.command_runner import CommandResult, SandboxUnavailable
 from mini_harness.tools.fences import (
@@ -198,6 +199,19 @@ async def test_every_tool_outcome_is_reachable(tmp_path: Path) -> None:
     observed.add(denied.result.outcome)
     await run("stub", {}, registry=_raising_registry("stub", _raise_timeout))
     await run("stub", {}, registry=_raising_registry("stub", _raise_cancelled))
+    assistant_registry = ToolRegistry([*file_tool_definitions(), *assistant_tool_definitions()])
+    await run(
+        "present",
+        {"path": "missing.md", "title": "x"},
+        registry=assistant_registry,
+    )
+    await run(
+        "write",
+        {"file_path": "plan-blocked.md", "content": "x\n"},
+        registry=assistant_registry,
+        plan_active=True,
+    )
+    await run("ask_user", {"question": "用 A 吗"}, registry=assistant_registry)
 
     # seam ①：取消在派发之前置位，声明了的调用没开始——那个取值只在回合循环里产出。
     cancel = asyncio.Event()
@@ -234,7 +248,8 @@ async def test_every_tool_outcome_is_reachable(tmp_path: Path) -> None:
     delegation_env.delegation.active = MAX_ACTIVE_SUBAGENTS
     await run("subagent", {"task": "再来一个"}, registry=delegating, session=delegation_env)
 
-    assert observed == set(get_args(ToolOutcome)), "有取值没被跑出来，或词表里多了跑不到的取值"
+    vocabulary = set(get_args(ToolOutcome))
+    assert observed == vocabulary, f"missing={vocabulary - observed} extra={observed - vocabulary}"
 
 
 async def test_a_timeout_in_the_execution_segment_is_a_result(tmp_path: Path) -> None:

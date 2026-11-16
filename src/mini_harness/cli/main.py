@@ -20,7 +20,13 @@ from mini_harness.cli.host import DEFAULT_HOST_PORT, host_main
 from mini_harness.cli.serve import DEFAULT_HOST, DEFAULT_PORT, SERVE_HOSTS, BindFailure, ServeServer
 from mini_harness.commands import command_catalog, direct_skill, execute_command
 from mini_harness.config.load import ConfigFailure, discover_config, load_config
-from mini_harness.events import EventLog, EventRecord, LogReadFailure, read_events
+from mini_harness.events import (
+    EventLog,
+    EventRecord,
+    LogReadFailure,
+    LogWriteFailure,
+    read_events,
+)
 from mini_harness.events.fold import assembled_payload, assembly_points, fold
 from mini_harness.loop import (
     ENTRY_CHAT,
@@ -65,6 +71,7 @@ from mini_harness.session.assembly import (
 from mini_harness.skill_providers import SkillRegistry, skills_view
 from mini_harness.skills import skill_content
 from mini_harness.tools import ToolRegistry
+from mini_harness.tools.fences import STDIN_QUESTION_GATE
 
 EXIT_OK = 0
 EXIT_FENCE_DENIED = 3
@@ -565,7 +572,10 @@ def _run_chat_command(prepared: Prepared, text: str) -> str | None:
         )
         instruction = arguments.strip() or f"（用户调用了技能 {name}，请按技能执行。）"
         return skill_content(skill, instruction)
-    outcome = execute_command(name, arguments, skills)
+    records = read_events(prepared.log.path)
+    outcome = execute_command(
+        name, arguments, skills, [] if isinstance(records, LogReadFailure) else records
+    )
     if outcome is None:
         print(f"未知命令：/{name}", file=sys.stderr)
         return None
@@ -574,6 +584,11 @@ def _run_chat_command(prepared: Prepared, text: str) -> str | None:
     prepared.log.append(
         "command/done", {"command_id": command_id, "ok": outcome.ok, "text": outcome.text}
     )
+    if outcome.plan_active is not None:
+        written = prepared.log.append("plan/mode", {"active": outcome.plan_active})
+        if isinstance(written, LogWriteFailure):
+            print("计划状态写不进日志", file=sys.stderr)
+            return None
     print(outcome.text)
     return None
 
@@ -591,6 +606,7 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
         registry=prepared.registry,
         settings=prepared.settings,
         skills_registry=prepared.skills_registry,
+        question_gate=STDIN_QUESTION_GATE,
     )
     if not prepared.resumed:
         started = start_session(prompt="", entry=ENTRY_CHAT, env=env)
