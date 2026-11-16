@@ -23,6 +23,7 @@ from mini_harness.events.fold import (
     Message,
     assembled_payload,
     fold,
+    fold_plan_mode,
     fold_range,
 )
 from mini_harness.events.reader import LogReadFailure, read_events
@@ -261,6 +262,7 @@ async def _dispatch_batch(
         settings,
         reads=reads_from_records(prefix, settings.workspace),
         session=session,
+        plan_active=fold_plan_mode(prefix),
     )
 
     # `started` 是「轮到过：开始派发或放弃」；`finished` 是「整个跑完」。

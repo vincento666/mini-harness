@@ -156,6 +156,8 @@ def run_command(handle: HostSession, name: str, arguments: str) -> CommandRespon
     handle.log.append(
         "command/done", {"command_id": command_id, "ok": outcome.ok, "text": outcome.text}
     )
+    if outcome.plan_active is not None:
+        handle.log.append("plan/mode", {"active": outcome.plan_active})
     return CommandResponse(ok=outcome.ok, text=outcome.text, cursor=handle.last_seq)
 
 

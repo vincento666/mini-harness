@@ -574,6 +574,8 @@ def _run_chat_command(prepared: Prepared, text: str) -> str | None:
     prepared.log.append(
         "command/done", {"command_id": command_id, "ok": outcome.ok, "text": outcome.text}
     )
+    if outcome.plan_active is not None:
+        prepared.log.append("plan/mode", {"active": outcome.plan_active})
     print(outcome.text)
     return None
 

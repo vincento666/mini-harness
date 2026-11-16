@@ -35,6 +35,8 @@ class DispatchOutcome:
     raw_path: str | None = None
 
 
+PLAN_BLOCKED_TOOLS: frozenset[str] = frozenset({"write", "edit", "bash", "subagent"})
+
 # 「要问人」的落盘钩子：提问之前先写 `approval/request`，写不进去就不问人（ADR-0002 第 9 条）。
 ApprovalAsked = Callable[[ToolCall], bool]
 
@@ -55,6 +57,15 @@ async def dispatch_tool_call(
         return outcome
 
     stages("pre-execute")
+    if context.plan_active and call.name in PLAN_BLOCKED_TOOLS:
+        return finished(
+            DispatchOutcome(
+                ToolResult(
+                    outcome="DENIED_BY_PLAN",
+                    content="计划模式：先提交计划并获批准，再执行写操作。",
+                )
+            )
+        )
     definition = registry.lookup(call.name)
     if definition is None:
         return finished(

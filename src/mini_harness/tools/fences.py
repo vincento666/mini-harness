@@ -53,6 +53,8 @@ class DispatchContext:
     reads: Mapping[str, PriorRead] = field(default_factory=dict)
     session: SessionEnv | None = None
     tool_call_id: str | None = None
+    # 计划模式（M14c）：派发前拦写类工具；由回合循环按日志算好传进来。
+    plan_active: bool = False
 
     @classmethod
     def from_settings(
@@ -61,6 +63,7 @@ class DispatchContext:
         *,
         reads: Mapping[str, PriorRead] | None = None,
         session: SessionEnv | None = None,
+        plan_active: bool = False,
     ) -> DispatchContext:
         return cls(
             workspace=settings.workspace,
@@ -68,6 +71,7 @@ class DispatchContext:
             approval=settings.approval,
             reads=reads or {},
             session=session,
+            plan_active=plan_active,
         )
 
 
