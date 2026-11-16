@@ -35,9 +35,9 @@
 
 - [ ] 6.1 `ProjectionUnit` 协议 + `project(records, name)` 纯函数 + 单测
 - [ ] 6.2 `todos` 单元：todo/updated 整表、segment/start 清空、segment/end 保留
-- [ ] 6.3 host 快照接口 `GET /sessions/{id}/projections/todos`
-- [ ] 6.4 SSE `session/projection` 帧（name / state_version / value）
-- [ ] 6.5 CLI `/todo` 与快照共用同一个 project 函数
+- [x] 6.3 host 快照接口 `GET /sessions/{id}/projections/todos`
+- [x] 6.4 SSE `session/projection` 帧（name / state_version / value）
+- [x] 6.5 CLI `/todo` 与快照共用同一个 project 函数
 
 ## 5. 收尾
 
