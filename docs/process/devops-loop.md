@@ -13,12 +13,12 @@
 | 重大决策点弹窗 | **可行，需要一份触发清单** | 否则弹窗会随机化：小事弹、大事漏 |
 | 别扭 / 未对齐 / 妥协记账 | **可行，已是现状** | 但分散在 code-review 与 dsh-review 两张表里，缺一个出口 |
 | 全流程自动化 | **不可全自动** | merge、改 AGENTS.md、UAT 归属三处必须人裁；其余可以自动化 |
-| 进入关键阶段前用 grillme / openspec explore 对齐 | **工具不存在，要换替代物** | 实测 `openspec` 只有 init / update / list / view / change / archive / spec；本机也没有 grill 技能 |
+| 进入关键阶段前用 grillme / openspec explore 对齐 | **grill-me 可用，explore 不存在** | `openspec` 只有 init / update / list / view / change / archive / spec（实测）；grill-me 已装并接入 §2.1 |
 | 用 lessons 反推流程简化 | **可行，见第 4 节** | 29 条收件箱可归并成 6 类，其中 3 类能靠流程动作直接规避 |
 
 ## 2. 需要新增的四件事
 
-### 2.1 阶段进入对齐单（替代 grill / explore）
+### 2.1 阶段进入对齐单（由 grill-me / grilling 执行）
 
 在 roadmap 的关键阶段进入前（下一个是 **M14c**，之后 M13、MEM1、E2、H 轨），propose 之前先答六问，答案由人给、agent 不得自答：
 
@@ -31,7 +31,9 @@
 
 产出写进 proposal 的「人裁决」小节。六问只问一次，不反复 grill。
 
-**关于 grill 技能**：本机没有安装（实测 `~/.workbuddy/skills` 为空，仓库也没有）。六问清单就是当前的对齐器；如果以后装了 grill 类技能，它仍要产出同样的六问答案并落进 proposal，不能替代人裁决。分诊 loop 的「候选简报」是六问的输入。
+**grill 入口**：技能已装（实体在 `~/.agents/skills`，各 harness 链接引用）。`grill-me` 是斜杠入口（`disable-model-invocation: true`，只由人触发），模型侧对应 `grilling`。两者都只是**提问器**，产出必须落成上面六问的答案并写进 proposal 的「人裁决」小节，不能替代人裁决。分诊 loop 的「候选简报」是六问的输入。
+
+**为什么不挂 universal-work-loop**：它是完整的 Loop 工程实现（契约、门、角色、恢复一整套），mini 只保留简化流程；两套循环并存会让「哪套在管事」变得含糊。形式类似即可，物理上不引用。
 
 ### 2.2 决策点弹窗的触发清单
 
@@ -183,6 +185,7 @@ propose 后、每个切片提交后、三半收尾后、归档前。每次三行
 - **实体只放一处**：`~/.agents/skills`。`~/.claude/skills`、`~/.workbuddy/skills`、`~/.dsh/skills` 都是指向它的符号链接。
 - **更新**：matt 库用 `uv run python scripts/sync_matt_skills.py`（幂等）；DSH 自带技能由 DSH 应用更新，链接自动跟随。
 - **原则**：新技能先落 `~/.agents/skills`，再由各 harness 链接；禁止在两个 harness 目录各存一份实体。
+- **已明确不挂**：`universal-work-loop`（与本项目简化流程不同层，避免混淆）；它的源码仍留在 `~/.codex/skills`，未删除。
 
 ## 12. 落地最小集
 
