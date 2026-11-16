@@ -95,3 +95,24 @@ def test_read_is_not_pruned(tmp_path: Path) -> None:
 
     assert result.content == "r" * 20000
     assert result.meta is None
+
+
+def test_the_threshold_is_inclusive(tmp_path: Path) -> None:
+    """恰好 8192 码点不动；多一个才剪。"""
+    at_limit = _finalize_content(ToolResult("OK", "a" * 8192), "grep", tmp_path)
+    assert at_limit.content == "a" * 8192
+
+    over = _finalize_content(ToolResult("OK", "a" * 8193), "grep", tmp_path)
+    assert MARKER in over.content
+
+
+def test_head_and_tail_budgets_are_exact(tmp_path: Path) -> None:
+    original = "h" * 4096 + "M" * 10000 + "t" * 1024
+
+    result = _finalize_content(ToolResult("OK", original), "grep", tmp_path)
+
+    assert result.content[:4096] == "h" * 4096
+    marker = "\n\n[... tool result middle pruned ...]\n\n"
+    assert result.content[4096 : 4096 + len(marker)] == marker
+    start = 4096 + len(marker)
+    assert result.content[start : start + 1024] == "t" * 1024
