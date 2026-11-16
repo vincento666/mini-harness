@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from mini_harness.events.record import EventRecord
-from mini_harness.metering import collect_usage
+from mini_harness.metering import Usage, collect_usage, pricing_from
 
 
 def _rec(seq: int, event_type: str, payload: dict[str, object]) -> EventRecord:
@@ -121,3 +121,53 @@ def test_the_usage_command_prints_turns_and_total(tmp_path: Path) -> None:
     assert data["total"]["input_uncached"] == 10
     assert data["total"]["output"] == 5
     assert data["cost"] is None
+
+
+def test_pricing_is_none_without_a_table() -> None:
+    assert pricing_from({}, "test-model") is None
+    assert pricing_from({"pricing": {}}, "test-model") is None
+
+
+def test_the_usage_command_computes_cost_from_config(tmp_path: Path) -> None:
+    from cli_blackbox import _cli
+
+    (tmp_path / "mini.config.toml").write_text(
+        "[pricing.test-model]\ninput = 1.0\noutput = 2.0\n", encoding="utf-8"
+    )
+    records = [
+        {
+            "schema_version": 1,
+            "type": "session/start",
+            "session_id": "s-cost",
+            "seq": 0,
+            "ts": "2026-11-14T00:00:00+00:00",
+            "payload": {"prompt": "任务", "model": "test-model"},
+        },
+        {
+            "schema_version": 1,
+            "type": "model/response",
+            "session_id": "s-cost",
+            "seq": 1,
+            "ts": "2026-11-14T00:00:01+00:00",
+            "payload": {"turn_id": "t1", "usage": {"input_tokens": 10, "output_tokens": 5}},
+        },
+    ]
+    (tmp_path / "s-cost.jsonl").write_text(
+        "\n".join(json.dumps(item) for item in records) + "\n", encoding="utf-8"
+    )
+
+    result = _cli("usage", "s-cost", "--session-dir", str(tmp_path), cwd=tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["cost"] == 0.00002
+
+
+def test_pricing_scales_by_bucket() -> None:
+    pricing = pricing_from(
+        {"pricing": {"m": {"input": 1.0, "output": 2.0, "cache_read": 0.5}}}, "m"
+    )
+    assert pricing is not None
+
+    cost = pricing.cost(Usage(input_uncached=1_000_000, cache_read=1_000_000, output=1_000_000))
+
+    assert cost == 3.5

@@ -30,6 +30,8 @@ SETTINGS_FIELDS: dict[str, tuple[type[Any], ...]] = {
     "subagent": (dict,),
     "session_dir": (str,),
     "workspace": (str,),
+    # 价目表：模型名 → 每百万 token 的四类单价；缺省即不做成本估算。
+    "pricing": (dict,),
 }
 
 # 一次运行的 prompt 与 fixture 只来自命令行；密钥只走环境变量的名字，值不进配置文件。

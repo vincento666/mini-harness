@@ -38,6 +38,24 @@ class Usage:
 
 
 @dataclass(frozen=True)
+class Pricing:
+    """每百万 token 的四类单价；缺的字段按 0 算，整表缺省时调用方给 None。"""
+
+    input_uncached: float = 0.0
+    cache_read: float = 0.0
+    cache_write: float = 0.0
+    output: float = 0.0
+
+    def cost(self, usage: Usage) -> float:
+        return (
+            usage.input_uncached * self.input_uncached
+            + usage.cache_read * self.cache_read
+            + usage.cache_write * self.cache_write
+            + usage.output * self.output
+        ) / 1_000_000
+
+
+@dataclass(frozen=True)
 class TurnUsage:
     turn_id: str
     usage: Usage
@@ -87,3 +105,23 @@ def collect_usage(records: Sequence[EventRecord]) -> tuple[tuple[TurnUsage, ...]
     for turn in turns:
         total = total.plus(turn.usage)
     return turns, total
+
+
+def _price(value: object) -> float:
+    return float(value) if isinstance(value, (int, float)) and value >= 0 else 0.0
+
+
+def pricing_from(config: Mapping[str, object], model: str) -> Pricing | None:
+    """从配置里取 `[pricing.<model>]`；没有这张表就返回 None（不猜价）。"""
+    table = config.get("pricing")
+    if not isinstance(table, dict):
+        return None
+    entry = table.get(model)
+    if not isinstance(entry, dict):
+        return None
+    return Pricing(
+        input_uncached=_price(entry.get("input")),
+        cache_read=_price(entry.get("cache_read")),
+        cache_write=_price(entry.get("cache_write")),
+        output=_price(entry.get("output")),
+    )
