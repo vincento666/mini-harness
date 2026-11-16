@@ -336,3 +336,12 @@ def assembly_points(events: Sequence[EventRecord]) -> list[AssemblyPoint]:
                 AssemblyPoint(record=event, prefix=tuple(events[:index]), turn_id=turn_id)
             )
     return points
+
+
+def fold_plan_mode(events: Sequence[EventRecord]) -> bool:
+    """计划模式取最后一条 `plan/mode` 的值；缺省 false（M14c）。"""
+    active = False
+    for event in events:
+        if event.type == "plan/mode" and isinstance(event.payload.get("active"), bool):
+            active = event.payload["active"]
+    return active
