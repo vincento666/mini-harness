@@ -317,3 +317,29 @@ async def test_ask_user_unavailable_leaves_question_open(tmp_path) -> None:
     assert outcome.result.outcome == "QUESTION_UNAVAILABLE"
     assert [r.type for r in records] == ["question/asked"]
     assert fold_questions(records)[0]["answer"] is None
+
+
+def test_stdin_question_gate_returns_none_off_tty() -> None:
+    import asyncio
+    import io
+
+    from mini_harness.tools.fences import StdinQuestionGate
+
+    gate = StdinQuestionGate(stream=io.StringIO("A\n"))
+    answer = asyncio.run(gate.request(question_id="q1", question="用 A 吗", options=["A"]))
+    assert answer is None
+
+
+def test_stdin_question_gate_reads_answer_on_tty() -> None:
+    import asyncio
+    import io
+
+    from mini_harness.tools.fences import StdinQuestionGate
+
+    class _Tty(io.StringIO):
+        def isatty(self) -> bool:
+            return True
+
+    gate = StdinQuestionGate(stream=_Tty("A\n"), prompt_stream=io.StringIO())
+    answer = asyncio.run(gate.request(question_id="q1", question="用 A 吗", options=["A"]))
+    assert answer == "A"

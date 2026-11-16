@@ -44,8 +44,10 @@ from mini_harness.skills import SkillDiscovery, catalog_digest, render_catalog_m
 from mini_harness.tools.dispatch import ApprovalAsked, DispatchOutcome, dispatch_tool_call
 from mini_harness.tools.fences import (
     STDIN_APPROVAL_GATE,
+    UNAVAILABLE_QUESTION_GATE,
     ApprovalGate,
     DispatchContext,
+    QuestionGate,
     reads_from_records,
 )
 from mini_harness.tools.registry import ToolRegistry, ToolResult
@@ -128,6 +130,7 @@ class SessionEnv:
     registry: ToolRegistry
     settings: SessionSettings
     approval_gate: ApprovalGate = STDIN_APPROVAL_GATE
+    question_gate: QuestionGate = UNAVAILABLE_QUESTION_GATE
     on_delta: TurnDeltaSink | None = None
     # 委派账本：活跃子代理数与宿主登记回调（M12）；每个会话一份。
     delegation: DelegationState = field(default_factory=DelegationState)
@@ -285,6 +288,7 @@ async def _dispatch_batch(
         reads=reads_from_records(prefix, settings.workspace),
         session=session,
         plan_active=fold_plan_mode(prefix),
+        question_gate=None if session is None else session.question_gate,
     )
 
     # `started` 是「轮到过：开始派发或放弃」；`finished` 是「整个跑完」。

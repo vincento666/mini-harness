@@ -211,6 +211,38 @@ class StdinApprovalGate:
 STDIN_APPROVAL_GATE = StdinApprovalGate()
 
 
+class StdinQuestionGate:
+    """tty 上问一个普通问题；非 tty 立即「问不到人」。
+
+    不做定时器：超时后 `input()` 线程仍会消费下一行，把下一条输入吃掉。
+    无人值守由非 tty 覆盖；人走开时用 Ctrl-C 取消这一次调用。
+    """
+
+    def __init__(
+        self, *, stream: TextIO | None = None, prompt_stream: TextIO | None = None
+    ) -> None:
+        self._stream = stream
+        self._prompt_stream = prompt_stream
+
+    async def request(
+        self, *, question_id: str, question: str, options: Sequence[str]
+    ) -> str | None:
+        answers = sys.stdin if self._stream is None else self._stream
+        if not answers.isatty():
+            return None
+        prompt = sys.stderr if self._prompt_stream is None else self._prompt_stream
+        suffix = f"（{'/'.join(options)}）" if options else ""
+        prompt.write(f"\n问题：{question}{suffix}\n> ")
+        prompt.flush()
+        answer = await _await_readline(answers)
+        if answer == "":
+            return None
+        return answer.strip() or None
+
+
+STDIN_QUESTION_GATE: QuestionGate = StdinQuestionGate()
+
+
 class UnavailableApprovalGate:
     """子代理的 approval 门：问人一律「不可用」，不继承父的放行（M12 design D4）。"""
 

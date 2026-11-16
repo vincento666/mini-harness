@@ -65,6 +65,7 @@ from mini_harness.session.assembly import (
 from mini_harness.skill_providers import SkillRegistry, skills_view
 from mini_harness.skills import skill_content
 from mini_harness.tools import ToolRegistry
+from mini_harness.tools.fences import STDIN_QUESTION_GATE
 
 EXIT_OK = 0
 EXIT_FENCE_DENIED = 3
@@ -596,6 +597,7 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
         registry=prepared.registry,
         settings=prepared.settings,
         skills_registry=prepared.skills_registry,
+        question_gate=STDIN_QUESTION_GATE,
     )
     if not prepared.resumed:
         started = start_session(prompt="", entry=ENTRY_CHAT, env=env)

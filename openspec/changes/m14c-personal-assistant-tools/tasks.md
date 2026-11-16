@@ -23,7 +23,8 @@
 ## 3. ask_user（seam ①②④）
 
 - [x] 3.1 `question/asked` / `question/answered` 事件与配对折叠
-- [ ] 3.2 超时 → `QUESTION_UNAVAILABLE`，不伪造答案
+- [x] 3.2 超时 → `QUESTION_UNAVAILABLE`，不伪造答案（tty 门已接；非 tty 立即不可用）
+- [ ] 3.3 host 的问答门（挂起 future + 事件推送）
 
 ## 4. present（seam ②④）
 
