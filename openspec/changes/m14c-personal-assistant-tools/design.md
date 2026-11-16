@@ -38,3 +38,25 @@
 - seam ②：`DENIED_BY_PLAN`、`todo` 整表、`present` 越界、`ask_user` 超时；
 - seam ④：五个新事件的 fold 与 replay 相等；
 - seam ⑥：`/todo`、`/plan`、`/plan off` 黑盒各一条。
+
+## D7 投影框架（2026-11-16 人裁：完整框架，不做各算各的）
+
+- `ProjectionUnit` 协议：`name`、`state_version`、`init()`、`apply(state, event)`、`view(state)`。
+- 纯函数 `project(records, name)` 供 CLI 与快照接口用；host 订阅日志，逐事件 `apply` 并推 `session/projection` 帧。
+- 首个单元是 `todos`；`state_version = 1`。没有第二单元之前不建注册表发现机制，写死一个字典即可。
+- 观察者仍只做转发：投影计算不在 `append` 调用栈里做重活，由 host 的订阅回调完成。
+
+## D8 todo 生命周期：按 segment 而非 turn
+
+DSH 的 `turn/start` 对应 mini 的 **`segment/start`**：mini 的 `turn` 是一次模型调用，若按 `turn/start` 清空，会在多步执行中间把表抹掉。规则：
+
+- `todo/updated` → 整表替换；
+- `segment/start` → 清空为 `[]`（每个用户请求一份计划）；
+- `segment/end` → 保留最后一张表（供本轮结束后的查看）；
+- 其它事件 → 状态不变（同一引用）。
+
+## D9 快照与增量
+
+- `GET /sessions/{id}/projections/todos` 返回 `{state_version, value}`；
+- SSE 在每次事件后推 `session/projection` 帧，带 `{name, state_version, value}`；
+- UI 首次拉快照，之后按帧增量更新；断线重连先重拉快照。

@@ -160,3 +160,20 @@ async def test_exit_plan_mode_unavailable_keeps_plan(tmp_path) -> None:
     assert outcome.result.outcome == "DENIED_BY_APPROVAL"
     assert outcome.plan_exit is False
     assert outcome.fence_code == "APPROVAL_UNAVAILABLE"
+
+
+def test_todo_projection_clears_on_segment_start() -> None:
+    from mini_harness.events.projection import project
+
+    records = [
+        _rec(0, "segment/start", {"segment_id": "s1"}),
+        _rec(1, "todo/updated", {"items": [{"id": "t1", "text": "写判据", "status": "pending"}]}),
+        _rec(2, "todo/updated", {"items": [{"id": "t1", "text": "写判据", "status": "completed"}]}),
+        _rec(3, "segment/end", {}),
+    ]
+
+    value = project(records, "todos")["value"]
+    assert value == [{"id": "t1", "text": "写判据", "status": "completed"}]
+
+    cleared = project([*records, _rec(4, "segment/start", {"segment_id": "s2"})], "todos")["value"]
+    assert cleared == []
