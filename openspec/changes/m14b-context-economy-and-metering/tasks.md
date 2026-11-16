@@ -19,6 +19,6 @@
 ## 4. 收尾
 
 - [x] 4.1 真实端点：一次含工具调用的 run，`usage` 的四桶与 provider 报的对得上
-- [ ] 4.2 UAT（人跑，场次见 `docs/verification/m14b-context-economy-and-metering-uat.md`）
+- [x] 4.2 UAT（人跑，场次见 `docs/verification/m14b-context-economy-and-metering-uat.md`）
 - [x] 4.3 变异测试一轮
 - [x] 4.4 Learning Gate
