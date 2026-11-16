@@ -12,11 +12,11 @@
 
 ## 2. plan（seam ①②④⑥）
 
-- [ ] 2.1 `plan/mode {active}` 事件 + `fold_plan_mode`；`--resume` 恢复
-- [ ] 2.2 `/plan` 与 `/plan off`；host 命令列表同步
-- [ ] 2.3 dispatch 拦截 `write` / `edit` / `bash` / `subagent` → `DENIED_BY_PLAN`（副作用前）
-- [ ] 2.4 `exit_plan_mode(plan)`：复用 approval，带 `purpose: "plan-review"` 与正文；仅批准置 false
-- [ ] 2.5 拒绝 / 不可用保持 active，结果说明原因
+- [x] 2.1 `plan/mode {active}` 事件 + `fold_plan_mode`；`--resume` 恢复
+- [x] 2.2 `/plan` 与 `/plan off`；host 命令列表同步
+- [x] 2.3 dispatch 拦截 `write` / `edit` / `bash` / `subagent` → `DENIED_BY_PLAN`（副作用前）
+- [x] 2.4 `exit_plan_mode(plan)`：复用 approval，带 `purpose: "plan-review"` 与正文；仅批准置 false
+- [x] 2.5 拒绝 / 不可用保持 active，结果说明原因
 - [ ] 2.6 `/plan off` 写事件并退出
 - [ ] 2.7 回放含 `plan/mode` 的日志逐点相等
 

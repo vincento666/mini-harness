@@ -33,6 +33,8 @@ class DispatchOutcome:
     fence_code: FenceCode | None = None
     path: str | None = None
     raw_path: str | None = None
+    # 这次调用是否批准了计划退出；回合循环据此写 `plan/mode {active: false}`。
+    plan_exit: bool = False
 
 
 PLAN_BLOCKED_TOOLS: frozenset[str] = frozenset({"write", "edit", "bash", "subagent"})
@@ -84,6 +86,27 @@ async def dispatch_tool_call(
                 )
             )
         )
+
+    if call.name == "exit_plan_mode":
+        if not context.plan_active:
+            return finished(
+                DispatchOutcome(ToolResult("TOOL_ARGS_INVALID", "计划模式未开启，不能提交计划"))
+            )
+        if on_approval_request is not None and not on_approval_request(call):
+            return finished(DispatchOutcome(ToolResult("TOOL_IO_FAILED", "计划复核写不进日志")))
+        plan_approval = await approval_gate.request(
+            tool_call_id=call.id, tool_name=call.name, detail="计划复核"
+        )
+        if plan_approval != "APPROVED":
+            return finished(
+                DispatchOutcome(
+                    ToolResult("DENIED_BY_APPROVAL", "计划未获批准，仍在计划模式"),
+                    approval=plan_approval,
+                    fence_code=_approval_denial_code(plan_approval),
+                )
+            )
+        result = await definition.run(args, replace(context, tool_call_id=call.id))
+        return finished(DispatchOutcome(result, approval=plan_approval, plan_exit=True))
 
     stages("guard")
     decision = judge_fence(context, raw_path=args.target_path(), mutates=definition.mutates)

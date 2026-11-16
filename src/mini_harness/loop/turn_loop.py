@@ -236,6 +236,20 @@ async def _race_with_cancel(
     raise settled[0]
 
 
+def _approval_request_payload(turn_id: str, call: ToolCall) -> dict[str, Any]:
+    """`approval/request` 的形状；计划复核额外带 `purpose` 与计划正文（M14c）。"""
+    payload: dict[str, Any] = {
+        "turn_id": turn_id,
+        "tool_call_id": call.id,
+        "name": call.name,
+        "arguments": call.arguments,
+    }
+    if call.name == "exit_plan_mode":
+        payload["purpose"] = "plan-review"
+        payload["plan"] = call.arguments.get("plan", "")
+    return payload
+
+
 async def _dispatch_batch(
     *,
     log: EventLog,
@@ -283,12 +297,7 @@ async def _dispatch_batch(
             [
                 (
                     "tool/call",
-                    {
-                        "turn_id": turn_id,
-                        "tool_call_id": call.id,
-                        "name": call.name,
-                        "arguments": call.arguments,
-                    },
+                    _approval_request_payload(turn_id, call),
                 )
             ],
         )
@@ -309,12 +318,7 @@ async def _dispatch_batch(
             [
                 (
                     "approval/request",
-                    {
-                        "turn_id": turn_id,
-                        "tool_call_id": call.id,
-                        "name": call.name,
-                        "arguments": call.arguments,
-                    },
+                    _approval_request_payload(turn_id, call),
                 )
             ],
         )
@@ -369,6 +373,8 @@ async def _dispatch_batch(
         if dispatched.result.meta is not None:
             result_payload.update(dispatched.result.meta)
         written.append(("tool/result", result_payload))
+        if dispatched.plan_exit:
+            written.append(("plan/mode", {"active": False}))
         if dispatched.result.outcome in CANCELLED_OUTCOMES:
             written.append(
                 (
