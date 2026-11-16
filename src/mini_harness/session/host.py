@@ -10,7 +10,7 @@ import asyncio
 import contextlib
 import uuid
 from collections import deque
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -179,6 +179,7 @@ class HostSession:
     queue: deque[str] = field(default_factory=deque)
     cancel: asyncio.Event | None = None
     approvals: dict[str, asyncio.Future[bool | None]] = field(default_factory=dict)
+    questions: dict[str, asyncio.Future[str | None]] = field(default_factory=dict)
     subscribers: set[asyncio.Queue[dict[str, object]]] = field(default_factory=set)
     event_subscribers: set[asyncio.Queue[EventRecord]] = field(default_factory=set)
     delta_indexes: dict[str, int] = field(default_factory=dict)
@@ -306,6 +307,7 @@ def create_session(
     handle.env = replace(
         env,
         approval_gate=HostApprovalGate(handle),
+        question_gate=HostQuestionGate(handle),
         on_delta=handle.publish_delta,
     )
     # 本会话派生的子代理收尾时登记进列表（M12）；它们不占 `MAX_SESSIONS` 的额度。
@@ -345,6 +347,42 @@ class HostApprovalGate:
         if approved is None or self._handle.stopping:
             return "UNAVAILABLE"
         return "APPROVED" if approved else "DENIED"
+
+
+class HostQuestionGate:
+    """host 的问答门：把 `question_id` 登记成 future，等 HTTP 回程；超时塌成 None。"""
+
+    def __init__(self, handle: HostSession, *, timeout: float = APPROVAL_TIMEOUT_SECONDS) -> None:
+        self._handle = handle
+        self._timeout = timeout
+
+    async def request(
+        self, *, question_id: str, question: str, options: Sequence[str]
+    ) -> str | None:
+        if question_id in self._handle.questions:
+            return None
+        loop = asyncio.get_running_loop()
+        answer: asyncio.Future[str | None] = loop.create_future()
+        self._handle.questions[question_id] = answer
+        try:
+            async with asyncio.timeout(self._timeout):
+                text = await answer
+        except TimeoutError:
+            return None
+        finally:
+            self._handle.questions.pop(question_id, None)
+        if text is None or self._handle.stopping:
+            return None
+        return text
+
+
+def resolve_question(handle: HostSession, question_id: str, *, answer: str) -> bool:
+    """把一次 HTTP 回答交给正在等待的门；未知或已失效的 id 返回 False。"""
+    pending = handle.questions.get(question_id)
+    if pending is None or pending.done():
+        return False
+    pending.set_result(answer)
+    return True
 
 
 def resolve_approval(handle: HostSession, tool_call_id: str, *, approve: bool) -> bool:
@@ -449,6 +487,9 @@ def cancel_session(handle: HostSession) -> bool:
     if handle.status != SESSION_RUNNING or handle.cancel is None:
         return False
     handle.cancel.set()
+    for pending in handle.questions.values():
+        if not pending.done():
+            pending.set_result(None)
     for answer in handle.approvals.values():
         if not answer.done():
             answer.set_result(None)
@@ -497,6 +538,9 @@ async def shutdown(state: HostState) -> None:
         handle.stopping = True
         if handle.cancel is not None:
             handle.cancel.set()
+        for pending in handle.questions.values():
+            if not pending.done():
+                pending.set_result(None)
         for answer in handle.approvals.values():
             if not answer.done():
                 answer.set_result(None)

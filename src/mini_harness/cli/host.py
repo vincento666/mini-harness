@@ -38,6 +38,7 @@ from mini_harness.session.host import (
     create_session,
     expand_skill_command,
     resolve_approval,
+    resolve_question,
     resume_session,
     run_command,
     shutdown,
@@ -163,6 +164,10 @@ class HostServer:
         router.add_post(
             f"{SESSIONS_PATH}/{{session_id}}/approvals/{{tool_call_id}}",
             self._post_approval,
+        )
+        router.add_post(
+            f"{SESSIONS_PATH}/{{session_id}}/questions/{{question_id}}",
+            self._post_question,
         )
         router.add_get(f"{SESSIONS_PATH}/{{session_id}}/events", self._events)
         self._runner: web.AppRunner | None = None
@@ -352,6 +357,23 @@ class HostServer:
         tool_call_id = request.match_info["tool_call_id"]
         if not resolve_approval(handle, tool_call_id, approve=decision == "approve"):
             return _error(404, "SESSION_NOT_FOUND", f"没有待决的审批：{tool_call_id}")
+        return web.json_response({"resolved": True}, status=200)
+
+    async def _post_question(self, request: web.Request) -> web.Response:
+        session_id = request.match_info["session_id"]
+        handle = self._state.sessions.get(session_id)
+        if handle is None:
+            return _error(404, "SESSION_NOT_FOUND", f"没有会话 {session_id}")
+        try:
+            body = await request.json()
+        except (ValueError, TypeError, web.HTTPBadRequest):
+            return _error(400, "INVALID_ARGUMENT", "请求体必须是 JSON 对象")
+        answer = body.get("answer") if isinstance(body, dict) else None
+        if not isinstance(answer, str) or not answer.strip():
+            return _error(400, "INVALID_ARGUMENT", "answer 必须是非空字符串")
+        question_id = request.match_info["question_id"]
+        if not resolve_question(handle, question_id, answer=answer):
+            return _error(404, "SESSION_NOT_FOUND", f"没有待决的问题：{question_id}")
         return web.json_response({"resolved": True}, status=200)
 
     async def _events(self, request: web.Request) -> web.StreamResponse:

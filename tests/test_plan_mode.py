@@ -343,3 +343,35 @@ def test_stdin_question_gate_reads_answer_on_tty() -> None:
     gate = StdinQuestionGate(stream=_Tty("A\n"), prompt_stream=io.StringIO())
     answer = asyncio.run(gate.request(question_id="q1", question="用 A 吗", options=["A"]))
     assert answer == "A"
+
+
+async def test_host_question_gate_resolves() -> None:
+    import asyncio
+
+    from mini_harness.session.host import HostQuestionGate, resolve_question
+
+    class _Handle:
+        def __init__(self) -> None:
+            self.questions = {}
+            self.stopping = False
+
+    handle = _Handle()
+    gate = HostQuestionGate(handle, timeout=1.0)  # type: ignore[arg-type]
+    task = asyncio.create_task(
+        gate.request(question_id="q1", question="用 A 吗", options=["A"])
+    )
+    await asyncio.sleep(0)
+    assert resolve_question(handle, "q1", answer="A") is True  # type: ignore[arg-type]
+    assert await task == "A"
+
+
+async def test_host_question_gate_times_out() -> None:
+    from mini_harness.session.host import HostQuestionGate
+
+    class _Handle:
+        def __init__(self) -> None:
+            self.questions = {}
+            self.stopping = False
+
+    gate = HostQuestionGate(_Handle(), timeout=0.01)  # type: ignore[arg-type]
+    assert await gate.request(question_id="q1", question="用 A 吗", options=[]) is None
