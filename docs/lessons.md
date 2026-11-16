@@ -19,14 +19,17 @@
 2026-11-16 归并：29 条原文移到 `docs/lessons-archive.md`，这里按类合并成 9 条。合并时保留了原始编号，便于回查。
 
 ### L-074
+- Seen: 6（不同日期：2026-10-16/21/22/23/24/25）
+- Promotion: 已晋升（2026-11-16 → AGENTS.md「编码行为四规」第 4 条）
 - Date: 2026-11-16
 - Context: 归并自 L-005 / L-036 / L-041 / L-048 / L-055（`fix-small-window-compaction-dead-zone`）/ L-056（同 change 的 delta）
 - Observation: 判据写成「字段存在」「顺序正确」「常见形状能过」时，坏法只要换一格就活下来：自指断言把待判值写在两侧（L-036）、只断言三条字段在不在（L-041）、只覆盖入口常见的形状（L-048）、判据落在实现之后就没见过红（L-055）、场景有一半在装配缝上不可达（L-056）
 - Evidence: `docs/lessons-archive.md` 对应条目；M9 变异 5、M6 三条存活变异、`fix-small-window-compaction-dead-zone` 的 4.1 与 2.3
 - Next use: 每条 Scenario 先列「坏法清单」再写断言；断言里不得出现待判值自身；红绿循环记一行「红的样子」，没红就写原因
-- Status: inbox
+- Status: promoted
 
 ### L-075
+- Seen: 2（不同日期：2026-10-23/29）
 - Date: 2026-11-16
 - Context: 归并自 L-059 / L-060 / L-066
 - Observation: 判据会绿在「本机恰好没有那个环境变量」上（L-059）；撤掉一条检查后 mock 判据会真向公网发请求（L-060）；用「一整行 50000 字符」构造大结果时，工具的单行上限先把结果截到 2000 字符，fixture 想造的语义已经不在了（L-066）
@@ -35,6 +38,7 @@
 - Status: inbox
 
 ### L-076
+- Seen: 1（不同日期：2026-11-05）
 - Date: 2026-11-16
 - Context: 归并自 L-070
 - Observation: 用 `session + 首尾 seq + 条数` 做缓存 key，会让不同日志、不同内容在相同 seq 形状下碰撞，测试拿到上一份 messages；日志 append-only 不等于「任意同 seq 形状都同内容」
@@ -43,6 +47,8 @@
 - Status: inbox
 
 ### L-077
+- Promotion: ready（≥3 个不同日期）
+- Seen: 3（不同日期：2026-10-21/23/27）
 - Date: 2026-11-16
 - Context: 归并自 L-045 / L-047 / L-058 / L-063
 - Observation: 带「每次」的 Requirement 只按正常回合核过，漏掉摘要调用与压缩后重试两条路径（L-047）；tasks 里写的失败码与规格不符（L-045）；扩充词表时，把旧词当反例的判据「还绿」不等于「还判那件事」（L-058）；两轴审查给出的改法会破坏 `FENCE_DENIED` / `CONTEXT_WINDOW_EXCEEDED` 的语义（L-063）
@@ -51,6 +57,8 @@
 - Status: inbox
 
 ### L-078
+- Promotion: ready（≥3 个不同日期）
+- Seen: 3（不同日期：2026-10-17/23/25）
 - Date: 2026-11-16
 - Context: 归并自 L-019 / L-057（`add-platform-facts...` 那条 PowerShell 经验）
 - Observation: 把 `async def test_...:` 整行（含结尾换行）当 `old_string` 会把下一行粘上来、语法当场坏掉；`git checkout -- <file>` 会连本轮未提交的改动一起回滚（L-019）；PowerShell 5.1 的 `Set-Content -Encoding utf8` 会写 BOM，`tasks.md` 首行因此带 BOM（L-057）
@@ -59,6 +67,8 @@
 - Status: inbox
 
 ### L-079
+- Promotion: ready（≥3 个不同日期）
+- Seen: 3（不同日期：2026-10-23/25/11-13）
 - Date: 2026-11-16
 - Context: 归并自 L-072 / L-056（`add-platform-facts...` 的 mypy 窄化）
 - Observation: `coverage report` 会消费并删除全部 `.coverage.*` partial，combine 之前跑过一次 report，下一轮 combine 的输入就少一批（L-072）；mypy 的平台窄化只认 `sys.platform == "win32"` 这种字面量，抽成常量后窄化失效（L-056）
@@ -67,6 +77,8 @@
 - Status: inbox
 
 ### L-080
+- Promotion: ready（≥3 个不同日期）
+- Seen: 4（不同日期：2026-10-22/23/24/28）
 - Date: 2026-11-16
 - Context: 归并自 L-052 / L-054 / L-055（`fix-chat-screen-feedback` 的真实端点那条）/ L-064
 - Observation: 真实端点暴露的缺陷，mock 全绿也抓不到，形状差在「段数与每段的输入数」（L-052）、「端口是否还开着与时序」（L-054）、「收尾缝隙只有几毫秒」（L-055）、「顺序对但延迟到整段结束才发」（L-064）
@@ -75,6 +87,7 @@
 - Status: inbox
 
 ### L-081
+- Seen: 2（不同日期：2026-10-21/11-06）
 - Date: 2026-11-16
 - Context: 归并自 L-039 / L-071
 - Observation: 实现里同时存在两条同义路径时，变异删掉一条、判据仍全绿，说明那条是死路径（L-071）；反过来，绿着写出来的守卫判据可以是有价值的，它的价值在变异轮兑现（L-039）
@@ -83,6 +96,7 @@
 - Status: inbox
 
 ### L-082
+- Seen: 1（不同日期：2026-10-27）
 - Date: 2026-11-16
 - Context: 归并自 L-062
 - Observation: `Future[bool]` 表达不了第三种结论 `UNAVAILABLE`；取消时把 pending future 置成 `False`，门只能回 `DENIED`，日志于是把「没人回答」写成「人拒绝了」
@@ -93,6 +107,7 @@
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 - 每个里程碑收尾扫一次，**允许输出 `NO-PROMOTION`**（没有可复用信号就不写条目）。
 - 收件箱条目超过 **15 条**必须先消化再收新的：合并同类、把已被代码或规格自证的条目删掉。
+- **Seen ≥3 个不同日期才晋升**（照 yetone 的做法）；每次只晋升一条，守一进一出。未达阈值的留在收件箱。
 - 晋升进 AGENTS.md 的唯一形态是**一句话规则**；细节留在本文件或 `docs/verification/`。
 - 每次晋升同时删/压 AGENTS.md 的一条旧内容（一进一出）。
 - 每个里程碑归档后跑一次 `agents-md-slim`；AGENTS.md 超过 **150 行**时跑一次 `agents-md-refactor` 做拆分。
