@@ -462,9 +462,7 @@ async def test_the_child_sandbox_can_be_narrowed(tmp_path: Path) -> None:
     assert fence.payload["code"] == "SANDBOX_DENIES_WRITE"
     assert not (tmp_path / "out.md").exists()
     # 档位拒绝也回到父：它拿到的是围栏拒绝词，不是一句「写不了」的成功文本。
-    parent_result = next(
-        record for record in read_events(log.path) if record.type == "tool/result"
-    )
+    parent_result = next(record for record in read_events(log.path) if record.type == "tool/result")
     assert parent_result.payload["outcome"] == "DENIED_BY_FENCE"
     assert "SANDBOX_DENIES_WRITE" in parent_result.payload["content"]
 

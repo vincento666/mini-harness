@@ -146,9 +146,9 @@ def test_the_host_command_face_sees_a_skill_added_mid_session(tmp_path: Path) ->
                 "---\nname: review\ndescription: 复核\n---\n正文\n", encoding="utf-8"
             )
 
-            commands = client.get(
-                f"/commands?session_id={session_id}", headers=_headers()
-            ).json()["commands"]
+            commands = client.get(f"/commands?session_id={session_id}", headers=_headers()).json()[
+                "commands"
+            ]
             assert "review" in {command["name"] for command in commands}
 
             listed = client.post(

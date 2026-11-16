@@ -2012,4 +2012,3 @@ def test_bad_json_and_bad_field_types_are_400(tmp_path: Path) -> None:
                 assert response.json()["error"]["code"] == "INVALID_ARGUMENT"
     finally:
         _stop(process)
-

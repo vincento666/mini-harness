@@ -46,11 +46,7 @@ def direct_skill(name: str, skills: Sequence[Skill]) -> Skill | None:
     if name in RESERVED:
         return None
     return next(
-        (
-            candidate
-            for candidate in skills
-            if candidate.name == name and candidate.user_invocable
-        ),
+        (candidate for candidate in skills if candidate.name == name and candidate.user_invocable),
         None,
     )
 
@@ -68,9 +64,7 @@ class CommandOutcome:
     text: str
 
 
-def execute_command(
-    name: str, arguments: str, skills: Sequence[Skill]
-) -> CommandOutcome | None:
+def execute_command(name: str, arguments: str, skills: Sequence[Skill]) -> CommandOutcome | None:
     """执行一条命令；未知命令返回 `None`（admission miss，不落日志）。"""
     if name == "skills":
         if arguments.strip():

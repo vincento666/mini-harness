@@ -104,6 +104,15 @@
 - Next use: 语义有三态时不要用 bool 建模；取消/关停要能区分「拒绝」与「问不到人」
 - Status: inbox
 
+### L-083
+- Seen: 1（2026-11-16）
+- Date: 2026-11-16
+- Context: 流程文档改动推送后，CI 连续三次红
+- Observation: 本地只跑了 `ruff check` 与针对改动文件的 `ruff format <file>`，没跑全树的 `ruff format --diff`；CI 的 format 步骤抓到 5 个文件不合格。门禁是四道，少跑一道就等于把 CI 当成第一道
+- Evidence: `gh run view 43802086482 --log-failed`；修复提交紧随其后
+- Next use: 每次提交前按 AGENTS.md 的四道顺序跑，`ruff format --diff` 在最前
+- Status: inbox
+
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 - 每个里程碑收尾扫一次，**允许输出 `NO-PROMOTION`**（没有可复用信号就不写条目）。
 - 收件箱条目超过 **15 条**必须先消化再收新的：合并同类、把已被代码或规格自证的条目删掉。

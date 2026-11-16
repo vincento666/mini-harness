@@ -1093,4 +1093,3 @@ async def test_the_chat_handler_wakes_the_loop_instead_of_only_queueing() -> Non
     assert callable(loop.scheduled[0])
     loop.scheduled[0]()
     assert cancel.is_set() is True
-
