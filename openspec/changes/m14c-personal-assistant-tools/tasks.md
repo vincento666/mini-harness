@@ -1,0 +1,39 @@
+# Tasks
+
+## 0. 前置
+
+- [ ] 0.1 子代理复核验证契约（plan 切片五项检查），GAPS 先改契约
+
+## 1. todo（seam ②④⑥）
+
+- [ ] 1.1 `todo` 工具：add / update / complete，整表写 `todo/updated`
+- [ ] 1.2 `fold` 取最后一张表；`replay` 相等
+- [ ] 1.3 `/todo` 命令：只打印，不写事件
+
+## 2. plan（seam ①②④⑥）
+
+- [ ] 2.1 `plan/mode {active}` 事件 + `fold_plan_mode`；`--resume` 恢复
+- [ ] 2.2 `/plan` 与 `/plan off`；host 命令列表同步
+- [ ] 2.3 dispatch 拦截 `write` / `edit` / `bash` / `subagent` → `DENIED_BY_PLAN`（副作用前）
+- [ ] 2.4 `exit_plan_mode(plan)`：复用 approval，带 `purpose: "plan-review"` 与正文；仅批准置 false
+- [ ] 2.5 拒绝 / 不可用保持 active，结果说明原因
+- [ ] 2.6 `/plan off` 写事件并退出
+- [ ] 2.7 回放含 `plan/mode` 的日志逐点相等
+
+## 3. ask_user（seam ①②④）
+
+- [ ] 3.1 `question/asked` / `question/answered` 事件与配对折叠
+- [ ] 3.2 超时 → `QUESTION_UNAVAILABLE`，不伪造答案
+
+## 4. present（seam ②④）
+
+- [ ] 4.1 路径校验（工作区内且存在）→ `present/artifact`
+- [ ] 4.2 越界 / 不存在 → `PRESENT_INVALID_PATH`
+
+## 5. 收尾
+
+- [ ] 5.1 真实端点：多步任务用到 `todo` 与 `plan`，批准后继续写
+- [ ] 5.2 UAT（关键场次人跑：计划期拦截、批准后恢复）
+- [ ] 5.3 变异测试一轮
+- [ ] 5.4 Learning Gate
+- [ ] 5.5 两轴 review（子代理）+ 对齐复核
