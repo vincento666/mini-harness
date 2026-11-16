@@ -2107,3 +2107,33 @@ def test_events_emit_todo_projection_frame(tmp_path: Path) -> None:
                 assert "t1" in seen.get("data", "")
     finally:
         _stop(process)
+
+
+def test_question_endpoint_rejects_unknown_id(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    session_dir.mkdir()
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = _mock_fixture(tmp_path)
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(client, workspace, fixture)
+            response = client.post(
+                f"/sessions/{session_id}/questions/nope",
+                headers=_headers(),
+                json={"answer": "A"},
+            )
+            assert response.status_code == 404
+            bad = client.post(
+                f"/sessions/{session_id}/questions/nope",
+                headers=_headers(),
+                json={"answer": ""},
+            )
+            assert bad.status_code == 400
+    finally:
+        _stop(process)

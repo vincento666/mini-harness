@@ -43,6 +43,10 @@ def test_assemble_returns_a_prepared_for_a_mock_request(tmp_path: Path) -> None:
         "bash",
         "subagent",
         "skill",
+        "exit_plan_mode",
+        "present",
+        "ask_user",
+        "todo",
     ]
 
 

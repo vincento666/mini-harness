@@ -585,6 +585,8 @@ def test_commands_only_see_user_invocable(tmp_path: Path) -> None:
     assert [command.name for command in command_catalog(skills)] == [
         "skills",
         "skill",
+        "plan",
+        "todo",
         "both",
         "user-only",
     ]

@@ -112,10 +112,10 @@ def test_the_parameter_schema_a_model_sees_comes_from_the_dispatch_side_model() 
         assert tool.name in {"read", "write", "edit", "glob", "grep"}
 
 
-def test_the_outcome_vocabulary_has_twenty_values_and_no_not_implemented() -> None:
+def test_the_outcome_vocabulary_has_twenty_three_values_and_no_not_implemented() -> None:
     outcomes = set(get_args(ToolOutcome))
 
-    assert len(outcomes) == 20
+    assert len(outcomes) == 23
     assert "NOT_IMPLEMENTED" not in outcomes
     required = {
         "DENIED_BY_FENCE",
@@ -241,7 +241,20 @@ async def test_invalid_arguments_are_caught_before_the_fence_is_consulted(tmp_pa
     assert outcome.fence_code is None
 
 
-_BUILTIN_TOOLS = ["read", "write", "edit", "glob", "grep", "bash", "subagent", "skill"]
+_BUILTIN_TOOLS = [
+    "read",
+    "write",
+    "edit",
+    "glob",
+    "grep",
+    "bash",
+    "subagent",
+    "skill",
+    "exit_plan_mode",
+    "present",
+    "ask_user",
+    "todo",
+]
 
 
 def test_the_builtin_registry_has_its_definitions_in_order() -> None:

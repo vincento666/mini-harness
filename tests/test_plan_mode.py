@@ -417,3 +417,9 @@ async def test_present_rejects_outside_or_missing(tmp_path) -> None:
 
     missing = await _dispatch_present(tmp_path, "nope.md")
     assert missing.result.outcome == "PRESENT_INVALID_PATH"
+
+
+def test_command_usage_errors_cover_edges() -> None:
+    assert execute_command("skills", "多余", []).ok is False
+    assert execute_command("skill", "", []).ok is False
+    assert execute_command("skill", "不存在", []).ok is False

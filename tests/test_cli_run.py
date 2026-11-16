@@ -961,6 +961,10 @@ def test_session_start_records_sandbox_approval_and_tools(tmp_path: Path) -> Non
         "bash",
         "subagent",
         "skill",
+        "exit_plan_mode",
+        "present",
+        "ask_user",
+        "todo",
     ]
     assert "schema_version" not in payload
 
