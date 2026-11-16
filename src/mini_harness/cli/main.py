@@ -19,6 +19,7 @@ from typing import NoReturn
 from mini_harness.cli.host import DEFAULT_HOST_PORT, host_main
 from mini_harness.cli.serve import DEFAULT_HOST, DEFAULT_PORT, SERVE_HOSTS, BindFailure, ServeServer
 from mini_harness.commands import command_catalog, direct_skill, execute_command
+from mini_harness.config.load import ConfigFailure, discover_config, load_config
 from mini_harness.events import EventLog, EventRecord, LogReadFailure, read_events
 from mini_harness.events.fold import assembled_payload, assembly_points, fold
 from mini_harness.loop import (
@@ -50,6 +51,7 @@ from mini_harness.loop.settings import (
     DEFAULT_SANDBOX,
     DEFAULT_WINDOW,
 )
+from mini_harness.metering import collect_usage, pricing_from
 from mini_harness.provider.contract import Provider
 from mini_harness.session.assembly import (
     EXIT_INTERNAL_ERROR,
@@ -220,6 +222,11 @@ def build_parser() -> argparse.ArgumentParser:
     replay = subcommands.add_parser("replay", help="重放一个 session 的日志")
     replay.add_argument("session_id")
     replay.add_argument("--session-dir", default=None)
+
+    usage = subcommands.add_parser("usage", help="按回合汇总 token 用量（JSON）")
+    usage.add_argument("session_id")
+    usage.add_argument("--session-dir", default=None)
+    usage.add_argument("--config", default=None)
     return parser
 
 
@@ -563,9 +570,7 @@ def _run_chat_command(prepared: Prepared, text: str) -> str | None:
         print(f"未知命令：/{name}", file=sys.stderr)
         return None
     command_id = uuid.uuid4().hex
-    prepared.log.append(
-        "command/run", {"command_id": command_id, "name": name, "raw_input": text}
-    )
+    prepared.log.append("command/run", {"command_id": command_id, "name": name, "raw_input": text})
     prepared.log.append(
         "command/done", {"command_id": command_id, "ok": outcome.ok, "text": outcome.text}
     )
@@ -757,6 +762,44 @@ def _replay(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _usage(args: argparse.Namespace) -> int:
+    session_id: str = args.session_id
+    session_dir = _session_dir(args.session_dir)
+    path = session_dir / f"{session_id}.jsonl"
+    if not path.is_file():
+        return _report_failure(
+            "SESSION_NOT_FOUND", f"找不到 session 日志：{path}", EXIT_INVALID_ARGUMENT
+        )
+    records = read_events(path)
+    if isinstance(records, LogReadFailure):
+        return _report_failure(records.code, records.detail, EXIT_INTERNAL_ERROR)
+    turns, total = collect_usage(records)
+    cost: float | None = None
+    config_path = discover_config(Path.cwd(), args.config)
+    if config_path is not None:
+        values = load_config(config_path)
+        if not isinstance(values, ConfigFailure):
+            model = next(
+                (
+                    record.payload.get("model")
+                    for record in records
+                    if record.type == "session/start"
+                    and isinstance(record.payload.get("model"), str)
+                ),
+                "",
+            )
+            pricing = pricing_from(values, model) if isinstance(model, str) else None
+            if pricing is not None:
+                cost = round(pricing.cost(total), 6)
+    payload = {
+        "turns": [{"turn_id": turn.turn_id, **turn.usage.as_dict()} for turn in turns],
+        "total": total.as_dict(),
+        "cost": cost,
+    }
+    print(json.dumps(payload, ensure_ascii=False))
+    return EXIT_OK
+
+
 def _reconfigure_streams() -> None:
     # stdin 也算：`chat` 按行读人的输入，编码不能看运行环境的脸色。
     for stream in (sys.stdin, sys.stdout, sys.stderr):
@@ -777,6 +820,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _chat(args)
     if args.command == "host":
         return host_main(args)
+    if args.command == "usage":
+        return _usage(args)
     return _replay(args)
 
 

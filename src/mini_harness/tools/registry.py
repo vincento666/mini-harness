@@ -53,6 +53,8 @@ class ToolResult:
 
     outcome: ToolOutcome
     content: str
+    # 收尾留下的审计信息（M14b：剪枝的 chars/digest/spill）；不进折叠、不进上下文。
+    meta: dict[str, Any] | None = None
 
 
 ToolExecutor = Callable[[Any, DispatchContext], Awaitable[ToolResult]]

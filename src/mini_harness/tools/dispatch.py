@@ -167,8 +167,10 @@ async def dispatch_tool_call(
 
 
 def _finalize_content(result: ToolResult, tool_name: str, workspace: Path) -> ToolResult:
-    """最终内容收尾：bash 的 16 KiB 尾部 + spill 只在这里做。"""
-    if tool_name == "bash" and result.outcome == "OK":
+    """最终内容收尾：bash 的尾部策略与其它工具的头尾剪枝都只在这里做。"""
+    if result.outcome != "OK":
+        return result
+    if tool_name == "bash":
         from mini_harness.tools.bash_tools import bound_bash_content
 
         try:
@@ -178,7 +180,18 @@ def _finalize_content(result: ToolResult, tool_name: str, workspace: Path) -> To
             )
         except OSError as exc:
             return ToolResult(outcome="TOOL_IO_FAILED", content=f"bash 结果 spill 失败：{exc}")
-    return result
+    if tool_name == "read":
+        # read 有自己的 capped window + offset 续读约定，剪枝会造成 read → spill → read 循环。
+        return result
+    if tool_name == "read":
+        # read 有自己的 capped window + offset 续读约定，剪枝会造成 read → spill → read 循环。
+        return result
+    from mini_harness.tools.retention import prune_tool_content
+
+    content, pruned = prune_tool_content(result.content, tool_name, workspace)
+    if pruned is None:
+        return result
+    return ToolResult(outcome=result.outcome, content=content, meta={"pruned": pruned})
 
 
 def _approval_denial_code(approval: ApprovalDecision) -> FenceCode:

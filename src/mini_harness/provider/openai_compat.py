@@ -236,12 +236,29 @@ def _parse_response(
         content=str(message.get("content") or ""),
         finish_reason=finish_reason,
         tool_calls=tool_calls,
-        usage=Usage(
-            input_tokens=int(usage.get("prompt_tokens", 0) or 0),
-            output_tokens=int(usage.get("completion_tokens", 0) or 0),
-        ),
+        usage=_usage_from(usage),
         attempts=list(attempts),
     )
+
+
+def _usage_from(raw: object) -> Usage:
+    """把 provider 的 usage 摊成「未缓存输入 / 缓存读 / 缓存写 / 输出」。
+
+    DeepSeek 报 `prompt_cache_hit_tokens` + `prompt_cache_miss_tokens`；
+    OpenAI 把命中放在 `prompt_tokens_details.cached_tokens`；两者都没有时按未缓存处理。
+    """
+    usage = raw if isinstance(raw, dict) else {}
+    prompt = int(usage.get("prompt_tokens", 0) or 0)
+    output = int(usage.get("completion_tokens", 0) or 0)
+    details = usage.get("prompt_tokens_details")
+    cached = 0
+    if isinstance(details, dict):
+        cached = int(details.get("cached_tokens", 0) or 0)
+    hit = int(usage.get("prompt_cache_hit_tokens", 0) or 0)
+    miss = int(usage.get("prompt_cache_miss_tokens", 0) or 0)
+    cache_read = hit or cached
+    input_tokens = miss if miss else max(prompt - cache_read, 0)
+    return Usage(input_tokens=input_tokens, cache_read_tokens=cache_read, output_tokens=output)
 
 
 def _status_failure(
@@ -450,10 +467,7 @@ class OpenAICompatProvider:
                         return _schema_failure("流式 data 不是对象", attempts)
                     raw_usage = payload.get("usage")
                     if isinstance(raw_usage, dict):
-                        usage = Usage(
-                            input_tokens=int(raw_usage.get("prompt_tokens", 0) or 0),
-                            output_tokens=int(raw_usage.get("completion_tokens", 0) or 0),
-                        )
+                        usage = _usage_from(raw_usage)
                     choices = payload.get("choices")
                     if not isinstance(choices, list) or not choices:
                         continue

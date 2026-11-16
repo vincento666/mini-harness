@@ -69,3 +69,34 @@
    - A：照 DSH，不自动删，只在文档里写「由外部清理」；
    - B：会话收尾删本会话的 spill 目录（与 DSH 的恢复/fork 理由冲突，但 mini 没有 fork）。
 3. **成本估算**：DSH 未记载按金额计价。mini 要么只做 token（不做金额），要么内置一张价目表（会过时，需要人维护）。
+
+## 6. 概念边界（prune / spill / compaction / projection）
+
+这一节把容易混的五个概念分开。**判断依据是「它改的是哪一层」**：日志（事实）／表层（派生视图）／外部存储（全文副本）。
+
+| 概念 | 改哪一层 | DSH 的载体 | mini 的载体 | 触发点 | 原文还在吗 |
+|---|---|---|---|---|---|
+| 事件日志 | 事实 | append-only JSONL + zstd | append-only JSONL | 每写一条 | 是（真源） |
+| 表层 surface | 派生 | 由日志折叠出的消息序列 | `fold()` 的输出 | 每次装配 | 从日志重算 |
+| 剪枝 prune | 进入上下文的形状 | 压缩触发时追加替换节点 + `surfaceOp` | **dispatch 收尾改写 `content`** | 单条结果超 8192 码点 | DSH 在日志；mini 在 spill |
+| 外置 spill | 全文放哪 | `spillStore`（`session-<hash>/<random>-<name>`） | `<workspace>/.mini-harness/spill/<tool>-<digest>.txt` | 同一阈值（本 change 合并成一步） | 是（文件里） |
+| 压缩 compaction | 历史留多少 | 替换节点遮蔽旧区间 | `compaction/summary.shadowed_range` | 接近窗口压力线 | 是（日志保留，重放可见） |
+| 投影 projection | 派生（给 UI/宿主） | `tokenUsage` / `contextPressure` / `contextBreakdown` | 本 change 只出 `minihns usage` 的 JSON | 每次读 | 从日志聚合 |
+| 回收 cleanup | 外部存储 | 不做，靠外部清理 | 不做，只给清理命令 | 人工/外部 | — |
+
+三条边界要背下来：
+
+1. **剪枝 ≠ 外置**。剪枝决定上下文里留下什么形状（头 + 标记 + 尾）；外置决定全文去哪（文件/存储）。mini 把两者合成一步，但语义是两件事。
+2. **压缩 ≠ 剪枝**。压缩作用于「一段历史」，结果是摘要 + `shadowed_range`，原文仍在日志、重放可见；剪枝作用于「单条结果」，mini 的日志里只留剪后版本。
+3. **投影 ≠ 事实**。DSH 明说占用率「既不是计费记录，也不是门控输入」；mini 的 `usage` JSON 同理，只做报告数据源。
+
+### 数据模型上的四个字段
+
+| 字段 | 出处 | 含义 |
+|---|---|---|
+| `surfaceOp: {op: 'replace', start, end}` | DSH 剪枝 | 用新节点覆盖表层的一段；mini **不采用**（见第 5 节分叉 1 的裁决） |
+| `sourceEventSeqs` | DSH 剪枝 | 替换节点引用的原始事件 seq，供回放/审计 |
+| `shadowed_range: {start, end}` | mini 压缩 | 被摘要遮蔽的区间，折叠时不产出消息；头部与 `session/start` 不被遮蔽 |
+| `pruned: {chars, digest, spill}` | mini M14b | 剪前码点数、剪前全文 sha256、相对路径；用于核对 spill 与原文一致 |
+
+一句话记忆：**日志记事实，表层是折叠，剪枝改形状，外置挪全文，压缩折历史，投影只是读数。**
