@@ -42,6 +42,26 @@ async def _ask_user(args: AskUserArgs, context: DispatchContext) -> ToolResult:
     return ToolResult("OK", answer, meta={"question_id": question_id})
 
 
+class PresentArgs(ToolArgs):
+    """把工作区内的一个产物交给壳。"""
+
+    path: str = Field(description="产物路径，相对工作区")
+    title: str = Field(description="给产物起一个短标题")
+
+
+async def _present(args: PresentArgs, context: DispatchContext) -> ToolResult:
+    workspace = context.workspace.resolve()
+    target = (workspace / args.path).resolve()
+    if not target.is_relative_to(workspace) or not target.is_file():
+        return ToolResult("PRESENT_INVALID_PATH", f"产物不在工作区内或不存在：{args.path}")
+    relative = target.relative_to(workspace).as_posix()
+    return ToolResult(
+        "OK",
+        f"产物：{relative}",
+        meta={"present_path": relative, "present_title": args.title},
+    )
+
+
 async def _exit_plan_mode(args: ExitPlanModeArgs, context: DispatchContext) -> ToolResult:
     return ToolResult("OK", "计划已获批准，退出计划模式")
 
@@ -81,6 +101,14 @@ def assistant_tool_definitions() -> list[ToolDefinition]:
             mutates=False,
             concurrency="parallel",
             run=_exit_plan_mode,
+        ),
+        ToolDefinition(
+            name="present",
+            description="把工作区内的产物交给壳；只接受已存在的文件。",
+            args_model=PresentArgs,
+            mutates=False,
+            concurrency="parallel",
+            run=_present,
         ),
         ToolDefinition(
             name="ask_user",

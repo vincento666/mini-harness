@@ -239,6 +239,17 @@ async def _race_with_cancel(
     raise settled[0]
 
 
+def _present_payload(call: ToolCall, result: ToolResult) -> dict[str, Any] | None:
+    """`present` 成功时落一条产物事件；路径与标题来自工具 meta。"""
+    if call.name != "present" or result.outcome != "OK" or result.meta is None:
+        return None
+    path = result.meta.get("present_path")
+    title = result.meta.get("present_title")
+    if not isinstance(path, str) or not isinstance(title, str):
+        return None
+    return {"path": path, "title": title}
+
+
 def _todo_event_payload(call: ToolCall, outcome: str) -> dict[str, Any] | None:
     """`todo` 成功的调用落一条整表事件；其它工具或失败调用返回 None。"""
     if call.name != "todo" or outcome != "OK":
@@ -390,6 +401,9 @@ async def _dispatch_batch(
         todo_payload = _todo_event_payload(call, dispatched.result.outcome)
         if todo_payload is not None:
             written.append(("todo/updated", todo_payload))
+        present_payload = _present_payload(call, dispatched.result)
+        if present_payload is not None:
+            written.append(("present/artifact", present_payload))
         if dispatched.result.outcome in CANCELLED_OUTCOMES:
             written.append(
                 (

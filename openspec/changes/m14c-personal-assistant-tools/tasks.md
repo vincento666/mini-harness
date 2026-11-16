@@ -28,8 +28,8 @@
 
 ## 4. present（seam ②④）
 
-- [ ] 4.1 路径校验（工作区内且存在）→ `present/artifact`
-- [ ] 4.2 越界 / 不存在 → `PRESENT_INVALID_PATH`
+- [x] 4.1 路径校验（工作区内且存在）→ `present/artifact`
+- [x] 4.2 越界 / 不存在 → `PRESENT_INVALID_PATH`
 
 ## 6. 投影（2026-11-16 人裁：完整框架）
 

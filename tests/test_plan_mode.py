@@ -375,3 +375,45 @@ async def test_host_question_gate_times_out() -> None:
 
     gate = HostQuestionGate(_Handle(), timeout=0.01)  # type: ignore[arg-type]
     assert await gate.request(question_id="q1", question="用 A 吗", options=[]) is None
+
+
+async def _dispatch_present(tmp_path, path: str, title: str = "报告"):
+    from mini_harness.config import build_registry
+    from mini_harness.provider.contract import ToolCall
+    from mini_harness.tools.dispatch import dispatch_tool_call
+    from mini_harness.tools.fences import DispatchContext
+
+    async def never(call, detail):
+        raise AssertionError("present 不该触发审批")
+
+    return await dispatch_tool_call(
+        ToolCall(id="c1", name="present", arguments={"path": path, "title": title}),
+        build_registry(None),
+        DispatchContext(workspace=tmp_path, sandbox="workspace-write", approval="auto"),
+        never,
+    )
+
+
+async def test_present_accepts_workspace_file(tmp_path) -> None:
+    (tmp_path / "report.md").write_text("x", encoding="utf-8")
+
+    outcome = await _dispatch_present(tmp_path, "report.md")
+
+    assert outcome.result.outcome == "OK"
+    assert outcome.result.content == "产物：report.md"
+    from mini_harness.loop.turn_loop import _present_payload
+    from mini_harness.provider.contract import ToolCall
+
+    payload = _present_payload(
+        ToolCall(id="c1", name="present", arguments={"path": "report.md", "title": "报告"}),
+        outcome.result,
+    )
+    assert payload == {"path": "report.md", "title": "报告"}
+
+
+async def test_present_rejects_outside_or_missing(tmp_path) -> None:
+    outside = await _dispatch_present(tmp_path, "../escape.txt")
+    assert outside.result.outcome == "PRESENT_INVALID_PATH"
+
+    missing = await _dispatch_present(tmp_path, "nope.md")
+    assert missing.result.outcome == "PRESENT_INVALID_PATH"
