@@ -14,7 +14,7 @@
 
 **读量**：只读 `CURRENT` 的「现在」与「开放缺口」、`lessons` 的 Active；`CURRENT-history.md` / `lessons-archive.md` 不读；其它文档只在有具体依赖、歧义或风险时展开对应一节。
 
-**接手先核实时状态**：先 `git status --short` 与 `git log --oneline -3`。跟 `docs/CURRENT.md` 对不上时以仓库实况为准并报告偏差——不要相信上一段会话的叙事。
+**接手先核实时状态**：先 `git status --short` 与 `git log --oneline -3`，并跑 `scripts/bootstrap.sh` 恢复 pre-commit hook。跟 `docs/CURRENT.md` 对不上时以仓库实况为准并报告偏差——不要相信上一段会话的叙事。
 
 ---
 
