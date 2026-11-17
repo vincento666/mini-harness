@@ -946,6 +946,7 @@ async def run_turn_segment(
     first_turn_index: int,
     cancel: asyncio.Event,
     user_message: str | None = None,
+    message_source: Mapping[str, Any] | None = None,
 ) -> SegmentOutcome:
     """跑一个回合段：一条输入展开的那串往返。段内上限是 `max_turns`，会话级没有上限。
 
@@ -954,10 +955,17 @@ async def run_turn_segment(
 
     `user_message` 是开启这个段的那条输入：给了就写成一条 `user/message`，落在段边界之内
     （design D5）。不给是 `run`——它的人话住在 `session/start`（design D6 记的不对称）。
+
+    `message_source` 区分这条输入是人打的还是目标轮次注入的（M13）：缺省 `{"kind": "user"}`。
     """
     opening: list[tuple[str, dict[str, Any]]] = [("segment/start", {"segment_id": segment_id})]
     if user_message is not None:
-        opening.append(("user/message", {"segment_id": segment_id, "content": user_message}))
+        source: dict[str, Any] = (
+            {"kind": "user"} if message_source is None else dict(message_source)
+        )
+        opening.append(
+            ("user/message", {"segment_id": segment_id, "content": user_message, "source": source})
+        )
     failure = _append_all(env.log, opening)
     if failure is not None:
         return _segment_failure(failure, 0)

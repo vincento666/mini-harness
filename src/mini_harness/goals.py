@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any, Literal
 
 from pydantic import BaseModel, field_validator, model_validator
@@ -79,3 +79,14 @@ def fold_goal(events: Sequence[EventRecord]) -> GoalSnapshot | None:
         payload: Any = event.payload.get("goal")
         current = None if payload is None else GoalSnapshot.model_validate(payload)
     return current
+
+
+MessageSource = dict[str, Any]
+
+
+def message_source_of(payload: Mapping[str, Any]) -> MessageSource:
+    """`user/message` 的来源；缺字段或认不出的 kind 一律按人类来源读（旧日志兼容）。"""
+    source = payload.get("source")
+    if isinstance(source, Mapping) and source.get("kind") == "goal":
+        return dict(source)
+    return {"kind": "user"}
