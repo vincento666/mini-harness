@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from mini_harness.events.record import EventRecord
+from mini_harness.goals import message_source_of
 
 
 class ProjectionUnit(Protocol):
@@ -28,7 +29,7 @@ class ProjectionUnit(Protocol):
 
 @dataclass(frozen=True)
 class TodoProjection:
-    """待办表：`todo/updated` 整表替换；`segment/start` 清空；`segment/end` 保留。"""
+    """待办表：`todo/updated` 整表替换；人类来源的段首清空；goal 轮次保留。"""
 
     name: str = "todos"
     state_version: int = 1
@@ -40,8 +41,10 @@ class TodoProjection:
         if event.type == "todo/updated":
             items = event.payload.get("items")
             return list(items) if isinstance(items, list) else state
-        if event.type == "segment/start":
-            return []
+        if event.type == "user/message":
+            # 段首先于驱动消息落盘，所以「谁开的这一段」只能在驱动消息上判；
+            # 来源的读法与 goals.message_source_of 同一规则（goal 才保留，其余按人读）。
+            return state if message_source_of(event.payload)["kind"] == "goal" else []
         return state
 
     def view(self, state: Any) -> Any:

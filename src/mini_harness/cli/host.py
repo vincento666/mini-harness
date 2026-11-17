@@ -25,7 +25,8 @@ from mini_harness.cli.serve import SERVE_HOSTS, sse_frame
 from mini_harness.commands import command_catalog, direct_skill
 from mini_harness.events import LogReadFailure, read_events
 from mini_harness.events.fold import fold
-from mini_harness.events.projection import UNITS, project
+from mini_harness.events.projection import UNITS, TodoProjection, project
+from mini_harness.events.record import EventRecord
 from mini_harness.session.assembly import (
     EXIT_INVALID_ARGUMENT,
     AssemblyRequest,
@@ -146,6 +147,20 @@ def _projection_frame(payload: dict[str, object]) -> bytes:
 def _delta_frame(payload: dict[str, object]) -> bytes:
     """ephemeral 帧：不带 `id`，不参与 `Last-Event-ID`，也不落日志。"""
     return f"event: model/delta\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
+
+
+def _todos_after(
+    unit: TodoProjection, state: list[dict[str, object]], record: EventRecord
+) -> list[dict[str, object]] | None:
+    """`todos` 投影在 SSE 上的增量：只在值真的变了时返回新状态。
+
+    清空条件挂在驱动消息上（M13），所以 `user/message` 也要进来算一次；
+    值没变（goal 轮次）就不推帧，免得每轮开头闪一次空表。
+    """
+    if record.type not in {"todo/updated", "user/message"}:
+        return None
+    updated: list[dict[str, object]] = unit.apply(state, record)
+    return updated if updated != state else None
 
 
 class HostServer:
@@ -452,10 +467,9 @@ class HostServer:
                 if record.seq > after:
                     await response.write(sse_frame(record))
                     after = record.seq
-                    if record.type == "todo/updated" or (
-                        record.type == "segment/start" and todo_state
-                    ):
-                        todo_state = todos_unit.apply(todo_state, record)
+                    changed = _todos_after(todos_unit, todo_state, record)
+                    if changed is not None:
+                        todo_state = changed
                         await response.write(
                             _projection_frame(
                                 {
@@ -479,10 +493,9 @@ class HostServer:
                                 await response.write(_delta_frame(deltas.get_nowait()))
                         await response.write(sse_frame(record))
                         after = record.seq
-                        if record.type == "todo/updated" or (
-                            record.type == "segment/start" and todo_state
-                        ):
-                            todo_state = todos_unit.apply(todo_state, record)
+                        changed = _todos_after(todos_unit, todo_state, record)
+                        if changed is not None:
+                            todo_state = changed
                             await response.write(
                                 _projection_frame(
                                     {
