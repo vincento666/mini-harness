@@ -53,13 +53,26 @@
 
 把后者脚本化，只会把错误判断固化得更快；所以流程用「停点」而不是「更多检查」来处理它们。
 
-## 5. 已知限制
+## 5. 与 DSH 的对照及已知限制
 
-- **git hook 要装**：`core.hooksPath` 不随克隆走，靠 `scripts/bootstrap.sh` 补；
-- **harness hook 绑产品**：`.claude/settings.json` 只对读它的产品生效，换 harness 可能失效；
-- **`--no-verify` 可绕**：最终仍要靠 CI；
-- **技能不随仓库走**：`~/.workbuddy/skills` 是用户级，流程文档只能「建议调用」，不能当门禁；
-- **Windows 差异**：hook 走 Git Bash，脚本按 POSIX 写，未用 bash 4+ 特性。
+### 5.1 DSH 有、mini 没有
+
+- **类型化拦截点**：DSH 的扩展面是 harness 的 typed interception points，hook 只是桥；mini 只有 git hook 与一个产品的 `PreToolUse`。
+- **多方言桥**：DSH 有 `hooks-claude-code` 与 `hooks-codex` 两个 bridge；mini 只写 Claude 方言。
+- **权限决策注入**：Claude Code 方言支持 `permissionDecision` 与 `additionalContext`；mini 目前只用了 `deny`。
+
+### 5.2 DSH 也未实现或明确不强制
+
+- **hook 不是策略本身**：DSH 把 native hook 定义为普通插件，桥只负责翻译协议；「该拦什么」仍由部署决定，没有内置策略。
+- **无法强制模型调用技能**：两边都只能建议，不能保证某个步骤一定走技能。
+
+### 5.3 mini 独有的简化代价
+
+- git hook 要装：`core.hooksPath` 不随克隆走，靠 `scripts/bootstrap.sh` 补；
+- harness hook 绑产品：`.claude/settings.json` 只对读它的产品生效；
+- `--no-verify` 可绕，最终仍靠 CI；
+- 技能不随仓库走：`~/.workbuddy/skills` 是用户级，流程文档只能建议调用；
+- Windows 走 Git Bash，脚本按 POSIX 写。
 
 ## 6. 一次实测
 
@@ -72,4 +85,5 @@ M14c 收尾：732 passed / 6 skipped、覆盖率 95%、变异 3/3、CI 双平台
 - `AGENTS.md`：门禁、三半完成判据、七个 seam；
 - `.githooks/pre-commit`、`scripts/pre-commit.sh`、`scripts/gates.sh`、`scripts/bootstrap.sh`；
 - `.claude/settings.json`、`scripts/harness_hooks.py`；
-- `.github/workflows/`：CI 双平台。
+- `.github/workflows/`：CI 双平台；
+- DSH `packages/hooks/README.md`（typed interception + 方言桥），commit `47f9438`。

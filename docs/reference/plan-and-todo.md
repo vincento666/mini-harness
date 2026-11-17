@@ -64,10 +64,25 @@
 
 ## 4. 边界与已知缺口
 
-- **没有读回工具**：模型靠 tool call 历史看表；上下文压缩后可能看不到，需靠模型主动重发或后续补读回；
-- **计划正文不自动注入**：批准后不会作为独立消息塞进上下文，避免每轮 token 成本与前缀缓存破坏；
-- **投影只服务 `todos`**：没有第二单元之前不建注册表发现机制；
-- **`present` 的 headless 输出**仍是缺口，与本模块无关但同属 M14c 尾巴。
+### 4.1 DSH 已实现、mini 未实现
+
+- **计划提示注入**：DSH 在每个模型请求里带 `plan:policy` 段；mini 不注入，模型靠工具历史与命令结果理解计划状态。
+- **待决选择与步边界**：DSH 的 `plan/mode` 是 turn-enclosed 事件，用户选择先 pending，等下一个 pre-step 追加；mini 在命令执行时立即写日志，没有 pending 状态。
+- **todo 的部署配置**：DSH 要求 `allowParallelInProgress` 必填，并校验空内容、重复内容与多余字段；mini 没有这两个开关与校验。
+- **todo 的结果形状**：DSH 返回 `{todos, counts}` 并有 native renderer；mini 只回计数与一句确认。
+- **事件与条目形状**：DSH 是 `todo/write`、条目 `{content, status}`；mini 是 `todo/updated`、条目 `{id, text, status}`。
+
+### 4.2 DSH 也未实现或明确不强制
+
+- **计划模式本身是软引导**：DSH 的 plan mode 只注入提示，不阻止写操作；真正的限制由 sandbox 与 approval 各自执行。mini 选择在派发前硬拦四类工具，这是**比 DSH 更强的偏离**。
+- **todo 的顺序与新鲜度**：DSH 把「保持列表最新」交给工具描述与模型，没有运行时强制。
+
+### 4.3 mini 独有的简化代价
+
+- 投影在 `segment/start` 清空，而日志仍保留最后一张表：新段里 `/todo` 为空，DSH 的 last-write-wins 不会这样；
+- 没有读回工具，压缩后模型可能看不到表；
+- 计划正文不自动注入；
+- 投影只服务 `todos`，没有第二单元。
 
 ## 5. 出处
 
@@ -75,4 +90,5 @@
 - `src/mini_harness/tools/dispatch.py`：计划期四路拦截与审批复用；
 - `src/mini_harness/events/projection.py`：`ProjectionUnit` 与 `todos`；
 - `src/mini_harness/cli/host.py`：快照接口与 SSE 投影帧；
-- `openspec/changes/archive/2026-11-16-m14c-personal-assistant-tools/`。
+- `openspec/changes/archive/2026-11-16-m14c-personal-assistant-tools/`；
+- DSH `packages/plan/`、`packages/todo/tool-todo/`、`docs/subsystems/plan.md`，commit `47f9438`。

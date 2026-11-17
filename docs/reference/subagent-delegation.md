@@ -71,14 +71,32 @@
 
 ## 4. 边界与已知缺口
 
-- **结果只给最终文本**：产物清单、投递状态这类结构化结果留给壳；
-- **没有 worktree 隔离**：子会话与父共享同一工作区，并发写要靠围栏与工具并发类约束；
-- **激活上限在当前并发（8）下很难真实触发**：要等目标轮次或并发上限变化；
-- **子会话失败不重试**：失败即结果，重试策略不在本项目范围内。
+### 4.1 DSH 已实现、mini 未实现
+
+- **fork 后端**：DSH 有 `subagent-fork-in-process`，从父的已完成历史起子会话；mini 明确不做（ADR-0035），只做空上下文 spawn。
+- **进程外后端**：DSH 有 ACP、Codex app-server、Claude Code SDK、DSH SDK 四类；mini 只有进程内 spawn。
+- **续跑与常驻**：DSH 的子会话可继续接收消息、可冷恢复；mini 一次执行、结束即返回。
+- **控制面**：DSH 有 `send_message` / `interrupt_agent` / `list_agents`；mini 没有父到子的消息通道。
+- **回报通道**：DSH 有 child-scoped `report`；mini 只有最终文本。
+- **多 provider 并存**：DSH 允许一个上下文注册多个具名 provider；mini 只有一条 in-process 路径。
+
+### 4.2 DSH 也未实现或明确不强制
+
+- **report 只是提示，不是强制**：DSH 自己的说明写明「guidance, not enforcement」，子会话零次或多次调用都接受，没有运行路径会因为「从不汇报」拒绝它。
+- **消息不能改写进行中的工作**：DSH 的控制消息按 FIFO 排到子会话的下一回合；子会话正在跑的那一回合不会被中途改向。
+- **`list_agents` 有额外依赖**：它需要 session store 与 projection registry 才能读目录，不是纯工具。
+
+### 4.3 mini 独有的简化代价
+
+- 深度固定 1、并发固定 8，且并发按父会话计；
+- 结果只有最终文本，产物清单与投递状态留给壳；
+- 子会话与父共享工作区，没有 worktree 隔离；
+- 子会话失败不重试。
 
 ## 5. 出处
 
 - `src/mini_harness/tools/subagent.py`：深度、容量、preset、子环境与取消桥；
 - `src/mini_harness/session/delegation.py`：`MAX_DEPTH` 与 `MAX_ACTIVE_SUBAGENTS`；
 - `docs/adr/0035`、`0036`、`0037`、`0040`；
+- DSH `packages/subagent/`（含 `subagent-fork-in-process`、`subagent-acp`、`subagent-codex`、`subagent-claude-code`、`tool-subagent-control`、`tool-subagent-report`），commit `47f9438`；
 - `openspec/changes/archive/2026-11-09-m12-subagent-delegation/`。
