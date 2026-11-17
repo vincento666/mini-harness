@@ -2,16 +2,16 @@
 
 ## 0. 前置
 
-- [ ] 0.1 子代理复核验证契约（五项检查：可追溯 / 可证伪 / 坏法覆盖 / 范围 / 可读），GAPS 先改契约再进 apply
+- [x] 0.1 子代理复核验证契约（五项检查：可追溯 / 可证伪 / 坏法覆盖 / 范围 / 可读），GAPS 先改契约再进 apply
 
 ## 1. 事件与折叠（seam ④）
 
-- [ ] 1.1 `goal/updated {goal|null}` 事件、快照字段校验（`blocked` 必带 `blocked_reason`、两者非空）、折叠取最后值
-- [ ] 1.2 `user/message.source`：缺省 `{kind:"user"}`；goal 轮次写 `{kind:"goal", goal_id, revision, round}`；旧日志缺字段按人读
+- [x] 1.1 `goal/updated {goal|null}` 事件、快照字段校验（`blocked` 必带 `blocked_reason`、两者非空）、折叠取最后值
+- [x] 1.2 `user/message.source`：缺省 `{kind:"user"}`；goal 轮次写 `{kind:"goal", goal_id, revision, round}`；旧日志缺字段按人读
 
 ## 2. 投影与任务并行（seam ②④）
 
-- [ ] 2.1 `todos` 投影清空条件改为「人类来源的段首」；goal 段保留上一张表
+- [x] 2.1 `todos` 投影清空条件改为「人类来源的段首」；goal 段保留上一张表
 - [ ] 2.2 `[goal] allow_parallel_in_progress`（默认 `true`）+ 第二个 `in_progress` → `TODO_PARALLEL_DISABLED`，整表不落盘
 
 ## 3. goal 工具（seam ②）
