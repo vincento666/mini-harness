@@ -2,7 +2,7 @@
 
 ## Why
 
-今天的长任务只能靠人不断回车：一次输入收敛后会话就停，模型没有「继续做」的入口。待办表虽然在，但段边界一到就清空，跨轮的任务进度留不住——这正好卡住「多个任务各自推进」这件事。目标轮次解决前一半（不靠人续跑），任务并行解决后一半（状态跨轮保留），两者在 M13 合成一件事。
+今天的长任务只能靠人不断回车：一次输入收敛后会话就停，模型没有「继续做」的入口。待办表虽然在，但一次只能标一件进行中的事，多步任务里「几件事同时在做」表达不出来。目标轮次解决续跑，任务并行解决「一轮里多个任务并存」，两者在 M13 合成一件事。
 
 ## What Changes
 
@@ -11,7 +11,7 @@
 - **轮次驱动**：`turn/end` 之后若目标 `active`、已武装、且还有轮次额度，则开新段并写一条 goal 来源的 `user/message`（`source.round` 连续递增），继续主循环；额度用尽则落 `phase = blocked`、`blocked_reason.code = "round-limit"`。
 - **`user/message` 增 `source`**：`{kind: "user"}`（缺省）或 `{kind: "goal", goal_id, revision, round}`；旧日志缺字段按 `{kind: "user"}` 读。
 - **任务并行**：`todo` 允许一次标多个 `in_progress`；`allow_parallel_in_progress = false` 时第二个 `in_progress` 被拒（`TODO_PARALLEL_DISABLED`）。
-- **`todos` 投影清空条件**：只在**人类来源**消息开启的段首清空；goal 来源的段保留上一张表。
+- **`todos` 投影清空条件不变**：`segment/start` 一律清空，goal 轮次也是新段（对齐 DSH 的 `turn/start`）；跨轮的任务连续性由模型每轮重交整表负责。
 - **CLI `/goal`**：查看当前目标与剩余轮次、`pause`、`resume`、`clear`。
 - **配置**：`[goal]` 段三键——`max_rounds`（默认 32）、`blocked_after_consecutive_rounds`（默认 3）、`allow_parallel_in_progress`（默认 `true`）。
 

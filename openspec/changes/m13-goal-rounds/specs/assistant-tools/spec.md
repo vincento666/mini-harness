@@ -30,17 +30,17 @@
 
 ### Requirement: `todos` 投影
 
-系统 SHALL 提供 `todos` 投影：`todo/updated` 整表替换；段的驱动消息是**人类来源**（`user/message.source.kind == "user"`）时，该段首 SHALL 清空为 `[]`；驱动消息是 goal 来源（`kind == "goal"`）时 MUST 保留上一张表；`segment/end` SHALL 保留最后一张表；其它事件不改变状态。投影 SHALL 可从日志重建（`project(records, name)`），并通过 host 快照接口 `GET /sessions/{id}/projections/todos` 与 SSE `session/projection` 帧提供给 UI。
+系统 SHALL 提供 `todos` 投影：`todo/updated` 整表替换；`segment/start` SHALL 清空为 `[]`（**含 goal 来源的段**，照 DSH 的 `turn/start`）；`segment/end` SHALL 保留最后一张表；其它事件不改变状态。投影 SHALL 可从日志重建（`project(records, name)`），并通过 host 快照接口 `GET /sessions/{id}/projections/todos` 与 SSE `session/projection` 帧提供给 UI。
 
-#### Scenario: 人类消息开启的段清空
+#### Scenario: 跨段清空
 
-- **WHEN** 上一段留下两条待办，用户输入新的一句话开启下一段
+- **WHEN** 一段里有 `todo/updated`，下一段以 `segment/start` 开始
 - **THEN** 投影值为 `[]`
 
-#### Scenario: goal 轮次不清空
+#### Scenario: goal 轮次也清空
 
 - **WHEN** 上一段留下两条待办，下一段由 goal 来源的 `user/message` 开启
-- **THEN** 投影仍是那两条，`status` 不变
+- **THEN** 投影值为 `[]`——goal 轮次也是新段，与 DSH 的 `turn/start` 同一条规则
 
 #### Scenario: 段内保留
 

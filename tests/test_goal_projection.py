@@ -1,4 +1,4 @@
-"""seam ④：`todos` 投影的清空条件（M13 task 2.1）。"""
+"""seam ④：`todos` 投影的清空条件——每段开头清空，含 goal 轮次（照 DSH 的 `turn/start`）。"""
 
 from __future__ import annotations
 
@@ -35,25 +35,13 @@ def _base() -> list[EventRecord]:
             1, "user/message", {"segment_id": "s1", "content": "开工", "source": {"kind": "user"}}
         ),
         _rec(2, "todo/updated", {"items": _table()}),
+    ]
+
+
+def test_segment_start_clears_even_for_a_goal_round() -> None:
+    records = [
+        *_base(),
         _rec(3, "segment/end", {"segment_id": "s1", "stop_reason": "MODEL_COMPLETED", "turns": 1}),
-    ]
-
-
-def test_human_segment_keeps_the_old_clearing_behaviour() -> None:
-    records = [
-        *_base(),
-        _rec(4, "segment/start", {"segment_id": "s2"}),
-        _rec(
-            5, "user/message", {"segment_id": "s2", "content": "新问题", "source": {"kind": "user"}}
-        ),
-    ]
-
-    assert project(records, "todos")["value"] == []
-
-
-def test_goal_segment_keeps_the_table() -> None:
-    records = [
-        *_base(),
         _rec(4, "segment/start", {"segment_id": "s2"}),
         _rec(
             5,
@@ -66,24 +54,26 @@ def test_goal_segment_keeps_the_table() -> None:
         ),
     ]
 
-    assert project(records, "todos")["value"] == _table()
-
-
-def test_old_log_without_source_still_clears() -> None:
-    records = [
-        *_base(),
-        _rec(4, "segment/start", {"segment_id": "s2"}),
-        _rec(5, "user/message", {"segment_id": "s2", "content": "老输入"}),
-    ]
-
     assert project(records, "todos")["value"] == []
 
 
 def test_segment_end_keeps_the_last_table() -> None:
-    assert project(_base(), "todos")["value"] == _table()
-
-
-def test_segment_start_alone_does_not_clear() -> None:
-    records = [*_base(), _rec(4, "segment/start", {"segment_id": "s2"})]
+    records = [*_base(), _rec(3, "segment/end", {"segment_id": "s1"})]
 
     assert project(records, "todos")["value"] == _table()
+
+
+def test_segment_start_alone_clears() -> None:
+    records = [*_base(), _rec(3, "segment/start", {"segment_id": "s2"})]
+
+    assert project(records, "todos")["value"] == []
+
+
+def test_old_log_without_source_clears_the_same_way() -> None:
+    records = [
+        *_base(),
+        _rec(3, "segment/start", {"segment_id": "s2"}),
+        _rec(4, "user/message", {"segment_id": "s2", "content": "老输入"}),
+    ]
+
+    assert project(records, "todos")["value"] == []

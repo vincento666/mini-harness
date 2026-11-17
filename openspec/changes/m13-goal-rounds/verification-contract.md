@@ -11,7 +11,7 @@
 1. **续跑成形**：一轮续跑不只是「日志多一条消息」——轮号连续、`source.revision` 指向本轮之前那份快照、四个事件顺序固定、该轮真的进了 `turn/start` 与 `model/request`、段数与段编号配对都对（seam ①⑦）。
 2. **上限与阻塞门槛**：轮数用尽落 `round-limit` 且不再起段；「同一阻碍」的硬门槛是轮数——三轮之前报阻塞一律被拒，三轮时才落 `model-reported`（seam ②⑦）。
 3. **武装权在人手里**：`armed` 不进事件载荷；启动与 `--resume` 后为假、不自动续跑；`/goal resume` 后才续；`pause` / `complete` / `blocked` / 撞上限之后一律为假（seam ⑥⑦）。
-4. **多任务互不覆盖**：goal 来源的段保留上一张表，人类来源的段首清空；跨调用把一条标完成不会把另一条从 `in_progress` 降级；关闭并行时第二个 `in_progress` 被拒（seam ②④⑥）。
+4. **多任务互不覆盖**：同一段里两个任务可同时 `in_progress`；把一条标完成不会把另一条降级；段首（**含 goal 轮次**，对齐 DSH）清空；关闭并行时第二个 `in_progress` 被拒（seam ②④⑥）。
 5. **边角不静默**：六个新结果词各有可达走法；`[goal]` 三键的默认与非法值在会话开始前处理；`/goal` 只读不写；回放既能对正常日志退出 0，也能对跳号日志非零退出（seam ②④⑥）。
 
 ## 判据（seam 映射）
@@ -26,11 +26,11 @@
 | 2 | seam ②：门槛 3 时，`rounds_started` 为 1 和 2 各调一次 `update_goal(blocked, reason="x")` → 两次都 `GOAL_BLOCK_TOO_EARLY`，日志无新 `goal/updated`；为 3 时同一调用成功，`blocked_reason.code == "model-reported"`、`message == "x"` |
 | 3 | seam ⑦：`/goal pause` 之后不再起段；`--resume` 之后到第一次 `model/request` 之间无 goal 来源消息；`/goal resume` 之后的下一次续跑出现 goal 消息 |
 | 3 | seam ②：每条 `goal/updated` 的 `goal` 快照里**没有** `armed` 键；`pause` / `complete` / `blocked` / 撞上限各一次之后，`get_goal()` 的 `armed` 均为 `false` |
-| 4 | seam ④：goal 来源段之后 `project(records, "todos")` 的条目数与两条 `status` 不变；随后的人类来源段之后值为 `[]`；只在 `segment/end` 之后投影仍是最后一张表 |
+| 4 | seam ④：一段里写两条后 `segment/end` 仍保留；其后任何新段（人类或 goal 来源）的 `segment/start` 之后值为 `[]`——两种来源同一条规则 |
 | 4 | seam ②：调用 1 标 A、B 都 `in_progress`；调用 2 只把 A 标 `completed`、B 仍 `in_progress` → 第二次 `todo/updated` 的整表两条并存，B 仍 `in_progress` |
 | 4 | seam ②：`allow_parallel_in_progress = false` 时一次调用标两个 `in_progress` → `TODO_PARALLEL_DISABLED`，日志无新 `todo/updated`；**默认配置**下同一调用成功（这就是该键默认 `true` 的可观察证据） |
-| 4 | seam ⑥：第 2 轮 `/todo` 的 stdout 含两条的 `id`（期望值取自 `project`，比字符串包含） |
-| 4 | seam ⑥：goal 段之后 `GET /sessions/{id}/projections/todos` 返回两条 |
+| 4 | seam ⑥：同一段里提交两条后 `/todo` 的 stdout 含两条 `id`（期望值取自 `project`，比字符串包含） |
+| 4 | seam ⑥：提交两条后 `GET /sessions/{id}/projections/todos` 返回两条；下一段开始后同一接口返回 `[]` |
 | 5 | seam ②：四词各一条走法——存在非 `complete` 目标时 `create_goal` → `GOAL_ALREADY_ACTIVE`；提交旧 `revision` → `GOAL_REF_STALE`；子会话（`entry == "subagent"`）调 `create_goal` → `GOAL_AUTHORITY_REQUIRED`；`paused` 时 `update_goal(resume)` → `GOAL_RESUME_BY_TOOL_DENIED`；四条都不产生新 `goal/updated`（`TODO_PARALLEL_DISABLED` 见行为 4） |
 | 5 | seam ④：跳号（第 2 条 `round` 写成 3）、轮号 0、`revision` 落后、`phase` 已停、轮号超上限——五份日志各跑一次 `replay`，全部非零 |
 | 5 | seam ④：回放一份 `user/message` 不带 `source` 的旧日志 → `replay` 退出码 `0`，且该段按人类来源清空 `todos`（证明缺字段读成 `{kind:"user"}`） |
@@ -44,7 +44,7 @@
 2. **`revision` 恒为 1**：快照每轮都写 `revision: 1`。→ 行为 1 第 1 行的「+1」必红。
 3. **顺序写反**：先写 `goal/updated` 再写 `segment/start`。→ 行为 1 第 2 行的子序列必红。
 4. **门槛写成 ≥1**：两轮也允许报阻塞。→ 行为 2 第 2 行的「`rounds_started == 2` 被拒」必红。
-5. **并行只改校验不改投影**：允许两个 `in_progress`，但段首仍无条件清空。→ 行为 4 第 1 行必红。
+5. **段首不再清空**：把 `segment/start` 的清空删掉，改成只在人类消息上清。→ 行为 4 第 1 行（goal 段也清空）必红。
 6. **恢复即武装**：`--resume` 直接把 `armed` 置真。→ 行为 3 第 1 行必红。
 7. **回调把别人降级**：`completed` 一条时把其它 `in_progress` 一并改成 `pending`。→ 行为 4 第 2 行必红。
 
@@ -58,6 +58,6 @@
 
 ## 待裁决
 
-- `[goal]` 三键默认 32 / 3 / true（DSH 服务默认 256 是无人值守长任务的量级）。
-- goal 轮次开新段、`todos` 只在人类来源段首清空。
+- `[goal]` 三键默认 32 / 3 / true（DSH 服务默认 256 是无人值守长任务的量级）——已定。
+- goal 轮次开新段（一轮一段）——已定；`todos` 每段清空，含 goal 轮，对齐 DSH（2026-11-18 裁）。
 - CLI 只做查看 / `pause` / `resume` / `clear`；创建走模型工具。

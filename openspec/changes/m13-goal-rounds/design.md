@@ -56,11 +56,11 @@ mini 没有 inbox、没有可插队的竞争输入、主循环是显式的（不
 
 **与 DSH 的差异**：DSH 的这个键**必填、无默认**，缺失时装配失败（"a composition that omits it fails at load"）。mini 的 `mini.config.toml` 有缺省传统，改必填会让既有配置文件全部失效；默认 `true` 与本 change 的目的（任务并行）一致。代价：少了一个显式的部署声明，靠文档与示例补。
 
-## D8 `todos` 只在人类来源的段首清空
+## D8 `todos` 每段开头照清，含 goal 轮次（对齐 DSH）
 
-原规则是 `segment/start` 无条件清空。goal 轮次每轮开一个新段，无条件清空会把上一轮的任务进度整张抹掉，行为 4 直接不成立。新规则：段首那条驱动消息 `user/message.source.kind == "user"` 才清空；`kind == "goal"` 保留。
+一度试过「goal 段保留、人类段清空」，2026-11-18 撤回。DSH 的 `todos` 投影无条件在 `turn/start` 归 `null`（`packages/todo/tool-todo/src/index.ts:120-131`：`if (event.type === 'turn/start') return null`），214 行里没有一个 `goal` 分支；而 goal 轮次在 DSH 就是一次 turn（`docs/subsystems/goal.md:119` 称其为 "admitted user-message **turn**"）。所以 DSH 每轮也清空。
 
-**注意**：投影在 `segment/start` 时还不知道本段由谁驱动。实现顺序必须是「先写 `user/message`、再决定清空」，或把清空判定放在 `segment/start` 之后的第一个 `user/message` 上。这是实现里最容易写错的一处，判据要钉「goal 段后条目数与状态不变」。
+**为什么不保留那处「更顺手」的偏离**：`todo` 在 DSH 里是「本轮的常备计划」，不是跨轮状态；跨轮靠 goal 的 objective、模型自己的工具历史、以及每次整表重写。保留旧表能买到的只有「轮次开头、模型还没提交新表」这段空窗期的可见性——它不改变任何真源，却让同一串事件在两份实现里投影不同。判据因此改为「清空对所有段一致」，跨轮的任务连续性由模型每轮重交整表负责，不由投影负责。
 
 ## D9 CLI `/goal` 只做查看与三个动作
 

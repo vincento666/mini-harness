@@ -11,7 +11,7 @@
 
 ## 2. 投影与任务并行（seam ②④）
 
-- [x] 2.1 `todos` 投影清空条件改为「人类来源的段首」；goal 段保留上一张表
+- [x] 2.1 `todos` 投影清空条件保持「每段开头」（含 goal 轮，对齐 DSH）——曾改成 goal 段保留，2026-11-18 撤回
 - [ ] 2.2 `[goal] allow_parallel_in_progress`（默认 `true`）+ 第二个 `in_progress` → `TODO_PARALLEL_DISABLED`，整表不落盘
 
 ## 3. goal 工具（seam ②）
