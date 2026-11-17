@@ -67,7 +67,7 @@
 4. **收尾**：全量四道 → 变异一轮 → 两轴子代理复核 → 关键 UAT（人跑或明确授权代跑）→ 归档 → 人批合并。
 5. **判据与汇报**：问「删掉实现里哪一行它会红」；每轮只给「数字 + 已知缺口」。
 6. **工具入口**：`scripts/gates.sh`（四道 + 覆盖率三步，含 `format --diff`）；`scripts/new-change.sh <id> <capability>`；`scripts/check-change.sh <id>`（归档前校验）；`scripts/install-hooks.sh`（一次性装 hook）。
-7. **硬兜底**：模型可能忘的机械步骤一律脚本化，由 hook 或 CI 执行，不靠记性；pre-commit 跑格式/风格/类型，CI 跑全量。
+7. **硬兜底**：模型可能忘的机械步骤一律脚本化，由 git hook、harness hook 或 CI 执行，不靠记性；pre-commit 跑格式/风格/类型，CI 跑全量。
 
 ## 1. 什么时候找人
 

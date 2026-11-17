@@ -3,5 +3,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 chmod +x .githooks/pre-commit scripts/pre-commit.sh
+if [ "$(git config --get core.hooksPath || true)" = ".githooks" ]; then
+  exit 0
+fi
 git config core.hooksPath .githooks
 echo "已启用 .githooks（pre-commit 跑格式/风格/类型）"
