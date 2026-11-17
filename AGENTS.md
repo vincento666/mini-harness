@@ -62,7 +62,7 @@ uv run coverage report --fail-under=95 --show-missing   # 这三步不可拆，�
 
 ## 流程：每个里程碑一个 OpenSpec change
 
-一个 change 的顺序：**propose → 人审 proposal / specs / design / tasks → apply（按 tdd 技能，red → green 单切片，一次一个）→ `code-review` 两轴 + **对齐复核（每个 change 必做）**→ 收尾四项（见下 Learning Gate）→ 在 change 分支上 sync delta 进主规格 + 归档 → 代码与规格一次合入 main**。对齐复核是 code review 的一步：逐条核对实现 ↔ 提案（Why/What/Impact）、design 的决策、spec 的 Requirement/Scenario、tasks 的验收判据；有 DSH 对照的，按 `docs/reference/dsh-alignment-checklist.md` 的十项逐条核对 DSH。产物是 `<change-id>-dsh-review.md`（历史名字保留）。
+一个 change 的顺序：**propose → 契约与对齐复核（子代理：六项检查 + DSH 十项，见 `docs/process/devops-loop.md` §0.4）→ 人审 proposal / specs / design / tasks → apply（按 tdd 技能，red → green 单切片，一次一个）→ `code-review` 两轴 → 收尾四项（见下 Learning Gate）→ 在 change 分支上 sync delta 进主规格 + 归档 → 代码与规格一次合入 main**。对齐复核在 apply 之前做：逐条核对 proposal / design / spec / tasks ↔ 一手资料，结论只用 `aligned / simplified / deferred`，产物 `<change-id>-dsh-review.md`（历史名字保留）。
 
 **默认按 `docs/process/devops-loop.md` §0 推进：人只选弹窗，其余自动继续。** 分支纪律：每个 change 一个分支 `change/<id>`；**归档在分支上做**——sync 进主规格、移 `changeRoot`、`openspec validate --all --strict` 全绿，然后代码与规格一次合入 `main`。**merge 与推 `main` 先征求人的批准、确认了才执行**；agent 可自行推 `change/<id>` 分支与归档提交。升级到人裁的六类触发见 `docs/process/devops-loop.md`。**流程文档同受一进一出**：单次提交对 `docs/process/` 的净增行数 ≤0，要净增须人裁（理由与代价见 `docs/process/devops-loop-rationale.md` §3）。
 
@@ -75,7 +75,7 @@ uv run coverage report --fail-under=95 --show-missing   # 这三步不可拆，�
 
 **每个里程碑收尾跑一轮变异测试并记录**：改坏一处实现 → 跑全量测试 → 把「变异 / 改法 / 哪些测试变红」记进 `docs/verification/<change-id>-mutation.md` → 还原并确认回到基线（**还原前先看 `git status`**，别把本轮未提交的改动一起回滚）。判据：每个变异都被至少一条测试杀死；存活的算覆盖缺口，补一条能杀死它的测试（先确认它在变异下红）。变异必须改变**可观察行为**，语义等价的改法是 dud mutant，不算。捕获一整个异常类族的代码，判据要用族里不显眼的那个成员。
 
-**Learning Gate（变异测试之后、归档之前）**：扫本轮证据——红过的测试、存活的变异、返工过的规格、踩过的工具坑——可复用教训写进 `docs/lessons.md` 收件箱，没有可复用信号就写 `NO-PROMOTION`。**每个 change 的 `tasks.md` 末尾固定四项收尾任务：真实端点验收、UAT 验收（人跑，场次手册在 propose 时立骨架）、变异测试一轮、Learning Gate**（archive 时未勾会警告）。**每个 change 归档前必做对齐复核**（code-review 之后），按 `docs/verification/dsh-parity-review-template.md` 产出 `<change-id>-dsh-review.md`；结论只用 `aligned / simplified / deferred`，`simplified` 写理由/ADR、`deferred` 写触发条件，两者都必须**人裁决**后才记账。晋升进本文件的只能是一句话规则，且**一进一出**：同时删掉或压缩本文件一条旧内容。收件箱超过 15 条先消化再收；每里程碑归档后跑一次 `agents-md-slim`。
+**Learning Gate（变异测试之后、归档之前）**：扫本轮证据——红过的测试、存活的变异、返工过的规格、踩过的工具坑——可复用教训写进 `docs/lessons.md` 收件箱，没有可复用信号就写 `NO-PROMOTION`。**每个 change 的 `tasks.md` 末尾固定四项收尾任务：真实端点验收、UAT 验收（人跑，场次手册在 propose 时立骨架）、变异测试一轮、Learning Gate**（archive 时未勾会警告）。晋升进本文件的只能是一句话规则，且**一进一出**：同时删掉或压缩本文件一条旧内容。收件箱超过 15 条先消化再收；每里程碑归档后跑一次 `agents-md-slim`。
 
 ---
 
@@ -93,5 +93,5 @@ Python **>= 3.12** · **uv** · `src/mini_harness/` 布局 · **mypy strict** ·
 
 - DSH 的参考以**官方一手资料**为准：上游仓库的 README / 包文档 / 源码，引用带 URL 与 commit（例：`deepseek-ai/deepseek-harness` 的 `47f9438`，`packages/context/agent-instructions`）。本仓库的 `docs/dsh-reference/` 是二手汇编，只当索引用——**不要无差别先读**，只在照某个机制实现时查对应章节或图的锚点（图集锚点形如 `#fig-<图名>`）；两者冲突以一手为准。这些图只做过静态结构校验，**没有视觉复核**。
 - 需要更细的出处时，只允许引 `S:\Develop\agent_harness\re\verified\dsh\` 与 `re\shell\`。**`re\full\` 是 8 字节偏移的损坏副本，永远不要引用**；不要 grep `rea/app-graph.json`（376 MB，分析时两次 OOM 被杀）。
-- 写规格时把「DSH 这么做」与「mini 版故意简化」分开写，简化处必须在 `docs/adr/` 里写明代价（用 `domain-modeling` 技能写 ADR）。
+- 写规格时把「DSH 这么做」与「mini 版故意简化」分开写，简化处必须在 `docs/adr/` 里写明代价（用 `domain-modeling` 技能写 ADR）。**新机制会扩大旧名词的外延**：既有规则里写着「每次 / 一律 / 无条件」的，逐条去一手实现找赋值点——只读文档摘要会漏。
 - **ADR 的新增与读写一律照 `domain-modeling` 技能的 `ADR-FORMAT`**：`docs/adr/` 下顺序编号 `NNNN-slug.md`（编号扫现有最大号 +1，目录用到时才建），正文 1–3 句；三条判据（**难回退** / **无上下文会困惑** / **真实取舍**）同时成立才写；被重新审视的加 `Status` frontmatter，推翻就新开一份并在旧份标 `superseded`。**本文件不写死 ADR 编号**——欠账在哪份里看 `docs/CURRENT.md`。
