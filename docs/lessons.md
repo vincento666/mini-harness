@@ -122,13 +122,13 @@
 - Next use: 新判据先问「删掉实现里哪一行，它会红」
 - Status: inbox
 
-### L-084
-- Seen: 1（2026-11-17）
-- Date: 2026-11-17
-- Context: M14c 两轴复核，子代理指出判据只断言实现内部字段
-- Observation: 判据要断言「日志里的事件」或「外部可观察行为」，不要断言 `plan_exit`、私有 helper 返回值这类内部字段；否则改坏真实写入路径测试仍然全绿
-- Evidence: 复核第二轮 5/6/7/8 条；已补 `_dispatch_batch` 日志级判据
-- Next use: 新判据先问「删掉实现里哪一行，它会红」
+### L-085
+- Seen: 1（2026-11-18）
+- Date: 2026-11-18
+- Context: M13 propose，`todos` 清空条件被改成「goal 段保留」，理由写进 design D8 与 spec；人问「是否违背 DSH」后查出 DSH 无条件清空
+- Observation: 新增机制会**扩展既有名词的外延**（goal 轮次也是一种「段」/DSH 的 turn），既有规格里的全称量词（「`segment/start` 一律清空」）因此自动落到新机制上。写规格时我把注意力放在新机制本身，没重扫既有规则里以「每次 / 一律 / 无条件」开头的句子。更值得记的是：我读过 `tool-todo` 的 README（明写 `turn/start` 清空），仍判断错——丢的是「goal 轮次也是 turn」这一步推理，不是资料
+- Evidence: `packages/todo/tool-todo/src/index.ts:120-131`（无条件 `turn/start → null`，无 goal 分支）；`docs/subsystems/goal.md:119`（"admitted user-message turn"）；本轮撤回提交 `2f62b8f`
+- Next use: 写新机制前先列「会被它波及的既有全称量词」清单，逐条去**一手实现的赋值点**确认（那一行代码，不是文档摘要）；六问第 4 问的「会动现有规格」要按「旧规则的外延变了」来答，不只按「新增了事件/字段」来答
 - Status: inbox
 
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
