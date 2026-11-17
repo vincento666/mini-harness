@@ -24,6 +24,7 @@ CONCRETE_EVENT_TYPES: frozenset[str] = frozenset(
         "command/run",
         "command/done",
         "plan/mode",
+        "goal/updated",
         "todo/updated",
         "question/asked",
         "question/answered",

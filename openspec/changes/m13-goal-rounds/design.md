@@ -80,7 +80,7 @@ mini 没有 inbox、没有可插队的竞争输入、主循环是显式的（不
 ## 测试与 seam
 
 - seam ①：段结束后按条件续跑、不满足条件不起段、额度用尽不起段；
-- seam ②：三个 goal 工具、五个结果词、todo 并行拒绝；
+- seam ②：三个 goal 工具、六个结果词、todo 并行拒绝；
 - seam ④：`goal/updated` 折叠、`user/message.source` 兼容、`replay` 逐点相等；
 - seam ⑥：`/goal`、`/goal pause`、`/goal resume`、`--resume` 后不自动续跑；
 - seam ⑦：3 轮上限的轮号连续、第 4 轮不出现、`round-limit` 落盘。
