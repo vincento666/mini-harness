@@ -6,8 +6,8 @@
 
 ## What Changes
 
-- **`goal` 域**：`goal/updated` 整值替换事件（`null` 表示清除），载荷含 `id`、`revision`、`objective`、`phase`、`max_rounds`、`rounds_started`、可选 `blocked_reason`；`phase ∈ active | paused | blocked | complete`；每次改动 `revision` 递增，用作比较交换。
-- **三个工具**：`get_goal()`、`create_goal(objective, max_rounds?)`、`update_goal(goal_id, revision, action, ...)`；`action ∈ edit | pause | resume | complete | blocked`。**单 goal**：只在无目标或上一个已 `complete` 时才能创建。
+- **`goal` 域**：`goal/updated` 整值替换事件（`null` 表示清除），载荷含 `id`、`revision`、`objective`、`phase`、`max_rounds`、`rounds_started`、可选 `blocked_reason`；`phase ∈ active | paused | blocked | complete`；`revision` 只随控制面动作（create / edit / pause / resume / complete / blocked / clear）递增，轮次推进不改它，用作比较交换。
+- **三个工具**：`get_goal()`、`create_goal(objective, max_rounds?)`、`update_goal(goal_id, revision, action, ...)`；`action ∈ edit | pause | resume | complete | blocked`。**单 goal**：只在无目标或上一个已 `complete` 时才能创建；`resume` 接受 `active`（重新武装）与 `blocked`（回 `active` 并清阻塞原因），拒绝 `paused`。
 - **轮次驱动**：`turn/end` 之后若目标 `active`、已武装、且还有轮次额度，则开新段并写一条 goal 来源的 `user/message`（`source.round` 连续递增），继续主循环；额度用尽则落 `phase = blocked`、`blocked_reason.code = "round-limit"`。
 - **`user/message` 增 `source`**：`{kind: "user"}`（缺省）或 `{kind: "goal", goal_id, revision, round}`；旧日志缺字段按 `{kind: "user"}` 读。
 - **任务并行**：`todo` 允许一次标多个 `in_progress`；`allow_parallel_in_progress = false` 时第二个 `in_progress` 被拒（`TODO_PARALLEL_DISABLED`）。

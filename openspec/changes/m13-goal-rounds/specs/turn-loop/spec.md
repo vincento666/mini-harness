@@ -4,16 +4,18 @@
 
 ### Requirement: 段结束后按目标条件续跑
 
-每个 `segment/end` 之后，系统 SHALL 判定是否续跑，判定只看当前目标快照与本次段的 `stop_reason`：`phase == "active"`、`armed` 为真、`rounds_started < max_rounds`、且 `stop_reason` 不在 `{ABORTED, FENCE_DENIED, PROVIDER_ERROR, CONTEXT_WINDOW_EXCEEDED}` 之内时，SHALL 开新段；否则 MUST NOT 开新段。
+每个 `segment/end` 之后，系统 SHALL 判定是否续跑，判定只看当前目标快照与本次段的 `stop_reason`：`phase == "active"`、`armed` 为真、`rounds_started < max_rounds`、且 `stop_reason` 不在 `{ABORTED, FENCE_DENIED, PROVIDER_ERROR, CONTEXT_WINDOW_EXCEEDED, MAX_TURNS}` 之内时，SHALL 开新段；否则 MUST NOT 开新段。
 
-开新段时，系统 SHALL 按固定顺序写三条事件：`segment/start`、goal 来源的 `user/message`（`source.round` 等于快照的 `rounds_started + 1`）、`goal/updated`（`rounds_started` 与 `revision` 各递增一）。写失败 SHALL 落 `error/*` 并终止会话，MUST NOT 静默重试。
+开新段时，系统 SHALL 按固定顺序写三条事件：`segment/start`、goal 来源的 `user/message`（`source.round` 等于快照的 `rounds_started + 1`）、`goal/updated`（`rounds_started` 递增，`revision` 不变）。
+
+轮次额度在写入 goal 消息时消耗：该轮即便未进模型也计入。写日志失败 SHALL 落 `error/*` 并终止会话，MUST NOT 静默重试。
 
 `rounds_started` 已达 `max_rounds` 时，系统 SHALL 写 `goal/updated` 把 `phase` 置 `blocked`、`blocked_reason.code` 置 `round-limit`，并 MUST NOT 开新段。
 
 #### Scenario: 达标即续跑
 
 - **WHEN** 段以 `MODEL_COMPLETED` 收尾，目标 `active`、已武装、`rounds_started == 1`、`max_rounds == 3`
-- **THEN** 日志出现 `segment/start`（新 `segment_id`）、`source.round == 2` 的 `user/message`、`rounds_started == 2` 的 `goal/updated`，顺序与这里一致
+- **THEN** 日志出现 `segment/start`（新 `segment_id`）、`source.round == 2` 的 `user/message`、`rounds_started == 2` 的 `goal/updated`，顺序与这里一致，且 `revision` 与上一轮相同
 
 #### Scenario: 上限不再开段
 
@@ -22,7 +24,7 @@
 
 #### Scenario: 失败收尾不续跑
 
-- **WHEN** 段以 `CONTEXT_WINDOW_EXCEEDED` 收尾
+- **WHEN** 段以 `CONTEXT_WINDOW_EXCEEDED` 或 `MAX_TURNS` 收尾
 - **THEN** 不出现新的段、不出现 goal 来源消息、不出现 `goal/updated`
 
 #### Scenario: 重放相等

@@ -8,7 +8,7 @@
 
 ## D2 `goal/updated` 是整值替换，不是操作日志
 
-载荷 `{goal: <快照> | null}`，每次改动写一条完整快照；`null` 是清除墓碑。`revision` 随每次被接受的改动 +1，`update_goal` 必须带上一读的 `(goal_id, revision)`。
+载荷 `{goal: <快照> | null}`，每次改动写一条完整快照；`null` 是清除墓碑。`revision` 只随**控制面动作**（create / edit / pause / resume / complete / blocked / clear）+1；**轮次推进不改 `revision`**——否则模型在轮内拿到的引用会立刻过期（DSH 的 `roundsStarted` 是派生值，本来就不产生变更）。`update_goal` 必须带上一读的 `(goal_id, revision)`。
 
 **与 DSH 的差异**：DSH 的 `goal/change` 带 `operation` 与 `view`（含 `rounds_started`、`createdAt`、`updatedAt`），并把「清除」编码为 `operation: "clear"` 的墓碑。mini 用整值替换 + `null`，与既有的 `plan/mode`、`todo/updated` 同形，折叠只需「取最后一条」。
 
@@ -26,7 +26,13 @@ DSH 的形状（一手资料，`packages/goal/goal-round-driver/src/index.ts`，
 
 mini 没有 inbox、没有可插队的竞争输入、主循环是显式的（不变量 C），所以第 1–4 步塌成一步：**段结束后在同一个协程里顺序判定条件、写 `segment/start` + goal 来源的 `user/message` + `goal/updated`（`rounds_started` 递增），再进下一段**。写日志成功即准入，因为 mini 的日志就是历史真源（不变量 A），不存在「排队后被别人抢先」的窗口。
 
-**代价**：丢掉 DSH 的「人先插话就让人插队」语义（`competingQueued` 让自动轮次让位）。mini 里人要么等当前轮收敛，要么取消；取消即暂停，不自动重跑。这条写进「已知缺口」。
+**代价**：丢掉 DSH 的「人先插话就让人插队」语义（`competingQueued` 让自动轮次让位）。mini 里人要么等当前轮收敛，要么取消；取消即暂停，不自动重跑。
+
+**这条塌缩带来三个必须写明的语义**（复核 B3/B4 指出）：
+
+1. **额度在写消息时消耗**：该轮即便未进模型（provider 在 `turn/start` 前失败）也计入，因为 mini 没有「预约未准入即归还」这一步。
+2. **取消置暂停**：段以 `ABORTED` 收尾时 `phase → paused` 并解除武装；其余失败只解除武装，`phase` 留在 `active`，等人 `/goal resume`。
+3. **blocked 必须能回 active**：`round-limit` 落的是 `blocked`，而驱动只推 `active`。若 `resume` 不认 `blocked`，目标就永久停摆。所以 `resume` 对 `blocked` 置 `active`、清 `blocked_reason`、置真；对 `paused` 仍拒绝（那是人的口子）。
 
 **保留的**：失败出口的稳定码——额度用尽仍是 `round-limit`，用来区分「跑满了」与「模型自报阻塞」。
 
@@ -40,7 +46,7 @@ mini 没有 inbox、没有可插队的竞争输入、主循环是显式的（不
 
 ## D5 `armed` 是进程内的布尔，永不落盘
 
-`goal/updated` 不带武装位；`armed` 只活在会话运行期。会话启动（含 `--resume`）一律 `armed = false`；`/goal resume` 与 `update_goal(resume)` 把它置真。`--resume` 之后不自动续跑，是这一条的必然结果，也是行为 3 的判据。
+`goal/updated` 不带武装位；`armed` 只活在会话运行期。会话启动（含 `--resume`）一律 `armed = false`；`/goal resume` 与 `update_goal(resume)` 把它置真；`pause` / `complete` / `blocked` / 撞上限 / 以失败收尾的段把它置假。`--resume` 之后不自动续跑，是这一条的必然结果，也是行为 3 的判据。
 
 **与 DSH 的差异**：DSH 的 `activation` 是 `armed | disarmed`，同样进程内、同样在 resume / fork / 卸载后失效。mini 用 `bool`，语义等价，少一个枚举值。
 

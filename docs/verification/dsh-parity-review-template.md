@@ -1,18 +1,16 @@
 # 对齐复核（alignment review）模板
 
-**何时跑**：**每个 change 必做**——它是 code review 的一步，不是 DSH 专项。  
+**何时跑**：**每个 change 必做**，位置在 apply **之前**、与契约复核同一道（`docs/process/devops-loop.md` §0.4 第一道）。  
 **对齐对象**：proposal 的 Why / What / Impact 与验收、design 的每条决策、spec 的每条 Requirement 与 Scenario、tasks 的完成判据；**有 DSH 对照的**，按 `docs/reference/dsh-alignment-checklist.md` 的十项逐条核对。
 
-**调研与复核的分工**：调研在 propose 之前，产出「DSH 是什么 + 我们的建议」；复核在实现之后，逐条核对「实现是否兑现了提案/规格/验收」，并给建议标状态。**简化与弱化是建议，由人裁决**，agent 不得自行把建议写成结论。
+**调研与复核的分工**：调研在 propose 之前，产出「DSH 是什么 + 我们的建议」；复核在写代码之前，逐条核对「提案/规格/验收是否站得住」，把偏离标成建议。**简化与弱化是建议，由人裁决**，agent 不得自行把建议写成结论。
 
-**时点**：`code-review` 两轴之后、收尾四项/归档之前。若发现设计级偏差，回到 design/spec 而不是只改代码；若发现「设计声称 aligned、实现不是」，先标红再修。
+**时点**：propose 定稿之后、apply 之前。若发现设计级偏差，回到 design/spec 改，不进 apply；实现之后发现「设计声称 aligned、实现不是」，按缺陷修，不靠这份复核兜底。
 
 ## 输入
 
-- change 的 proposal / design / spec / tasks（提案与验收标准是**第一对齐对象**）；
-- `git diff <base>...HEAD`；
-- DSH 出处：`docs/dsh-reference/` 对应章节，或
-  `S:\Develop\agent_harness\re\verified\dsh\node_modules\@deepseek-ai/...` 的 README/代码。
+- change 的 proposal / design / spec / tasks / 验证契约（提案与验收标准是**第一对齐对象**）；
+- DSH 出处：上游仓库的一手文件 URL + commit（README / `docs/subsystems/*.md` / 源码），或仓库内 `docs/reference/dsh-alignment-checklist.md` 指到的对应章节；`docs/dsh-reference/` 只当索引。
 
 ## 输出
 
