@@ -64,7 +64,7 @@ uv run coverage report --fail-under=95 --show-missing   # 这三步不可拆，�
 
 一个 change 的顺序：**propose → 人审 proposal / specs / design / tasks → apply（按 tdd 技能，red → green 单切片，一次一个）→ `code-review` 两轴 + **对齐复核（每个 change 必做）**→ 收尾四项（见下 Learning Gate）→ 在 change 分支上 sync delta 进主规格 + 归档 → 代码与规格一次合入 main**。对齐复核是 code review 的一步：逐条核对实现 ↔ 提案（Why/What/Impact）、design 的决策、spec 的 Requirement/Scenario、tasks 的验收判据；有 DSH 对照的，按 `docs/reference/dsh-alignment-checklist.md` 的十项逐条核对 DSH。产物是 `<change-id>-dsh-review.md`（历史名字保留）。
 
-**默认按 `docs/process/devops-loop.md` §0 推进：人只选弹窗，其余自动继续。** 分支纪律：每个 change 一个分支 `change/<id>`；**归档在分支上做**——sync 进主规格、移 `changeRoot`、`openspec validate --all --strict` 全绿，然后代码与规格一次合入 `main`。反过来（先合并再归档）会在主干上留下「代码已合、主规格还停在上一个里程碑」的窗口。**merge 与推 `main` 先征求人的批准、确认了才执行**；agent 可自行推 `change/<id>` 分支与归档提交。升级到人裁的六类触发见 `docs/process/devops-loop.md`。
+**默认按 `docs/process/devops-loop.md` §0 推进：人只选弹窗，其余自动继续。** 分支纪律：每个 change 一个分支 `change/<id>`；**归档在分支上做**——sync 进主规格、移 `changeRoot`、`openspec validate --all --strict` 全绿，然后代码与规格一次合入 `main`。**merge 与推 `main` 先征求人的批准、确认了才执行**；agent 可自行推 `change/<id>` 分支与归档提交。升级到人裁的六类触发见 `docs/process/devops-loop.md`。**流程文档同受一进一出**：单次提交对 `docs/process/` 的净增行数 ≤0，要净增须人裁（理由与代价见 `docs/process/devops-loop-rationale.md` §3）。
 
 **完成判据有三半，三半都通过才算验收**（ADR-0024 + ADR-0025）：mock 那一半是上面那四道门禁——mock 桩只负责单元测试与冒烟，mock 全绿不算完成；**真实那一半是接上真实端点把本里程碑的判据跑一遍并通过**，不进 CI、不替代门禁那四道；**UAT 那一半是人坐在终端前拿它办一件真事**（不是跑判据），场次与观察表在 `docs/verification/<change-id>-uat.md`，**那张表没填完这个 change 不得归档、不得合入 `main`**，tty 场次 agent 不得代跑。CI 层的判据用真实端点回过的产物做 fixture（ADR-0022），补的是形状不是验收。
 

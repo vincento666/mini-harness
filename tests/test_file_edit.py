@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
+
+import pytest
 
 from mini_harness.events import read_events
 from mini_harness.tools.dispatch import DispatchOutcome
@@ -217,6 +220,14 @@ async def test_a_write_does_not_count_as_having_read_it(tmp_path: Path) -> None:
     assert (tmp_path / "new.md").read_text(encoding="utf-8") == "新写的\n"
 
 
+@pytest.mark.skipif(
+    sys.platform == "darwin",
+    reason="APFS 默认大小写不敏感，POSIX 分支的假设在 macOS 上不成立",
+)
+@pytest.mark.skipif(
+    sys.platform == "darwin",
+    reason="APFS 默认大小写不敏感，POSIX 分支的假设在 macOS 上不成立",
+)
 async def test_a_differently_cased_path_folds_only_where_paths_fold(tmp_path: Path) -> None:
     """seam ②③：路径键的大小写折叠决定写前必读能不能被换写法满足。
 
