@@ -16,6 +16,33 @@
 
 ## 2. 机制
 
+### 2.1 计划模式的状态机
+
+```
+              /plan                  exit_plan_mode(plan)
+   普通 ───────────────▶ 计划中 ───────────────────▶ 待审批
+    ▲                     │                            │
+    │                     │ write/edit/bash/subagent    │ APPROVED
+    │                     │ → DENIED_BY_PLAN            ▼
+    └─────────────────────┴────────────────────────── 普通
+                          DENIED / UNAVAILABLE
+                          → 保持计划中
+```
+
+### 2.2 从事件到投影
+
+```
+日志（唯一真源）
+  todo/updated ──┐
+  segment/start ─┼─▶ project(records, "todos") ──▶ {name, state_version, value}
+  segment/end ───┘                                      │
+                                                        ├─▶ CLI /todo
+                                                        ├─▶ GET /projections/todos
+                                                        └─▶ SSE session/projection
+```
+
+### 2.3 三条路径
+
 **进入计划模式**：`/plan` 由壳写 `plan/mode {active: true}`；模型只读探索，`write` / `edit` / `bash` / `subagent` 在派发前被拒，结果词 `DENIED_BY_PLAN`，副作用不发生。
 
 **提交计划**：`exit_plan_mode(plan)` 走审批复用路径，请求里带 `purpose=plan-review` 与正文；只有 `APPROVED` 才返回 `plan_exit=true`，回合循环随后写 `plan/mode {active: false}`。`DENIED` 与 `UNAVAILABLE` 保持 active，且工具结果文案区分「人拒绝」与「问不到人」。
