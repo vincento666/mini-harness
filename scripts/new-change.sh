@@ -35,4 +35,4 @@ cat > "$dir/tasks.md" <<EOF
 - [ ] 2.4 Learning Gate
 EOF
 
-echo "已建 $dir（分支 change/$id）。下一步：写契约与 specs/$capability/spec.md。"
+echo "已建 ${dir}（分支 change/${id}）。下一步：写契约与 specs/${capability}/spec.md。"
