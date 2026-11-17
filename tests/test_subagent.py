@@ -271,6 +271,8 @@ async def _run_with(
 async def test_two_subagents_run_in_parallel(tmp_path: Path) -> None:
     """同一批两个 `subagent` 真并发：wall-clock 小于串行基线，结果按完成顺序落盘。"""
 
+    starts: dict[str, float] = {}
+
     async def respond(index: int, messages: Sequence[Message]) -> AssistantTurn:
         if index == 1:
             return _turn(
@@ -282,6 +284,7 @@ async def test_two_subagents_run_in_parallel(tmp_path: Path) -> None:
             )
         if index in (2, 3):
             task = messages[-1].content or ""
+            starts[task] = time.monotonic()
             await asyncio.sleep(0.2 if "甲" in task else 0.4)
             return _turn(f"{task}做完了")
         return _turn("父结束")
@@ -291,8 +294,10 @@ async def test_two_subagents_run_in_parallel(tmp_path: Path) -> None:
     elapsed = time.monotonic() - started
 
     assert outcome.stop_reason == "MODEL_COMPLETED"
-    # 串行基线是 0.2 + 0.4；真并发的话两者重叠。
-    assert elapsed < 0.55
+    # 串行基线是 0.2 + 0.4；真并发的判据是「两个子任务几乎同时开始」，
+    # 不拿绝对耗时卡机器速度（Windows CI 抖动会让 0.55 误红）。
+    assert abs(starts["子任务甲"] - starts["子任务乙"]) < 0.1
+    assert elapsed < 1.0
     results = [record.payload for record in read_events(log_path) if record.type == "tool/result"]
     assert [(result["tool_call_id"], result["content"]) for result in results] == [
         ("c1", "子任务甲做完了"),
