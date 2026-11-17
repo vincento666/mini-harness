@@ -5,7 +5,7 @@
 ## 现在
 
 - `main` 以 `git log -1` 为准；最近一次里程碑合并是 `m14c`（`09caa26`，2026-11-17 07:55）。
-- **门禁实测（`m14b` 收尾，2026-11-16）**：ruff / `mypy --strict` 绿；**701 passed / 6 skipped / 1 failed**（`test_file_edit.py` 的 macOS 大小写折叠，既知红）；覆盖率 **95%（4070 / 206）**；`openspec validate --all --strict` **22/22**。`m14c` 收尾的读数是 728 passed（见「下一步」），两次读数未复核一致性。
+- **门禁实测（2026-11-17，`change/m13-goal-rounds`）**：ruff / `mypy --strict` 绿；**732 passed / 7 skipped / 0 failed**；覆盖率 **95%（4356 / 233）**；`openspec validate --all --strict` 见归档时的读数。上一版记的「`test_file_edit.py` 的 macOS 大小写折叠既知红」今天没有复现——按仓库实况记，不再当既知红。**本机 `scripts/gates.sh` 跑不通**：它开头的 `rm -rf .tmp/pytest-gates` 与 `coverage erase/combine` 的批量删除被 safe-delete 守卫拦下（阈值 50），四道要手动各跑一遍。
 - **活动 change**：`m13-goal-rounds`（分支 `change/m13-goal-rounds`，提交 `03c7dce`）。proposal / design / 五份 spec delta / 验证契约已落盘，`openspec validate --strict` 绿；**等人审 proposal 与契约**（停点 1）。六问已答：单目标 + 任务并行（ADR-0042），多目标调度后置 `parallel-goal-scheduler`。
 - 已合并但未删的分支：`change/fix-small-window-compaction-dead-zone`、`change/add-key-driven-default-provider`、`change/fix-chat-screen-feedback`、`change/add-platform-facts-to-protected-header`、`change/fix-compaction-and-context-overflow`。
 
