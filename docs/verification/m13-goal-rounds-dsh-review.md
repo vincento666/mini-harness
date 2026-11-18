@@ -8,10 +8,10 @@
 
 | 项 | DSH（一手） | mini（change 位置） | 结论 | 记账 |
 |---|---|---|---|---|
-| 1 形状 | `GoalSnapshot{id,revision,objective,phase,blockedReason?,maxGoalRounds}`，`roundsStarted` 是 `GoalView` 的派生值（`docs/subsystems/goal.md:44-70`）；`goal/change` 带 `operation` 与墓碑 | 快照把 `rounds_started` 写进载荷、`goal/updated{goal\|null}` | simplified | design D2；本轮修：轮次推进不再递增 `revision`，使轮内 ref 仍有效 |
+| 1 形状 | `GoalSnapshot{id,revision,objective,phase,blockedReason?,maxGoalRounds}`，`roundsStarted` 是 `GoalView` 的派生值（`docs/subsystems/goal.md:44-70`）；`goal/change` 带 `operation` 与墓碑 | 快照把 `rounds_started` 写进载荷、`goal/updated{goal\|null}` | simplified | design D2 + ADR-0043；本轮修：轮次推进不再递增 `revision`；4.4 补 replay 交叉校验（`goal_round_defect`） |
 | 2 机制 | 空闲 → `flush` 检查点 → 预约 → `followup` → `pre-step` 前后两次围栏（`driver_index.ts:106-221,372-452`） | 段后同协程判定 + 写三事件 | simplified | D3；丢 `competingQueued` 让位 |
 | 3 语义 | `create` 可替换 `complete`；`resume` 接受已停目标（含 blocked）并清旧 blocker，且要有轮次余量（`goal README:68`） | 原稿只写 paused 拒绝、active 武装，blocked 无出口 | **blocker，本轮修** | 补 `blocked → active` 且清 `blocked_reason` |
-| 4 不变量 | `roundsStarted` 只由进入模型历史的 goal 消息推进；activation 永不落盘 | 写作时即推进 | simplified（本轮显式记账） | 见 B4 |
+| 4 不变量 | `roundsStarted` 只由进入模型历史的 goal 消息推进；activation 永不落盘 | 首条 `turn/start` 之后推进（`turn_loop.py:1190`）；`armed` 同样不落盘 | simplified | ADR-0043；剩余窗口 `turn/start → context/assembled` 会白烧一轮，见 D.2 |
 | 5 面 | 模型面 = `<goal_round>`（objective + `Round: n/cap` + 指令，`prompt.ts:12-26`）+ `tool:goal` 政策段 | 无正文形状要求、无政策文本 | **blocker，本轮修正文；政策段记 deferred** | 正文补 Requirement；政策段触发条件：出现「模型反复试错才知门槛」的真实记录 |
 | 6 失败 | `queue-failed` / `prompt-rejected` / `round-limit`；异常失败需人工 resume；`agent/error` 即 disarm | 只有 `round-limit`；失败收尾不续跑但未 disarm | simplified | 本轮把「失败收尾即 disarm」补进 Requirement 与判据 |
 | 7 组合 | cap 属 goal、门槛属 tool-goal、并行属 todo 包，分属三处 | 全收进 `[goal]` 一段 | simplified | D7；代价：部署面分成三段变一段，语义归属变粗 |
@@ -56,3 +56,39 @@
 > 判据能在「模型实际收到什么」和「轮次何时消耗额度」这两处全绿而实现是错的，且 `round-limit` 之后没有回到 active 的路径。
 
 三条都指向同一件事：我把「状态机走通」当成够了，没检查「走完之后还能不能回来」。B3 是其中最贵的——一个只能进不能出的状态机。
+
+## D. 2026-11-18 追加：术语与轮次机制的记账
+
+人问「同一个词在两边指什么、跨段的 goal 消息从哪来」之后补记。前三行是**术语映射**，后三行是**本轮实现里与 DSH 不同形的机制**。
+
+### D.1 术语映射（aligned）
+
+| mini | DSH | 关系 | 落点 |
+|---|---|---|---|
+| 段 segment | turn | 一个段恰是一个 turn：一条输入展开的那串回合 | `GLOSSARY.md`「段」；`turn-loop` 主规格 220 行原句 |
+| 轮 round（goal 轮次） | goal round | 一轮恰是一个段；DSH 里那一轮也是一次 admitted user-message turn（`goal.md:119`） | `GLOSSARY.md`「轮」（本次新增） |
+| 回合 turn | step | 一次模型往返 | `GLOSSARY.md`「回合」 |
+
+因此「goal 跨段」= 「goal 跨 turn（DSH 义）」= 多轮，不是偏离；被 M13 改掉的是**入口的段数不变量**（`run` 以前恰一个段），见 `turn-loop` delta。同一次扫查还改掉两处旧全称量词：`turn-loop` 的「一次性 run 恰一个段」与 `event-stream` 的「一个会话恰一个段」。
+
+### D.2 准入点：首条 `turn/start` 之后（simplified，待人裁）
+
+- DSH：消息**进了这一轮**才计数；被拒的预约不消耗轮号（`goal-round-driver/README.md:71`）。
+- mini：写 goal 消息 → 首条 `turn/start` → 写 `goal/updated`。窗口 `turn/start → context/assembled`（注入契约与技能目录、读日志、折叠、必要时压缩）失败时，mini 已扣一轮，DSH 不会。
+- 代价与替代：见 ADR-0043。要消掉就把那次 `goal/updated` 挪到首条 `context/assembled` 之后；代价是四事件顺序与契约行为 1 的三条判据一起改。**待人裁。**
+
+### D.3 计数来源：写成字段 + replay 交叉校验（simplified）
+
+- DSH：派生值，不存在写错的可能。
+- mini：快照字段；`replay` 校验「每条快照的 `rounds_started` 等于此前该目标的轮次消息条数」（`goals.goal_round_defect`，4.4）。
+- 代价：同一事实两份写法，必须同步；收益是 `get_goal` 能回自足快照、驱动不必重扫全日志。
+
+### D.4 goal 消息的唯一来源（aligned）
+
+- 只有驱动能造它：`run_session_env` 判定后调 `run_turn_segment(goal_round=GoalRound(...))`（`turn_loop.py:1507`），正文由 `render_goal_round` 生成（`turn_loop.py:986`），来源固定为 `{kind: "goal", goal_id, revision, round}`。
+- 人不能编辑它、模型不能伪造它（模型没有写 `user/message` 的工具）；DSH 同款——驱动排队一条带 goal message source 的 `<goal_round>` 提示（`driver README:71`）。
+- 待补：REPL 的驱动入口（task 5.4）接上后，来源仍是这一条路径。
+
+### D.5 决策位置（simplified，已在项 2 记）
+
+段后同协程判定，不是独立 consumer：省掉预约、`flush` 检查点与 `pre-step` 围栏；代价是丢 `competingQueued` 让位（人只能等这一段收敛或取消）。REPL 侧尚未接驱动（5.4），当前只有 `run` / `serve` 会续跑。

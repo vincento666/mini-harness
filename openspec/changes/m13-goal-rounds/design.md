@@ -44,6 +44,8 @@ mini 没有 inbox、没有可插队的竞争输入、主循环是显式的（不
 
 **代价**：`user/message` 的形状变化波及折叠、投影与 CLI 回显；旧日志缺 `source` 必须按人读，不能当解析失败。
 
+**消息只有一个来源**：驱动在段后判定通过时调 `run_turn_segment(goal_round=...)`，正文由 `render_goal_round` 生成；人没有写 `user/message` 的入口，模型也没有——所以「goal 轮次」不可能被伪造或手改。`rounds_started` 写成快照字段、准入点取首条 `turn/start` 之后，理由与代价见 ADR-0043。
+
 ## D5 `armed` 是进程内的布尔，永不落盘
 
 `goal/updated` 不带武装位；`armed` 只活在会话运行期。会话启动（含 `--resume`）一律 `armed = false`；**`create` 置真**（DSH 的 `create` 就是 `commitSnapshot(..., 'armed')`，见 `packages/goal/goal/src/index.ts:300-321`；不置真则目标永远不动）；`/goal resume` 与 `update_goal(resume)` 把它置真；`pause` / `complete` / `blocked` / 撞上限 / 以失败收尾的段把它置假。`--resume` 之后不自动续跑，是这一条的必然结果，也是行为 3 的判据。
