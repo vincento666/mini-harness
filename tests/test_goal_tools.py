@@ -11,6 +11,7 @@ import stat
 from pathlib import Path
 from typing import Any, cast
 
+from mini_harness.config import build_registry
 from mini_harness.events import EventLog, EventRecord, read_events
 from mini_harness.loop import SessionEnv
 from mini_harness.loop.settings import SessionSettings
@@ -193,3 +194,12 @@ async def test_create_goal_reports_a_log_write_failure(tmp_path: Path) -> None:
 
     assert outcome.result.outcome == "TOOL_IO_FAILED"
     assert env.goal_runtime.armed is False
+
+
+def test_the_default_registry_mounts_the_goal_tools() -> None:
+    """生产装配走 build_registry：目标工具不在那里，模型永远调不到 create_goal。"""
+    registry = build_registry(None)
+
+    assert isinstance(registry, ToolRegistry)
+    names = {tool.name for tool in registry.definitions()}
+    assert {"get_goal", "create_goal", "update_goal"} <= names

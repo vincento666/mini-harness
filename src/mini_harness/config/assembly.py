@@ -209,6 +209,7 @@ def build_registry(
         *subagent_tool_definitions(presets),
         *skill_tool_definitions(skills),
         *assistant_tool_definitions(),
+        *goal_tool_definitions(),
     ]
     if whitelist is None:
         return ToolRegistry(definitions)

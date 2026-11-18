@@ -92,6 +92,9 @@ def test_no_config_file_means_builtin_defaults(tmp_path: Path) -> None:
         "present",
         "ask_user",
         "todo",
+        "get_goal",
+        "create_goal",
+        "update_goal",
     ]
 
 
@@ -479,6 +482,9 @@ def test_the_same_cli_under_two_config_files_yields_different_payloads(tmp_path:
         "present",
         "ask_user",
         "todo",
+        "get_goal",
+        "create_goal",
+        "update_goal",
     ]
 
 

@@ -165,7 +165,7 @@ async def _update_goal(args: UpdateGoalArgs, context: DispatchContext) -> ToolRe
 
 
 def goal_tool_definitions() -> list[ToolDefinition]:
-    """两个目标工具；都会读当前快照再改，因此串行派发。"""
+    """三个目标工具；都读当前快照再改，因此串行派发。顺序即 `session/start` 里的工具名顺序。"""
     return [
         ToolDefinition(
             name="get_goal",
@@ -176,19 +176,19 @@ def goal_tool_definitions() -> list[ToolDefinition]:
             run=_get_goal,
         ),
         ToolDefinition(
-            name="update_goal",
-            description="按 id+revision 改写目标：edit / pause / resume / complete / blocked。",
-            args_model=UpdateGoalArgs,
-            mutates=False,
-            concurrency="exclusive",
-            run=_update_goal,
-        ),
-        ToolDefinition(
             name="create_goal",
             description="创建一个目标并开始自动续跑；已有未完成目标时拒绝（单目标）。",
             args_model=CreateGoalArgs,
             mutates=False,
             concurrency="exclusive",
             run=_create_goal,
+        ),
+        ToolDefinition(
+            name="update_goal",
+            description="按 id+revision 改写目标：edit / pause / resume / complete / blocked。",
+            args_model=UpdateGoalArgs,
+            mutates=False,
+            concurrency="exclusive",
+            run=_update_goal,
         ),
     ]

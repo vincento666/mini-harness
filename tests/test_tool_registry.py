@@ -254,6 +254,9 @@ _BUILTIN_TOOLS = [
     "present",
     "ask_user",
     "todo",
+    "get_goal",
+    "create_goal",
+    "update_goal",
 ]
 
 

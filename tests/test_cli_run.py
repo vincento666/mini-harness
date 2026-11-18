@@ -965,6 +965,9 @@ def test_session_start_records_sandbox_approval_and_tools(tmp_path: Path) -> Non
         "present",
         "ask_user",
         "todo",
+        "get_goal",
+        "create_goal",
+        "update_goal",
     ]
     assert "schema_version" not in payload
 
