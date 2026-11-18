@@ -516,3 +516,18 @@ async def test_dispatch_batch_reads_plan_state_from_log(tmp_path) -> None:
     )
     assert second.failure is None
     assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "x"
+
+
+def test_stdin_question_gate_treats_a_blank_line_as_no_answer() -> None:
+    import asyncio
+    import io
+
+    from mini_harness.tools.fences import StdinQuestionGate
+
+    class _Tty(io.StringIO):
+        def isatty(self) -> bool:
+            return True
+
+    gate = StdinQuestionGate(stream=_Tty("\n"), prompt_stream=io.StringIO())
+    answer = asyncio.run(gate.request(question_id="q1", question="用 A 吗", options=["A"]))
+    assert answer is None

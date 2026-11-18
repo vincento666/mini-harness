@@ -6,6 +6,8 @@
 from __future__ import annotations
 
 import json
+import os
+import stat
 from pathlib import Path
 from typing import Any, cast
 
@@ -170,3 +172,24 @@ async def test_a_goal_round_has_no_goal_authority(tmp_path: Path) -> None:
 
     assert outcome.result.outcome == "GOAL_AUTHORITY_REQUIRED"
     assert read_events(env.log.path) == []
+
+
+async def test_create_goal_without_a_session_cannot_write(tmp_path: Path) -> None:
+    outcome = await dispatch_call(
+        tmp_path, "create_goal", {"objective": "没有会话"}, registry=_registry()
+    )
+
+    assert outcome.result.outcome == "TOOL_IO_FAILED"
+
+
+async def test_create_goal_reports_a_log_write_failure(tmp_path: Path) -> None:
+    env = _env(tmp_path)
+    log_path = env.log.path
+    os.chmod(log_path, stat.S_IREAD)
+    try:
+        outcome = await _call(tmp_path, env, "create_goal", {"objective": "写不进日志"})
+    finally:
+        os.chmod(log_path, stat.S_IREAD | stat.S_IWRITE)
+
+    assert outcome.result.outcome == "TOOL_IO_FAILED"
+    assert env.goal_runtime.armed is False

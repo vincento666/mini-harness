@@ -6,6 +6,8 @@
 from __future__ import annotations
 
 import json
+import os
+import stat
 from pathlib import Path
 from typing import Any, cast
 
@@ -291,3 +293,85 @@ async def test_editing_from_a_subagent_has_no_authority(tmp_path: Path) -> None:
 
     assert outcome.result.outcome == "GOAL_AUTHORITY_REQUIRED"
     assert read_events(env.log.path) == []
+
+
+async def test_edit_can_replace_the_objective(tmp_path: Path) -> None:
+    env = _env(tmp_path)
+
+    outcome = await _update(
+        tmp_path, env, current=_current(), action="edit", objective="改成另一件事"
+    )
+
+    assert outcome.result.outcome == "OK"
+    goal = _new_snapshot(env)
+    assert goal is not None
+    assert goal["objective"] == "改成另一件事"
+    assert goal["max_rounds"] == 8
+
+
+async def test_resume_on_a_completed_goal_is_invalid(tmp_path: Path) -> None:
+    env = _env(tmp_path)
+
+    outcome = await _update(tmp_path, env, current=_current("complete"), action="resume")
+
+    assert outcome.result.outcome == "GOAL_INVALID_TRANSITION"
+    assert read_events(env.log.path) == []
+
+
+async def test_resume_on_an_armed_active_goal_is_invalid(tmp_path: Path) -> None:
+    env = _env(tmp_path, armed=True)
+
+    outcome = await _update(tmp_path, env, current=_current(), action="resume")
+
+    assert outcome.result.outcome == "GOAL_INVALID_TRANSITION"
+    assert read_events(env.log.path) == []
+
+
+async def test_block_from_a_non_active_phase_is_invalid(tmp_path: Path) -> None:
+    env = _env(tmp_path)
+
+    outcome = await _update(
+        tmp_path,
+        env,
+        current=_current("paused", rounds_started=5),
+        action="blocked",
+        blocked_reason="已经暂停了还想报阻塞",
+    )
+
+    assert outcome.result.outcome == "GOAL_INVALID_TRANSITION"
+    assert read_events(env.log.path) == []
+
+
+async def test_update_in_a_goal_round_has_no_authority(tmp_path: Path) -> None:
+    env = _env(tmp_path)
+
+    outcome = await _update(tmp_path, env, current=_current(), action="pause", human_driven=False)
+
+    assert outcome.result.outcome == "GOAL_AUTHORITY_REQUIRED"
+    assert read_events(env.log.path) == []
+
+
+async def test_update_without_a_session_cannot_write(tmp_path: Path) -> None:
+    outcome = await dispatch_call(
+        tmp_path,
+        "update_goal",
+        {"goal_id": "g1", "revision": 2, "action": "pause"},
+        registry=_registry(),
+        records=[_current()],
+        session=None,
+    )
+
+    assert outcome.result.outcome == "TOOL_IO_FAILED"
+
+
+async def test_update_reports_a_log_write_failure(tmp_path: Path) -> None:
+    env = _env(tmp_path, armed=True)
+    log_path = env.log.path
+    os.chmod(log_path, stat.S_IREAD)
+    try:
+        outcome = await _update(tmp_path, env, current=_current(), action="pause")
+    finally:
+        os.chmod(log_path, stat.S_IREAD | stat.S_IWRITE)
+
+    assert outcome.result.outcome == "TOOL_IO_FAILED"
+    assert env.goal_runtime.armed is True

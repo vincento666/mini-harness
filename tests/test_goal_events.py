@@ -97,3 +97,8 @@ def test_revision_and_round_caps_are_positive() -> None:
 def test_objective_must_not_be_blank() -> None:
     with pytest.raises(ValidationError):
         GoalSnapshot.model_validate(_snapshot(objective="   "))
+
+
+def test_rounds_started_cannot_be_negative() -> None:
+    with pytest.raises(ValidationError):
+        GoalSnapshot.model_validate(_snapshot(rounds_started=-1))

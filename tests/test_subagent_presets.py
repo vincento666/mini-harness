@@ -139,3 +139,10 @@ def test_invalid_subagent_configs_are_failures() -> None:
         result = build_registry(None, value)
         assert isinstance(result, ConfigFailure), value
         assert result.code == code, (value, result.code)
+
+
+def test_a_non_string_persona_is_a_config_error() -> None:
+    result = build_registry(None, {"presets": {"reviewer": {"tools": ["read"], "persona": 3}}})
+
+    assert isinstance(result, ConfigFailure)
+    assert result.code == "CONFIG_INVALID_VALUE"

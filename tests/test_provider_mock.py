@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
+from pathlib import Path
 
 from mini_harness.provider import (
     AssistantTurn,
+    FixtureLoadFailure,
     FixtureProvider,
     ProviderFailure,
     load_fixture_provider,
@@ -138,3 +141,16 @@ async def test_fixture_entry_missing_finish_reason_is_a_schema_failure() -> None
 
     assert isinstance(outcome, ProviderFailure)
     assert outcome.code == "PROVIDER_SCHEMA_INVALID"
+
+
+def test_a_fixture_with_non_string_deltas_is_invalid(tmp_path: Path) -> None:
+    path = tmp_path / "bad-deltas.json"
+    path.write_text(
+        json.dumps([{"content": "x", "finish_reason": "stop", "deltas": 7}]),
+        encoding="utf-8",
+    )
+
+    outcome = load_fixture_provider(path)
+
+    assert isinstance(outcome, FixtureLoadFailure)
+    assert "deltas" in outcome.detail

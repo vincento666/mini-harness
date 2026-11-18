@@ -285,3 +285,24 @@ def test_an_unknown_tool_name_in_the_whitelist_is_a_config_failure() -> None:
     assert isinstance(failure, ConfigFailure)
     assert failure.code == "UNKNOWN_TOOL_NAME"
     assert "web_search" in failure.detail
+
+
+def test_definitions_returns_a_copy_in_registration_order() -> None:
+    definitions = file_tool_definitions()[:2]
+    registry = ToolRegistry(definitions)
+
+    listed = registry.definitions()
+
+    assert [tool.name for tool in listed] == [tool.name for tool in definitions]
+    listed.clear()
+    assert len(registry.definitions()) == 2
+
+
+def test_approval_detail_is_empty_for_a_tool_without_a_path() -> None:
+    class _NoPath(ToolArgs):
+        query: str = ""
+
+    args = _NoPath()
+
+    assert args.target_path() is None
+    assert args.approval_detail() == ""
