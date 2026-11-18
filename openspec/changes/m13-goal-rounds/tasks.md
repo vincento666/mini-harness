@@ -23,9 +23,9 @@
 
 ## 4. 轮次驱动（seam ①⑦）
 
-- [ ] 4.1 段后判定 + 三事件顺序（`segment/start` → goal 来源 `user/message` → `goal/updated`），`rounds_started` 与 `revision` 各递增
+- [ ] 4.1 段后判定 + 四事件顺序（`segment/start` → goal 来源 `user/message` → 首条 `turn/start` → `goal/updated`），`rounds_started` 递增、`revision` 不变
 - [ ] 4.2 达上限：写 `blocked {code: "round-limit"}`，不起新段
-- [ ] 4.3 四类失败收尾（`ABORTED` / `FENCE_DENIED` / `PROVIDER_ERROR` / `CONTEXT_WINDOW_EXCEEDED`）不续跑、不写 `goal/updated`
+- [ ] 4.3 五类失败收尾（`ABORTED` / `FENCE_DENIED` / `PROVIDER_ERROR` / `CONTEXT_WINDOW_EXCEEDED` / `MAX_TURNS`）不续跑、不写 `goal/updated`；`ABORTED` 另把 `phase` 置 `paused`
 
 ## 5. 武装与命令面（seam ⑥）
 
