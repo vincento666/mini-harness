@@ -67,8 +67,12 @@ norecursedirs = ["fixtures"]
 source = ["mini_harness"]
 parallel = true
 
-# 覆盖率地板：combine 后实测 95.62%（457 条语句 / 20 条未覆盖），地板定在 95，略低于实测、当前可达。
-# 未覆盖集中在 `cli/main.py`（96%：57-59、182、214）、`events/reader.py`（85%）、`loop/turn_loop.py`（90%）。
-# 跑法三步：`coverage run -m pytest` → `coverage combine` → `coverage report --fail-under=95 --show-missing`。
+# 覆盖率地板 95。2026-11-18 实测 94.73%（4612 条语句 / 243 条未覆盖）。
+# `precision = 2` 是 2026-11-18 加的：默认精度 0 会把 94.73 显示成 95 并判过线，
+# 那是四舍五入在替门禁兜底。加上之后这道门禁**当前是红的**——要么补约 0.3pp 覆盖，
+# 要么降地板；两者都是政策变更，人裁后再动。
+# 跑法三步：`coverage run -m pytest` → `coverage combine --keep` →
+# `coverage report --fail-under=95 --keep-combined --show-missing`。
 [tool.coverage.report]
 fail_under = 95
+precision = 2
