@@ -15,6 +15,7 @@ import httpx
 
 from mini_harness.events import EventLog, read_events
 from mini_harness.events.fold import Message, fold
+from mini_harness.goals import GoalPolicy
 from mini_harness.loop import STOP_REASONS
 from mini_harness.provider import (
     AssistantTurn,
@@ -212,6 +213,17 @@ async def test_every_tool_outcome_is_reachable(tmp_path: Path) -> None:
         plan_active=True,
     )
     await run("ask_user", {"question": "用 A 吗"}, registry=assistant_registry)
+    await run(
+        "todo",
+        {
+            "items": [
+                {"id": "t1", "text": "甲", "status": "in_progress"},
+                {"id": "t2", "text": "乙", "status": "in_progress"},
+            ]
+        },
+        registry=assistant_registry,
+        goal=GoalPolicy(allow_parallel_in_progress=False),
+    )
 
     # seam ①：取消在派发之前置位，声明了的调用没开始——那个取值只在回合循环里产出。
     cancel = asyncio.Event()

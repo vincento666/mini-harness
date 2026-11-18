@@ -582,3 +582,52 @@ def test_a_fence_level_outside_the_vocabulary_is_an_argument_error(tmp_path: Pat
         assert name in result.stderr
 
     assert not list(tmp_path.rglob("*.jsonl"))
+
+
+def test_zero_goal_rounds_is_an_argument_error(tmp_path: Path) -> None:
+    config = tmp_path / "mini.config.toml"
+    config.write_text("[goal]\nmax_rounds = 0\n", encoding="utf-8")
+
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--config",
+        str(config),
+        "--yes",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert list((tmp_path / "sessions").glob("*.jsonl")) == []
+
+
+def test_threshold_above_the_cap_is_an_argument_error(tmp_path: Path) -> None:
+    config = tmp_path / "mini.config.toml"
+    config.write_text(
+        "[goal]\nmax_rounds = 2\nblocked_after_consecutive_rounds = 3\n", encoding="utf-8"
+    )
+
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--config",
+        str(config),
+        "--yes",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert "blocked_after_consecutive_rounds" in result.stderr
+    assert list((tmp_path / "sessions").glob("*.jsonl")) == []

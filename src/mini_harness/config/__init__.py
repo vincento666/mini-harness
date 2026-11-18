@@ -1,6 +1,6 @@
 """配置层：一次运行的设置从哪儿来——配置文件读取、三层取值、工具白名单。"""
 
-from mini_harness.config.assembly import build_registry
+from mini_harness.config.assembly import build_goal_policy, build_registry
 from mini_harness.config.layering import layer_settings
 from mini_harness.config.load import (
     CONFIG_CODES,
@@ -15,6 +15,7 @@ __all__ = [
     "CONFIG_CODES",
     "ConfigCode",
     "ConfigFailure",
+    "build_goal_policy",
     "build_registry",
     "discover_config",
     "layer_settings",

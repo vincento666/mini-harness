@@ -30,7 +30,7 @@ mini 没有 inbox、没有可插队的竞争输入、主循环是显式的（不
 
 **这条塌缩带来三个必须写明的语义**（复核 B3/B4 指出）：
 
-1. **额度在写消息时消耗**：该轮即便未进模型（provider 在 `turn/start` 前失败）也计入，因为 mini 没有「预约未准入即归还」这一步。
+1. **额度在首条 `turn/start` 之后消耗**：顺序是 `segment/start` → goal 消息 → `turn/start` → `goal/updated`。段在 `turn/start` 之前失败（provider 立刻失败、装配失败）时不计轮次——这是 DSH「预约未被准入不消耗轮号」在 mini 的等价物，代价是 `goal/updated` 不再紧贴消息，回放校验要认这个位置。
 2. **取消置暂停**：段以 `ABORTED` 收尾时 `phase → paused` 并解除武装；其余失败只解除武装，`phase` 留在 `active`，等人 `/goal resume`。
 3. **blocked 必须能回 active**：`round-limit` 落的是 `blocked`，而驱动只推 `active`。若 `resume` 不认 `blocked`，目标就永久停摆。所以 `resume` 对 `blocked` 置 `active`、清 `blocked_reason`、置真；对 `paused` 仍拒绝（那是人的口子）。
 

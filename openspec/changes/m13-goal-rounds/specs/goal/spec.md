@@ -121,9 +121,9 @@ goal 来源消息的 `round` MUST 等于写入时快照的 `rounds_started + 1`�
 
 ### Requirement: 轮次驱动与上限
 
-段结束且 `turn/end.stop_reason` 不在 `{ABORTED, FENCE_DENIED, PROVIDER_ERROR, CONTEXT_WINDOW_EXCEEDED, MAX_TURNS}` 之内时，系统 SHALL 检查当前目标：`phase == active`、`armed` 为真、`rounds_started < max_rounds` 三者同时成立才 SHALL 开新段，并按顺序写 `segment/start`、goal 来源的 `user/message`、`goal/updated`（`rounds_started` 递增，`revision` 不变）。三者任一不成立 MUST NOT 开新段。
+段结束且 `turn/end.stop_reason` 不在 `{ABORTED, FENCE_DENIED, PROVIDER_ERROR, CONTEXT_WINDOW_EXCEEDED, MAX_TURNS}` 之内时，系统 SHALL 检查当前目标：`phase == active`、`armed` 为真、`rounds_started < max_rounds` 三者同时成立才 SHALL 开新段，并按顺序写 `segment/start`、goal 来源的 `user/message`、该段首条 `turn/start`、`goal/updated`（`rounds_started` 递增，`revision` 不变）。三者任一不成立 MUST NOT 开新段。
 
-轮次额度 SHALL 在写入 goal 消息时消耗：该轮即使尚未进入模型（例如 provider 在 `turn/start` 之前就失败）也计入 `rounds_started`。这是 mini 没有预约-准入两段式的必然结果，代价见 design D3。
+轮次额度 SHALL 在**首条 `turn/start` 落盘之后**消耗：该段若在此之前就失败（provider 立刻失败、装配失败），MUST NOT 计入 `rounds_started`——这是 DSH「预约未被准入不消耗轮号」在 mini 的等价物。
 
 `rounds_started` 已达 `max_rounds` 时，系统 SHALL 写 `goal/updated` 把 `phase` 置 `blocked`、`blocked_reason.code` 置 `round-limit`，并 MUST NOT 再起轮次。
 
@@ -141,10 +141,10 @@ goal 来源消息的 `round` MUST 等于写入时快照的 `rounds_started + 1`�
 - **WHEN** `rounds_started == max_rounds` 且目标仍 `active`
 - **THEN** 不出现新的 `segment/start`，出现一条 `goal/updated`：`phase == "blocked"`、`blocked_reason.code == "round-limit"`
 
-#### Scenario: 早失败也计一轮
+#### Scenario: 早失败不消耗轮次
 
 - **WHEN** 第 2 轮的段刚写完 goal 消息，provider 在 `turn/start` 之前失败
-- **THEN** `rounds_started` 仍为 2，且不再自动续跑
+- **THEN** `rounds_started` 仍为 1（这一轮不算数），且不再自动续跑
 
 #### Scenario: 取消把目标置暂停
 

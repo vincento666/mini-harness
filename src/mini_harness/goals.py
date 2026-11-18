@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from pydantic import BaseModel, field_validator, model_validator
@@ -13,6 +14,19 @@ from pydantic import BaseModel, field_validator, model_validator
 from mini_harness.events.record import EventRecord
 
 GoalPhase = Literal["active", "paused", "blocked", "complete"]
+
+# 部署策略：缺省 32 轮、门槛 3 轮、允许并行任务（2026-11-17 人裁）。
+DEFAULT_MAX_ROUNDS = 32
+DEFAULT_BLOCKED_AFTER = 3
+
+
+@dataclass(frozen=True)
+class GoalPolicy:
+    """`[goal]` 段的三键。工具与驱动都读这一份，不各自解释配置。"""
+
+    max_rounds: int = DEFAULT_MAX_ROUNDS
+    blocked_after_consecutive_rounds: int = DEFAULT_BLOCKED_AFTER
+    allow_parallel_in_progress: bool = True
 
 
 class GoalBlockReason(BaseModel):

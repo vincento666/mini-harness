@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from mini_harness.events import EventLog, EventRecord, read_events
+from mini_harness.goals import GoalPolicy
 from mini_harness.loop import (
     ENTRY_RUN,
     RunOutcome,
@@ -124,6 +125,7 @@ def dispatch_context(
     session: SessionEnv | None = None,
     plan_active: bool = False,
     question_gate: object | None = None,
+    goal: GoalPolicy | None = None,
 ) -> DispatchContext:
     """seam ②③ 判据共用的围栏上下文。`SessionSettings` 只在这里构造一次。"""
     settings = SessionSettings(
@@ -132,6 +134,7 @@ def dispatch_context(
         max_turns=8,
         sandbox=sandbox,
         approval=approval,
+        goal=GoalPolicy() if goal is None else goal,
     )
     reads = None if records is None else reads_from_records(records, workspace)
     return DispatchContext.from_settings(
@@ -157,6 +160,7 @@ async def dispatch_call(
     session: SessionEnv | None = None,
     plan_active: bool = False,
     question_gate: object | None = None,
+    goal: GoalPolicy | None = None,
 ) -> DispatchOutcome:
     """跑完一次派发判定。注册表与 approval 门都可注入。"""
     call = ToolCall(id="c1", name=name, arguments=arguments)
@@ -169,6 +173,7 @@ async def dispatch_call(
             plan_active=plan_active,
             question_gate=question_gate,
             approval=approval,
+            goal=goal,
             records=records,
             session=session,
         ),

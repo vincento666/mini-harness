@@ -28,7 +28,7 @@
 | B1 | 契约目标句仍写「在轮次之间各自保留」，与行为 4（每段清空）互斥 | 目标句改为「同一段里多个任务并存」，与 D8 一致 |
 | B2 | goal 轮次消息**正文形状**无 Requirement；主规格 `context-projection` 只认「run prompt」与「REPL user/message」两个 user 来源 | 补 Requirement：正文是 `<goal_round>` 块，含 `Objective:` 与 `Round: n/cap`；补判据断言正文含 objective 与轮号；补 `context-projection` delta |
 | B3 | `blocked` 无恢复路径：`round-limit` 落 blocked，driver 只推 `active`，resume 不认 blocked → 目标永久停摆 | `resume` 接受 `blocked`，置 `active` 并清 `blocked_reason`；补判据 |
-| B4 | 额度在写 `goal/updated` 时即 +1，与 DSH 的「进历史才计数」不同；早失败的白烧无判据 | 保留简化（写日志即准入），但写成显式语义并加判据：provider 在 `turn/start` 前失败，该轮仍计入 `rounds_started` |
+| B4 | 额度在写 `goal/updated` 时即 +1，与 DSH 的「进历史才计数」不同；早失败的白烧无判据 | 改为对齐：计数点移到该段首条 `turn/start` 之后，早失败不计轮次；判据相应改写 |
 
 ### Major（本轮修）
 

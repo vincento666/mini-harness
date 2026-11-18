@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Protocol, TextIO
 
 from mini_harness.events.record import EventRecord
+from mini_harness.goals import GoalPolicy
 
 if TYPE_CHECKING:
     # 只给类型检查看：运行时导入会绕成 fences → loop → tools.dispatch → fences 的环。
@@ -76,6 +77,8 @@ class DispatchContext:
     # 计划模式（M14c）：派发前拦写类工具；由回合循环按日志算好传进来。
     plan_active: bool = False
     question_gate: QuestionGate = UNAVAILABLE_QUESTION_GATE
+    # 目标轮次策略（M13）：`todo` 的并行纪律读它；缺省即部署默认。
+    goal_policy: GoalPolicy = field(default_factory=GoalPolicy)
 
     @classmethod
     def from_settings(
@@ -95,6 +98,7 @@ class DispatchContext:
             session=session,
             plan_active=plan_active,
             question_gate=UNAVAILABLE_QUESTION_GATE if question_gate is None else question_gate,
+            goal_policy=settings.goal,
         )
 
 

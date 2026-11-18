@@ -48,6 +48,8 @@ BUILTIN_DEFAULTS: dict[str, Any] = {
     "tools": None,
     # 子代理 preset 只有配置文件一个来源（没有 CLI flag）；`None` 是「没配」。
     "subagent": None,
+    # 目标轮次策略同样只有配置文件一个来源。
+    "goal": None,
     "session_dir": None,
     "workspace": None,
 }
@@ -80,6 +82,7 @@ class EffectiveSettings:
     approval: ApprovalMode
     tools: list[str] | None
     subagent: dict[str, Any] | None
+    goal: dict[str, Any] | None
     session_dir: str | None
     workspace: str | None
 

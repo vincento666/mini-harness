@@ -19,7 +19,7 @@
 | 行为 | 判据 |
 |---|---|
 | 1 | seam ⑦：3 轮上限、无人插话 → goal 来源 `user/message` 恰 3 条；`source.round` 为 1/2/3；三条 `source.revision` 全等于 `create` 写入的 `1`（轮次不改 revision）；`source.goal_id` 全等 |
-| 1 | seam ⑦：按 seq 取子序列，每轮为 `segment/end` → `segment/start` → goal 来源 `user/message` → `goal/updated` → `turn/start` → `model/request`；每条 goal 消息之后至少一条 `turn/start` 与一条 `model/request`，且属同一新 `segment_id` |
+| 1 | seam ⑦：按 seq 取子序列，每轮为 `segment/end` → `segment/start` → goal 来源 `user/message` → `turn/start` → `goal/updated` → `model/request`；每条 goal 消息之后至少一条 `turn/start` 与一条 `model/request`，且属同一新 `segment_id` |
 | 1 | seam ④：第 2 轮 goal 消息的 `content` 含 `Objective: "修好失败的用例"` 与 `Round: 2/3`，且非空 |
 | 1 | seam ①：一次 `run` 续两轮后撞上限 → `segment/start` 恰 3 条，`segment_id` 为 `s1`/`s2`/`s3`，各配一条 `segment/end` |
 | 1 | seam ⑥：含三轮续跑的日志 `replay` 退出码 `0`；把一条 `goal/updated` 的 `rounds_started` 改掉再跑 → 非零 |
@@ -39,7 +39,7 @@
 | 5 | seam ④：五份坏日志（跳号、轮号 0、超 `max_rounds`、`revision` 落后、`phase` 已停）各跑一次 `replay` → 全部非零；一份缺 `source` 的旧日志 → 退出 0 且按人类来源计入 |
 | 5 | seam ⑥：无 `[goal]` 段时 `create_goal` 得 `max_rounds == 32`；`max_rounds = 0`、`blocked_after_consecutive_rounds = 0`、`allow_parallel_in_progress = "yes"` 三种非法配置 → 参数错误退出且 `sessions/` 无新日志 |
 | 5 | seam ⑦：`ABORTED` / `FENCE_DENIED` / `PROVIDER_ERROR` / `CONTEXT_WINDOW_EXCEEDED` / `MAX_TURNS` 五种收尾各一次 → 都不起新段、不出现 goal 消息 |
-| 5 | seam ⑦：第 2 轮段刚写完 goal 消息，provider 在 `turn/start` 前失败 → `rounds_started == 2`（额度已计），且不再自动续跑 |
+| 5 | seam ⑦：第 2 轮段刚写完 goal 消息，provider 在 `turn/start` 前失败 → `rounds_started` 仍为 `1`（不计），且不再自动续跑 |
 | 5 | seam ⑦：续跑时日志不可写 → 不出现新段、留下 `error/*`、非零退出 |
 | 5 | seam ⑥：`/goal` 之后日志条数不变；`/goal clear` 后 `get_goal()` 为 `null`；无目标时 `/goal resume` 退出码 `0` 且日志条数不变 |
 
@@ -51,7 +51,7 @@
 4. **正文只写「继续」**：goal 消息正文为空或不带 objective / Round。→ 行为 1 第 3 行必红。
 5. **门槛写成 ≥1**：两轮也允许报阻塞。→ 行为 2 第 2 行必红。
 6. **blocked 不可恢复**：`resume` 只认 `active`。→ 行为 2 第 3 行必红。
-7. **额度改成「进模型才计」**：写消息时不递增。→ 行为 5 的早失败用例必红。
+7. **额度提前到写消息时计**：不等首条 `turn/start`。→ 行为 5 的早失败用例必红。
 8. **恢复即武装**：`--resume` 直接把 `armed` 置真。→ 行为 3 第 1 行必红。
 9. **取消不置暂停**：`ABORTED` 只解除武装、`phase` 留在 active。→ 行为 3 第 3 行必红。
 10. **回调把别人降级**：`completed` 一条时把其它 `in_progress` 一并改成 `pending`。→ 行为 4 第 1 行必红。
@@ -70,5 +70,5 @@
 ## 待裁决
 
 - `[goal]` 三键默认 32 / 3 / true——已定（2026-11-17）。
-- 门槛大于 `max_rounds` 时不额外校验，该目标只能走到 `round-limit`——`simplified`，待人裁。
-- 「早失败也计一轮」是「写日志即准入」的必然结果——`simplified`，待人裁。
+- 门槛大于 `max_rounds` 由配置层直接拒（见 `config-layering` delta），不是运行期宽容。
+- 早失败不消耗轮次：计数点在首条 `turn/start` 之后，对齐 DSH「预约未准入不计数」——`aligned`。

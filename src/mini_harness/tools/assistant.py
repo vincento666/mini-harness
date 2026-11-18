@@ -86,6 +86,13 @@ class TodoArgs(ToolArgs):
 
 
 async def _todo(args: TodoArgs, context: DispatchContext) -> ToolResult:
+    if not context.goal_policy.allow_parallel_in_progress:
+        running = [item for item in args.items if item.status == "in_progress"]
+        if len(running) > 1:
+            return ToolResult(
+                "TODO_PARALLEL_DISABLED",
+                f"当前部署不允许同时进行多个任务（收到 {len(running)} 个）",
+            )
     counts = {"pending": 0, "in_progress": 0, "completed": 0}
     for item in args.items:
         counts[item.status] += 1

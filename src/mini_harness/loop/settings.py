@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
 from mini_harness.context import budget as context_budget
+from mini_harness.goals import GoalPolicy
 from mini_harness.skills import Skill
 
 DEFAULT_COMPACTION_THRESHOLD_RATIO = context_budget.DEFAULT_COMPACTION_THRESHOLD_RATIO
@@ -104,3 +105,5 @@ class SessionSettings:
     skills: tuple[Skill, ...] = ()
     # 发现是否完整；根目录扫不动时为 False（skill-invocation-policy）。
     skills_complete: bool = True
+    # 目标轮次策略（M13）：`[goal]` 段的三键，工具与驱动共用。
+    goal: GoalPolicy = field(default_factory=GoalPolicy)

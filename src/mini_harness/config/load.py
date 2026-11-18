@@ -28,6 +28,8 @@ SETTINGS_FIELDS: dict[str, tuple[type[Any], ...]] = {
     "tools": (list,),
     # 子代理 preset：一张嵌套表，形状与校验细节在 config/assembly.build_registry 里。
     "subagent": (dict,),
+    # 目标轮次策略：三键嵌套表，形状与校验在 config/assembly.build_goal_policy 里。
+    "goal": (dict,),
     "session_dir": (str,),
     "workspace": (str,),
     # 价目表：模型名 → 每百万 token 的四类单价；缺省即不做成本估算。

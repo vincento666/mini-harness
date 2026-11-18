@@ -15,6 +15,7 @@ from typing import Any
 
 from mini_harness.config import (
     ConfigFailure,
+    build_goal_policy,
     build_registry,
     discover_config,
     layer_settings,
@@ -173,6 +174,9 @@ def assemble(
             return Failure(
                 "INVALID_ARGUMENT", f"{name} 至少为 0，收到 {value}", EXIT_INVALID_ARGUMENT
             )
+    goal_policy = build_goal_policy(layered.goal)
+    if isinstance(goal_policy, ConfigFailure):
+        return Failure("INVALID_ARGUMENT", goal_policy.detail, EXIT_INVALID_ARGUMENT)
     if provider_name not in PROVIDER_NAMES:
         return Failure(
             "UNKNOWN_PROVIDER",
@@ -311,6 +315,7 @@ def assemble(
         platform=platform_facts(),
         skills=skills,
         skills_complete=discovery.complete,
+        goal=goal_policy,
     )
     return Prepared(
         provider=provider,

@@ -112,10 +112,10 @@ def test_the_parameter_schema_a_model_sees_comes_from_the_dispatch_side_model() 
         assert tool.name in {"read", "write", "edit", "glob", "grep"}
 
 
-def test_the_outcome_vocabulary_has_twenty_three_values_and_no_not_implemented() -> None:
+def test_the_outcome_vocabulary_has_twenty_four_values_and_no_not_implemented() -> None:
     outcomes = set(get_args(ToolOutcome))
 
-    assert len(outcomes) == 23
+    assert len(outcomes) == 24
     assert "NOT_IMPLEMENTED" not in outcomes
     required = {
         "DENIED_BY_FENCE",

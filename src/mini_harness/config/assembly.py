@@ -11,6 +11,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from mini_harness.config.load import ConfigCode, ConfigFailure
+from mini_harness.goals import DEFAULT_BLOCKED_AFTER, DEFAULT_MAX_ROUNDS, GoalPolicy
 from mini_harness.skills import Skill
 from mini_harness.tools import ToolRegistry
 from mini_harness.tools.assistant import assistant_tool_definitions
@@ -139,6 +140,41 @@ def _presets(
     for preset_id, names in tool_names.items():
         registries[preset_id] = ToolRegistry([tool for tool in catalog if tool.name in names])
     return presets
+
+
+def build_goal_policy(raw: Mapping[str, Any] | None) -> GoalPolicy | ConfigFailure:
+    """`[goal]` 段 → `GoalPolicy`；未知键、非正数、非布尔、门槛大于上限都是配置失败。
+
+    门槛大于上限会让「合法阻塞」那条路径永远走不到（只能等 `round-limit`），
+    这里直接拒，不留给部署者一个静默自废的配置。
+    """
+    if raw is None:
+        return GoalPolicy()
+    known = {"max_rounds", "blocked_after_consecutive_rounds", "allow_parallel_in_progress"}
+    unknown = sorted(set(raw) - known)
+    if unknown:
+        return _invalid(f"[goal] 里有未知的键：{_names_joined(unknown)}", "CONFIG_UNKNOWN_KEY")
+    max_rounds = raw.get("max_rounds", DEFAULT_MAX_ROUNDS)
+    threshold = raw.get("blocked_after_consecutive_rounds", DEFAULT_BLOCKED_AFTER)
+    parallel = raw.get("allow_parallel_in_progress", True)
+    for name, value in (
+        ("max_rounds", max_rounds),
+        ("blocked_after_consecutive_rounds", threshold),
+    ):
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            return _invalid(f"[goal] {name} 必须是正整数")
+    if not isinstance(parallel, bool):
+        return _invalid("[goal] allow_parallel_in_progress 必须是布尔值")
+    if threshold > max_rounds:
+        return _invalid(
+            "[goal] blocked_after_consecutive_rounds 不能大于 max_rounds："
+            "否则阻塞门槛永远够不到，目标只能走到 round-limit"
+        )
+    return GoalPolicy(
+        max_rounds=max_rounds,
+        blocked_after_consecutive_rounds=threshold,
+        allow_parallel_in_progress=parallel,
+    )
 
 
 def build_registry(
