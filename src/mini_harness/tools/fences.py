@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Protocol, TextIO
 
 from mini_harness.events.record import EventRecord
-from mini_harness.goals import GoalPolicy
+from mini_harness.goals import GoalPolicy, GoalSnapshot
 
 if TYPE_CHECKING:
     # 只给类型检查看：运行时导入会绕成 fences → loop → tools.dispatch → fences 的环。
@@ -79,6 +79,12 @@ class DispatchContext:
     question_gate: QuestionGate = UNAVAILABLE_QUESTION_GATE
     # 目标轮次策略（M13）：`todo` 的并行纪律读它；缺省即部署默认。
     goal_policy: GoalPolicy = field(default_factory=GoalPolicy)
+    # 目标快照（M13）：派发前按日志折好传进来，工具不自己读日志。
+    goal: GoalSnapshot | None = None
+    # 本段是否由人类来源开启；goal 轮次里不能创建/改写目标（M13 权威）。
+    human_driven: bool = True
+    # 会话入口：子会话没有目标权威。取值与 `SessionEntry` 一致。
+    entry: str = "chat"
 
     @classmethod
     def from_settings(
@@ -89,6 +95,9 @@ class DispatchContext:
         session: SessionEnv | None = None,
         plan_active: bool = False,
         question_gate: QuestionGate | None = None,
+        goal: GoalSnapshot | None = None,
+        human_driven: bool = True,
+        entry: str = "chat",
     ) -> DispatchContext:
         return cls(
             workspace=settings.workspace,
@@ -99,6 +108,9 @@ class DispatchContext:
             plan_active=plan_active,
             question_gate=UNAVAILABLE_QUESTION_GATE if question_gate is None else question_gate,
             goal_policy=settings.goal,
+            goal=goal,
+            human_driven=human_driven,
+            entry=entry,
         )
 
 

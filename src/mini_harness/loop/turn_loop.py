@@ -29,6 +29,7 @@ from mini_harness.events.fold import (
 from mini_harness.events.reader import LogReadFailure, read_events
 from mini_harness.events.record import EventRecord
 from mini_harness.events.writer import EventLog, LogWriteFailure
+from mini_harness.goals import GoalRuntime, entry_of, fold_goal, opened_by_human
 from mini_harness.loop.settings import SessionSettings
 from mini_harness.provider.contract import (
     AssistantTurn,
@@ -140,6 +141,8 @@ class SessionEnv:
     # 工作区契约：每 turn 观察两份 AGENTS.md，指纹变了才重发；首页目录取自环境。
     contracts_home: Path = field(default_factory=lambda: contract_home(os.environ))
     contracts: ContractState = field(default_factory=ContractState)
+    # 目标武装位（M13）：进程内，不落盘（design D5）。
+    goal_runtime: GoalRuntime = field(default_factory=GoalRuntime)
 
 
 @dataclass(frozen=True)
@@ -313,6 +316,9 @@ async def _dispatch_batch(
         session=session,
         plan_active=fold_plan_mode(prefix),
         question_gate=None if session is None else session.question_gate,
+        goal=fold_goal(prefix),
+        human_driven=opened_by_human(prefix),
+        entry=entry_of(prefix),
     )
 
     # `started` 是「轮到过：开始派发或放弃」；`finished` 是「整个跑完」。

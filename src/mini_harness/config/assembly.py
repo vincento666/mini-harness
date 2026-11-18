@@ -17,6 +17,7 @@ from mini_harness.tools import ToolRegistry
 from mini_harness.tools.assistant import assistant_tool_definitions
 from mini_harness.tools.bash_tools import bash_tool_definitions
 from mini_harness.tools.file_tools import file_tool_definitions
+from mini_harness.tools.goal import goal_tool_definitions
 from mini_harness.tools.skill import skill_tool_definitions
 from mini_harness.tools.subagent import SubagentPresets, subagent_tool_definitions
 
@@ -136,6 +137,7 @@ def _presets(
         *subagent_tool_definitions(presets),
         *skill_tool_definitions(skills),
         *assistant_tool_definitions(),
+        *goal_tool_definitions(),
     ]
     for preset_id, names in tool_names.items():
         registries[preset_id] = ToolRegistry([tool for tool in catalog if tool.name in names])
@@ -192,6 +194,7 @@ def build_registry(
     known_tools = known_tools | frozenset(tool.name for tool in bash_tool_definitions())
     known_tools = known_tools | frozenset(tool.name for tool in skill_tool_definitions(skills))
     known_tools = known_tools | frozenset(tool.name for tool in assistant_tool_definitions())
+    known_tools = known_tools | frozenset(tool.name for tool in goal_tool_definitions())
 
     presets: SubagentPresets | None = None
     if subagent is not None:

@@ -16,7 +16,7 @@
 
 ## 3. goal 工具（seam ②）
 
-- [ ] 3.1 `get_goal`（无目标回 `{"goal": null}`）+ `create_goal`（单目标 → `GOAL_ALREADY_ACTIVE`；子会话 → `GOAL_AUTHORITY_REQUIRED`）
+- [x] 3.1 `get_goal`（无目标回 `{"goal": null}`）+ `create_goal`（单目标 → `GOAL_ALREADY_ACTIVE`；子会话 → `GOAL_AUTHORITY_REQUIRED`）
 - [ ] 3.2 `update_goal` 的 CAS：id/revision 不符 → `GOAL_REF_STALE`；`pause` / `complete` 按 phase 翻转
 - [ ] 3.3 `resume`：`active` 的解除武装目标置真；`paused` → `GOAL_RESUME_BY_TOOL_DENIED`
 - [ ] 3.4 `blocked`：`rounds_started < blocked_after_consecutive_rounds` → `GOAL_BLOCK_TOO_EARLY`；接受时 `code == "model-reported"`

@@ -13,7 +13,7 @@
 #### Scenario: 创建后可读回同一份快照
 
 - **WHEN** 人类在会话里提出一个目标，模型调用 `create_goal`
-- **THEN** 日志恰新增一条 `goal/updated`，其 `goal.revision == 1`、`phase == "active"`、`rounds_started == 0`；`get_goal()` 返回同一份快照
+- **THEN** 日志恰新增一条 `goal/updated`，其 `goal.revision == 1`、`phase == "active"`、`rounds_started == 0`；`get_goal()` 返回同一份快照与 `armed == true`（创建即武装，照 DSH 的 `create`）
 
 #### Scenario: 轮次推进不改 revision
 

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from mini_harness.events import EventLog, EventRecord, read_events
-from mini_harness.goals import GoalPolicy
+from mini_harness.goals import GoalPolicy, fold_goal
 from mini_harness.loop import (
     ENTRY_RUN,
     RunOutcome,
@@ -126,6 +126,9 @@ def dispatch_context(
     plan_active: bool = False,
     question_gate: object | None = None,
     goal: GoalPolicy | None = None,
+    goal_snapshot: object | None = None,
+    human_driven: bool = True,
+    entry: str = "chat",
 ) -> DispatchContext:
     """seam ②③ 判据共用的围栏上下文。`SessionSettings` 只在这里构造一次。"""
     settings = SessionSettings(
@@ -136,13 +139,22 @@ def dispatch_context(
         approval=approval,
         goal=GoalPolicy() if goal is None else goal,
     )
-    reads = None if records is None else reads_from_records(records, workspace)
+    listed = None if records is None else list(records)
+    reads = None if listed is None else reads_from_records(listed, workspace)
+    # 生产里快照由回合循环按日志折好传进来；这里照同一规则折，判据才和实现同源。
+    if goal_snapshot is not None:
+        view = goal_snapshot
+    else:
+        view = None if listed is None else fold_goal(listed)
     return DispatchContext.from_settings(
         settings,
         reads=reads,
         session=session,
         plan_active=plan_active,
         question_gate=question_gate,  # type: ignore[arg-type]
+        goal=view,  # type: ignore[arg-type]
+        human_driven=human_driven,
+        entry=entry,
     )
 
 
@@ -161,6 +173,9 @@ async def dispatch_call(
     plan_active: bool = False,
     question_gate: object | None = None,
     goal: GoalPolicy | None = None,
+    goal_snapshot: object | None = None,
+    human_driven: bool = True,
+    entry: str = "chat",
 ) -> DispatchOutcome:
     """跑完一次派发判定。注册表与 approval 门都可注入。"""
     call = ToolCall(id="c1", name=name, arguments=arguments)
@@ -174,6 +189,9 @@ async def dispatch_call(
             question_gate=question_gate,
             approval=approval,
             goal=goal,
+            goal_snapshot=goal_snapshot,
+            human_driven=human_driven,
+            entry=entry,
             records=records,
             session=session,
         ),

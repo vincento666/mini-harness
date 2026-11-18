@@ -13,7 +13,7 @@ from typing import get_args
 
 import httpx
 
-from mini_harness.events import EventLog, read_events
+from mini_harness.events import EventLog, EventRecord, read_events
 from mini_harness.events.fold import Message, fold
 from mini_harness.goals import GoalPolicy
 from mini_harness.loop import STOP_REASONS
@@ -40,6 +40,7 @@ from mini_harness.tools.fences import (
     StdinApprovalGate,
 )
 from mini_harness.tools.file_tools import file_tool_definitions
+from mini_harness.tools.goal import goal_tool_definitions
 from mini_harness.tools.registry import (
     ToolArgs,
     ToolDefinition,
@@ -59,6 +60,27 @@ from tool_harness import (
     run_session_fixture,
     tool_call_entry,
 )
+
+
+def _goal_record(phase: str) -> EventRecord:
+    """一条已存在的目标快照：给 `create_goal` 造「已有未完成目标」的那条路径。"""
+    return EventRecord(
+        schema_version=1,
+        type="goal/updated",
+        session_id="s-goal",
+        seq=0,
+        ts="2026-11-18T00:00:00+00:00",
+        payload={
+            "goal": {
+                "id": "g-old",
+                "revision": 1,
+                "objective": "旧目标",
+                "phase": phase,
+                "max_rounds": 8,
+                "rounds_started": 0,
+            }
+        },
+    )
 
 
 class _Gate:
@@ -200,7 +222,9 @@ async def test_every_tool_outcome_is_reachable(tmp_path: Path) -> None:
     observed.add(denied.result.outcome)
     await run("stub", {}, registry=_raising_registry("stub", _raise_timeout))
     await run("stub", {}, registry=_raising_registry("stub", _raise_cancelled))
-    assistant_registry = ToolRegistry([*file_tool_definitions(), *assistant_tool_definitions()])
+    assistant_registry = ToolRegistry(
+        [*file_tool_definitions(), *assistant_tool_definitions(), *goal_tool_definitions()]
+    )
     await run(
         "present",
         {"path": "missing.md", "title": "x"},
@@ -223,6 +247,19 @@ async def test_every_tool_outcome_is_reachable(tmp_path: Path) -> None:
         },
         registry=assistant_registry,
         goal=GoalPolicy(allow_parallel_in_progress=False),
+    )
+    active_goal = _goal_record("active")
+    await run(
+        "create_goal",
+        {"objective": "第二个人目标"},
+        registry=assistant_registry,
+        records=[active_goal],
+    )
+    await run(
+        "create_goal",
+        {"objective": "子会话里开目标"},
+        registry=assistant_registry,
+        entry="subagent",
     )
 
     # seam ①：取消在派发之前置位，声明了的调用没开始——那个取值只在回合循环里产出。

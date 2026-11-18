@@ -95,7 +95,39 @@ def fold_goal(events: Sequence[EventRecord]) -> GoalSnapshot | None:
     return current
 
 
+@dataclass
+class GoalRuntime:
+    """进程内的武装位：永不落盘（design D5）。会话启动与 `--resume` 之后一律为假。"""
+
+    armed: bool = False
+
+
 MessageSource = dict[str, Any]
+
+
+def entry_of(events: Sequence[EventRecord]) -> str:
+    """会话入口：`session/start` 里写的那一个。缺省按人类入口读（旧日志兼容）。"""
+    for event in events:
+        if event.type == "session/start":
+            entry = event.payload.get("entry")
+            return entry if isinstance(entry, str) else "chat"
+    return "chat"
+
+
+def opened_by_human(events: Sequence[EventRecord]) -> bool:
+    """当前段是否由人类来源开启：看最后一条 `segment/start` 之后的第一条 `user/message`。
+
+    没有段首或其后没有驱动消息（`run` 的 prompt 住在 `session/start`）都按人类读，
+    与 `message_source_of` 的旧日志回落同一规则。
+    """
+    start = -1
+    for index, event in enumerate(events):
+        if event.type == "segment/start":
+            start = index
+    for event in events[start + 1 :]:
+        if event.type == "user/message":
+            return str(message_source_of(event.payload)["kind"]) != "goal"
+    return True
 
 
 def message_source_of(payload: Mapping[str, Any]) -> MessageSource:
