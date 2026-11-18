@@ -28,6 +28,7 @@ from mini_harness.events import (
     read_events,
 )
 from mini_harness.events.fold import assembled_payload, assembly_points, fold
+from mini_harness.goals import goal_round_defect
 from mini_harness.loop import (
     ENTRY_CHAT,
     ENTRY_RUN,
@@ -751,6 +752,10 @@ def _replay(args: argparse.Namespace) -> int:
     records = read_events(path)
     if isinstance(records, LogReadFailure):
         return _report_failure(records.code, records.detail, EXIT_INTERNAL_ERROR)
+
+    defect = goal_round_defect(records)
+    if defect is not None:
+        return _report_failure("REPLAY_MISMATCH", defect, EXIT_INTERNAL_ERROR)
 
     points = assembly_points(records)
     if not points:
