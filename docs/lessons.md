@@ -68,11 +68,11 @@
 
 ### L-079
 - Promotion: ready（≥3 个不同日期）
-- Seen: 3（不同日期：2026-10-23/25/11-13）
-- Date: 2026-11-16
-- Context: 归并自 L-072 / L-056（`add-platform-facts...` 的 mypy 窄化）
-- Observation: `coverage report` 会消费并删除全部 `.coverage.*` partial，combine 之前跑过一次 report，下一轮 combine 的输入就少一批（L-072）；mypy 的平台窄化只认 `sys.platform == "win32"` 这种字面量，抽成常量后窄化失效（L-056）
-- Evidence: `docs/lessons-archive.md` 对应条目；本仓库 2026-11-13 的四次整轮实测
+- Seen: 4（不同日期：2026-10-23/25/11-13/11-18）
+- Date: 2026-11-18
+- Context: 归并自 L-072 / L-056（`add-platform-facts...` 的 mypy 窄化）；11-18 复发于「诊断覆盖率异常时反复手跑 report」
+- Observation: `coverage report` 会消费并删除全部 `.coverage.*` partial，combine 之前跑过一次 report，下一轮 combine 的输入就少一批（L-072）；**为看单个文件而重跑 report 同样成立**——它按「当时存在的 partial」合并，前一次已把上一批吃掉，于是读数一路走低（11-18 实测：209 份 partial，一次 report 得 95%，随后归零）；mypy 的平台窄化只认 `sys.platform == "win32"` 这种字面量，抽成常量后窄化失效（L-056）
+- Evidence: `docs/lessons-archive.md` 对应条目；2026-11-13 的四次整轮实测；2026-11-18 的 209 → 0 实测（`docs/CURRENT.md`）
 - Next use: 覆盖率异常先数 partial 份数；平台判断保留字面量写法
 - Status: inbox
 

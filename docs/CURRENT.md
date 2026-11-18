@@ -7,7 +7,8 @@
 - `main` 以 `git log -1` 为准；最近一次里程碑合并是 `m14c`（`09caa26`，2026-11-17 07:55）。
 - **门禁实测（2026-11-18，`change/m13-goal-rounds`）**：ruff `format --diff` / `check` 绿、`mypy --strict` 绿；**767 passed / 7 skipped / 0 failed**；`openspec validate --all --strict` 绿。上一版记的「`test_file_edit.py` 大小写折叠既知红」没有复现，不再当既知红。
 - **`scripts/gates.sh` 已能跑通，但拆成两条命令**：沙箱的 `sitecustomize` 按「单条命令累计删除数」拦批量删除（阈值 50），一次全量 pytest 就把额度花光，同一条命令里紧随其后的 `coverage combine` 必被拦。现在 `gates.sh`（四道 + 全量测试，脚本内零删除）与 `coverage-report.sh`（合并 + 报告）分开跑，各自一个额度。
-- **覆盖率读数对不上，未解决**：`tools/goal.py` 单独跑两个测试文件是 **94%**，在全量聚合里掉到 **34%**——并集不可能小于其中任一份，所以 `coverage combine` 在这里**不是在求并集**（它对 293 个 partial 报 `Combined 179 / skipped 114`，且 skipped 的那 114 个会被删掉；删除量过 50 就被 safe-delete 拦）。上一版记的 95% 复现不出来。**结论：先不当绿，也不要报数**；下一步是把子进程覆盖率接线改成「不开 parallel、单文件 append」，从源头消灭 partial 与合并。：`coverage erase` 后跑全量 + `combine --keep`
+- **覆盖率 95%（4612 / 243），过线**：`.coverage.*` 有 209 份时跑一次 `coverage report`，TOTAL 95%、`--fail-under=95` 退出码 0，同时那 209 份被消费归零（正是 L-079 记的行为）。
+- **2026-11-18 早些时候记的 76% / 34% 是错的读数，已撤回**：那两个数是「为了看某一个文件而反复手跑 `coverage report`」读到的——每跑一次就吃掉当时全部 partial，下一次读到的并集自然缺一批。错在读数方法，不在合并；我此前写的「combine 不是在求并集」这句不成立，已删。**纪律**：只跑 `scripts/coverage-report.sh`，它的 `--show-missing` 一次列出每个文件；不要为了看单文件再跑第二次。`coverage-report.sh` 现在在没有 partial 时会先警告「这份读数可能陈旧」。：`coverage erase` 后跑全量 + `combine --keep`
 - **活动 change**：`m13-goal-rounds`（分支 `change/m13-goal-rounds`，提交 `03c7dce`）。proposal / design / 五份 spec delta / 验证契约已落盘，`openspec validate --strict` 绿；**等人审 proposal 与契约**（停点 1）。六问已答：单目标 + 任务并行（ADR-0042），多目标调度后置 `parallel-goal-scheduler`。
 - 已合并但未删的分支：`change/fix-small-window-compaction-dead-zone`、`change/add-key-driven-default-provider`、`change/fix-chat-screen-feedback`、`change/add-platform-facts-to-protected-header`、`change/fix-compaction-and-context-overflow`。
 

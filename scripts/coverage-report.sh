@@ -4,5 +4,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-uv run coverage combine --keep
+count=$(find . -maxdepth 1 -name '.coverage.*' | wc -l | tr -d ' ')
+if [ "$count" -gt 0 ]; then
+  uv run coverage combine --keep
+else
+  echo "警告：没有 .coverage.* partial，直接读上一次合并的结果（可能陈旧）" >&2
+fi
+
 uv run coverage report --fail-under=95 --show-missing
