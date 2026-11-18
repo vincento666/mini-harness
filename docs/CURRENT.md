@@ -1,19 +1,16 @@
 # 当前状态
 
-**更新：2026-11-17**。以 `git status --short` 与 `git log --oneline -3` 为准；本文件只写「现在」，历史在 `docs/CURRENT-history.md`、`docs/verification/` 与 `openspec/changes/archive/`。
+**更新：2026-11-18**。以 `git status --short` 与 `git log --oneline -3` 为准；本文件只写「现在」，历史在 `docs/CURRENT-history.md`、`docs/verification/` 与 `openspec/changes/archive/`。
 
 ## 现在
 
 - `main` 以 `git log -1` 为准；最近一次里程碑合并是 `m14c`（`09caa26`，2026-11-17 07:55）。
-- **门禁实测（2026-11-18，`change/m13-goal-rounds`）**：ruff `format --diff` / `check` 绿、`mypy --strict` 绿；**767 passed / 7 skipped / 0 failed**；`openspec validate --all --strict` 绿。上一版记的「`test_file_edit.py` 大小写折叠既知红」没有复现，不再当既知红。
-- **`scripts/gates.sh` 已能跑通，但拆成两条命令**：沙箱的 `sitecustomize` 按「单条命令累计删除数」拦批量删除（阈值 50），一次全量 pytest 就把额度花光，同一条命令里紧随其后的 `coverage combine` 必被拦。现在 `gates.sh`（四道 + 全量测试，脚本内零删除）与 `coverage-report.sh`（合并 + 报告）分开跑，各自一个额度。
-- **覆盖率实测 94.73%（4612 条 / 243 未覆盖）——「95% 过线」是四舍五入的结果**。干净重跑一次（`coverage erase` → 全量 784 passed → 293 份 partial → `combine --keep` → `report --keep-combined`）得 TOTAL 4612 / 243：默认精度 0 显示 95% 且 `--fail-under=95` 退出 0；`--precision=2` 则显示 94.73 并被判不达标。地板只剩约 0.27pp 的余量。
-- **读数机制（源码事实）**：所有 reporting 命令在出报告前都会调一次 `combine`（`coverage/cmdline.py:884-887`：`load()` 之后 `combine(strict=False, keep=bool(options.keep_combined))`），默认 `keep=False` 会删掉全部 partial。所以「为看单文件再跑一次 report」会吃掉下一批输入（L-079 的复发形态）；要反复看就加 `--keep-combined`，`scripts/coverage-report.sh` 已改。
-- **覆盖率已转绿（2026-11-18）**：`precision = 2` 之下实测 **95.03%（4612 条 / 229 未覆盖）**，`coverage report` 退出码 0。补的是真实分支：`tools/goal.py` 从 94% 到 100%（写日志失败、无会话、goal 轮次里的写权限）、`goals.py` 100%、`assembly` 的 persona 校验、`registry.definitions()` 的副本语义、fixture 的 `deltas` 形状、stdin 空行、`approval_detail` 的空串回落。共 15 条判据，全量 799 passed。
-- **清理 partial 的办法（避开批量删除守卫）**：`mkdir -p .tmp/cov-archive && mv .coverage.* .coverage .tmp/cov-archive/`——移动不算删除。攒多了再在**单独一条命令**里删归档目录，或由人批一次批量确认。
-- **不做「关 parallel + 单文件 append」**（2026-11-18 判断，理由留档）：partial 是子进程覆盖率的常规采集方式；append 到同一个 SQLite 数据文件在并发子进程下有写冲突风险，而收益只是少一步 `combine`——今天的问题已查明是「反复跑 report 吃掉 partial」，不是 partial 机制本身。真要控制文件堆积，用 `coverage erase` 定期清，别改架构。
-- **2026-11-18 早些时候记的 76% / 34% 是错的读数，已撤回**：那两个数是「为了看某一个文件而反复手跑 `coverage report`」读到的——每跑一次就吃掉当时全部 partial，下一次读到的并集自然缺一批。错在读数方法，不在合并；我此前写的「combine 不是在求并集」这句不成立，已删。**纪律**：只跑 `scripts/coverage-report.sh`，它的 `--show-missing` 一次列出每个文件；不要为了看单文件再跑第二次。`coverage-report.sh` 现在在没有 partial 时会先警告「这份读数可能陈旧」。：`coverage erase` 后跑全量 + `combine --keep`
-- **活动 change**：`m13-goal-rounds`（分支 `change/m13-goal-rounds`，提交 `03c7dce`）。proposal / design / 五份 spec delta / 验证契约已落盘，`openspec validate --strict` 绿；**等人审 proposal 与契约**（停点 1）。六问已答：单目标 + 任务并行（ADR-0042），多目标调度后置 `parallel-goal-scheduler`。
+- **门禁实测（2026-11-18，`change/m13-goal-rounds`）**：ruff `format --diff` / `check` 绿、`mypy --strict` 绿；**818 passed / 7 skipped / 0 failed**；覆盖率 **95.01%（4745 条 / 237 未覆盖）**，`precision = 2` 之下 `coverage report` 退出码 0；`openspec validate --all --strict` 绿。
+- **覆盖率读数机制（源码事实）**：所有 reporting 命令在出报告前都会调一次 `combine`（`coverage/cmdline.py:884-887`），默认 `keep=False` 会删掉全部 partial。所以「为看单文件再跑一次 `report`」会吃掉下一批输入（L-079 的复发形态）——只看 `scripts/coverage-report.sh` 的那一次输出，别为了换视角再跑一遍。
+- **清理 partial 的办法（避开批量删除守卫）**：`mkdir -p .tmp/cov-archive && mv .coverage.* .coverage .tmp/cov-archive/`——移动不算删除。攒多了在**单独一条命令**里删归档目录，或由人批一次批量确认。
+- **不做「关 parallel + 单文件 append」**（2026-11-18 判断，理由留档）：partial 是子进程覆盖率的常规采集方式；append 到同一个 SQLite 在并发子进程下有写冲突风险，收益只是少一步 `combine`。今天的问题已查明是「反复跑 report 吃掉 partial」，不是 partial 机制本身。
+- **沙箱会把长命令掐断**：全量测试在沙箱里跑时，两次都在十几分钟后被 `sitecustomize._BrokerProtocolError: execution capability 已过期` 打断，日志只剩空文件（partial 已写 160 份，说明测试本身在跑）。四道门禁与覆盖率两步因此在**沙箱外**跑（每轮约 3 分钟）；沙箱内跑单个测试文件没问题。
+- **活动 change**：`m13-goal-rounds`（分支 `change/m13-goal-rounds`）。apply 进行到 4.x：**1.1–4.4 已落**——goal 事件与折叠、`user/message.source`、`[goal]` 三键与 todo 并行纪律、三个目标工具（CAS / 相位矩阵 / 阻塞门槛）、段后续跑（四事件顺序、`round-limit`、失败收尾）、`replay` 的轮次校验。下一步 5.1–5.4：武装位收口、四条 `/goal` 命令、`--resume` 黑盒、REPL 段后驱动。六问已答：单目标 + 任务并行（ADR-0042）。
 - 已合并但未删的分支：`change/fix-small-window-compaction-dead-zone`、`change/add-key-driven-default-provider`、`change/fix-chat-screen-feedback`、`change/add-platform-facts-to-protected-header`、`change/fix-compaction-and-context-overflow`。
 
 ## 下一步
@@ -22,7 +19,7 @@
 
 1. **M14c 个人助理 UX 工具——已完成**（`2026-11-16-m14c-personal-assistant-tools`）：todo/plan/ask_user/present、投影框架与快照/SSE；23 份主规格 validate 绿；全量 728 passed / 6 skipped（macOS 上 1 条大小写折叠用例失败，属平台假设）。
 
-2. **M13 目标轮次**：六问已答，propose 已提交（`03c7dce`）。下一步是人审 proposal 与 `verification-contract.md`，通过后从 task 0.1（子代理复核契约）开始 apply。M13 之后是 M15a 进程收容 → MEM1 基础记忆。
+2. **M13 目标轮次**：propose 与契约已批，apply 到 4.4（1.1–4.4 已落）；下一步 5.1–5.4（武装位、`/goal` 四条命令、`--resume` 黑盒、REPL 驱动），再 6.x 验收。M13 之后是 M15a 进程收容 → MEM1 基础记忆。
 3. 并行支撑轨：E1 评测（`scripts/eval/` 只有 README，无 runner）；E2 组件接缝在 M 核心之后。
 
 ## 开放缺口

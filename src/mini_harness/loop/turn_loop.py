@@ -30,16 +30,15 @@ from mini_harness.events.reader import LogReadFailure, read_events
 from mini_harness.events.record import EventRecord
 from mini_harness.events.writer import EventLog, LogWriteFailure
 from mini_harness.goals import (
-    GoalRefusal,
     GoalRound,
     GoalRuntime,
     GoalSnapshot,
+    abort_goal,
     advance_round,
     entry_of,
     exhaust_goal,
     fold_goal,
     opened_by_human,
-    pause_goal,
     render_goal_round,
 )
 from mini_harness.loop.goal_driver import NO_CONTINUE_REASONS, RoundDecision, next_round
@@ -1447,10 +1446,9 @@ def _close_failed_round(*, env: SessionEnv, segment: SegmentOutcome) -> SegmentO
         return _segment_failure(goal, segment.turns)
     if goal is None or goal.phase != "active":
         return None
-    paused = pause_goal(goal)
-    if isinstance(paused, GoalRefusal):
-        return None
-    written = env.log.append("goal/updated", {"goal": paused.model_dump(exclude_none=True)})
+    written = env.log.append(
+        "goal/updated", {"goal": abort_goal(goal).model_dump(exclude_none=True)}
+    )
     if isinstance(written, LogWriteFailure):
         return _segment_failure(written, segment.turns)
     return None

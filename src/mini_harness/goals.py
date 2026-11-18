@@ -140,6 +140,11 @@ def advance_round(current: GoalSnapshot, round_number: int) -> GoalSnapshot:
     return GoalSnapshot.model_validate(merged)
 
 
+def abort_goal(current: GoalSnapshot) -> GoalSnapshot:
+    """人取消：`active` → `paused`。调用方已判过相位，所以这里不设拒绝分支。"""
+    return _next(current, phase="paused")
+
+
 def exhaust_goal(current: GoalSnapshot) -> GoalSnapshot:
     """额度用尽：系统写 `blocked{round-limit}`，`revision + 1`（控制面动作）。"""
     return _next(
