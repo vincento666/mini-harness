@@ -12,7 +12,7 @@
 2. **上限与出入**：轮数用尽落 `round-limit` 且不再起段；「同一阻碍」的硬门槛是轮数——三轮之前报阻塞一律被拒；**撞上限之后改大上限并 resume，目标能回到 active 继续跑**（seam ②⑦）。
 3. **武装权在人手里**：`armed` 不进事件载荷；启动与 `--resume` 后为假、不自动续跑；`/goal resume` 后才续；`pause` / `complete` / `blocked` / 撞上限 / 取消 / 失败收尾之后一律为假（seam ⑥⑦）。
 4. **多任务互不覆盖**：同一段里两个任务可同时 `in_progress`；把一条标完成不会把另一条降级；段首（含 goal 轮次）清空；关闭并行时第二个被拒（seam ②④⑥）。
-5. **边角不静默**：六个新结果词各有可达走法；`[goal]` 三键的默认与非法值在会话开始前处理；回放对正常日志退 0、对五类坏日志非零；写不进日志就停（seam ②④⑥）。
+5. **边角不静默**：七个新结果词各有可达走法；`[goal]` 三键的默认与非法值在会话开始前处理；回放对正常日志退 0、对五类坏日志非零；写不进日志就停（seam ②④⑥）。
 
 ## 判据（seam 映射）
 
@@ -34,6 +34,7 @@
 | 4 | seam ②：`allow_parallel_in_progress = false` 时一次标两个 `in_progress` → `TODO_PARALLEL_DISABLED` 且无新 `todo/updated`；默认配置下同一调用成功 |
 | 4 | seam ⑥：同一段提交两条后 `/todo` 的 stdout 含两条 `id`；`GET /projections/todos` 返回两条，下一段开始后返回 `[]` |
 | 5 | seam ②：`GOAL_ALREADY_ACTIVE`（有非 complete 目标时 create）、`GOAL_REF_STALE`（旧 revision）、`GOAL_AUTHORITY_REQUIRED`（子会话 create）、`GOAL_RESUME_BY_TOOL_DENIED`（paused 时工具 resume）各一条走法，四条都不产生新 `goal/updated` |
+| 5 | seam ②：`GOAL_INVALID_TRANSITION` 一条走法（`blocked` 时 `pause`）、`GOAL_BLOCK_TOO_EARLY` 两条（`rounds_started` 为 1 与 2，门槛 3）——都不产生新 `goal/updated` |
 | 5 | seam ②：目标 A `complete` 后能再 `create_goal`——新 `id`、`revision == 1`、`rounds_started == 0`；`replay` 接受轮号重置 |
 | 5 | seam ②：`edit` 只给 `max_rounds` → `objective` 不变、`phase` 不变；给空串 objective 与 `max_rounds: 0` → 视为省略、`TOOL_ARGS_INVALID` 或不变（二者取实现的一种，判据钉日志无新事件） |
 | 5 | seam ④：五份坏日志（跳号、轮号 0、超 `max_rounds`、`revision` 落后、`phase` 已停）各跑一次 `replay` → 全部非零；一份缺 `source` 的旧日志 → 退出 0 且按人类来源计入 |

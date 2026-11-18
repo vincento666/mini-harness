@@ -102,6 +102,95 @@ class GoalRuntime:
     armed: bool = False
 
 
+@dataclass(frozen=True)
+class GoalRefusal:
+    """一次被拒的改动：结果词 + 给人看的原因。不落事件。"""
+
+    outcome: str
+    detail: str
+
+
+def _next(current: GoalSnapshot, **changes: Any) -> GoalSnapshot:
+    """复制 + 改字段 + `revision + 1`（控制面动作才递增，轮次推进不走这里）。
+
+    用 `model_validate` 而不是 `model_copy`：快照的形状约束（blocked 必带原因、
+    非 blocked 不许带）要在每次改动上重新过一遍。
+    """
+    merged = {**current.model_dump(), **changes, "revision": current.revision + 1}
+    return GoalSnapshot.model_validate(merged)
+
+
+def edit_goal(
+    current: GoalSnapshot, *, objective: str | None, max_rounds: int | None
+) -> GoalSnapshot | GoalRefusal:
+    """部分替换：空串与 0 视为省略；一个有效字段都没有就是参数错误。"""
+    changes: dict[str, Any] = {}
+    if objective:
+        changes["objective"] = objective
+    if max_rounds:
+        changes["max_rounds"] = max_rounds
+    if not changes:
+        return GoalRefusal(
+            "TOOL_ARGS_INVALID", "edit 至少要给一个有效字段（objective 或 max_rounds）"
+        )
+    return _next(current, **changes)
+
+
+def pause_goal(current: GoalSnapshot) -> GoalSnapshot | GoalRefusal:
+    if current.phase != "active":
+        return GoalRefusal(
+            "GOAL_INVALID_TRANSITION", f"不能从 {current.phase} 暂停；只有 active 可以"
+        )
+    return _next(current, phase="paused")
+
+
+def complete_goal(current: GoalSnapshot) -> GoalSnapshot | GoalRefusal:
+    if current.phase == "complete":
+        return GoalRefusal("GOAL_INVALID_TRANSITION", "目标已经完成")
+    return _next(current, phase="complete")
+
+
+def resume_goal(current: GoalSnapshot, *, armed: bool) -> GoalSnapshot | GoalRefusal:
+    """把目标放回 active 并（由调用方）武装。
+
+    `paused` 留给人：工具面拒绝，`/goal resume` 才放行。轮次用尽时也拒——
+    照 DSH 的 `resume`，先调大 `maxGoalRounds` 再来。
+    """
+    if current.phase == "paused":
+        return GoalRefusal("GOAL_RESUME_BY_TOOL_DENIED", "暂停的目标只能由人的 /goal resume 恢复")
+    if current.phase == "complete":
+        return GoalRefusal("GOAL_INVALID_TRANSITION", "已完成的目标不能恢复")
+    if current.phase == "active" and armed:
+        return GoalRefusal("GOAL_INVALID_TRANSITION", "目标已经是 active 且已武装")
+    if current.rounds_started >= current.max_rounds:
+        return GoalRefusal(
+            "GOAL_INVALID_TRANSITION",
+            f"轮次已用尽（{current.rounds_started}/{current.max_rounds}）："
+            "先调大 max_rounds 再 resume",
+        )
+    return _next(current, phase="active", blocked_reason=None)
+
+
+def block_goal(
+    current: GoalSnapshot, *, message: str, threshold: int
+) -> GoalSnapshot | GoalRefusal:
+    """模型自报阻塞：相位必须是 active，且必须已经跑满门槛轮数。"""
+    if current.phase != "active":
+        return GoalRefusal(
+            "GOAL_INVALID_TRANSITION", f"不能从 {current.phase} 报阻塞；只有 active 可以"
+        )
+    if current.rounds_started < threshold:
+        return GoalRefusal(
+            "GOAL_BLOCK_TOO_EARLY",
+            f"至少要跑满 {threshold} 轮才能报阻塞（当前 {current.rounds_started} 轮）",
+        )
+    return _next(
+        current,
+        phase="blocked",
+        blocked_reason=GoalBlockReason(code="model-reported", message=message),
+    )
+
+
 MessageSource = dict[str, Any]
 
 

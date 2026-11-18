@@ -261,6 +261,34 @@ async def test_every_tool_outcome_is_reachable(tmp_path: Path) -> None:
         registry=assistant_registry,
         entry="subagent",
     )
+    await run(
+        "update_goal",
+        {"goal_id": "g1", "revision": 1, "action": "pause"},
+        registry=assistant_registry,
+    )
+    await run(
+        "update_goal",
+        {"goal_id": "g-old", "revision": 1, "action": "resume"},
+        registry=assistant_registry,
+        records=[_goal_record("paused")],
+    )
+    await run(
+        "update_goal",
+        {"goal_id": "g-old", "revision": 1, "action": "pause"},
+        registry=assistant_registry,
+        records=[_goal_record("paused")],
+    )
+    await run(
+        "update_goal",
+        {
+            "goal_id": "g-old",
+            "revision": 1,
+            "action": "blocked",
+            "blocked_reason": "接口一直 502",
+        },
+        registry=assistant_registry,
+        records=[_goal_record("active")],
+    )
 
     # seam ①：取消在派发之前置位，声明了的调用没开始——那个取值只在回合循环里产出。
     cancel = asyncio.Event()

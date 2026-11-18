@@ -55,6 +55,17 @@
 - GoalBar、host 的 goal 回显与投影帧；只落事件与 CLI。
 - 被取消轮次的自动重跑：取消即暂停。
 
+## 提案扩展（2026-11-18，实现 3.2 时补）
+
+第七个结果词 `GOAL_INVALID_TRANSITION`。原文只有六个词，盖不住「相位不允许该动作」：
+`pause` 一个 `blocked` 目标、`complete` 一个已完成目标、轮次用尽后 `resume`，三种情况
+既不是 ref 过期，也不是门槛太早，更不是暂停恢复被拒，只能返回一个不准确的词。
+
+依据是一手实现里的同名错误（`packages/goal/goal/src/index.ts`）：`pause` 用
+`transition(..., ['active'], 'paused', ...)`（356 行）、`resume` 的「已 active 且已武装」
+（376）与「轮次已用尽」（381）都抛 `GOAL_INVALID_TRANSITION`，`block` 只认 `active`（415）。
+所以这不是新语义，是把 DSH 已有的第七个出口补上；代价是结果词从 6 涨到 7、判据多一条。
+
 ## 验收
 
 五种可观察行为全绿（见 `verification-contract.md`）；`replay` 逐点相等；四个门禁 + 真实端点一轮 + UAT 一轮 + 变异一轮。真实端点那一半只做一次「两轮小上限续跑」，不跑满 32 轮。

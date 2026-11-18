@@ -46,6 +46,8 @@
 
 `complete` SHALL 把非 `complete` 目标置 `complete` 并解除武装；`blocked` SHALL 按「阻塞需要轮数门槛」Requirement 判定。
 
+相位不允许该动作时 MUST 返回 `GOAL_INVALID_TRANSITION` 且不落事件：`pause` 只在 `active`，`complete` 只在非 `complete`，`blocked` 只在 `active`，`resume` 在 `complete` 或轮次已用尽时拒绝（`paused` 归人，见 `GOAL_RESUME_BY_TOOL_DENIED`）。
+
 #### Scenario: 单目标约束
 
 - **WHEN** 当前目标 `active`，模型再次调用 `create_goal`
@@ -165,7 +167,7 @@ goal 来源消息的 `round` MUST 等于写入时快照的 `rounds_started + 1`�
 
 `update_goal(action="blocked")` MUST 要求 `blocked_reason` 非空；`rounds_started` 小于 `blocked_after_consecutive_rounds` 时 MUST 返回 `GOAL_BLOCK_TOO_EARLY` 且不落事件。被接受时快照的 `blocked_reason.code` MUST 为 `model-reported`，`message` 为调用方给出的原文。
 
-门槛大于 `max_rounds` 时系统 MUST NOT 额外校验：该目标只能走到 `round-limit`。这是部署选择，不是错误。
+`create_goal` 显式给出的 `max_rounds` 小于门槛时 MUST NOT 拒绝创建：该目标只能走到 `round-limit`，`model-reported` 这条出口对它关闭——这是调用方的显式选择。部署级的 `[goal]` 组合不允许这样配，见 `config-layering` delta。
 
 #### Scenario: 两轮就报阻塞被拒
 
@@ -176,6 +178,11 @@ goal 来源消息的 `round` MUST 等于写入时快照的 `rounds_started + 1`�
 
 - **WHEN** `rounds_started == 3`，模型带 `blocked_reason` 调用 `blocked`
 - **THEN** `phase == "blocked"`、`blocked_reason.code == "model-reported"`、`message` 与入参相同
+
+#### Scenario: 相位不允许的动作被拒
+
+- **WHEN** 目标 `phase == "blocked"`，模型调用 `update_goal(action="pause")`
+- **THEN** 结果是 `GOAL_INVALID_TRANSITION`，`phase` 仍为 `blocked`，日志不新增 `goal/updated`
 
 #### Scenario: 空原因被拒
 

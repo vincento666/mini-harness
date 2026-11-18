@@ -76,17 +76,32 @@ mini 没有 inbox、没有可插队的竞争输入、主循环是显式的（不
 
 **与 DSH 的差异**：DSH 的 `resume` 对持久 `paused` 目标在工具层直接拒绝（`GOAL_TOOL_RESUME_PAUSED`），把该转换留给用户面。mini 照抄这个分界，但用户面是 `/goal resume`（不是 Web 控件）。
 
+## D10 相位转换矩阵照 DSH，动词分人/模型两套
+
+| 动作 | 允许的相位 | 落定相位 | 武装 | 谁能调 |
+|---|---|---|---|---|
+| `create` | 无目标，或上一个 `complete` | `active` | 真 | 人类段里的模型 |
+| `edit` | 任意 | 不变 | 不变 | 人类段里的模型 |
+| `pause` | `active` | `paused` | 假 | 人类段里的模型 / `/goal pause` |
+| `resume` | `active`（未武装）、`blocked` | `active` | 真 | 人类段里的模型；`paused` 只认 `/goal resume` |
+| `complete` | 非 `complete` | `complete` | 假 | 模型（含 goal 轮次） |
+| `blocked` | `active` 且跑满门槛 | `blocked` | 假 | 模型（含 goal 轮次） |
+
+**依据**（`packages/goal/goal/src/index.ts`）：`pause` 的 `transition(..., ['active'], 'paused', 'disarmed')`（356）；`resume` 的 `resumable = ['active','paused','blocked']` 加两条拒绝——已 `active` 且已武装（376）、`roundsStarted >= maxGoalRounds`（381）；`complete` 的 `['active','paused','blocked']`（388-402）；`block` 只认 `active`（406-425）。
+
+**与 DSH 的两处差异**：① `resume` 对 `paused` 在工具层拒绝，交给 `/goal resume`（DSH 是 `GOAL_TOOL_RESUME_PAUSED`，同一分界）；② DSH 用 `GOAL_INVALID_TRANSITION` 表达「相位不允许」，mini 补了同名结果词——这是实现时发现的缺口，记在 proposal 的「提案扩展」。
+
 ## 风险
 
 - `user/message` 形状变化波及折叠、投影、CLI 与既有 fixture；旧日志兼容要一条专门的判据。
 - 「写日志即准入」意味着日志写失败等于没起轮次；失败必须落 `error/*` 并停，不许静默重试。
-- 6 个新结果词每个都要有可达判据（Active Lesson 1 栽过两次）。
+- 7 个新结果词每个都要有可达判据（Active Lesson 1 栽过两次）。
 - 段边界与投影清空的先后顺序，是实现里唯一容易写反的地方（D8 末段）。
 
 ## 测试与 seam
 
 - seam ①：段结束后按条件续跑、不满足条件不起段、额度用尽不起段；
-- seam ②：三个 goal 工具、六个结果词、todo 并行拒绝；
+- seam ②：三个 goal 工具、七个结果词、todo 并行拒绝；
 - seam ④：`goal/updated` 折叠、`user/message.source` 兼容、`replay` 逐点相等；
 - seam ⑥：`/goal`、`/goal pause`、`/goal resume`、`--resume` 后不自动续跑；
 - seam ⑦：3 轮上限的轮号连续、第 4 轮不出现、`round-limit` 落盘。

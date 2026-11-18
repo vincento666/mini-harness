@@ -8,13 +8,44 @@ from __future__ import annotations
 
 import json
 import uuid
+from typing import Literal, cast
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from mini_harness.events.writer import LogWriteFailure
-from mini_harness.goals import GoalSnapshot
+from mini_harness.goals import (
+    GoalRefusal,
+    GoalSnapshot,
+    block_goal,
+    complete_goal,
+    edit_goal,
+    pause_goal,
+    resume_goal,
+)
 from mini_harness.tools.fences import DispatchContext
-from mini_harness.tools.registry import ToolArgs, ToolDefinition, ToolResult
+from mini_harness.tools.registry import (
+    ToolArgs,
+    ToolDefinition,
+    ToolOutcome,
+    ToolResult,
+)
+
+
+class UpdateGoalArgs(ToolArgs):
+    """一次带比较交换的改动：`goal_id` + `revision` 必须与当前快照一致。"""
+
+    goal_id: str = Field(description="目标的 id，取自 get_goal")
+    revision: int = Field(ge=1, description="刚才读到的 revision；不一致会被拒")
+    action: Literal["edit", "pause", "resume", "complete", "blocked"]
+    objective: str | None = Field(default=None, description="edit 时的新目标正文")
+    max_rounds: int | None = Field(default=None, ge=0, description="edit 时的轮次上限")
+    blocked_reason: str | None = Field(default=None, description="blocked 时的原因原文")
+
+    @model_validator(mode="after")
+    def _blocked_needs_a_reason(self) -> UpdateGoalArgs:
+        if self.action == "blocked" and not (self.blocked_reason or "").strip():
+            raise ValueError("blocked 必须给 blocked_reason")
+        return self
 
 
 class GetGoalArgs(ToolArgs):
@@ -79,6 +110,60 @@ async def _create_goal(args: CreateGoalArgs, context: DispatchContext) -> ToolRe
     return ToolResult("OK", _view(context, snapshot))
 
 
+# 只有这四个动作要「人类开口的段」；complete / blocked 是模型在轮次里自己收尾的口子。
+_HUMAN_ONLY_ACTIONS = frozenset({"edit", "pause", "resume"})
+
+
+async def _update_goal(args: UpdateGoalArgs, context: DispatchContext) -> ToolResult:
+    if args.action in _HUMAN_ONLY_ACTIONS:
+        if context.entry == "subagent":
+            return ToolResult("GOAL_AUTHORITY_REQUIRED", "子会话没有改写目标的权威")
+        if not context.human_driven:
+            return ToolResult(
+                "GOAL_AUTHORITY_REQUIRED",
+                "只有人类开口的段才能改写目标；目标轮次里不行",
+            )
+    current = context.goal
+    if current is None or current.id != args.goal_id or current.revision != args.revision:
+        expected = "没有目标" if current is None else f"{current.id}@{current.revision}"
+        return ToolResult(
+            "GOAL_REF_STALE",
+            f"目标引用过期：当前是 {expected}，收到 {args.goal_id}@{args.revision}",
+        )
+
+    armed = _armed(context)
+    if args.action == "edit":
+        result: GoalSnapshot | GoalRefusal = edit_goal(
+            current, objective=args.objective, max_rounds=args.max_rounds
+        )
+    elif args.action == "pause":
+        result = pause_goal(current)
+    elif args.action == "complete":
+        result = complete_goal(current)
+    elif args.action == "resume":
+        result = resume_goal(current, armed=armed)
+    else:
+        result = block_goal(
+            current,
+            message=args.blocked_reason or "",
+            threshold=context.goal_policy.blocked_after_consecutive_rounds,
+        )
+    if isinstance(result, GoalRefusal):
+        return ToolResult(cast(ToolOutcome, result.outcome), result.detail)
+
+    session = context.session
+    if session is None:
+        return ToolResult("TOOL_IO_FAILED", "没有会话日志，改动没有落盘")
+    written = session.log.append("goal/updated", {"goal": result.model_dump(exclude_none=True)})
+    if isinstance(written, LogWriteFailure):
+        return ToolResult("TOOL_IO_FAILED", "改动写不进日志，本次操作作废")
+    if args.action == "resume":
+        session.goal_runtime.armed = True
+    elif args.action in {"pause", "complete", "blocked"}:
+        session.goal_runtime.armed = False
+    return ToolResult("OK", _view(context, result))
+
+
 def goal_tool_definitions() -> list[ToolDefinition]:
     """两个目标工具；都会读当前快照再改，因此串行派发。"""
     return [
@@ -89,6 +174,14 @@ def goal_tool_definitions() -> list[ToolDefinition]:
             mutates=False,
             concurrency="exclusive",
             run=_get_goal,
+        ),
+        ToolDefinition(
+            name="update_goal",
+            description="按 id+revision 改写目标：edit / pause / resume / complete / blocked。",
+            args_model=UpdateGoalArgs,
+            mutates=False,
+            concurrency="exclusive",
+            run=_update_goal,
         ),
         ToolDefinition(
             name="create_goal",
