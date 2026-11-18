@@ -11,4 +11,4 @@ else
   echo "警告：没有 .coverage.* partial，直接读上一次合并的结果（可能陈旧）" >&2
 fi
 
-uv run coverage report --fail-under=95 --show-missing
+uv run coverage report --fail-under=95 --keep-combined --show-missing
