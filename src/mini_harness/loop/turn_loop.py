@@ -1186,15 +1186,6 @@ async def _run_turns(
         if failure is not None:
             return _segment_failure(failure, turns)
 
-        if goal_round is not None and offset == 0:
-            # 额度在首条 turn/start 落盘之后才计：段在此之前失败不算这一轮（design D3）。
-            advanced = advance_round(goal_round.goal, goal_round.round)
-            failure = _append_all(
-                log, [("goal/updated", {"goal": advanced.model_dump(exclude_none=True)})]
-            )
-            if failure is not None:
-                return _segment_failure(failure, turns)
-
         failure = _maybe_emit_contracts(env, segment_id)
         if failure is not None:
             return _segment_failure(failure, turns)
@@ -1246,13 +1237,16 @@ async def _run_turns(
                     head = f"可遮蔽的那一段本身就装不下，预算读数 {reading} 超过压力预算 {pressure}"
                 return await _context_overflow(log, turn_id, turns, f"{head}（触发线 {line}）")
 
-        failure = _append_all(
-            log,
-            [
-                ("context/assembled", assembled_payload(turn_id, context)),
-                ("model/request", {"turn_id": turn_id, "tools": tool_names}),
-            ],
-        )
+        opening: list[tuple[str, dict[str, Any]]] = [
+            ("context/assembled", assembled_payload(turn_id, context))
+        ]
+        if goal_round is not None and offset == 0:
+            # 额度在首条 context/assembled 落盘之后才计：这一轮真的装进了上下文才算数，
+            # 装配之前失败（注入、折叠、压缩）不扣轮次（ADR-0043）。
+            advanced = advance_round(goal_round.goal, goal_round.round)
+            opening.append(("goal/updated", {"goal": advanced.model_dump(exclude_none=True)}))
+        opening.append(("model/request", {"turn_id": turn_id, "tools": tool_names}))
+        failure = _append_all(log, opening)
         if failure is not None:
             return _segment_failure(failure, turns)
 

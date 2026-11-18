@@ -21,6 +21,7 @@
 | 1 | seam ⑦：3 轮上限、无人插话 → goal 来源 `user/message` 恰 3 条；`source.round` 为 1/2/3；三条 `source.revision` 全等于 `create` 写入的 `1`（轮次不改 revision）；`source.goal_id` 全等 |
 | 1 | seam ⑦：按 seq 取子序列，每轮为 `segment/end` → `segment/start` → goal 来源 `user/message` → `turn/start` → `goal/updated` → `model/request`；每条 goal 消息之后至少一条 `turn/start` 与一条 `model/request`，且属同一新 `segment_id` |
 | 1 | seam ④：第 2 轮 goal 消息的 `content` 含 `Objective: "修好失败的用例"` 与 `Round: 2/3`，且非空 |
+| 1 | seam ⑦：每轮的 `goal/updated` 在同段首条 `context/assembled` 之后、`model/request` 之前（额度按「进了上下文」计，2026-11-19 起） |
 | 1 | seam ①：一次 `run` 续两轮后撞上限 → `segment/start` 恰 3 条，`segment_id` 为 `s1`/`s2`/`s3`，各配一条 `segment/end` |
 | 1 | seam ⑥：含三轮续跑的日志 `replay` 退出码 `0`；把一条 `goal/updated` 的 `rounds_started` 改掉再跑 → 非零 |
 | 2 | seam ⑦：第 4 轮不出现 goal 消息；最后一条 `goal/updated` 为 `blocked`、`code == "round-limit"`、`rounds_started == 3`；其后无 `segment/start` |
@@ -52,7 +53,7 @@
 4. **正文只写「继续」**：goal 消息正文为空或不带 objective / Round。→ 行为 1 第 3 行必红。
 5. **门槛写成 ≥1**：两轮也允许报阻塞。→ 行为 2 第 2 行必红。
 6. **blocked 不可恢复**：`resume` 只认 `active`。→ 行为 2 第 3 行必红。
-7. **额度提前到写消息时计**：不等首条 `turn/start`。→ 行为 5 的早失败用例必红。
+7. **额度提前**：不等首条 `context/assembled`（写消息时、或 `turn/start` 时）。→ 行为 5 的早失败用例必红。
 8. **恢复即武装**：`--resume` 直接把 `armed` 置真。→ 行为 3 第 1 行必红。
 9. **取消不置暂停**：`ABORTED` 只解除武装、`phase` 留在 active。→ 行为 3 第 3 行必红。
 10. **回调把别人降级**：`completed` 一条时把其它 `in_progress` 一并改成 `pending`。→ 行为 4 第 1 行必红。
@@ -72,4 +73,4 @@
 
 - `[goal]` 三键默认 32 / 3 / true——已定（2026-11-17）。
 - 门槛大于 `max_rounds` 由配置层直接拒（见 `config-layering` delta），不是运行期宽容。
-- 早失败不消耗轮次：计数点在首条 `turn/start` 之后，对齐 DSH「预约未准入不计数」——`aligned`。
+- 早失败不消耗轮次：计数点在首条 `context/assembled` 之后（2026-11-19 起），对齐 DSH「进模型历史才计数」——`aligned`。

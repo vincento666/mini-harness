@@ -6,9 +6,9 @@
 
 每个 `segment/end` 之后，系统 SHALL 判定是否续跑，判定只看当前目标快照与本次段的 `stop_reason`：`phase == "active"`、`armed` 为真、`rounds_started < max_rounds`、且 `stop_reason` 不在 `{ABORTED, FENCE_DENIED, PROVIDER_ERROR, CONTEXT_WINDOW_EXCEEDED, MAX_TURNS}` 之内时，SHALL 开新段；否则 MUST NOT 开新段。
 
-开新段时，系统 SHALL 按固定顺序写：`segment/start`、goal 来源的 `user/message`（`source.round` 等于快照的 `rounds_started + 1`）、首条 `turn/start`、`goal/updated`（`rounds_started` 递增，`revision` 不变）。
+开新段时，系统 SHALL 按固定顺序写：`segment/start`、goal 来源的 `user/message`（`source.round` 等于快照的 `rounds_started + 1`）、首条 `turn/start`、首条 `context/assembled`、`goal/updated`（`rounds_started` 递增，`revision` 不变）。
 
-轮次额度在首条 `turn/start` 落盘后消耗；该段在此之前失败 MUST NOT 计入。写日志失败 SHALL 落 `error/*` 并终止会话，MUST NOT 静默重试。
+轮次额度在首条 `context/assembled` 落盘后消耗；装配完成之前失败 MUST NOT 计入。写日志失败 SHALL 落 `error/*` 并终止会话，MUST NOT 静默重试。
 
 `rounds_started` 已达 `max_rounds` 时，系统 SHALL 写 `goal/updated` 把 `phase` 置 `blocked`、`blocked_reason.code` 置 `round-limit`，并 MUST NOT 开新段。
 

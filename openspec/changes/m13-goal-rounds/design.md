@@ -24,13 +24,13 @@ DSH 的形状（一手资料，`packages/goal/goal-round-driver/src/index.ts`，
 4. `agent/pre-step` 前后各校验一次（`validReservation`）：预约仍持有、`phase` 仍 `active`、`armed` 仍真、`source.round === roundsStarted + 1`；失败则丢弃这一步、恢复其它被领取的消息、重新驱动；
 5. 失败出口各有稳定码：排队失败 `queue-failed`，准入被下游拒绝 `prompt-rejected`，额度用尽 `round-limit`。
 
-mini 没有 inbox、没有可插队的竞争输入、主循环是显式的（不变量 C），所以第 1–4 步塌成一步：**段结束后在同一个协程里顺序判定条件、写 `segment/start` + goal 来源的 `user/message` + 首条 `turn/start` + `goal/updated`（`rounds_started` 递增），再进下一段**。写日志成功即准入，因为 mini 的日志就是历史真源（不变量 A），不存在「排队后被别人抢先」的窗口。
+mini 没有 inbox、没有可插队的竞争输入、主循环是显式的（不变量 C），所以第 1–4 步塌成一步：**段结束后在同一个协程里顺序判定条件、写 `segment/start` + goal 来源的 `user/message` + 首条 `turn/start` + 首条 `context/assembled` + `goal/updated`（`rounds_started` 递增），再进下一段**。写日志成功即准入，因为 mini 的日志就是历史真源（不变量 A），不存在「排队后被别人抢先」的窗口。
 
 **代价**：丢掉 DSH 的「人先插话就让人插队」语义（`competingQueued` 让自动轮次让位）。mini 里人要么等当前轮收敛，要么取消；取消即暂停，不自动重跑。
 
 **这条塌缩带来三个必须写明的语义**（复核 B3/B4 指出）：
 
-1. **额度在首条 `turn/start` 之后消耗**：顺序是 `segment/start` → goal 消息 → `turn/start` → `goal/updated`。段在 `turn/start` 之前失败（provider 立刻失败、装配失败）时不计轮次——这是 DSH「预约未被准入不消耗轮号」在 mini 的等价物，代价是 `goal/updated` 不再紧贴消息，回放校验要认这个位置。
+1. **额度在首条 `context/assembled` 之后消耗**（2026-11-19 人裁）：顺序是 `segment/start` → goal 消息 → `turn/start` → `context/assembled` → `goal/updated`。装配完成之前失败（provider 立刻失败、注入失败、折叠失败、装配内压缩失败）都不计轮次——这是 DSH「进模型历史才计数」在 mini 的等价物。代价是 `goal/updated` 离消息更远，回放校验要认这个位置；收益是「起了回合但没装进上下文」不再白烧额度。
 2. **取消置暂停**：段以 `ABORTED` 收尾时 `phase → paused` 并解除武装；其余失败只解除武装，`phase` 留在 `active`，等人 `/goal resume`。
 3. **blocked 必须能回 active**：`round-limit` 落的是 `blocked`，而驱动只推 `active`。若 `resume` 不认 `blocked`，目标就永久停摆。所以 `resume` 对 `blocked` 置 `active`、清 `blocked_reason`、置真；对 `paused` 仍拒绝（那是人的口子）。
 
@@ -44,7 +44,7 @@ mini 没有 inbox、没有可插队的竞争输入、主循环是显式的（不
 
 **代价**：`user/message` 的形状变化波及折叠、投影与 CLI 回显；旧日志缺 `source` 必须按人读，不能当解析失败。
 
-**消息只有一个来源**：驱动在段后判定通过时调 `run_turn_segment(goal_round=...)`，正文由 `render_goal_round` 生成；人没有写 `user/message` 的入口，模型也没有——所以「goal 轮次」不可能被伪造或手改。`rounds_started` 写成快照字段、准入点取首条 `turn/start` 之后，理由与代价见 ADR-0043。
+**消息只有一个来源**：驱动在段后判定通过时调 `run_turn_segment(goal_round=...)`，正文由 `render_goal_round` 生成；人没有写 `user/message` 的入口，模型也没有——所以「goal 轮次」不可能被伪造或手改。`rounds_started` 写成快照字段、准入点取首条 `context/assembled` 之后，理由与代价见 ADR-0043。
 
 ## D5 `armed` 是进程内的布尔，永不落盘
 

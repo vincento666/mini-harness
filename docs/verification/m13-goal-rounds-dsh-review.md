@@ -11,7 +11,7 @@
 | 1 形状 | `GoalSnapshot{id,revision,objective,phase,blockedReason?,maxGoalRounds}`，`roundsStarted` 是 `GoalView` 的派生值（`docs/subsystems/goal.md:44-70`）；`goal/change` 带 `operation` 与墓碑 | 快照把 `rounds_started` 写进载荷、`goal/updated{goal\|null}` | simplified | design D2 + ADR-0043；本轮修：轮次推进不再递增 `revision`；4.4 补 replay 交叉校验（`goal_round_defect`） |
 | 2 机制 | 空闲 → `flush` 检查点 → 预约 → `followup` → `pre-step` 前后两次围栏（`driver_index.ts:106-221,372-452`） | 段后同协程判定 + 写三事件 | simplified | D3；丢 `competingQueued` 让位 |
 | 3 语义 | `create` 可替换 `complete`；`resume` 接受已停目标（含 blocked）并清旧 blocker，且要有轮次余量（`goal README:68`） | 原稿只写 paused 拒绝、active 武装，blocked 无出口 | **blocker，本轮修** | 补 `blocked → active` 且清 `blocked_reason` |
-| 4 不变量 | `roundsStarted` 只由进入模型历史的 goal 消息推进；activation 永不落盘 | 首条 `turn/start` 之后推进（`turn_loop.py:1190`）；`armed` 同样不落盘 | simplified | ADR-0043；剩余窗口 `turn/start → context/assembled` 会白烧一轮，见 D.2 |
+| 4 不变量 | `roundsStarted` 只由进入模型历史的 goal 消息推进；activation 永不落盘 | 首条 `context/assembled` 之后推进（2026-11-19 起）；`armed` 同样不落盘 | simplified | ADR-0043；计数点已贴住「进上下文」 |
 | 5 面 | 模型面 = `<goal_round>`（objective + `Round: n/cap` + 指令，`prompt.ts:12-26`）+ `tool:goal` 政策段 | 无正文形状要求、无政策文本 | **blocker，本轮修正文；政策段记 deferred** | 正文补 Requirement；政策段触发条件：出现「模型反复试错才知门槛」的真实记录 |
 | 6 失败 | `queue-failed` / `prompt-rejected` / `round-limit`；异常失败需人工 resume；`agent/error` 即 disarm | 只有 `round-limit`；失败收尾不续跑但未 disarm | simplified | 本轮把「失败收尾即 disarm」补进 Requirement 与判据 |
 | 7 组合 | cap 属 goal、门槛属 tool-goal、并行属 todo 包，分属三处 | 全收进 `[goal]` 一段 | simplified | D7；代价：部署面分成三段变一段，语义归属变粗 |
@@ -71,17 +71,19 @@
 
 因此「goal 跨段」= 「goal 跨 turn（DSH 义）」= 多轮，不是偏离；被 M13 改掉的是**入口的段数不变量**（`run` 以前恰一个段），见 `turn-loop` delta。同一次扫查还改掉两处旧全称量词：`turn-loop` 的「一次性 run 恰一个段」与 `event-stream` 的「一个会话恰一个段」。
 
-### D.2 准入点：首条 `turn/start` 之后（simplified，待人裁）
+### D.2 准入点：首条 `context/assembled` 之后（2026-11-19 已裁，aligned）
 
 - DSH：消息**进了这一轮**才计数；被拒的预约不消耗轮号（`goal-round-driver/README.md:71`）。
-- mini：写 goal 消息 → 首条 `turn/start` → 写 `goal/updated`。窗口 `turn/start → context/assembled`（注入契约与技能目录、读日志、折叠、必要时压缩）失败时，mini 已扣一轮，DSH 不会。
-- 代价与替代：见 ADR-0043。要消掉就把那次 `goal/updated` 挪到首条 `context/assembled` 之后；代价是四事件顺序与契约行为 1 的三条判据一起改。**待人裁。**
+- mini：写 goal 消息 → `turn/start` → `context/assembled` → `goal/updated`。装配完成之前失败（注入、折叠、装配内压缩、provider 立刻失败）不扣轮次。
+- 2026-11-19 人裁：原来停在 `turn/start`，留了一个 `turn/start → context/assembled` 的白烧窗口；现已挪到 `context/assembled` 之后，四事件顺序与契约行为 1 的判据同步改。
+- 残余窗口：「装配成功、`model/request` 立刻失败」仍会扣一轮——这与 DSH 一致（消息已进历史），不再收紧。
 
-### D.3 计数来源：写成字段 + replay 交叉校验（simplified）
+### D.3 计数来源：写成字段 + replay 交叉校验（语义 aligned / 表示 simplified）
 
-- DSH：派生值，不存在写错的可能。
-- mini：快照字段；`replay` 校验「每条快照的 `rounds_started` 等于此前该目标的轮次消息条数」（`goals.goal_round_defect`，4.4）。
-- 代价：同一事实两份写法，必须同步；收益是 `get_goal` 能回自足快照、驱动不必重扫全日志。
+- DSH：`roundsStarted` 是 `GoalView` 的派生值——从日志里数 goal 消息就能得出，不存在写错的可能。
+- mini：同一个语义值写在快照里（`rounds_started`），**并且**能从日志数出来；`replay` 校验「每条快照的 `rounds_started` 等于此前该目标的轮次消息条数」（`goals.goal_round_defect`，4.4）。所以两边**语义等价**，差别只在表示：mini 多存了一份冗余。
+- 收益：`get_goal` 能回自足快照，驱动不必每轮重扫全日志（O(1) 读 vs O(n) 数）。
+- 代价：同一事实两份写法必须同步；改任何一边都会让 `replay` 判红——这是刻意的 redundancy，不是「语义没对齐」。
 
 ### D.4 goal 消息的唯一来源（aligned）
 

@@ -149,15 +149,15 @@ async def test_three_rounds_run_in_order_and_stop_at_the_cap(tmp_path: Path) -> 
     for round_number in (1, 2, 3):
         segment = segments[f"s{round_number + 1}"]
         types = [record.type for record in segment]
-        assert types[:5] == [
+        assert types[:6] == [
             "segment/start",
             "user/message",
             "turn/start",
-            "goal/updated",
             "context/assembled",
+            "goal/updated",
+            "model/request",
         ]
-        assert "model/request" in types
-        snapshot = segment[3].payload["goal"]
+        snapshot = segment[4].payload["goal"]
         assert snapshot["rounds_started"] == round_number
         assert snapshot["revision"] == 1
         assert snapshot["phase"] == "active"
