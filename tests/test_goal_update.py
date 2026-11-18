@@ -375,3 +375,31 @@ async def test_update_reports_a_log_write_failure(tmp_path: Path) -> None:
 
     assert outcome.result.outcome == "TOOL_IO_FAILED"
     assert env.goal_runtime.armed is True
+
+
+async def test_raising_the_cap_then_resuming_brings_a_blocked_goal_back(tmp_path: Path) -> None:
+    """撞上限落 blocked 之后，人把上限改大再 resume——目标回到 active 且可再跑。"""
+    env = _env(tmp_path)
+    blocked = _current("blocked", rounds_started=8, max_rounds=8)
+
+    edited = await _update(tmp_path, env, current=blocked, action="edit", max_rounds=16)
+    assert edited.result.outcome == "OK"
+
+    # 模型下一步读到的是刚写进去的那份快照（revision 3），不是它改之前的那份。
+    raised = read_events(env.log.path)[-1]
+    resumed = await _update(
+        tmp_path,
+        env,
+        current=raised,
+        revision=raised.payload["goal"]["revision"],
+        action="resume",
+    )
+
+    assert resumed.result.outcome == "OK"
+    goal = _new_snapshot(env)
+    assert goal is not None
+    assert goal["phase"] == "active"
+    assert goal["max_rounds"] == 16
+    assert goal["rounds_started"] == 8
+    assert "blocked_reason" not in goal
+    assert env.goal_runtime.armed is True
