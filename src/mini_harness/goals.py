@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -110,6 +111,47 @@ class GoalRefusal:
     detail: str
 
 
+@dataclass(frozen=True)
+class GoalRound:
+    """一轮续跑的输入：快照加轮号。正文与来源都由这一对派生，避免两处写歪。"""
+
+    goal: GoalSnapshot
+    round: int
+
+
+def render_goal_round(goal: GoalSnapshot, round_number: int) -> str:
+    """goal 来源消息的正文（spec：`<goal_round>` 块，至少 `Objective` 与 `Round` 两行）。"""
+    return (
+        "<goal_round>\n"
+        f"Objective: {json.dumps(goal.objective, ensure_ascii=False)}\n"
+        f"Round: {round_number}/{goal.max_rounds}\n"
+        "以工作区、工具结果与持久状态为准：完成前取证，确认完成后调用 update_goal 标 complete。\n"
+        "</goal_round>"
+    )
+
+
+def advance_round(current: GoalSnapshot, round_number: int) -> GoalSnapshot:
+    """轮次推进：只写 `rounds_started`，`revision` 不动。
+
+    照 DSH：`roundsStarted` 是 `GoalView` 的派生值，轮次不是一次 goal 变更。改 `revision`
+    会让模型在轮内拿到的引用立刻过期。
+    """
+    merged = {**current.model_dump(), "rounds_started": round_number}
+    return GoalSnapshot.model_validate(merged)
+
+
+def exhaust_goal(current: GoalSnapshot) -> GoalSnapshot:
+    """额度用尽：系统写 `blocked{round-limit}`，`revision + 1`（控制面动作）。"""
+    return _next(
+        current,
+        phase="blocked",
+        blocked_reason=GoalBlockReason(
+            code="round-limit",
+            message=f"轮次已用尽（{current.rounds_started}/{current.max_rounds}）",
+        ),
+    )
+
+
 def _next(current: GoalSnapshot, **changes: Any) -> GoalSnapshot:
     """复制 + 改字段 + `revision + 1`（控制面动作才递增，轮次推进不走这里）。
 
@@ -192,6 +234,54 @@ def block_goal(
 
 
 MessageSource = dict[str, Any]
+
+
+def goal_round_defect(events: Sequence[EventRecord]) -> str | None:
+    """检查 goal 轮次的自洽，返回第一条缺陷的说明；`None` 表示自洽。
+
+    规则来自 spec 的「轮次是 goal 来源的用户消息」：轮号为正、同一目标内不跳号、不超上限、
+    `revision` 与当前快照一致、目标已停就不再出现轮次消息。另加一条覆盖「改了
+    `rounds_started`」的读数：每条快照的 `rounds_started` 必须等于此前已出现的轮次条数。
+    """
+    seen: dict[str, int] = {}
+    current: GoalSnapshot | None = None
+    for event in events:
+        if event.type == "goal/updated":
+            payload: Any = event.payload.get("goal")
+            current = None if payload is None else GoalSnapshot.model_validate(payload)
+            if current is not None and current.rounds_started != seen.get(current.id, 0):
+                return (
+                    f"seq={event.seq} 的 goal/updated 写 rounds_started="
+                    f"{current.rounds_started}，此前只有 {seen.get(current.id, 0)} 条轮次消息"
+                )
+            continue
+        if event.type != "user/message":
+            continue
+        source = message_source_of(event.payload)
+        if source["kind"] != "goal":
+            continue
+        goal_id = source.get("goal_id")
+        round_number = source.get("round")
+        revision = source.get("revision")
+        if not isinstance(goal_id, str) or not isinstance(round_number, int):
+            return f"seq={event.seq} 的 goal 消息来源字段不完整"
+        if not isinstance(revision, int):
+            return f"seq={event.seq} 的 goal 消息缺 revision"
+        if round_number < 1:
+            return f"seq={event.seq} 的 goal 消息轮号为 {round_number}，必须为正"
+        if current is None or current.id != goal_id:
+            return f"seq={event.seq} 的 goal 消息指向 {goal_id}，当前没有这个目标"
+        if current.phase != "active":
+            return f"seq={event.seq} 的 goal 消息落在 {current.phase} 之后"
+        if revision != current.revision:
+            return f"seq={event.seq} 的 goal 消息 revision={revision}，当前是 {current.revision}"
+        expected = seen.get(goal_id, 0) + 1
+        if round_number != expected:
+            return f"seq={event.seq} 的 goal 消息轮号 {round_number}，按前序应为 {expected}"
+        if round_number > current.max_rounds:
+            return f"seq={event.seq} 的 goal 消息轮号 {round_number} 超过上限 {current.max_rounds}"
+        seen[goal_id] = round_number
+    return None
 
 
 def entry_of(events: Sequence[EventRecord]) -> str:

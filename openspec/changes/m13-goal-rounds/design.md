@@ -24,7 +24,7 @@ DSH 的形状（一手资料，`packages/goal/goal-round-driver/src/index.ts`，
 4. `agent/pre-step` 前后各校验一次（`validReservation`）：预约仍持有、`phase` 仍 `active`、`armed` 仍真、`source.round === roundsStarted + 1`；失败则丢弃这一步、恢复其它被领取的消息、重新驱动；
 5. 失败出口各有稳定码：排队失败 `queue-failed`，准入被下游拒绝 `prompt-rejected`，额度用尽 `round-limit`。
 
-mini 没有 inbox、没有可插队的竞争输入、主循环是显式的（不变量 C），所以第 1–4 步塌成一步：**段结束后在同一个协程里顺序判定条件、写 `segment/start` + goal 来源的 `user/message` + `goal/updated`（`rounds_started` 递增），再进下一段**。写日志成功即准入，因为 mini 的日志就是历史真源（不变量 A），不存在「排队后被别人抢先」的窗口。
+mini 没有 inbox、没有可插队的竞争输入、主循环是显式的（不变量 C），所以第 1–4 步塌成一步：**段结束后在同一个协程里顺序判定条件、写 `segment/start` + goal 来源的 `user/message` + 首条 `turn/start` + `goal/updated`（`rounds_started` 递增），再进下一段**。写日志成功即准入，因为 mini 的日志就是历史真源（不变量 A），不存在「排队后被别人抢先」的窗口。
 
 **代价**：丢掉 DSH 的「人先插话就让人插队」语义（`competingQueued` 让自动轮次让位）。mini 里人要么等当前轮收敛，要么取消；取消即暂停，不自动重跑。
 

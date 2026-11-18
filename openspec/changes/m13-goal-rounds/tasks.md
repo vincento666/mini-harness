@@ -23,15 +23,17 @@
 
 ## 4. 轮次驱动（seam ①⑦）
 
-- [ ] 4.1 段后判定 + 四事件顺序（`segment/start` → goal 来源 `user/message` → 首条 `turn/start` → `goal/updated`），`rounds_started` 递增、`revision` 不变
-- [ ] 4.2 达上限：写 `blocked {code: "round-limit"}`，不起新段
-- [ ] 4.3 五类失败收尾（`ABORTED` / `FENCE_DENIED` / `PROVIDER_ERROR` / `CONTEXT_WINDOW_EXCEEDED` / `MAX_TURNS`）不续跑、不写 `goal/updated`；`ABORTED` 另把 `phase` 置 `paused`
+- [x] 4.1 段后判定 + 四事件顺序（`segment/start` → goal 来源 `user/message` → 首条 `turn/start` → `goal/updated`），`rounds_started` 递增、`revision` 不变
+- [x] 4.2 达上限：写 `blocked {code: "round-limit"}`，不起新段
+- [x] 4.3 五类失败收尾（`ABORTED` / `FENCE_DENIED` / `PROVIDER_ERROR` / `CONTEXT_WINDOW_EXCEEDED` / `MAX_TURNS`）不续跑、不开新段；`ABORTED` 另写一条 `goal/updated` 把 `phase` 置 `paused`，其余只解除武装
+- [ ] 4.4 `replay` 校验 goal 轮次：轮号非正、同一 `goal_id` 内跳号、超 `max_rounds`、`revision` 落后、`phase` 已停 → 退出码非零；正常日志退出 0
 
 ## 5. 武装与命令面（seam ⑥）
 
 - [ ] 5.1 `armed` 只活在进程内：启动与 `--resume` 后为假，`pause` / `complete` / `blocked` / 撞上限置假
 - [ ] 5.2 `/goal`、`/goal pause`、`/goal resume`、`/goal clear` 四条命令；无目标不写事件
 - [ ] 5.3 CLI 黑盒：`--resume` 之后第一次模型调用前没有 goal 来源消息，`/goal resume` 之后才有
+- [ ] 5.4 REPL 段后驱动：`chat` 里目标 `active` 且已武装时，段结束不开提示符、直接起下一轮；提示符只在驱动停下时出现（turn-loop delta 的「REPL 的每个段由一条输入或一轮目标驱动」）
 
 ## 6. 收尾
 

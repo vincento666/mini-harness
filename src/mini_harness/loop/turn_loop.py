@@ -29,7 +29,20 @@ from mini_harness.events.fold import (
 from mini_harness.events.reader import LogReadFailure, read_events
 from mini_harness.events.record import EventRecord
 from mini_harness.events.writer import EventLog, LogWriteFailure
-from mini_harness.goals import GoalRuntime, entry_of, fold_goal, opened_by_human
+from mini_harness.goals import (
+    GoalRefusal,
+    GoalRound,
+    GoalRuntime,
+    GoalSnapshot,
+    advance_round,
+    entry_of,
+    exhaust_goal,
+    fold_goal,
+    opened_by_human,
+    pause_goal,
+    render_goal_round,
+)
+from mini_harness.loop.goal_driver import NO_CONTINUE_REASONS, RoundDecision, next_round
 from mini_harness.loop.settings import SessionSettings
 from mini_harness.provider.contract import (
     AssistantTurn,
@@ -953,6 +966,7 @@ async def run_turn_segment(
     cancel: asyncio.Event,
     user_message: str | None = None,
     message_source: Mapping[str, Any] | None = None,
+    goal_round: GoalRound | None = None,
 ) -> SegmentOutcome:
     """跑一个回合段：一条输入展开的那串往返。段内上限是 `max_turns`，会话级没有上限。
 
@@ -963,7 +977,20 @@ async def run_turn_segment(
     （design D5）。不给是 `run`——它的人话住在 `session/start`（design D6 记的不对称）。
 
     `message_source` 区分这条输入是人打的还是目标轮次注入的（M13）：缺省 `{"kind": "user"}`。
+
+    `goal_round` 是 goal 轮次的唯一入口：正文与来源都由它派生，且由 `_run_turns` 在首条
+    `turn/start` 之后补写 `goal/updated`（额度那时才消耗，design D3）。
     """
+    if goal_round is not None:
+        if user_message is not None or message_source is not None:
+            raise ValueError("goal_round 与 user_message / message_source 不能同时给")
+        user_message = render_goal_round(goal_round.goal, goal_round.round)
+        message_source = {
+            "kind": "goal",
+            "goal_id": goal_round.goal.id,
+            "revision": goal_round.goal.revision,
+            "round": goal_round.round,
+        }
     opening: list[tuple[str, dict[str, Any]]] = [("segment/start", {"segment_id": segment_id})]
     if user_message is not None:
         source: dict[str, Any] = (
@@ -981,6 +1008,7 @@ async def run_turn_segment(
         segment_id=segment_id,
         first_turn_index=first_turn_index,
         cancel=cancel,
+        goal_round=goal_round,
     )
     if outcome.stop_reason not in STOP_REASONS:
         # 内核坏了：写不出 `turn/end`，也就不写 `segment/end`。
@@ -1131,7 +1159,12 @@ def _maybe_emit_catalog(env: SessionEnv, segment_id: str) -> LogWriteFailure | N
 
 
 async def _run_turns(
-    *, env: SessionEnv, segment_id: str, first_turn_index: int, cancel: asyncio.Event
+    *,
+    env: SessionEnv,
+    segment_id: str,
+    first_turn_index: int,
+    cancel: asyncio.Event,
+    goal_round: GoalRound | None = None,
 ) -> SegmentOutcome:
     """段内的显式回合循环：记账 → 装配上下文 → 调模型 → 派发工具 → 判定停止。"""
     log = env.log
@@ -1153,6 +1186,15 @@ async def _run_turns(
         failure = _append_all(log, [("turn/start", {"turn_id": turn_id})])
         if failure is not None:
             return _segment_failure(failure, turns)
+
+        if goal_round is not None and offset == 0:
+            # 额度在首条 turn/start 落盘之后才计：段在此之前失败不算这一轮（design D3）。
+            advanced = advance_round(goal_round.goal, goal_round.round)
+            failure = _append_all(
+                log, [("goal/updated", {"goal": advanced.model_dump(exclude_none=True)})]
+            )
+            if failure is not None:
+                return _segment_failure(failure, turns)
 
         failure = _maybe_emit_contracts(env, segment_id)
         if failure is not None:
@@ -1371,22 +1413,110 @@ async def run_session(
     return await run_session_env(prompt=prompt, entry=entry, env=env, cancel=cancel)
 
 
+def _goal_after(log: EventLog) -> GoalSnapshot | LogReadFailure | None:
+    """按日志折当前目标；读不动就把失败往上抛，不猜。"""
+    events = read_events(log.path)
+    if isinstance(events, LogReadFailure):
+        return events
+    return fold_goal(events)
+
+
+def _exhaust_goal_rounds(
+    *, env: SessionEnv, decision: RoundDecision, turns: int
+) -> SegmentOutcome | None:
+    """额度用尽：落 `blocked{round-limit}` 并解除武装。写不进日志就是段失败。"""
+    assert decision.goal is not None
+    blocked = exhaust_goal(decision.goal)
+    written = env.log.append("goal/updated", {"goal": blocked.model_dump(exclude_none=True)})
+    if isinstance(written, LogWriteFailure):
+        return _segment_failure(written, turns)
+    env.goal_runtime.armed = False
+    return None
+
+
+def _close_failed_round(*, env: SessionEnv, segment: SegmentOutcome) -> SegmentOutcome | None:
+    """失败收尾：一律解除武装；`ABORTED`（人取消）另把 `active` 目标置 `paused`。
+
+    其余失败 `phase` 留在 `active`——上游抖动不该替人决定目标作废，人 `/goal resume` 即可。
+    """
+    env.goal_runtime.armed = False
+    if segment.stop_reason != STOP_ABORTED:
+        return None
+    goal = _goal_after(env.log)
+    if isinstance(goal, LogReadFailure):
+        return _segment_failure(goal, segment.turns)
+    if goal is None or goal.phase != "active":
+        return None
+    paused = pause_goal(goal)
+    if isinstance(paused, GoalRefusal):
+        return None
+    written = env.log.append("goal/updated", {"goal": paused.model_dump(exclude_none=True)})
+    if isinstance(written, LogWriteFailure):
+        return _segment_failure(written, segment.turns)
+    return None
+
+
 async def run_session_env(
     *, prompt: str, entry: SessionEntry, env: SessionEnv, cancel: asyncio.Event
 ) -> RunOutcome:
-    """在已装配好的 `env` 上跑一次性会话：开始、恰一个段、结束。
+    """在已装配好的 `env` 上跑一次性会话：开始、按目标轮次展开若干段、结束。
 
     `run` / `serve` 从 `run_session` 走到这里；`subagent` 直接带着子会话的 env 调用它——
-    「开始 → 恰一个段 → 结束」只有一份实现。
+    「开始 → 若干段 → 结束」只有一份实现。
+
+    段数由目标决定（design D3）：没有可续跑的目标时恰一个段；目标 `active` 且已武装时，
+    每个 `segment/end` 之后按 `next_round` 判定，续跑就再开一段。驱动不另起协程：判定与
+    开段在同一个协程里顺序做完，写日志成功即准入。
     """
     log = env.log
     started = start_session(prompt=prompt, entry=entry, env=env)
     if started is not None:
         return _run_outcome(log, started)
+
+    segments = 0
+    turns = 0
     segment = await run_turn_segment(env=env, segment_id="s1", first_turn_index=1, cancel=cancel)
-    if segment.stop_reason not in STOP_REASONS:
-        return _run_outcome(log, segment)
-    ended = end_session(env=env, stop_reason=segment.stop_reason, turns=segment.turns)
+    while True:
+        if segment.stop_reason not in STOP_REASONS:
+            # 内核坏了：不再开段，也不写 session/end。
+            return _run_outcome(log, segment)
+        segments += 1
+        turns += segment.turns
+
+        goal = _goal_after(log)
+        if isinstance(goal, LogReadFailure):
+            return _run_outcome(log, _segment_failure(goal, turns))
+        decision = next_round(
+            goal=goal, armed=env.goal_runtime.armed, stop_reason=segment.stop_reason
+        )
+        if decision.kind == "exhausted":
+            failed = _exhaust_goal_rounds(env=env, decision=decision, turns=turns)
+            if failed is not None:
+                return _run_outcome(log, failed)
+            break
+        if decision.kind == "stop":
+            if segment.stop_reason in NO_CONTINUE_REASONS:
+                failed = _close_failed_round(env=env, segment=segment)
+                if failed is not None:
+                    return _run_outcome(log, failed)
+            break
+        assert decision.goal is not None
+        segment = await run_turn_segment(
+            env=env,
+            segment_id=f"s{segments + 1}",
+            first_turn_index=turns + 1,
+            cancel=cancel,
+            goal_round=GoalRound(goal=decision.goal, round=decision.round),
+        )
+
+    ended = end_session(env=env, stop_reason=segment.stop_reason, turns=turns)
     if ended is not None:
         return _run_outcome(log, ended)
-    return _run_outcome(log, segment)
+    # 段数可能大于一，`turns` 是这次会话的累计；失败码仍取最后一个段。
+    return RunOutcome(
+        session_id=log.session_id,
+        stop_reason=segment.stop_reason,
+        turns=turns,
+        failure_code=segment.failure_code,
+        detail=segment.detail,
+    )
