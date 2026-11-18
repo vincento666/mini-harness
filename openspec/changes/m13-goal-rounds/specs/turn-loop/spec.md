@@ -59,3 +59,22 @@
 
 - **WHEN** 一个段进行中收到取消信号
 - **THEN** 日志里有 `error/abort`、`turn/end`（`stop_reason: ABORTED`）与 `segment/end`（`stop_reason: ABORTED`），没有 `session/end`
+
+### Requirement: 回合数上限由 --max-turns 决定
+
+系统 SHALL 用 `--max-turns` 限制**一个段**的回合数，默认 8，取值 MUST 是 ≥ 1 的整数；非法取值 SHALL 以退出码 2 结束且在 session 开始之前失败。会话级 MUST NOT 设回合数上限：会话的段数由目标轮次决定（没有目标续跑时恰一个段；有则每轮一段），`minihns chat` 里每条输入或每一轮是一个段，段用完上限 MUST NOT 结束会话（见 `chat-repl`）。目标的轮数上限是 `max_rounds`，与这里的 `max_turns` 是两个量，MUST NOT 混名。
+
+#### Scenario: 非法 max-turns 不产生日志
+
+- **WHEN** 执行 `minihns run -p "x" --max-turns 0`
+- **THEN** 退出码为 2，stderr 含 `INVALID_ARGUMENT`，且没有创建任何 session 日志
+
+#### Scenario: 上限判的是段不是会话
+
+- **WHEN** 一次 chat 的第一条输入用完 `max_turns = 2`
+- **THEN** 该段的 `segment/end` 的 `stop_reason` 是 `MAX_TURNS`、`turns` 为 2，日志里没有 `session/end`，下一条输入开一个新的段并照样有 2 个回合的额度
+
+#### Scenario: 段额度不随目标轮次累计
+
+- **WHEN** 目标连跑三轮，`max_turns = 2`
+- **THEN** 每个段各自最多两个回合，第三段的 `turns` 不从前面累加
