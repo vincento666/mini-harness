@@ -131,3 +131,12 @@ DSH 只有写表工具（`packages/todo/tool-todo/`），没有读回。mini 加
 - **若要跨轮读旧表**，得加一个非投影的读法（例如 `get_todos(scope="last")` 读最后一条 `todo/updated`），代价是引入 DSH 没有的跨轮表语义，且模型容易把旧表当本段当前表。**未做，待人裁。**
 
 顺带更正一处旧记录：`docs/reference/plan-and-todo.md` 4.1 原写「DSH 返回 `{todos, counts}` 并有 native renderer」——结构化输出确实是这个形状，但模型读到的是 `render` 的计数文本，与 mini 同形；已改。
+
+#### D.7.2 跨轮（含 goal 轮次）不保表：两边都靠历史与工作区（2026-11-19）
+
+人追问三件：跨轮指普通 turn 还是 goal turn；DSH 具体怎么跨段保表；被遮蔽是否就读不回来。
+
+- **两种轮是同一个边界。** DSH 的 goal round 就是一次 admitted user-message turn（`goal.md:119`）；`todos` 投影只认两个分支——`todo/write` 与 `turn/start`（`todo_index.ts:130`），**没有 goal 分支**。所以普通 turn 与 goal 轮都在开头清空，没有「goal 段保留表」这回事；mini 的 `segment/start` 同构（`events/projection.py`）。
+- **DSH 不跨段保表。** 能查的载体都查了：包里没有读回工具（`tool-todo` 只有 `todo_write`）；工具结果的模型可见文本只有计数（`render`，`todo_index.ts:159-182`）；goal 轮提示只有 objective / round / 指令（`packages/goal/goal-round-driver/src/prompt.ts`）；系统提示的 section 排序里没有 todo（逆向报告 §5.3，`tool-todo` 只是工具分组）。`turn/start` 之后运行时状态是 `null`，唯一载体是模型自己的历史。
+- **连续性靠三样，不是表。** 目标与轮号每轮注入；工作区、工具结果与持久状态由轮次提示明确要求「inspect them instead of assuming earlier narration is still current」；压缩摘要带叙述。表是「本轮常备计划」，条目刻意最小（无 id、整表替换，`docs/subsystems/todo.md`）。
+- **被遮蔽就是读不回来。** 两边一样：DSH 没有读回面，mini 的 `get_todos` 只覆盖本段。要让跨轮读回成立，得加一个非投影的读法（`todos_last` 投影 + `get_todos(scope="last")`，标注「最近一次提交，可能来自更早的段」）——这是 DSH 没有的机制，**未做，待人裁**。

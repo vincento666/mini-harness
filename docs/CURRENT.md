@@ -12,7 +12,7 @@
 - **沙箱会把长命令掐断**：全量测试在沙箱里跑时，两次都在十几分钟后被 `sitecustomize._BrokerProtocolError: execution capability 已过期` 打断，日志只剩空文件（partial 已写 160 份，说明测试本身在跑）。四道门禁与覆盖率两步因此在**沙箱外**跑（每轮约 3 分钟）；沙箱内跑单个测试文件没问题。
 - **活动 change**：`m13-goal-rounds`（分支 `change/m13-goal-rounds`）。apply 进行到 4.x：**1.1–4.5 已落**——goal 事件与折叠、`user/message.source`、`[goal]` 三键与 todo 并行纪律、三个目标工具（CAS / 相位矩阵 / 阻塞门槛）、段后续跑（四事件顺序、`round-limit`、失败收尾）、`replay` 的轮次校验、`get_todos` 读回（补 D8 的遮蔽缺口）。下一步 5.1–5.4：武装位收口、四条 `/goal` 命令、`--resume` 黑盒、REPL 段后驱动。六问已答：单目标 + 任务并行（ADR-0042）。
 - **已裁（M13，2026-11-19）**：轮次准入点从「首条 `turn/start` 之后」挪到「首条 `context/assembled` 之后」——装配完成才算一轮，注入/折叠/装配内压缩失败不再白烧额度。四事件顺序随之变成 `segment/start → goal 消息 → turn/start → context/assembled → goal/updated`；契约行为 1 新增一条顺序判据。ADR-0043 已改为 accepted。
-- **已核对（M13，2026-11-19）**：DSH 的 step / turn / goal round 与 mini 的回合 / 段 / 轮以及各自跟 goal 的关系**都有直接等价物**（逐条对边界事件与判据，见 `m13-goal-rounds-dsh-review.md` D.6）。据此 D.2–D.5 维持现状：D.2 已对齐、D.3 语义对齐（表示多一份冗余字段）、D.4 对齐、D.5 保持 `simplified`（要真对齐得先有输入队列）。`get_todos` 记为 `added`（D.7），不是对齐项；它的作用域是**本段**——跨轮重交靠模型历史（DSH 同构，零次额外调用），要跨轮读旧表需另加 `scope=last`，未做（D.7.1）。
+- **已核对（M13，2026-11-19）**：DSH 的 step / turn / goal round 与 mini 的回合 / 段 / 轮以及各自跟 goal 的关系**都有直接等价物**（逐条对边界事件与判据，见 `m13-goal-rounds-dsh-review.md` D.6）。据此 D.2–D.5 维持现状：D.2 已对齐、D.3 语义对齐（表示多一份冗余字段）、D.4 对齐、D.5 保持 `simplified`（要真对齐得先有输入队列）。`get_todos` 记为 `added`（D.7），不是对齐项；它的作用域是**本段**——跨轮重交靠模型历史（DSH 同构，零次额外调用）；**goal 轮同样清表**（DSH 的 round 就是一次 turn，`turn/start` 无条件清），被遮蔽后跨轮读不回，两边一样（D.7.2）。要跨轮读旧表需另加 `scope=last`，未做。
 - 已合并但未删的分支：`change/fix-small-window-compaction-dead-zone`、`change/add-key-driven-default-provider`、`change/fix-chat-screen-feedback`、`change/add-platform-facts-to-protected-header`、`change/fix-compaction-and-context-overflow`。
 
 ## 下一步
