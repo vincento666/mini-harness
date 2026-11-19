@@ -140,3 +140,17 @@ DSH 只有写表工具（`packages/todo/tool-todo/`），没有读回。mini 加
 - **DSH 不跨段保表。** 能查的载体都查了：包里没有读回工具（`tool-todo` 只有 `todo_write`）；工具结果的模型可见文本只有计数（`render`，`todo_index.ts:159-182`）；goal 轮提示只有 objective / round / 指令（`packages/goal/goal-round-driver/src/prompt.ts`）；系统提示的 section 排序里没有 todo（逆向报告 §5.3，`tool-todo` 只是工具分组）。`turn/start` 之后运行时状态是 `null`，唯一载体是模型自己的历史。
 - **连续性靠三样，不是表。** 目标与轮号每轮注入；工作区、工具结果与持久状态由轮次提示明确要求「inspect them instead of assuming earlier narration is still current」；压缩摘要带叙述。表是「本轮常备计划」，条目刻意最小（无 id、整表替换，`docs/subsystems/todo.md`）。
 - **被遮蔽就是读不回来。** 两边一样：DSH 没有读回面，mini 的 `get_todos` 只覆盖本段。要让跨轮读回成立，得加一个非投影的读法（`todos_last` 投影 + `get_todos(scope="last")`，标注「最近一次提交，可能来自更早的段」）——这是 DSH 没有的机制，**未做，待人裁**。
+
+#### D.7.3 「工作区与持久状态」在 DSH 的具体形式（2026-11-19）
+
+轮次提示那句 “Treat the current workspace, tool results, and durable session state as authoritative; inspect them instead of assuming earlier narration is still current” 指三层，按寿命排序：
+
+| 说法 | 形式 | 模型怎么看到 | 寿命 |
+|---|---|---|---|
+| current workspace | cwd 下的文件树（源码、产物、构建输出、git 状态）；`tool-fs` / `tool-bash` 操作的对象 | `read` / `grep` / `glob` / `bash` | 跨会话；进度的唯一真源 |
+| tool results | 本会话已发生的工具调用与输出，装配进上下文 | 直接在上下文里 | 跟上下文；会被剪枝 / 压缩遮蔽 |
+| durable session state | 会话日志 + 从它折出的投影（`goal/change`、`todo/write`、`plan/mode`、压缩摘要） | `get_goal` 读目标（`goal.md:178`：goal service「backed exclusively by the owning session log」）；plan 段由提示注入；todo 没有读面 | 跨 resume / replay，但不保证在上下文里 |
+
+- **AGENTS.md 不是状态，是指令**：它由 `agent-instructions` 段进提示（逆向报告 §5.2：`maxBytes: 65536`，读 `$DSH_HOME/AGENTS.md`），内容不随工作进展变化，也不该用来记进度。文档与产物属于第一层。
+- **没有「会话快照」这个东西**：日志是 durable 的，每次请求的上下文是装配出来的视图（transient）。`goal/change` 的 payload 是「完整快照」，但那是**单个对象的整值替换**，不是会话快照；mini 的 `context/assembled` 同理。
+- 所以「持久状态」里模型能读的只有目标（`get_goal`）与 plan 模式（提示注入）；**todo 表不在其中**——它是每轮清空的常备计划（D.7.2）。
