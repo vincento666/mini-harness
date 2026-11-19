@@ -149,7 +149,8 @@ async def write_file(args: WriteArgs, context: DispatchContext) -> ToolResult:
     if target.parent != target:
         target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(args.content, encoding="utf-8")
-    return ToolResult(outcome="OK", content=f"写了 {target}（{len(args.content)} 个字符）")
+    shown = _relative_to(context.workspace, target)
+    return ToolResult(outcome="OK", content=f"写了 {shown}（{len(args.content)} 个字符）")
 
 
 async def edit_file(args: EditArgs, context: DispatchContext) -> ToolResult:
@@ -184,7 +185,9 @@ async def edit_file(args: EditArgs, context: DispatchContext) -> ToolResult:
 
     count = matches if args.replace_all else 1
     target.write_text(body.replace(args.old_string, args.new_string, count), encoding="utf-8")
-    return ToolResult(outcome="OK", content=f"替换了 {count} 处：{target}")
+    return ToolResult(
+        outcome="OK", content=f"替换了 {count} 处：{_relative_to(context.workspace, target)}"
+    )
 
 
 def _relative_to(workspace: Path, target: Path) -> str:

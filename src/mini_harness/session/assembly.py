@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import os
 from argparse import Namespace
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
@@ -225,7 +226,11 @@ def assemble(
         )
 
     # 工作区在任何发现之前定下来：技能的四级根都相对它（用户级根相对 MINIHNS_HOME）。
-    workspace = Path(layered.workspace) if layered.workspace is not None else Path.cwd()
+    # 绝对化（`abspath` 不解析符号链接）：工具回执与 bash 的 cwd 用同一条路径，模型不会
+    # 看到「写了 .tmp/uat/m13/notes.md」却在工作区里 `tail` 不到的矛盾。
+    workspace = Path(
+        os.path.abspath(layered.workspace if layered.workspace is not None else Path.cwd())
+    )
     # 全局 provider + 分层注册表：目录消息与命令面都从注册表快照取（skill-providers）。
     skills_registry = SkillRegistry(FilesystemProvider.global_roots(workspace, environ))
     discovery = skills_registry.snapshot()

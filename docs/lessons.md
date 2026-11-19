@@ -168,6 +168,24 @@
 - Next use: 命令 handler 有副作用时，先写 `command/run`；命令白名单与 handler 表同源，别让 handler 的返回值兼任「存在性检查」
 - Status: inbox
 
+### L-090
+- Seen: 1（2026-11-19）
+- Date: 2026-11-19
+- Context: M13 的 UAT 场次 1：模型在自动轮次里调 `ask_user`，返回 `QUESTION_UNAVAILABLE`，驱动仍开了下一轮——问题没人答，额度照烧
+- Observation: 自动循环的「还能不能继续」判据里，**未决的人工输入**必须是一条停止理由。工具返回「问不到人」不是普通错误：它表示这一轮在等一个只有人能给的东西；把它当成普通工具结果继续跑，等于用轮次额度买同一个问题
+- Evidence: `loop/goal_driver.py` 的 `awaiting_input`；`docs/verification/m13-goal-rounds-dsh-review.md` D.8.1
+- Next use: 任何自动续跑／重试循环，先列「哪些结果意味着必须等人」，再写「否则继续」；`ask_user`、审批、凭证缺失都在这一类
+- Status: inbox
+
+### L-091
+- Seen: 1（2026-11-19）
+- Date: 2026-11-19
+- Context: 同一场 UAT：`--workspace .tmp/uat/m13` 是相对路径，`write` 回执写 `.tmp/uat/m13/notes.md`，而 `bash` 的 cwd 是工作区根，模型 `tail` 不到自己刚写的文件
+- Observation: 工具回执里的路径必须是**模型能直接拿去用**的那条。同一个工作区在两处用两种写法（相对启动目录 vs 相对工作区），模型只会得到「写了却找不到」的假矛盾，浪费一整轮自查
+- Evidence: `tools/file_tools.py` 的 `_relative_to` 回执；`session/assembly.py` 的 `abspath` 绝对化
+- Next use: 新增工具回执先问「这条路径从 bash 的 cwd 看得到吗」；工作区在装配时绝对化，展示用工作区相对路径
+- Status: inbox
+
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 - 每个里程碑收尾扫一次，**允许输出 `NO-PROMOTION`**（没有可复用信号就不写条目）。
 - 收件箱条目超过 **15 条**必须先消化再收新的：合并同类、把已被代码或规格自证的条目删掉。

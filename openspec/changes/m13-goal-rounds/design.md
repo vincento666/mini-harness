@@ -95,6 +95,18 @@ mini 没有 inbox、没有可插队的竞争输入、主循环是显式的（不
 
 **与 DSH 的两处差异**：① `resume` 对 `paused` 在工具层拒绝，交给 `/goal resume`（DSH 是 `GOAL_TOOL_RESUME_PAUSED`，同一分界）；② DSH 用 `GOAL_INVALID_TRANSITION` 表达「相位不允许」，mini 补了同名结果词——这是实现时发现的缺口，记在 proposal 的「提案扩展」。
 
+## D11 未回答的问题不续跑：暂停而不是跳过
+
+`ask_user` 在自动轮次里通常问不到人（`QUESTION_UNAVAILABLE`）。原来的行为是：模型拿到「问题未决」，段照常以 `MODEL_COMPLETED` 收尾，驱动接着开下一轮——问题还悬着，额度却继续烧。2026-11-19 的 UAT 场次 1 撞上这个形状（两轮全用在「问一个没人能答的问题」上）。
+
+- **判据**：段尾 `session.questions.pending` 非空就是「等人回答」。它在段首清空（与 `todos` 同一条边界），只有 `ask_user` 拿到答案时才清掉。
+- **处置**：`next_round` 多一档 `awaiting_input`；入口落 `paused` 并解除武装，与 `ABORTED` 同一条收尾理由——自动化停在这里，人回答后 `/goal resume` 再放行。`blocked` / `complete` / `paused` 不改写。
+- **优先级**：额度用尽优先。最后一轮里问了问题也先落 `blocked{round-limit}`——那是更硬的事实，避免「paused 却 resume 不了」。
+- **不选「继续跑」**：模型会重复提问或自拟答案，两种都在替人做决定；也不选「把问题塞进下一轮提示」——DSH 的轮次提示只有 objective 与轮号，加一段问答会变成新的机制。
+- **代价**：DSH 没有对应的可查证据（它的问题面不在本次抓取范围），这是 mini 自己补的一条收尾规则；`paused` 的表达也让人必须多敲一次 `/goal resume`，换来的是「不会在问题悬着时继续花钱」。
+
+**REPL 可见性**：自动轮次开始前沿用 `_print_segment_note` 的同一通道打 `[轮] n/cap`，额度用尽与「等人回答」各打一行。既有 `chat-repl` 规则要求 `MODEL_COMPLETED` 不打印段级那行，所以这里另立一种行，不改那条规则。
+
 ## 风险
 
 - `user/message` 形状变化波及折叠、投影、CLI 与既有 fixture；旧日志兼容要一条专门的判据。

@@ -90,6 +90,64 @@ def test_chat_keeps_running_rounds_without_another_line(tmp_path: Path) -> None:
     # 两轮的回复都打出来了：驱动期间输出接着走，不是攒到提示符才印。
     assert "第一轮做了一点" in result.stdout
     assert "第二轮做完了" in result.stdout
+    # 自动轮次有边界标记：人手里没有提示符，靠这两行知道这是第几轮、为什么停了。
+    assert "[轮] 1/2" in result.stderr
+    assert "[轮] 2/2" in result.stderr
+    assert "已用尽 2/2" in result.stderr
+
+
+def test_a_question_asked_in_a_round_pauses_instead_of_burning_the_next(
+    tmp_path: Path,
+) -> None:
+    """自动轮次里问不到人：回到提示符、目标暂停，不再白烧下一轮（design D9）。"""
+    fixture = _fixture(
+        tmp_path,
+        [
+            {
+                "content": "先立个目标",
+                "finish_reason": "tool_calls",
+                "tool_calls": [
+                    {
+                        "id": "c1",
+                        "name": "create_goal",
+                        "arguments": {"objective": "修好失败的用例", "max_rounds": 3},
+                    }
+                ],
+            },
+            {"content": "先看一下", "finish_reason": "stop"},
+            {
+                "content": "我先问一句",
+                "finish_reason": "tool_calls",
+                "tool_calls": [
+                    {
+                        "id": "q1",
+                        "name": "ask_user",
+                        "arguments": {"question": "用 A 还是 B", "options": ["A", "B"]},
+                    }
+                ],
+            },
+            {"content": "等你回答", "finish_reason": "stop"},
+            {"content": "不应该跑到这一轮", "finish_reason": "stop"},
+        ],
+    )
+
+    result = _chat(tmp_path, fixture, "开始\n")
+
+    assert result.returncode == 0
+    records = _records(tmp_path)
+    assert [record.type for record in records].count("segment/start") == 2
+    goal = fold_goal(records)
+    assert goal is not None
+    assert goal.phase == "paused"
+    assert goal.rounds_started == 1
+    types = [record.type for record in records]
+    assert types.count("question/asked") == 1
+    assert "question/answered" not in types
+    assert "等你回答" in result.stdout
+    assert "不应该跑到这一轮" not in result.stdout
+    assert "[轮] 1/3" in result.stderr
+    assert "[轮] 2/3" not in result.stderr
+    assert "目标已暂停" in result.stderr
 
 
 def test_resume_does_not_continue_an_active_goal(tmp_path: Path) -> None:

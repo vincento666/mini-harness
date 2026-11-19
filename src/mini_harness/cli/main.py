@@ -51,6 +51,7 @@ from mini_harness.loop import (
     end_session,
     exhaust_goal_rounds,
     goal_after,
+    pause_for_question,
     run_session,
     run_turn_segment,
     start_session,
@@ -683,6 +684,13 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
                 goal_round: GoalRound | None = None
                 while True:
                     segments += 1
+                    if goal_round is not None:
+                        # 自动轮次由驱动开：人手里没有提示符，得有一行说明这是第几轮
+                        # （不是日志事实，只是把 goal 消息里的 `Round: n/cap` 说给人听）。
+                        print(
+                            f"[轮] {goal_round.round}/{goal_round.goal.max_rounds}",
+                            file=sys.stderr,
+                        )
                     cancel = asyncio.Event()
                     signals.active = cancel
                     try:
@@ -737,8 +745,26 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
                         goal=goal,
                         armed=env.goal_runtime.armed,
                         stop_reason=segment.stop_reason,
+                        question_pending=env.questions.pending is not None,
                     )
+                    if decision.kind == "awaiting_input":
+                        failed = pause_for_question(
+                            env=env, decision=decision, turns=turn_index - 1
+                        )
+                        if failed is not None:
+                            return _report_failure(
+                                failed.failure_code or failed.stop_reason,
+                                failed.detail,
+                                EXIT_INTERNAL_ERROR,
+                            )
+                        print(
+                            "[轮] 本轮有一个没答完的问题：目标已暂停，"
+                            "直接回答，再用 /goal resume 继续",
+                            file=sys.stderr,
+                        )
+                        break
                     if decision.kind == "exhausted":
+                        assert decision.goal is not None
                         failed = exhaust_goal_rounds(
                             env=env, decision=decision, turns=turn_index - 1
                         )
@@ -748,6 +774,11 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
                                 failed.detail,
                                 EXIT_INTERNAL_ERROR,
                             )
+                        print(
+                            f"[轮] 已用尽 {decision.goal.rounds_started}/"
+                            f"{decision.goal.max_rounds}：目标置为 blocked（round-limit）",
+                            file=sys.stderr,
+                        )
                         break
                     if decision.kind == "stop":
                         if segment.stop_reason in NO_CONTINUE_REASONS:

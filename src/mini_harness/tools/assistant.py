@@ -40,7 +40,12 @@ async def _ask_user(args: AskUserArgs, context: DispatchContext) -> ToolResult:
         question_id=question_id, question=args.question, options=args.options
     )
     if answer is None:
+        # 记在会话上：自动轮次里问不到人时，驱动据此不再开下一段（design D11）。
+        if context.session is not None:
+            context.session.questions.pending = question_id
         return ToolResult("QUESTION_UNAVAILABLE", "没有问不到人的答案：问题保持未决")
+    if context.session is not None:
+        context.session.questions.pending = None
     if log is not None:
         answered = log.append("question/answered", {"question_id": question_id, "answer": answer})
         if isinstance(answered, LogWriteFailure):

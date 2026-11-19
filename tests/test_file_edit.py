@@ -33,6 +33,8 @@ async def test_editing_a_read_file_replaces_only_the_one_match(tmp_path: Path) -
 
     assert tool_outcomes(log) == ["OK", "OK"]
     assert (tmp_path / "a.md").read_text(encoding="utf-8") == "换掉\n"
+    results = [record.payload for record in read_events(log.path) if record.type == "tool/result"]
+    assert "替换了 1 处：a.md" in results[-1]["content"]
 
 
 async def test_edit_replaces_only_the_first_match_unless_replace_all(tmp_path: Path) -> None:

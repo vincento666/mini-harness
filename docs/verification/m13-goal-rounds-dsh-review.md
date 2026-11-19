@@ -154,3 +154,20 @@ DSH 只有写表工具（`packages/todo/tool-todo/`），没有读回。mini 加
 - **AGENTS.md 不是状态，是指令**：它由 `agent-instructions` 段进提示（逆向报告 §5.2：`maxBytes: 65536`，读 `$DSH_HOME/AGENTS.md`），内容不随工作进展变化，也不该用来记进度。文档与产物属于第一层。
 - **没有「会话快照」这个东西**：日志是 durable 的，每次请求的上下文是装配出来的视图（transient）。`goal/change` 的 payload 是「完整快照」，但那是**单个对象的整值替换**，不是会话快照；mini 的 `context/assembled` 同理。
 - 所以「持久状态」里模型能读的只有目标（`get_goal`）与 plan 模式（提示注入）；**todo 表不在其中**——它是每轮清空的常备计划（D.7.2）。
+
+### D.8 UAT 场次 1/2 暴露的两处实现问题（2026-11-19）
+
+人跑场次 1 时模型在轮次里调 `ask_user`，得到 `QUESTION_UNAVAILABLE` 之后驱动仍开了下一轮——问题悬着，额度继续烧。同一场还暴露出工具回执的路径与 bash 的 cwd 对不上。
+
+#### D.8.1 未回答的问题不续跑（added，不是对齐项）
+
+- **原行为**：`ask_user` 返回「问不到人」，段照常以 `MODEL_COMPLETED` 收尾，`next_round` 只看快照、武装位与 `stop_reason`，于是开了下一轮。
+- **现行为**：`session.questions.pending` 在段尾非空时，`next_round` 给 `awaiting_input`；入口落 `paused` 并解除武装，与 `ABORTED` 同一条收尾理由。段首清空；额度用尽优先。
+- **为什么不是「继续跑」**：模型会重复提问或自拟答案，两种都在替人做决定。
+- **对齐状态**：DSH 的问题面不在本次抓取范围（`/tmp/dsh-goal` 只有 goal/todo 子系统），所以这条记 `added`，不声称与 DSH 同形；形状上它只是把「段尾不能继续」多列一种理由，与 `ABORTED` 并列。
+
+#### D.8.2 回执路径与工作区同一条（缺陷修复）
+
+- **原行为**：`--workspace .tmp/uat/m13` 是相对路径，`resolve_target` 直接拼接，`write` 回执写 `.tmp/uat/m13/notes.md`；而 `bash` 的 cwd 是工作区根，模型 `tail .tmp/uat/m13/notes.md` 当场失败（场次 2 记录）。
+- **现行为**：装配时把工作区绝对化（`os.path.abspath`，不解析符号链接），`write` / `edit` 的回执改用工作区相对路径（与 `glob` / `grep` 一致）：`写了 notes.md（… 个字符）`。
+- **顺带**：`[段]` 那行只在非 `MODEL_COMPLETED` 时打印（`chat-repl` 的既有规则），所以自动轮次之间人看不到任何边界；补 `[轮] n/cap`、`已用尽 n/cap`、`目标已暂停` 三类行，写在 REPL 层，不进日志。

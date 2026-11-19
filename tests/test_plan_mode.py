@@ -278,6 +278,7 @@ async def _dispatch_ask(tmp_path, gate):
 
     from mini_harness.config import build_registry
     from mini_harness.events import EventLog, read_events
+    from mini_harness.loop.turn_loop import QuestionRuntime
     from mini_harness.provider.contract import ToolCall
     from mini_harness.tools.dispatch import dispatch_tool_call
     from mini_harness.tools.fences import DispatchContext
@@ -287,7 +288,7 @@ async def _dispatch_ask(tmp_path, gate):
         workspace=tmp_path,
         sandbox="workspace-write",
         approval="auto",
-        session=SimpleNamespace(log=log),
+        session=SimpleNamespace(log=log, questions=QuestionRuntime()),
     )
     if gate is not None:
         object.__setattr__(context, "question_gate", gate)

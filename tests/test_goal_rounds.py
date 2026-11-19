@@ -7,10 +7,11 @@ from pathlib import Path
 from typing import Any
 
 from mini_harness.events import EventRecord, read_events
+from mini_harness.events.writer import LogWriteFailure
 from mini_harness.goals import GoalSnapshot, fold_goal
-from mini_harness.loop import ENTRY_RUN, run_session_env
-from mini_harness.loop.goal_driver import next_round
-from mini_harness.provider import AssistantTurn, ProviderFailure, ToolCall
+from mini_harness.loop import ENTRY_RUN, pause_for_question, run_session_env
+from mini_harness.loop.goal_driver import RoundDecision, next_round
+from mini_harness.provider import AssistantTurn, FixtureProvider, ProviderFailure, ToolCall
 from mini_harness.tools import ToolRegistry
 from mini_harness.tools.assistant import assistant_tool_definitions
 from mini_harness.tools.goal import goal_tool_definitions
@@ -182,6 +183,80 @@ async def test_three_rounds_run_in_order_and_stop_at_the_cap(tmp_path: Path) -> 
     assert outcome.stop_reason == "MODEL_COMPLETED"
 
 
+class _AsksThenStops:
+    """第 1 轮问一个人答不了的问题，然后收尾；用来钉住「未决问题不续跑」。"""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def generate(
+        self, messages: Any, tools: Any, signal: Any, on_delta: Any = None
+    ) -> AssistantTurn | ProviderFailure:
+        self.calls += 1
+        if self.calls == 1:
+            return AssistantTurn(
+                content="先立个目标",
+                finish_reason="tool_calls",
+                tool_calls=[
+                    ToolCall(
+                        id="c1",
+                        name="create_goal",
+                        arguments={"objective": OBJECTIVE, "max_rounds": 3},
+                    )
+                ],
+            )
+        if self.calls == 2:
+            # 人类这一段自己收尾：问题要落在目标轮次里，才测得到驱动。
+            return AssistantTurn(content="先看一下", finish_reason="stop")
+        if self.calls == 3:
+            return AssistantTurn(
+                content="我先问一句",
+                finish_reason="tool_calls",
+                tool_calls=[
+                    ToolCall(
+                        id="q1",
+                        name="ask_user",
+                        arguments={"question": "用 A 还是 B", "options": ["A", "B"]},
+                    )
+                ],
+            )
+        return AssistantTurn(content="等你回答", finish_reason="stop")
+
+
+async def test_an_unanswered_question_pauses_instead_of_burning_the_next_round(
+    tmp_path: Path,
+) -> None:
+    """自动轮次里问不到人：目标落 paused、解除武装，不再开下一段（design D9）。"""
+    log, env = build_session_env(
+        tmp_path, "s-question", _AsksThenStops(), registry=_registry(), max_turns=8
+    )
+    outcome = await run_session_env(
+        prompt="把这件活干完", entry=ENTRY_RUN, env=env, cancel=asyncio.Event()
+    )
+    records = read_events(log.path)
+
+    assert list(_segments(records)) == ["s1", "s2"]
+    assert env.goal_runtime.armed is False
+    goal = fold_goal(records)
+    assert goal is not None
+    assert goal.phase == "paused"
+    assert goal.rounds_started == 1
+    assert outcome.stop_reason == "MODEL_COMPLETED"
+    types = [record.type for record in records]
+    assert types.count("question/asked") == 1
+    assert "question/answered" not in types
+    # 问题悬着的时候不开新段：日志里没有第 2 轮的 goal 消息。
+    assert [
+        payload["source"]["round"]
+        for payload in (
+            record.payload
+            for record in records
+            if record.type == "user/message"
+            and record.payload.get("source", {}).get("kind") == "goal"
+        )
+    ] == [1]
+
+
 async def test_a_completed_goal_no_longer_opens_segments(tmp_path: Path) -> None:
     records, goal, outcome, _ = await _run(tmp_path, max_rounds=3, complete_at=4)
 
@@ -331,3 +406,22 @@ def test_a_broken_log_is_reported_instead_of_guessed(tmp_path: Path) -> None:
     log.path.write_text("{ 这不是 json\n", encoding="utf-8")
 
     assert isinstance(goal_after(log), LogReadFailure)
+
+
+def test_a_failed_pause_write_is_reported(tmp_path: Path, monkeypatch: Any) -> None:
+    """暂停写不进日志：段以失败收尾、武装位已经解除（人至少不会被留在「已武装」上）。"""
+    log, env = build_session_env(
+        tmp_path, "s-pause-fail", FixtureProvider(entries=[]), registry=_registry()
+    )
+    goal = GoalSnapshot(
+        id="g1", revision=1, objective=OBJECTIVE, phase="active", max_rounds=3, rounds_started=1
+    )
+    monkeypatch.setattr(
+        env.log, "append", lambda *args, **kwargs: LogWriteFailure(log.path, "只读")
+    )
+
+    failed = pause_for_question(env=env, decision=RoundDecision("awaiting_input", goal, 2), turns=2)
+
+    assert failed is not None
+    assert failed.failure_code == "LOG_WRITE_FAILED"
+    assert env.goal_runtime.armed is False

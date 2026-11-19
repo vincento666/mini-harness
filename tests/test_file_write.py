@@ -28,6 +28,8 @@ async def test_writing_a_new_file_creates_it_and_the_parent_dirs(tmp_path: Path)
 
     assert outcome.result.outcome == "OK"
     assert (tmp_path / "notes" / "deep" / "a.md").read_text(encoding="utf-8") == "新文件\n"
+    # 回执用工作区内的相对路径：与 glob/grep 一致，也与 bash 的 cwd 对得上。
+    assert outcome.result.content == "写了 notes/deep/a.md（4 个字符）"
 
 
 async def test_overwriting_an_unread_file_is_refused_and_leaves_the_bytes_alone(

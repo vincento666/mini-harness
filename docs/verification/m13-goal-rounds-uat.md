@@ -28,7 +28,8 @@ uv run minihns chat --provider deepseek --workspace .tmp/uat/m13 --session-dir .
 请调用 create_goal 建一个目标，objective 写「把 notes.md 逐节写成三节：每轮只写一节，写完不要标完成，由我验收」，max_rounds 给 2。建完目标就结束这一轮，现在不要读文件、不要写文件。
 ```
 
-- 期望：这一段结束后**不出现 `> ` 提示符**，直接跑两轮；第 2 轮之后写 `goal/updated {phase: "blocked", blocked_reason.code: "round-limit"}`，回到提示符；`notes.md` 里有两节（第 3 节没写）。
+- 期望：这一段结束后**不出现 `> ` 提示符**，stderr 先打 `[轮] 1/2`、再打 `[轮] 2/2`；第 2 轮之后写 `goal/updated {phase: "blocked", blocked_reason.code: "round-limit"}` 并打一行 `已用尽 2/2`，回到提示符；`notes.md` 里有两节（第 3 节没写）。
+- 另一种合法收尾（2026-11-19 起）：模型在轮次里调 `ask_user` 但没人能答时，**不再续跑**——stderr 出现 `[轮] n/2` 后跟 `目标已暂停`，目标落 `paused`；你回答后用 `/goal resume` 继续。看到这个不算失败，是 design D11。
 - 观察：无人输入时是否自己推进；轮次提示是否清楚（`Round: n/2`）；阻塞后是否停下不动。
 - 结果：**待填**
 
@@ -40,7 +41,7 @@ uv run minihns chat --provider deepseek --workspace .tmp/uat/m13 --session-dir .
 请调用 create_goal 建一个目标，objective 写「把 notes.md 逐节写成三节：每轮只写一节，写完不要标完成，由我验收」，max_rounds 给 4。建完目标就结束这一轮，现在不要读文件、不要写文件。
 ```
 
-- 步骤：每段结束 stderr 会打一行 `[段] …`。等第二个 `[段]` 出现、第 3 段（轮次 2）开始输出时按一次 `Ctrl-C`；回到提示符后输入：
+- 步骤：自动轮次开始前 stderr 会打 `[轮] n/cap`。看到 `[轮] 2/4` 之后按一次 `Ctrl-C`；回到提示符后输入：
 
 ```text
 /goal

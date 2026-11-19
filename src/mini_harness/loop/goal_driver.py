@@ -23,24 +23,36 @@ NO_CONTINUE_REASONS: frozenset[str] = frozenset(
     }
 )
 
-RoundDecisionKind = Literal["stop", "continue", "exhausted"]
+RoundDecisionKind = Literal["stop", "continue", "exhausted", "awaiting_input"]
 
 
 @dataclass(frozen=True)
 class RoundDecision:
-    """段之后的三选一：停、续下一轮、额度用尽（要落 blocker，不再起段）。"""
+    """段之后的四选一：停、续下一轮、额度用尽（落 blocker）、等人回答问题。"""
 
     kind: RoundDecisionKind
     goal: GoalSnapshot | None = None
     round: int = 0
 
 
-def next_round(*, goal: GoalSnapshot | None, armed: bool, stop_reason: str) -> RoundDecision:
-    """`phase == active` + 已武装 + 该收尾允许继续，才开新段；到上限则落 blocker。"""
+def next_round(
+    *,
+    goal: GoalSnapshot | None,
+    armed: bool,
+    stop_reason: str,
+    question_pending: bool = False,
+) -> RoundDecision:
+    """`phase == active` + 已武装 + 该收尾允许继续，才开新段；到上限则落 blocker。
+
+    `question_pending` 是本段末尾仍未回答的问题：自动轮次里没人能回答，继续开段只会
+    白烧额度，所以先停、由入口把目标置 `paused`。额度用尽优先（那是更硬的事实）。
+    """
     if goal is None or goal.phase != "active" or not armed:
         return RoundDecision("stop", goal)
     if stop_reason in NO_CONTINUE_REASONS:
         return RoundDecision("stop", goal)
     if goal.rounds_started >= goal.max_rounds:
         return RoundDecision("exhausted", goal, goal.rounds_started + 1)
+    if question_pending:
+        return RoundDecision("awaiting_input", goal, goal.rounds_started + 1)
     return RoundDecision("continue", goal, goal.rounds_started + 1)

@@ -163,6 +163,25 @@ goal 来源消息的 `round` MUST 等于写入时快照的 `rounds_started + 1`�
 - **WHEN** 续跑要写的 `goal/updated` 落盘失败
 - **THEN** 不出现新的段，日志里留下 `error/*`，命令以非零码结束
 
+### Requirement: 未回答的问题不续跑
+
+一个段在收尾时若仍带着**没有答案的问题**（`ask_user` 返回 `QUESTION_UNAVAILABLE`，日志有 `question/asked` 且没有配对的 `question/answered`），驱动 MUST NOT 再开轮次：SHALL 把 `active` 目标置 `paused` 并解除武装。已 `blocked` / `complete` / `paused` 的目标 MUST NOT 被这条改写。`rounds_started >= max_rounds` 时以额度用尽为准（先落 `blocked{round-limit}`）。未决问题是**段作用域**：每个段开头清空，MUST NOT 跨段继承；人回答之后要 `/goal resume` 才恢复自动推进。
+
+#### Scenario: 轮次里问不到人就暂停
+
+- **WHEN** 第 1 轮里 `ask_user` 返回 `QUESTION_UNAVAILABLE`，该段以 `MODEL_COMPLETED` 收尾
+- **THEN** 日志没有第 2 段的 `user/message`；新增一条 `goal/updated`：`phase == "paused"`；`get_goal()` 的 `armed == false`；`question/asked` 有一条且没有 `question/answered`
+
+#### Scenario: 答完再放行
+
+- **WHEN** 上一场之后人回答这个问题，并执行 `/goal resume`
+- **THEN** 目标回到 `active`、`armed == true`；下一段结束时照常判定是否续跑
+
+#### Scenario: 段首清空
+
+- **WHEN** 上一段留了未决问题，新的一段里没有再提问
+- **THEN** 新段结尾不因上一段的问题而暂停（标记已在 `segment/start` 清空）
+
 ### Requirement: 阻塞需要轮数门槛
 
 `update_goal(action="blocked")` MUST 要求 `blocked_reason` 非空；`rounds_started` 小于 `blocked_after_consecutive_rounds` 时 MUST 返回 `GOAL_BLOCK_TOO_EARLY` 且不落事件。被接受时快照的 `blocked_reason.code` MUST 为 `model-reported`，`message` 为调用方给出的原文。

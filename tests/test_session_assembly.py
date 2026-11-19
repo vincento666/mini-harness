@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from mini_harness.session.assembly import AssemblyRequest, Failure, Prepared, assemble
 
@@ -131,3 +132,29 @@ def test_assemble_failure_happens_before_any_log(tmp_path: Path) -> None:
         assert isinstance(failure, Failure)
         assert failure.code == "INVALID_ARGUMENT"
         assert list(session_dir.glob("*.jsonl")) == []
+
+
+def test_a_relative_workspace_is_made_absolute(tmp_path: Path, monkeypatch: Any) -> None:
+    """相对 `--workspace` 在装配时绝对化：工具回执与 bash 的 cwd 才是同一条路径。"""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    fixture = tmp_path / "turns.json"
+    fixture.write_text(
+        json.dumps([{"content": "好", "finish_reason": "stop"}], ensure_ascii=False),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    prepared = assemble(
+        AssemblyRequest(
+            workspace="ws",
+            provider="mock",
+            fixture=str(fixture),
+            session_dir=str(tmp_path / "sessions"),
+        ),
+        {"MINIHNS_HOME": str(tmp_path / "home")},
+    )
+
+    assert isinstance(prepared, Prepared)
+    assert prepared.settings.workspace.is_absolute()
+    assert prepared.settings.workspace == workspace

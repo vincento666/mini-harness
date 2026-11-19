@@ -13,6 +13,7 @@
 3. **武装权在人手里**：`armed` 不进事件载荷；启动与 `--resume` 后为假、不自动续跑；`/goal resume` 后才续；`pause` / `complete` / `blocked` / 撞上限 / 取消 / 失败收尾之后一律为假（seam ⑥⑦）。
 4. **多任务互不覆盖**：同一段里两个任务可同时 `in_progress`；把一条标完成不会把另一条降级；段首（含 goal 轮次）清空；关闭并行时第二个被拒；被遮蔽后 `get_todos` 能读回本段提交的表（seam ②④⑥）。
 5. **边角不静默**：七个新结果词各有可达走法；`[goal]` 三键的默认与非法值在会话开始前处理；回放对正常日志退 0、对五类坏日志非零；写不进日志就停（seam ②④⑥）。
+6. **未决问题不烧额度**：自动轮次里 `ask_user` 问不到人时，目标落 `paused`、解除武装、不再开段；标记在段首清空；人回答后 `/goal resume` 才继续（seam ⑥⑦）。
 
 ## 判据（seam 映射）
 
@@ -58,6 +59,7 @@
 8. **恢复即武装**：`--resume` 直接把 `armed` 置真。→ 行为 3 第 1 行必红。
 9. **取消不置暂停**：`ABORTED` 只解除武装、`phase` 留在 active。→ 行为 3 第 3 行必红。
 10. **回调把别人降级**：`completed` 一条时把其它 `in_progress` 一并改成 `pending`。→ 行为 4 第 1 行必红。
+11. **忽略未决问题**：`next_round` 不看 `question_pending`。→ 行为 6 必红（`test_an_unanswered_question_pauses_instead_of_burning_the_next_round`）。
 
 ## 不验什么
 

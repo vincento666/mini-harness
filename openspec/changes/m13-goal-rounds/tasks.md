@@ -35,6 +35,7 @@
 - [x] 5.2 `/goal`、`/goal pause`、`/goal resume`、`/goal clear` 四条命令；无目标不写事件（`test_goal_commands`；host 同一条 `execute_command`，带 env）
 - [x] 5.3 CLI 黑盒：`--resume` 之后第一次模型调用前没有 goal 来源消息，`/goal resume` 之后才有（`test_chat_goal_driver` 的两条 chat 用例）
 - [x] 5.4 REPL 段后驱动：`chat` 里目标 `active` 且已武装时，段结束不开提示符、直接起下一轮；提示符只在驱动停下时出现（`test_chat_goal_driver::test_chat_keeps_running_rounds_without_another_line`）
+- [x] 5.5 未决问题不续跑（D11，2026-11-19 UAT 场次 1 暴露）：`ask_user` 拿到 `QUESTION_UNAVAILABLE` 时记在会话上，段尾 `awaiting_input` → `paused` + 解除武装；段首清空；chat 打 `[轮] n/cap`（`test_goal_rounds`、`test_chat_goal_driver`）
 
 ## 6. 收尾
 

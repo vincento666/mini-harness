@@ -31,6 +31,7 @@ from mini_harness.events.reader import LogReadFailure, read_events
 from mini_harness.events.record import EventRecord
 from mini_harness.events.writer import EventLog, LogWriteFailure
 from mini_harness.goals import (
+    GoalRefusal,
     GoalRound,
     GoalRuntime,
     GoalSnapshot,
@@ -40,6 +41,7 @@ from mini_harness.goals import (
     exhaust_goal,
     fold_goal,
     opened_by_human,
+    pause_goal,
     render_goal_round,
 )
 from mini_harness.loop.goal_driver import NO_CONTINUE_REASONS, RoundDecision, next_round
@@ -132,6 +134,13 @@ class ContractState:
     last_paths: tuple[str, ...] = ()
 
 
+@dataclass
+class QuestionRuntime:
+    """本段最后一个没有答案的问题（进程内，不落盘）。段首清零，段尾还在就不自动续跑。"""
+
+    pending: str | None = None
+
+
 @dataclass(frozen=True)
 class SessionEnv:
     """一次会话的冻结环境：段调用不再一路结伴（ADR-0002 第 21 条）。
@@ -156,6 +165,9 @@ class SessionEnv:
     contracts: ContractState = field(default_factory=ContractState)
     # 目标武装位（M13）：进程内，不落盘（design D5）。
     goal_runtime: GoalRuntime = field(default_factory=GoalRuntime)
+    # 本段里最后一个没有答案的问题（`ask_user` 的 `QUESTION_UNAVAILABLE`）。
+    # 段首清零；段尾还在就是「等人回答」，驱动据此不再自动续跑（design D11）。
+    questions: QuestionRuntime = field(default_factory=QuestionRuntime)
 
 
 @dataclass(frozen=True)
@@ -982,6 +994,8 @@ async def run_turn_segment(
     `goal_round` 是 goal 轮次的唯一入口：正文与来源都由它派生，且由 `_run_turns` 在首条
     `turn/start` 之后补写 `goal/updated`（额度那时才消耗，design D3）。
     """
+    # 段首清空：上一段没答完的问题不带进新段（与 `todos` 的段作用域同一条边界）。
+    env.questions.pending = None
     if goal_round is not None:
         if user_message is not None or message_source is not None:
             raise ValueError("goal_round 与 user_message / message_source 不能同时给")
@@ -1429,6 +1443,24 @@ def exhaust_goal_rounds(
     return None
 
 
+def pause_for_question(
+    *, env: SessionEnv, decision: RoundDecision, turns: int
+) -> SegmentOutcome | None:
+    """自动轮次以未回答的问题收尾：落 `paused` 并解除武装，等人回答。
+
+    与 `ABORTED` 同一条收尾理由：自动化停在这里，人回答之后用 `/goal resume` 再放行。
+    已经 `blocked` / `complete` / `paused` 的目标不改写——那些相位已经是人的决定。
+    """
+    env.goal_runtime.armed = False
+    assert decision.goal is not None
+    paused = pause_goal(decision.goal)
+    assert not isinstance(paused, GoalRefusal)  # `next_round` 只在 active 时给这一档
+    written = env.log.append("goal/updated", {"goal": paused.model_dump(exclude_none=True)})
+    if isinstance(written, LogWriteFailure):
+        return _segment_failure(written, turns)
+    return None
+
+
 def close_failed_round(*, env: SessionEnv, segment: SegmentOutcome) -> SegmentOutcome | None:
     """失败收尾：一律解除武装；`ABORTED`（人取消）另把 `active` 目标置 `paused`。
 
@@ -1481,8 +1513,16 @@ async def run_session_env(
         if isinstance(goal, LogReadFailure):
             return _run_outcome(log, _segment_failure(goal, turns))
         decision = next_round(
-            goal=goal, armed=env.goal_runtime.armed, stop_reason=segment.stop_reason
+            goal=goal,
+            armed=env.goal_runtime.armed,
+            stop_reason=segment.stop_reason,
+            question_pending=env.questions.pending is not None,
         )
+        if decision.kind == "awaiting_input":
+            failed = pause_for_question(env=env, decision=decision, turns=turns)
+            if failed is not None:
+                return _run_outcome(log, failed)
+            break
         if decision.kind == "exhausted":
             failed = exhaust_goal_rounds(env=env, decision=decision, turns=turns)
             if failed is not None:
