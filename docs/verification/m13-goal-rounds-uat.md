@@ -51,11 +51,7 @@ uv run minihns chat --provider deepseek --workspace .tmp/uat/m13 --session-dir .
 ```text
 /goal resume
 ```
-（应是「已恢复目标：这一段结束后继续」）。然后再**输入一句话**让它开一段：
-
-```text
-继续
-```
+（应是「已恢复目标：继续自动推进」）。**不用再输入**：紧接着应出现 `[轮] 2/4`，自动跑下去。
 
 - 期望：`Ctrl-C` 之后不再自动起新段；`/goal resume` 之后武装位变 true（`get_goal` 的工具结果里 `armed: true`）；「继续」这一段结束后自动续跑，轮次从 2 起。
 - 观察：取消的反馈是否明确；续跑是否要人确认；有没有「取消后自己又跑了」。

@@ -36,6 +36,7 @@
 - [x] 5.3 CLI 黑盒：`--resume` 之后第一次模型调用前没有 goal 来源消息，`/goal resume` 之后才有（`test_chat_goal_driver` 的两条 chat 用例）
 - [x] 5.4 REPL 段后驱动：`chat` 里目标 `active` 且已武装时，段结束不开提示符、直接起下一轮；提示符只在驱动停下时出现（`test_chat_goal_driver::test_chat_keeps_running_rounds_without_another_line`）
 - [x] 5.5 未决问题不续跑（D11，2026-11-19 UAT 场次 1 暴露）：`ask_user` 拿到 `QUESTION_UNAVAILABLE` 时记在会话上，段尾 `awaiting_input` → `paused` + 解除武装；段首清空；chat 打 `[轮] n/cap`（`test_goal_rounds`、`test_chat_goal_driver`）
+- [x] 5.6 `/goal resume` 之后立刻起下一轮（D12，2026-11-19 UAT 场次 2）：命令成功即进段循环，`[轮] n/cap` 紧跟回执；不再需要人敲「继续」（`test_chat_goal_driver::test_goal_resume_in_chat_starts_the_next_round_without_another_line`）
 
 ## 6. 收尾
 

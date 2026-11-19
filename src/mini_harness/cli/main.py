@@ -606,6 +606,25 @@ def _run_chat_command(prepared: Prepared, text: str, env: SessionEnv | None = No
     return None
 
 
+def _resume_round(env: SessionEnv, text: str) -> GoalRound | None:
+    """`/goal resume` 之后驱动立刻开的那个轮次；其余命令返回 `None`（design D12）。
+
+    只认命令面确实把武装位放开的三种事实：命令是 `resume`、目标 `active`、还有额度。
+    读不动日志就不猜——返回 `None`，让人留在一个能看见提示符的状态里。
+    """
+    name, _, arguments = text.partition(" ")
+    if name != "/goal" or arguments.strip() != "resume":
+        return None
+    if not env.goal_runtime.armed:
+        return None
+    goal = goal_after(env.log)
+    if isinstance(goal, LogReadFailure) or goal is None or goal.phase != "active":
+        return None
+    if goal.rounds_started >= goal.max_rounds:
+        return None
+    return GoalRound(goal=goal, round=goal.rounds_started + 1)
+
+
 async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
     """读一行、开一个段、回到提示符；EOF 或提示符上的 Ctrl-C 收尾整个会话。
 
@@ -679,9 +698,16 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
                     # 命令本身不写 user/message；`/<技能名> 指令` 会展开成一条消息再开段。
                     expanded = _run_chat_command(prepared, text, env)
                     if expanded is None:
-                        continue
-                    text = expanded
-                goal_round: GoalRound | None = None
+                        # `/goal resume` 把武装位放开之后，驱动立刻开下一轮——不必再等一行
+                        # （design D12）。其余命令仍然回到提示符。
+                        goal_round = _resume_round(env, text)
+                        if goal_round is None:
+                            continue
+                    else:
+                        text = expanded
+                        goal_round = None
+                else:
+                    goal_round = None
                 while True:
                     segments += 1
                     if goal_round is not None:

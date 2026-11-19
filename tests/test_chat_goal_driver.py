@@ -185,8 +185,10 @@ def test_resume_does_not_continue_an_active_goal(tmp_path: Path) -> None:
     assert goal.rounds_started == 1
 
 
-def test_goal_resume_in_chat_continues_after_the_next_segment(tmp_path: Path) -> None:
-    """`/goal resume` 之后，下一段结束就起轮次——命令面与驱动面接在同一条武装位上。"""
+def test_goal_resume_in_chat_starts_the_next_round_without_another_line(
+    tmp_path: Path,
+) -> None:
+    """`/goal resume` 之后立刻起下一轮：不必再敲一行（design D12）。"""
     sessions = tmp_path / "sessions"
     sessions.mkdir()
     log, env = build_session_env(
@@ -207,17 +209,16 @@ def test_goal_resume_in_chat_continues_after_the_next_segment(tmp_path: Path) ->
     )
     log.append("goal/updated", {"goal": paused.model_dump(exclude_none=True)})
 
-    fixture = _fixture(
-        tmp_path,
-        [
-            {"content": "人这一句的回应", "finish_reason": "stop"},
-            {"content": "第二轮做完了", "finish_reason": "stop"},
-        ],
-    )
-    result = _chat(tmp_path, fixture, "/goal resume\n开始\n", "--resume", "s-resume-paused")
+    fixture = _fixture(tmp_path, [{"content": "第二轮做完了", "finish_reason": "stop"}])
+    # 只给命令、不给后续输入：轮次仍然要跑起来。
+    result = _chat(tmp_path, fixture, "/goal resume\n", "--resume", "s-resume-paused")
 
     assert result.returncode == 0
     assert "已恢复目标" in result.stdout
+    assert "第二轮做完了" in result.stdout
+    # 这一轮是自动轮次：终端有轮次标记，且没有多出一个供人输入的空段。
+    assert "[轮] 2/2" in result.stderr
+    assert "[轮] 已用尽 2/2" in result.stderr
     records = _records(tmp_path)
     assert [payload["source"]["round"] for payload in _goal_messages(records)] == [2]
     goal = fold_goal(records)
@@ -225,3 +226,50 @@ def test_goal_resume_in_chat_continues_after_the_next_segment(tmp_path: Path) ->
     assert goal.phase == "blocked"
     assert goal.blocked_reason is not None
     assert goal.blocked_reason.code == "round-limit"
+
+
+def test_resume_round_only_drives_on_a_successful_resume(tmp_path: Path) -> None:
+    """`_resume_round` 的每一档：只认 resume + 已武装 + active + 还有额度（D12）。"""
+    from mini_harness.cli.main import _resume_round
+
+    sessions = tmp_path / "sessions"
+    sessions.mkdir()
+    log, env = build_session_env(
+        tmp_path,
+        "s-resume-helper",
+        FixtureProvider(entries=[]),
+        registry=build_registry(None),
+        session_dir=sessions,
+    )
+    assert start_session(prompt="", entry=ENTRY_CHAT, env=env) is None
+    active = GoalSnapshot(
+        id="g-helper",
+        revision=1,
+        objective="修好失败的用例",
+        phase="active",
+        max_rounds=3,
+        rounds_started=1,
+    )
+    log.append("goal/updated", {"goal": active.model_dump(exclude_none=True)})
+
+    assert _resume_round(env, "/goal pause") is None
+    assert _resume_round(env, "/goal resume") is None  # 还没武装
+    env.goal_runtime.armed = True
+    assert _resume_round(env, "/goal") is None
+    assert _resume_round(env, "/goal resume extra") is None
+
+    decision = _resume_round(env, "/goal resume")
+    assert decision is not None
+    assert decision.round == 2
+    assert decision.goal is not None
+
+    paused = active.model_copy(update={"phase": "paused", "revision": 2})
+    log.append("goal/updated", {"goal": paused.model_dump(exclude_none=True)})
+    assert _resume_round(env, "/goal resume") is None
+
+    at_cap = active.model_copy(update={"rounds_started": 3, "revision": 3})
+    log.append("goal/updated", {"goal": at_cap.model_dump(exclude_none=True)})
+    assert _resume_round(env, "/goal resume") is None
+
+    log.append("goal/updated", {"goal": None})
+    assert _resume_round(env, "/goal resume") is None

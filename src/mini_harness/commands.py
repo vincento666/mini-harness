@@ -133,7 +133,7 @@ def _goal_command(
         env.goal_runtime.armed = False
         return CommandOutcome(True, "已暂停目标")
     env.goal_runtime.armed = True
-    return CommandOutcome(True, "已恢复目标：这一段结束后继续")
+    return CommandOutcome(True, "已恢复目标：继续自动推进")
 
 
 def execute_command(

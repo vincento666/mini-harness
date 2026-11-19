@@ -26,7 +26,7 @@
 #### Scenario: 人工续跑
 
 - **WHEN** 用户输入 `/goal resume`
-- **THEN** 日志新增 `goal/updated`，`phase == "active"`、`revision` 比之前大一；下一段结束后出现 goal 来源消息
+- **THEN** 日志新增 `goal/updated`，`phase == "active"`、`revision` 比之前大一；命令返回后**立刻**出现 goal 来源的 `user/message` 与新一轮，不再等人另敲一行
 
 #### Scenario: 无目标时的命令
 

@@ -171,3 +171,9 @@ DSH 只有写表工具（`packages/todo/tool-todo/`），没有读回。mini 加
 - **原行为**：`--workspace .tmp/uat/m13` 是相对路径，`resolve_target` 直接拼接，`write` 回执写 `.tmp/uat/m13/notes.md`；而 `bash` 的 cwd 是工作区根，模型 `tail .tmp/uat/m13/notes.md` 当场失败（场次 2 记录）。
 - **现行为**：装配时把工作区绝对化（`os.path.abspath`，不解析符号链接），`write` / `edit` 的回执改用工作区相对路径（与 `glob` / `grep` 一致）：`写了 notes.md（… 个字符）`。
 - **顺带**：`[段]` 那行只在非 `MODEL_COMPLETED` 时打印（`chat-repl` 的既有规则），所以自动轮次之间人看不到任何边界；补 `[轮] n/cap`、`已用尽 n/cap`、`目标已暂停` 三类行，写在 REPL 层，不进日志。
+
+#### D.8.3 resume 之后立刻驱动（2026-11-19，更贴 DSH 的 idle）
+
+- **原行为**：`/goal resume` 只放武装位；REPL 只在段尾判定，所以人还得敲一行「继续」。那一行开的是**人类段**——模型在里面写了第二节，轮次计数却没动（场次 2 的 `[轮] 3/4` 直接跳过了这活）。
+- **现行为**：命令成功后立刻算下一轮并进段循环，`[轮] n/cap` 紧跟回执（design D12）。
+- **对齐状态**：DSH 在 whole-agent idle 时驱动；命令返回就是 idle，所以这条是向 DSH 靠，而不是新增偏离。mini 仍缺 inbox 与 `pre-step` 围栏（D.5 的 `simplified` 不变）。
