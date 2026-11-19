@@ -8,10 +8,23 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from mini_harness.events.projection import project, render_todos
 from mini_harness.events.record import EventRecord
+from mini_harness.events.writer import LogWriteFailure
+from mini_harness.goals import (
+    GoalRefusal,
+    GoalSnapshot,
+    fold_goal,
+    pause_goal,
+    resume_goal,
+)
 from mini_harness.skills import Skill, read_skill_body
+
+if TYPE_CHECKING:
+    # 只给类型检查看：命令面只用到 log 与进程内武装位，不把整个回合循环拉进来。
+    from mini_harness.loop.turn_loop import SessionEnv
 
 
 @dataclass(frozen=True)
@@ -27,6 +40,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
     CommandSpec("skill", "加载一个技能的正文"),
     CommandSpec("plan", "进入计划模式；`/plan off` 退出"),
     CommandSpec("todo", "打印当前待办表"),
+    CommandSpec("goal", "查看目标；`/goal pause` / `resume` / `clear`"),
 )
 
 
@@ -69,13 +83,72 @@ class CommandOutcome:
     plan_active: bool | None = None
 
 
+def _goal_command(
+    arguments: str, records: Sequence[EventRecord], env: SessionEnv | None
+) -> CommandOutcome:
+    """`/goal` 四个命令：查看、暂停、恢复、清除。没有目标只打印，不写事件。"""
+    goal = fold_goal(records)
+    action = arguments.strip()
+    armed = env is not None and env.goal_runtime.armed
+    if action == "":
+        if goal is None:
+            return CommandOutcome(True, "没有当前目标")
+        lines = [
+            f"目标 {goal.id}（revision {goal.revision}）：{goal.objective}",
+            f"相位 {goal.phase} · 轮次 {goal.rounds_started}/{goal.max_rounds} · "
+            + ("已武装" if armed else "未武装"),
+        ]
+        if goal.blocked_reason is not None:
+            lines.append(f"阻塞 {goal.blocked_reason.code}：{goal.blocked_reason.message}")
+        return CommandOutcome(True, "\n".join(lines))
+
+    if action not in {"pause", "resume", "clear"}:
+        return CommandOutcome(False, "用法：/goal、/goal pause、/goal resume、/goal clear")
+    if goal is None:
+        return CommandOutcome(False, f"没有当前目标：无法执行 /goal {action}")
+    if env is None:
+        return CommandOutcome(False, "这个入口没有会话运行期状态，/goal 不可用")
+
+    if action == "clear":
+        # 清空是整值替换：`goal: null` 让 fold 回 None，也让旧引用失效。
+        written = env.log.append("goal/updated", {"goal": None})
+        if isinstance(written, LogWriteFailure):
+            return CommandOutcome(False, "清除写不进日志，目标保持原样")
+        env.goal_runtime.armed = False
+        return CommandOutcome(True, "已清除当前目标")
+
+    if action == "resume" and goal.phase == "active" and armed:
+        return CommandOutcome(True, "目标已经在自动推进（无需 resume）")
+
+    # 人的 resume 才放行 `paused`；工具面仍然拒绝（GOAL_RESUME_BY_TOOL_DENIED）。
+    result: GoalSnapshot | GoalRefusal = (
+        pause_goal(goal) if action == "pause" else resume_goal(goal, armed=armed, human=True)
+    )
+    if isinstance(result, GoalRefusal):
+        return CommandOutcome(False, result.detail)
+    written = env.log.append("goal/updated", {"goal": result.model_dump(exclude_none=True)})
+    if isinstance(written, LogWriteFailure):
+        return CommandOutcome(False, "改动写不进日志，本次操作作废")
+    if action == "pause":
+        env.goal_runtime.armed = False
+        return CommandOutcome(True, "已暂停目标")
+    env.goal_runtime.armed = True
+    return CommandOutcome(True, "已恢复目标：这一段结束后继续")
+
+
 def execute_command(
     name: str,
     arguments: str,
     skills: Sequence[Skill],
     records: Sequence[EventRecord] = (),
+    env: SessionEnv | None = None,
 ) -> CommandOutcome | None:
-    """执行一条命令；未知命令返回 `None`（admission miss，不落日志）。"""
+    """执行一条命令；未知命令返回 `None`（admission miss，不落日志）。
+
+    `env` 只有 `/goal` 用：它要写 `goal/updated` 并翻转进程内的武装位。
+    """
+    if name == "goal":
+        return _goal_command(arguments, records, env)
     if name == "skills":
         if arguments.strip():
             return CommandOutcome(False, "用法：/skills")

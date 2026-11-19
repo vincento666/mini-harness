@@ -249,9 +249,9 @@ async def test_a_provider_error_keeps_the_goal_active_but_disarmed(tmp_path: Pat
 def test_a_broken_log_is_reported_instead_of_guessed(tmp_path: Path) -> None:
     """段结束时读不动日志：驱动把失败往上报，不按「没有目标」处理。"""
     from mini_harness.events import EventLog, LogReadFailure
-    from mini_harness.loop.turn_loop import _goal_after
+    from mini_harness.loop.turn_loop import goal_after
 
     log = EventLog.create(tmp_path, session_id="s-broken")
     log.path.write_text("{ 这不是 json\n", encoding="utf-8")
 
-    assert isinstance(_goal_after(log), LogReadFailure)
+    assert isinstance(goal_after(log), LogReadFailure)

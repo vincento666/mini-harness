@@ -197,13 +197,16 @@ def complete_goal(current: GoalSnapshot) -> GoalSnapshot | GoalRefusal:
     return _next(current, phase="complete")
 
 
-def resume_goal(current: GoalSnapshot, *, armed: bool) -> GoalSnapshot | GoalRefusal:
+def resume_goal(
+    current: GoalSnapshot, *, armed: bool, human: bool = False
+) -> GoalSnapshot | GoalRefusal:
     """把目标放回 active 并（由调用方）武装。
 
-    `paused` 留给人：工具面拒绝，`/goal resume` 才放行。轮次用尽时也拒——
-    照 DSH 的 `resume`，先调大 `maxGoalRounds` 再来。
+    `paused` 留给人：工具面拒绝（`GOAL_RESUME_BY_TOOL_DENIED`），`/goal resume`
+    （`human=True`）才放行。轮次用尽时都拒——照 DSH 的 `resume`，先调大
+    `maxGoalRounds` 再来。
     """
-    if current.phase == "paused":
+    if current.phase == "paused" and not human:
         return GoalRefusal("GOAL_RESUME_BY_TOOL_DENIED", "暂停的目标只能由人的 /goal resume 恢复")
     if current.phase == "complete":
         return GoalRefusal("GOAL_INVALID_TRANSITION", "已完成的目标不能恢复")

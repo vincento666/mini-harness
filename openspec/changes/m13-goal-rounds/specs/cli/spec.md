@@ -11,12 +11,12 @@
 - `/goal resume` SHALL 写一条 `goal/updated`，`revision` 递增，`armed` 置真；对 `paused` 目标 SHALL 同时把 `phase` 置 `active`；
 - `/goal clear` SHALL 写 `goal/updated {goal: null}`。
 
-没有当前目标时，四个命令 MUST 打印提示并以 `0` 退出，MUST NOT 写事件。
+没有当前目标时，四个命令 MUST 打印提示并以 `0` 退出，MUST NOT 写 `goal/updated`；命令自己的 `command/run` / `command/done` 照常落（M14 的命令面规则：已知命令无论成败都留这一对）。
 
 #### Scenario: 查看不写事件
 
 - **WHEN** 用户输入 `/goal`
-- **THEN** 终端打印目标摘要，日志条数不变
+- **THEN** 终端打印目标摘要，日志里没有新增 `goal/updated`
 
 #### Scenario: 暂停后再跑一轮不续跑
 
@@ -31,7 +31,7 @@
 #### Scenario: 无目标时的命令
 
 - **WHEN** 会话里没有目标，用户输入 `/goal resume`
-- **THEN** 打印「没有当前目标」，退出码 `0`，日志条数不变
+- **THEN** 打印「没有当前目标」，退出码 `0`，日志里没有新增 `goal/updated`
 
 #### Scenario: 清除后读回为空
 

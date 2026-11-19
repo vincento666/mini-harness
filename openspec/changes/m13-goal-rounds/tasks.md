@@ -31,10 +31,10 @@
 
 ## 5. 武装与命令面（seam ⑥）
 
-- [ ] 5.1 `armed` 只活在进程内：启动与 `--resume` 后为假，`pause` / `complete` / `blocked` / 撞上限置假
-- [ ] 5.2 `/goal`、`/goal pause`、`/goal resume`、`/goal clear` 四条命令；无目标不写事件
-- [ ] 5.3 CLI 黑盒：`--resume` 之后第一次模型调用前没有 goal 来源消息，`/goal resume` 之后才有
-- [ ] 5.4 REPL 段后驱动：`chat` 里目标 `active` 且已武装时，段结束不开提示符、直接起下一轮；提示符只在驱动停下时出现（turn-loop delta 的「REPL 的每个段由一条输入或一轮目标驱动」）
+- [x] 5.1 `armed` 只活在进程内：启动与 `--resume` 后为假，`pause` / `complete` / `blocked` / 撞上限置假（`test_goal_update`、`test_chat_goal_driver::test_resume_does_not_continue_an_active_goal`）
+- [x] 5.2 `/goal`、`/goal pause`、`/goal resume`、`/goal clear` 四条命令；无目标不写事件（`test_goal_commands`；host 同一条 `execute_command`，带 env）
+- [x] 5.3 CLI 黑盒：`--resume` 之后第一次模型调用前没有 goal 来源消息，`/goal resume` 之后才有（`test_chat_goal_driver` 的两条 chat 用例）
+- [x] 5.4 REPL 段后驱动：`chat` 里目标 `active` 且已武装时，段结束不开提示符、直接起下一轮；提示符只在驱动停下时出现（`test_chat_goal_driver::test_chat_keeps_running_rounds_without_another_line`）
 
 ## 6. 收尾
 

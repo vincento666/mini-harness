@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
-from mini_harness.commands import execute_command
+from mini_harness.commands import RESERVED, execute_command
 from mini_harness.events import (
     EventLog,
     EventRecord,
@@ -153,20 +153,23 @@ def run_command(handle: HostSession, name: str, arguments: str) -> CommandRespon
         return Failure("SESSION_NOT_FOUND", "会话已经结束", EXIT_INVALID_ARGUMENT)
     if name == "plan" and handle.status == SESSION_RUNNING:
         return Failure("SESSION_BUSY", "会话运行中不能切换计划模式", EXIT_INVALID_ARGUMENT)
+    if name not in RESERVED:
+        return Failure("UNKNOWN_COMMAND", f"未知命令：{name}", EXIT_INVALID_ARGUMENT)
     records = read_events(handle.log.path)
+    command_id = uuid.uuid4().hex
+    # `command/run` 先落：`/goal` 的 `goal/updated` 排在它之后，回放时因果不倒置。
+    handle.log.append(
+        "command/run",
+        {"command_id": command_id, "name": name, "raw_input": f"/{name} {arguments}".rstrip()},
+    )
     outcome = execute_command(
         name,
         arguments,
         visible_skills(handle),
         [] if isinstance(records, LogReadFailure) else records,
+        handle.env,
     )
-    if outcome is None:
-        return Failure("UNKNOWN_COMMAND", f"未知命令：{name}", EXIT_INVALID_ARGUMENT)
-    command_id = uuid.uuid4().hex
-    handle.log.append(
-        "command/run",
-        {"command_id": command_id, "name": name, "raw_input": f"/{name} {arguments}".rstrip()},
-    )
+    assert outcome is not None  # RESERVED 与 execute_command 的已知集合同源
     handle.log.append(
         "command/done", {"command_id": command_id, "ok": outcome.ok, "text": outcome.text}
     )

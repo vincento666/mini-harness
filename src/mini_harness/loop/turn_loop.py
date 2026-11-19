@@ -1408,7 +1408,7 @@ async def run_session(
     return await run_session_env(prompt=prompt, entry=entry, env=env, cancel=cancel)
 
 
-def _goal_after(log: EventLog) -> GoalSnapshot | LogReadFailure | None:
+def goal_after(log: EventLog) -> GoalSnapshot | LogReadFailure | None:
     """按日志折当前目标；读不动就把失败往上抛，不猜。"""
     events = read_events(log.path)
     if isinstance(events, LogReadFailure):
@@ -1416,7 +1416,7 @@ def _goal_after(log: EventLog) -> GoalSnapshot | LogReadFailure | None:
     return fold_goal(events)
 
 
-def _exhaust_goal_rounds(
+def exhaust_goal_rounds(
     *, env: SessionEnv, decision: RoundDecision, turns: int
 ) -> SegmentOutcome | None:
     """额度用尽：落 `blocked{round-limit}` 并解除武装。写不进日志就是段失败。"""
@@ -1429,7 +1429,7 @@ def _exhaust_goal_rounds(
     return None
 
 
-def _close_failed_round(*, env: SessionEnv, segment: SegmentOutcome) -> SegmentOutcome | None:
+def close_failed_round(*, env: SessionEnv, segment: SegmentOutcome) -> SegmentOutcome | None:
     """失败收尾：一律解除武装；`ABORTED`（人取消）另把 `active` 目标置 `paused`。
 
     其余失败 `phase` 留在 `active`——上游抖动不该替人决定目标作废，人 `/goal resume` 即可。
@@ -1437,7 +1437,7 @@ def _close_failed_round(*, env: SessionEnv, segment: SegmentOutcome) -> SegmentO
     env.goal_runtime.armed = False
     if segment.stop_reason != STOP_ABORTED:
         return None
-    goal = _goal_after(env.log)
+    goal = goal_after(env.log)
     if isinstance(goal, LogReadFailure):
         return _segment_failure(goal, segment.turns)
     if goal is None or goal.phase != "active":
@@ -1477,20 +1477,20 @@ async def run_session_env(
         segments += 1
         turns += segment.turns
 
-        goal = _goal_after(log)
+        goal = goal_after(log)
         if isinstance(goal, LogReadFailure):
             return _run_outcome(log, _segment_failure(goal, turns))
         decision = next_round(
             goal=goal, armed=env.goal_runtime.armed, stop_reason=segment.stop_reason
         )
         if decision.kind == "exhausted":
-            failed = _exhaust_goal_rounds(env=env, decision=decision, turns=turns)
+            failed = exhaust_goal_rounds(env=env, decision=decision, turns=turns)
             if failed is not None:
                 return _run_outcome(log, failed)
             break
         if decision.kind == "stop":
             if segment.stop_reason in NO_CONTINUE_REASONS:
-                failed = _close_failed_round(env=env, segment=segment)
+                failed = close_failed_round(env=env, segment=segment)
                 if failed is not None:
                     return _run_outcome(log, failed)
             break

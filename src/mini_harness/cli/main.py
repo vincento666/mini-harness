@@ -18,7 +18,7 @@ from typing import NoReturn
 
 from mini_harness.cli.host import DEFAULT_HOST_PORT, host_main
 from mini_harness.cli.serve import DEFAULT_HOST, DEFAULT_PORT, SERVE_HOSTS, BindFailure, ServeServer
-from mini_harness.commands import command_catalog, direct_skill, execute_command
+from mini_harness.commands import RESERVED, command_catalog, direct_skill, execute_command
 from mini_harness.config.load import ConfigFailure, discover_config, load_config
 from mini_harness.events import (
     EventLog,
@@ -28,7 +28,7 @@ from mini_harness.events import (
     read_events,
 )
 from mini_harness.events.fold import assembled_payload, assembly_points, fold
-from mini_harness.goals import goal_round_defect
+from mini_harness.goals import GoalRound, goal_round_defect
 from mini_harness.loop import (
     ENTRY_CHAT,
     ENTRY_RUN,
@@ -47,11 +47,15 @@ from mini_harness.loop import (
     SessionEntry,
     SessionEnv,
     SessionSettings,
+    close_failed_round,
     end_session,
+    exhaust_goal_rounds,
+    goal_after,
     run_session,
     run_turn_segment,
     start_session,
 )
+from mini_harness.loop.goal_driver import NO_CONTINUE_REASONS, next_round
 from mini_harness.loop.settings import (
     DEFAULT_MAX_TURNS,
     DEFAULT_RESERVE,
@@ -552,7 +556,7 @@ def _print_shadow_feedback(log: EventLog, through: int) -> tuple[int, LogReadFai
     return latest, None
 
 
-def _run_chat_command(prepared: Prepared, text: str) -> str | None:
+def _run_chat_command(prepared: Prepared, text: str, env: SessionEnv | None = None) -> str | None:
     """一条斜杠命令；返回非 None 表示它展开成了一条要开段的用户消息。"""
     skills = skills_view(prepared.skills_registry, prepared.settings.skills)
     name, _, arguments = text[1:].partition(" ")
@@ -573,15 +577,22 @@ def _run_chat_command(prepared: Prepared, text: str) -> str | None:
         )
         instruction = arguments.strip() or f"（用户调用了技能 {name}，请按技能执行。）"
         return skill_content(skill, instruction)
-    records = read_events(prepared.log.path)
-    outcome = execute_command(
-        name, arguments, skills, [] if isinstance(records, LogReadFailure) else records
-    )
-    if outcome is None:
+    if name not in RESERVED:
         print(f"未知命令：/{name}", file=sys.stderr)
         return None
+    records = read_events(prepared.log.path)
+    # `command/run` 先落：命令的副作用（`/goal` 的 `goal/updated`）排在它之后，
+    # 回放时「谁让它变的」不会晚于变化本身。
     command_id = uuid.uuid4().hex
     prepared.log.append("command/run", {"command_id": command_id, "name": name, "raw_input": text})
+    outcome = execute_command(
+        name,
+        arguments,
+        skills,
+        [] if isinstance(records, LogReadFailure) else records,
+        env,
+    )
+    assert outcome is not None  # RESERVED 与 execute_command 的已知集合同源
     prepared.log.append(
         "command/done", {"command_id": command_id, "ok": outcome.ok, "text": outcome.text}
     )
@@ -665,55 +676,91 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
                     continue
                 if text.startswith("/"):
                     # 命令本身不写 user/message；`/<技能名> 指令` 会展开成一条消息再开段。
-                    expanded = _run_chat_command(prepared, text)
+                    expanded = _run_chat_command(prepared, text, env)
                     if expanded is None:
                         continue
                     text = expanded
-                segments += 1
-                cancel = asyncio.Event()
-                signals.active = cancel
-                try:
-                    segment = await run_turn_segment(
-                        env=env,
-                        segment_id=f"s{segments}",
-                        first_turn_index=turn_index,
-                        cancel=cancel,
-                        user_message=text,
+                goal_round: GoalRound | None = None
+                while True:
+                    segments += 1
+                    cancel = asyncio.Event()
+                    signals.active = cancel
+                    try:
+                        segment = await run_turn_segment(
+                            env=env,
+                            segment_id=f"s{segments}",
+                            first_turn_index=turn_index,
+                            cancel=cancel,
+                            user_message=None if goal_round is not None else text,
+                            goal_round=goal_round,
+                        )
+                    finally:
+                        signals.active = None
+                    if segment.stop_reason not in STOP_REASONS:
+                        # 内核坏了：不再回到提示符，按内部错误收尾。
+                        return _report_failure(
+                            segment.failure_code or segment.stop_reason,
+                            segment.detail,
+                            EXIT_INTERNAL_ERROR,
+                        )
+                    turn_index += segment.turns
+                    _print_segment_note(segment)
+                    if (
+                        segment.stop_reason == STOP_CONTEXT_WINDOW_EXCEEDED
+                        and previous_stop_reason == STOP_CONTEXT_WINDOW_EXCEEDED
+                        and not said_cannot_come_down
+                    ):
+                        # 连续两段溢出：这一句每个会话只说一次，措辞留给实现。
+                        # 不进日志、不结束会话、不改退出码。
+                        print(
+                            "[降不下去] 连续两段溢出：这份会话已经降不下去，"
+                            "退出并新开一个会话是可选动作。",
+                            file=sys.stderr,
+                        )
+                        said_cannot_come_down = True
+                    previous_stop_reason = segment.stop_reason
+                    scanned, shadow_failure = _print_shadow_feedback(prepared.log, scanned)
+                    if shadow_failure is not None:
+                        return _report_failure(
+                            shadow_failure.code, shadow_failure.detail, EXIT_INTERNAL_ERROR
+                        )
+                    replies = _print_new_replies(prepared.log, printed)
+                    if isinstance(replies, LogReadFailure):
+                        return _report_failure(replies.code, replies.detail, EXIT_INTERNAL_ERROR)
+                    printed = replies
+                    # 段后驱动（design D3）：目标 active 且已武装时不打印提示符，直接判下一轮。
+                    # 判定只读三样——快照、进程内武装位、本段 stop_reason。
+                    goal = goal_after(env.log)
+                    if isinstance(goal, LogReadFailure):
+                        return _report_failure(goal.code, goal.detail, EXIT_INTERNAL_ERROR)
+                    decision = next_round(
+                        goal=goal,
+                        armed=env.goal_runtime.armed,
+                        stop_reason=segment.stop_reason,
                     )
-                finally:
-                    signals.active = None
-                if segment.stop_reason not in STOP_REASONS:
-                    # 内核坏了：不再回到提示符，按内部错误收尾。
-                    return _report_failure(
-                        segment.failure_code or segment.stop_reason,
-                        segment.detail,
-                        EXIT_INTERNAL_ERROR,
-                    )
-                turn_index += segment.turns
-                _print_segment_note(segment)
-                if (
-                    segment.stop_reason == STOP_CONTEXT_WINDOW_EXCEEDED
-                    and previous_stop_reason == STOP_CONTEXT_WINDOW_EXCEEDED
-                    and not said_cannot_come_down
-                ):
-                    # 连续两段溢出：这一句每个会话只说一次，措辞留给实现。
-                    # 不进日志、不结束会话、不改退出码。
-                    print(
-                        "[降不下去] 连续两段溢出：这份会话已经降不下去，"
-                        "退出并新开一个会话是可选动作。",
-                        file=sys.stderr,
-                    )
-                    said_cannot_come_down = True
-                previous_stop_reason = segment.stop_reason
-                scanned, shadow_failure = _print_shadow_feedback(prepared.log, scanned)
-                if shadow_failure is not None:
-                    return _report_failure(
-                        shadow_failure.code, shadow_failure.detail, EXIT_INTERNAL_ERROR
-                    )
-                replies = _print_new_replies(prepared.log, printed)
-                if isinstance(replies, LogReadFailure):
-                    return _report_failure(replies.code, replies.detail, EXIT_INTERNAL_ERROR)
-                printed = replies
+                    if decision.kind == "exhausted":
+                        failed = exhaust_goal_rounds(
+                            env=env, decision=decision, turns=turn_index - 1
+                        )
+                        if failed is not None:
+                            return _report_failure(
+                                failed.failure_code or failed.stop_reason,
+                                failed.detail,
+                                EXIT_INTERNAL_ERROR,
+                            )
+                        break
+                    if decision.kind == "stop":
+                        if segment.stop_reason in NO_CONTINUE_REASONS:
+                            failed = close_failed_round(env=env, segment=segment)
+                            if failed is not None:
+                                return _report_failure(
+                                    failed.failure_code or failed.stop_reason,
+                                    failed.detail,
+                                    EXIT_INTERNAL_ERROR,
+                                )
+                        break
+                    assert decision.goal is not None
+                    goal_round = GoalRound(goal=decision.goal, round=decision.round)
         except KeyboardInterrupt:
             # 提示符上的 Ctrl-C：与 EOF 同一条路，写 `session/end`、退出码 0。
             pass

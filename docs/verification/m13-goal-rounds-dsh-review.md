@@ -89,11 +89,11 @@
 
 - 只有驱动能造它：`run_session_env` 判定后调 `run_turn_segment(goal_round=GoalRound(...))`（`turn_loop.py:1498`），正文由 `render_goal_round` 生成（`turn_loop.py:988`），来源固定为 `{kind: "goal", goal_id, revision, round}`。
 - 人不能编辑它、模型不能伪造它（模型没有写 `user/message` 的工具）；DSH 同款——驱动排队一条带 goal message source 的 `<goal_round>` 提示（`driver README:71`）。
-- 待补：REPL 的驱动入口（task 5.4）接上后，来源仍是这一条路径。
+- REPL 的驱动入口（task 5.4）已接上，来源仍是这一条路径：`chat` 在段尾判定通过后调同一个 `run_turn_segment(goal_round=...)`。
 
 ### D.5 决策位置（simplified，已在项 2 记）
 
-段后同协程判定，不是独立 consumer：省掉预约、`flush` 检查点与 `pre-step` 围栏；代价是丢 `competingQueued` 让位（人只能等这一段收敛或取消）。REPL 侧尚未接驱动（5.4），当前只有 `run` / `serve` 会续跑。
+段后同协程判定，不是独立 consumer：省掉预约、`flush` 检查点与 `pre-step` 围栏；代价是丢 `competingQueued` 让位（人只能等这一段收敛或取消）。REPL 侧也已在 5.4 接上同一套判定（`chat` 段尾判定通过就不打印提示符，直接起下一轮）。
 
 ### D.6 等价物核对：turn / step / round 与 goal（2026-11-19，逐条对代码）
 
