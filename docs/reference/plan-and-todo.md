@@ -51,6 +51,8 @@
 
 **读回**：`get_todos()` 无入参，读 `todos` 投影（与 `/todo`、快照接口同值），不写事件。它补的是「被遮蔽后看不见表」：整表只活在工具历史里，剪枝或压缩一挡就没了。段首清空之后读回为空——段作用域，不跨段继承。
 
+**读回的边界**：跨轮重交**不经过**读回——模型从自己的历史里看见上一轮 `todo` 的入参，直接重交；历史完整时是零次额外调用。段首之后投影为空，所以「先读回旧表、再重交」在当前工具下不成立。这不是缺口：DSH 的 `turn/start` 同样把投影归 `null`（`todo_index.ts:130`），表是**本轮的常备计划**，不是跨轮状态（design D8）。
+
 **回显**：`todos` 投影单元按事件推进——`todo/updated` 整表替换，`segment/start` 清空，`segment/end` 保留；`GET /sessions/{id}/projections/todos` 给快照，SSE 在变化时推 `session/projection` 帧，增量 apply，不重算全量。
 
 ## 3. 决策与依据
@@ -71,7 +73,7 @@
 - **计划提示注入**：DSH 在每个模型请求里带 `plan:policy` 段；mini 不注入，模型靠工具历史与命令结果理解计划状态。
 - **待决选择与步边界**：DSH 的 `plan/mode` 是 turn-enclosed 事件，用户选择先 pending，等下一个 pre-step 追加；mini 在命令执行时立即写日志，没有 pending 状态。
 - **todo 的部署配置**：DSH 要求 `allowParallelInProgress` 必填，并校验空内容、重复内容与多余字段；mini 没有这两个开关与校验。
-- **todo 的结果形状**：DSH 返回 `{todos, counts}` 并有 native renderer；mini 只回计数与一句确认。
+- **todo 的结果形状**：两边给模型看的都是计数文本。DSH 的结构化输出是 `{todos, counts}`，但模型可见的是 `render` 出来的那一句计数（`todo_index.ts:159-182`），整表只留在调用入参与 `todo/write` 事件里；mini 同形（`已更新待办：…`）。
 - **事件与条目形状**：DSH 是 `todo/write`、条目 `{content, status}`；mini 是 `todo/updated`、条目 `{id, text, status}`。
 
 ### 4.2 DSH 也未实现或明确不强制

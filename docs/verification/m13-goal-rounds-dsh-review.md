@@ -121,3 +121,13 @@ DSH 只有写表工具（`packages/todo/tool-todo/`），没有读回。mini 加
 - 读的是 `todos` 投影，所以与 `/todo`、`GET /projections/todos` 同值；段首之后为空，不跨段继承（跨轮仍靠模型重交，D8 的边界不动）。
 - 只读：不写 `todo/updated`、不问人、计划模式放行；`DispatchContext.todos` 由批首前缀折好传入（与 `goal` 同一条规则）。
 - 代价：工具面多一个名字；同批里读不到本批前一条 `todo` 的结果（批首前缀只取样一次，与 `reads`、`goal` 一致）。
+
+#### D.7.1 读回的边界：跨轮重交不经过它（2026-11-19 人问）
+
+人问「跨轮重交整表本身就依赖读回上一段的表，所以只是多一次工具调用吧」。答案分两半：
+
+- **跨轮、历史完整：零次额外调用。** 模型重交的是它自己上一轮 `todo` 调用的入参，历史里看得见，不需要读回；`get_todos` 在段首给的是空表（投影在 `segment/start` 清空），所以「先读回旧表再重交」这条路**当前不成立**。
+- **DSH 同构，不是 mini 的缺口。** `todo_write` 的模型可见文本也只有计数（`render`，`todo_index.ts:159-182`），整表只留在调用入参与 `todo/write` 事件里；`turn/start` 之后投影归 `null`（`todo_index.ts:130`）。所以 DSH 跨轮同样靠模型重写，被遮蔽之后同样无路可读——它的表也是「本轮常备计划」，不是跨轮状态。
+- **若要跨轮读旧表**，得加一个非投影的读法（例如 `get_todos(scope="last")` 读最后一条 `todo/updated`），代价是引入 DSH 没有的跨轮表语义，且模型容易把旧表当本段当前表。**未做，待人裁。**
+
+顺带更正一处旧记录：`docs/reference/plan-and-todo.md` 4.1 原写「DSH 返回 `{todos, counts}` 并有 native renderer」——结构化输出确实是这个形状，但模型读到的是 `render` 的计数文本，与 mini 同形；已改。
