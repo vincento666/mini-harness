@@ -195,6 +195,82 @@ async def test_a_completed_goal_no_longer_opens_segments(tmp_path: Path) -> None
     assert outcome.stop_reason == "MODEL_COMPLETED"
 
 
+class _TwoTurnRounds:
+    """人类段建目标；此后每轮两个回合（先提待办、再收尾），从不标完成。
+
+    单回合的轮次分不出「每轮扣一次」与「每回合扣一次」——这个脚本专门用来
+    把计数点钉在段首，而不是每个回合（变异 M5 的专用判据）。
+    """
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def generate(
+        self, messages: Any, tools: Any, signal: Any, on_delta: Any = None
+    ) -> AssistantTurn | ProviderFailure:
+        self.calls += 1
+        if self.calls == 1:
+            return AssistantTurn(
+                content="先立个目标",
+                finish_reason="tool_calls",
+                tool_calls=[
+                    ToolCall(
+                        id="c1",
+                        name="create_goal",
+                        arguments={"objective": OBJECTIVE, "max_rounds": 2},
+                    )
+                ],
+            )
+        if self.calls % 2 == 0:
+            return AssistantTurn(
+                content="提一条待办",
+                finish_reason="tool_calls",
+                tool_calls=[
+                    ToolCall(
+                        id=f"t{self.calls}",
+                        name="todo",
+                        arguments={
+                            "items": [{"id": "t1", "text": "这一步", "status": "in_progress"}]
+                        },
+                    )
+                ],
+            )
+        return AssistantTurn(content="这一步做完了", finish_reason="stop")
+
+
+async def test_a_round_with_two_turns_deducts_only_once(tmp_path: Path) -> None:
+    """一轮两回合也只扣一次：额度跟段走，不跟回合走。"""
+    log, env = build_session_env(
+        tmp_path, "s-two-turn-rounds", _TwoTurnRounds(), registry=_registry(), max_turns=8
+    )
+    outcome = await run_session_env(
+        prompt="把这件活干完", entry=ENTRY_RUN, env=env, cancel=asyncio.Event()
+    )
+    records = read_events(log.path)
+    segments = _segments(records)
+    assert list(segments) == ["s1", "s2", "s3"]
+
+    for name, round_number in (("s2", 1), ("s3", 2)):
+        inside: list[EventRecord] = []
+        for record in segments[name]:
+            inside.append(record)
+            if record.type == "segment/end":
+                break
+        assert [record.type for record in inside].count("turn/start") == 2
+        snapshots = [record.payload["goal"] for record in inside if record.type == "goal/updated"]
+        # 段内只有一条扣额度的快照；两回合若各扣一次，这里会变成 [1, 2] 与 [3]。
+        assert [snapshot["rounds_started"] for snapshot in snapshots] == [round_number]
+        assert all(snapshot["phase"] == "active" for snapshot in snapshots)
+
+    goal = fold_goal(records)
+    assert goal is not None
+    assert goal.rounds_started == 2
+    assert goal.phase == "blocked"
+    assert goal.blocked_reason is not None
+    assert goal.blocked_reason.code == "round-limit"
+    assert outcome.stop_reason == "MODEL_COMPLETED"
+
+
 def test_the_round_decision_only_looks_at_the_snapshot_the_arm_and_the_stop_reason() -> None:
     active = GoalSnapshot(
         id="g1", revision=1, objective=OBJECTIVE, phase="active", max_rounds=3, rounds_started=1
