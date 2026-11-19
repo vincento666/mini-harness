@@ -40,5 +40,5 @@
 
 - [x] 6.1 真实端点验收（小上限两轮续跑，记录 `docs/verification/m13-goal-rounds-real-endpoint.md`；A/B 两场，complete 与 round-limit 各一）
 - [ ] 6.2 UAT 验收（人跑；场次手册 `docs/verification/m13-goal-rounds-uat.md`）
-- [ ] 6.3 变异测试一轮（记录 `docs/verification/m13-goal-rounds-mutation.md`）
-- [ ] 6.4 Learning Gate
+- [x] 6.3 变异测试一轮（记录 `docs/verification/m13-goal-rounds-mutation.md`；六条全杀，M5 单点覆盖已记为薄弱处）
+- [x] 6.4 Learning Gate（`docs/lessons.md` 新增 L-086–L-089，均 `inbox`；无晋升，AGENTS.md 未动）

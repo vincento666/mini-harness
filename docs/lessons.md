@@ -132,6 +132,42 @@
 - Next use: 写新机制前先列「会被它波及的既有全称量词」清单，逐条去**一手实现的赋值点**确认（那一行代码，不是文档摘要）；六问第 4 问的「会动现有规格」要按「旧规则的外延变了」来答，不只按「新增了事件/字段」来答
 - Status: promoted
 
+### L-086
+- Seen: 1（2026-11-19）
+- Date: 2026-11-19
+- Context: M13 复核 D.3：`rounds_started` 既写成快照字段，又能从日志的 goal 消息数出来；初稿把这条记成 `simplified`，人问「mini 是不是没有等价语义」
+- Observation: 同一事实的两份写法里，只要**后一份能由日志重建**，语义就是对齐的，差的是表示（冗余/索引）；记成 `simplified` 会让读者把「冗余」读成「偏离」。记账要分两栏：`aligned（语义）/ simplified（表示）`
+- Evidence: `docs/verification/m13-goal-rounds-dsh-review.md` D.3 与 `replay` 的 `goal_round_defect`
+- Next use: 每个对齐项先问「丢掉这个字段/机制，语义能不能从日志或工作区重建」；能，就写语义对齐 + 表示差异，并写出冗余的收益与代价
+- Status: inbox
+
+### L-087
+- Seen: 1（2026-11-19）
+- Date: 2026-11-19
+- Context: `docs/reference/plan-and-todo.md` 4.1 原写「DSH 返回 `{todos, counts}` 并有 native renderer」；本轮读 `todo_index.ts` 才发现模型可见的是 `render` 出来的计数文本，整表只在入参与事件里
+- Observation: 跨项目对齐的转述会带着上一轮的误解一起传下去；文档写得越像结论，后人越不会回源。写「X 返回 Y」之前先看 Y 怎么到模型/用户手里，不能停在类型定义
+- Evidence: `packages/todo/tool-todo/src/index.ts:159-182`（`output.schema` 之后是 `render` 只打 counts）；本轮更正 4.1
+- Next use: 引用外部行为时标源文件行号；类型与「模型看到的内容」分开写
+- Status: inbox
+
+### L-088
+- Seen: 1（2026-11-19）
+- Date: 2026-11-19
+- Context: 新增 `get_todos` 时只写了「段首清空」，没写「跨轮读到什么」；人追问「跨轮重交是不是只多一次工具调用」后才补出 D.7.1/D.7.2
+- Observation: 读回类工具的价值与局限都在**作用域**上。只说「段首为空」不够，设计时就要回答「同段 / 跨段 / 被遮蔽」三种情形各返回什么、模型该怎么用
+- Evidence: 复核文档 D.7.1（三种情形）与 D.7.2（goal 轮同样是 turn，跨轮两边都不保表）
+- Next use: 新增读工具先画一张「作用域 × 状态」表，至少测一条边界（段首为空）
+- Status: inbox
+
+### L-089
+- Seen: 1（2026-11-19）
+- Date: 2026-11-19
+- Context: `/goal` 最初先 `execute_command` 再写 `command/run`，回放时 `goal/updated` 早于「谁让它变的」
+- Observation: 命令面的事件顺序是因果，不是装饰。已知命令应先落 `command/run` 再执行；「未知命令」用白名单（`RESERVED`）预检，不靠执行返回 `None` 来判——否则要么因果倒置，要么留一条不可达分支
+- Evidence: `cli/main.py::_run_chat_command`、`session/host.py::run_command`；`command/run` 先于 `/goal` 的 `goal/updated`
+- Next use: 命令 handler 有副作用时，先写 `command/run`；命令白名单与 handler 表同源，别让 handler 的返回值兼任「存在性检查」
+- Status: inbox
+
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 - 每个里程碑收尾扫一次，**允许输出 `NO-PROMOTION`**（没有可复用信号就不写条目）。
 - 收件箱条目超过 **15 条**必须先消化再收新的：合并同类、把已被代码或规格自证的条目删掉。
