@@ -55,6 +55,16 @@
 
 **回显**：`todos` 投影单元按事件推进——`todo/updated` 整表替换，`segment/start` 清空，`segment/end` 保留；`GET /sessions/{id}/projections/todos` 给快照，SSE 在变化时推 `session/projection` 帧，增量 apply，不重算全量。
 
+### 2.4 与段、轮的关系
+
+| 词 | 在 mini 里 | 在 DSH 里 | 表的边界 |
+|---|---|---|---|
+| 回合 | 一次模型往返 | step | 不变 |
+| 段 | 一条输入展开的那串回合 | turn | `segment/start` 清空 |
+| 轮 | 一次目标驱动的段 | goal round（就是一次 admitted user-message turn） | 同段，清空 |
+
+所以 goal 轮次与普通对话在表上没有区别：**每轮开头都是空表**。跨轮连续性不靠表——靠目标、工作区与（可能被压缩的）历史；表是「这一轮的常备计划」。详见 `docs/verification/m13-goal-rounds-dsh-review.md` D.7.2。
+
 ## 3. 决策与依据
 
 | 决策 | 理由 | 记录 |
