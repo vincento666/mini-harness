@@ -6,31 +6,108 @@
 
 **环境**：本机 macOS；`minihns chat`；真实端点（`DEEPSEEK_API_KEY`）；工作区用临时目录。
 
+> **2026-11-19 修正**：原场次 1 写的是 `/goal 修好……轮次上限 2`，但 `/goal` 只有查看 / `pause` / `resume` / `clear` 四个动作（task 5.2），**没有创建**——建目标是模型的 `create_goal` 工具。手册已按实现改口，每场都给出可直接粘贴的命令与提示词。
+
+## 准备（每场开始前）
+
+```bash
+cd /Users/vincento/work/develop/mini-harness
+export DEEPSEEK_API_KEY=$(python3 -c 'import pathlib,re;t=(pathlib.Path.home()/".dsh/.credentials.yaml").read_text();print(re.search(r"^\s*DEEPSEEK_API_KEY:\s*(\S+)\s*$",t,re.M).group(1))')
+rm -rf .tmp/uat/m13 && mkdir -p .tmp/uat/m13
+uv run minihns chat --provider deepseek --workspace .tmp/uat/m13 --session-dir .tmp/uat/m13/sessions --yes
+```
+
+启动后 stderr 会打一行 `会话 <session-id>`，**记下来**，场次 4 要用。
+
 ## 场次 1：两轮续跑后自己停
 
-- 步骤：`/goal 修好 tests/ 里那条失败的用例，轮次上限 2` → 说一句「开始」→ 不再输入。
-- 期望：自动跑两轮；第二段以 `goal/updated {phase: "blocked", blocked_reason.code: "round-limit"}` 收尾；终端提示目标已阻塞。
-- 观察：是否在无人输入时推进；轮次提示是否清楚；阻塞后是否停下不动。
+- 启动：用上面的准备命令。
+- 步骤：在 `> ` 提示符粘贴这一段（建目标后停手，之后**不要再输入**）：
+
+```text
+请调用 create_goal 建一个目标，objective 写「把 notes.md 逐节写成三节：每轮只写一节，写完不要标完成，由我验收」，max_rounds 给 2。建完目标就结束这一轮，现在不要读文件、不要写文件。
+```
+
+- 期望：这一段结束后**不出现 `> ` 提示符**，直接跑两轮；第 2 轮之后写 `goal/updated {phase: "blocked", blocked_reason.code: "round-limit"}`，回到提示符；`notes.md` 里有两节（第 3 节没写）。
+- 观察：无人输入时是否自己推进；轮次提示是否清楚（`Round: n/2`）；阻塞后是否停下不动。
 - 结果：**待填**
 
 ## 场次 2：中途叫停与人工续跑
 
-- 步骤：同场次 1 的目标（上限 4），跑到第二轮时按 `Ctrl-C`；再输入 `/goal resume`。
-- 期望：取消后不自动起新段；`/goal resume` 之后继续，且 `get_goal` 的 `armed` 从 `false` 变 `true`。
+- 启动：重新跑一次准备命令（新会话）。提示词把 `max_rounds` 改成 4：
+
+```text
+请调用 create_goal 建一个目标，objective 写「把 notes.md 逐节写成三节：每轮只写一节，写完不要标完成，由我验收」，max_rounds 给 4。建完目标就结束这一轮，现在不要读文件、不要写文件。
+```
+
+- 步骤：每段结束 stderr 会打一行 `[段] …`。等第二个 `[段]` 出现、第 3 段（轮次 2）开始输出时按一次 `Ctrl-C`；回到提示符后输入：
+
+```text
+/goal
+```
+（应是 `相位 paused`、`未武装`、轮次 1/4）
+
+```text
+/goal resume
+```
+（应是「已恢复目标：这一段结束后继续」）。然后再**输入一句话**让它开一段：
+
+```text
+继续
+```
+
+- 期望：`Ctrl-C` 之后不再自动起新段；`/goal resume` 之后武装位变 true（`get_goal` 的工具结果里 `armed: true`）；「继续」这一段结束后自动续跑，轮次从 2 起。
 - 观察：取消的反馈是否明确；续跑是否要人确认；有没有「取消后自己又跑了」。
 - 结果：**待填**
 
 ## 场次 3：任务表的两面（段内并行 / 段首清空）
 
-- 步骤：让模型列三条待办，其中两条同时标为进行中；等这一段结束回到提示符，输入 `/todo`；再输入一句「只回一句话，不要用 todo」，等这一段结束再输入 `/todo`。
-- 期望：第一次 `/todo` 显示三条（两条 `in_progress`、第三条状态不变）；第二次为空——表在 `segment/start` 清空，是「本段的常备计划」，不是跨段状态（D8，对齐 DSH 的 `turn/start`）。
+- 启动：重新跑一次准备命令（新会话，无目标）。
+- 步骤：粘贴：
+
+```text
+请调用 todo 提交三条待办：t1 与 t2 同时标为 in_progress，t3 标 pending。提交完就回一句话结束这一段，不要做别的。
+```
+
+等回到 `> ` 后：
+
+```text
+/todo
+```
+
+再输入：
+
+```text
+只回一句话，不要用 todo。
+```
+
+回到 `> ` 后再：
+
+```text
+/todo
+```
+
+- 期望：第一次 `/todo` 显示三条（t1、t2 为 `in_progress`，t3 为 `pending`）；第二次为空——表在 `segment/start` 清空，是「本段的常备计划」，不是跨段状态（D8，对齐 DSH 的 `turn/start`）。
 - 观察：`/todo` 的输出是否够人读懂；段边界前后的变化是否让人意外（第二次为空是**预期**，不是丢数据——表还在日志里）。
 - 结果：**待填**
 
 ## 场次 4：恢复会话不自己动
 
-- 步骤：场次 1 之后退出；`minihns chat --resume <session>`。
-- 期望：不自动起新段；`/goal` 显示 `armed: false`；输入一句话才继续。
+- 启动：场次 1 结束之后按 `Ctrl-D`（或提示符上 `Ctrl-C`）退出，然后：
+
+```bash
+cd /Users/vincento/work/develop/mini-harness
+export DEEPSEEK_API_KEY=$(python3 -c 'import pathlib,re;t=(pathlib.Path.home()/".dsh/.credentials.yaml").read_text();print(re.search(r"^\s*DEEPSEEK_API_KEY:\s*(\S+)\s*$",t,re.M).group(1))')
+uv run minihns chat --provider deepseek --workspace .tmp/uat/m13 --session-dir .tmp/uat/m13/sessions --yes --resume <场次 1 的 session-id>
+```
+
+- 步骤：启动后输入：
+
+```text
+/goal
+```
+
+- 期望：不自动起新段（启动即停在提示符）；`/goal` 显示 `相位 blocked`（场次 1 撞了上限）与 `未武装`；输入一句话才继续，且不会自动开新段（目标是 blocked）。
 - 观察：恢复的默认行为是否符合「不擅自花钱」。
 - 结果：**待填**
 
