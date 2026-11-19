@@ -26,6 +26,7 @@ from mini_harness.events.fold import (
     fold_plan_mode,
     fold_range,
 )
+from mini_harness.events.projection import project
 from mini_harness.events.reader import LogReadFailure, read_events
 from mini_harness.events.record import EventRecord
 from mini_harness.events.writer import EventLog, LogWriteFailure
@@ -329,6 +330,7 @@ async def _dispatch_batch(
         plan_active=fold_plan_mode(prefix),
         question_gate=None if session is None else session.question_gate,
         goal=fold_goal(prefix),
+        todos=project(prefix, "todos")["value"],
         human_driven=opened_by_human(prefix),
         entry=entry_of(prefix),
     )

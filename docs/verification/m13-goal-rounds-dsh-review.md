@@ -87,10 +87,37 @@
 
 ### D.4 goal 消息的唯一来源（aligned）
 
-- 只有驱动能造它：`run_session_env` 判定后调 `run_turn_segment(goal_round=GoalRound(...))`（`turn_loop.py:1507`），正文由 `render_goal_round` 生成（`turn_loop.py:986`），来源固定为 `{kind: "goal", goal_id, revision, round}`。
+- 只有驱动能造它：`run_session_env` 判定后调 `run_turn_segment(goal_round=GoalRound(...))`（`turn_loop.py:1498`），正文由 `render_goal_round` 生成（`turn_loop.py:988`），来源固定为 `{kind: "goal", goal_id, revision, round}`。
 - 人不能编辑它、模型不能伪造它（模型没有写 `user/message` 的工具）；DSH 同款——驱动排队一条带 goal message source 的 `<goal_round>` 提示（`driver README:71`）。
 - 待补：REPL 的驱动入口（task 5.4）接上后，来源仍是这一条路径。
 
 ### D.5 决策位置（simplified，已在项 2 记）
 
 段后同协程判定，不是独立 consumer：省掉预约、`flush` 检查点与 `pre-step` 围栏；代价是丢 `competingQueued` 让位（人只能等这一段收敛或取消）。REPL 侧尚未接驱动（5.4），当前只有 `run` / `serve` 会续跑。
+
+### D.6 等价物核对：turn / step / round 与 goal（2026-11-19，逐条对代码）
+
+人要求「先确认 turn、step、round 之间的关系以及它们跟 goal 的对应关系在 mini 都有等价物，其余维持现状」。逐条核对的是**边界事件与判据**，不是名词：
+
+| DSH | mini | 边界（写在哪） | 判据 |
+|---|---|---|---|
+| `step`（一次模型往返） | 回合 | `turn/start`（`turn_loop.py:1187`）→ `turn/end`（`1352`）；段内上限 `max_turns` | `test_two_segments_number_segments_and_turns_continuously`：两段共 5 个回合，编号连续 |
+| `turn`（一次输入驱动的整跑） | 段 | `segment/start`（`995`）→ `segment/end`（`1021`）；一个段恰好包住 1..n 个回合 | 同上：`segment/end` 的 `turns` 与段内 `turn/start` 条数相等 |
+| `goal round`（一次被准入的 user-message turn） | 轮 | 一轮 = 一个段；段首写 goal 来源 `user/message`（`source.round` 来自 `GoalRound`） | `test_three_rounds_run_in_order_and_stop_at_the_cap`：3 轮 → `s1`（人）+ `s2`/`s3`/`s4`，每轮段前六类固定 |
+| goal 与轮的关系 | 同 | 轮属于目标：`source.goal_id` + `source.revision`；上限 `max_rounds`；计数 `rounds_started`；相位在 `goal/updated` | `replay` 的 `goal_round_defect`（4.4）+ 契约行为 1、2 的各条 |
+
+DSH 侧的原句（`packages/goal/goal-round-driver/README.md` 与 `docs/subsystems/goal.md`）：**“Each round gives the model another turn toward the objective”**（`driver README:12`）——round 与 turn 是同一个对象；**“the `agent/pre-step` listener … before its step enters”**（`72`）——一个 round/turn 里有多个 step，每个 step 进模型之前过围栏；**“each admitted user-message turn”**（`goal.md:119`）——轮只由被准入的 user-message turn 推进。
+
+结论：**四层都有直接等价物**，且关系同形——一个 goal 由多轮组成，一轮是一个段、段内多个回合；轮不拆、不并、不并发（`next_round` 与开段在同一个协程里顺序发生，`turn_loop.py:1473-1504`）。
+
+**唯一不严格同形的一处**（早已记在 D.4 与 turn-loop 的设计里）：DSH 的 turn 总有一条 admitted `user/message`；mini 的 `run` 起手段把「人话」放在 `session/start`（design D6 的不对称）。这是**输入记录的存放位置**不同，不是段/回合边界不同——`run` 之后续跑的每一轮都照 D.4 那条路径写 goal 消息。
+
+据此，D.2–D.5 的处置**维持现状**：D.2 已对齐（`context/assembled` 之后计数）、D.3 语义对齐（表示多一份冗余字段）、D.4 对齐、D.5 保持 `simplified`（要真对齐得先有输入队列，见项 2 的四件套）。
+
+### D.7 `get_todos`：mini 补的一个洞（added，不是对齐项）
+
+DSH 只有写表工具（`packages/todo/tool-todo/`），没有读回。mini 加 `get_todos` 的原因不是对齐，而是 D8 的代价：`todos` 每段开头清空、整表只活在工具历史里，被剪枝或压缩遮住之后模型只能凭记忆重写——而 `todo` 是整表替换，记错就改掉进度。
+
+- 读的是 `todos` 投影，所以与 `/todo`、`GET /projections/todos` 同值；段首之后为空，不跨段继承（跨轮仍靠模型重交，D8 的边界不动）。
+- 只读：不写 `todo/updated`、不问人、计划模式放行；`DispatchContext.todos` 由批首前缀折好传入（与 `goal` 同一条规则）。
+- 代价：工具面多一个名字；同批里读不到本批前一条 `todo` 的结果（批首前缀只取样一次，与 `reads`、`goal` 一致）。

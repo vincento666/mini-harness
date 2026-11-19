@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -49,6 +49,15 @@ class TodoProjection:
 
 
 UNITS = {"todos": TodoProjection()}
+
+
+def render_todos(items: Sequence[Mapping[str, Any]]) -> list[str]:
+    """一行一条待办：`- [status] id text`；空表返回空列表。
+
+    `/todo`、`get_todos` 与壳的回显共用这一条格式规则——但空表说什么由调用方决定
+    （命令说「没有待办」，工具要说清「本段还没提交过」）。
+    """
+    return [f"- [{item['status']}] {item['id']} {item['text']}" for item in items]
 
 
 def project(records: Sequence[EventRecord], name: str) -> dict[str, Any]:

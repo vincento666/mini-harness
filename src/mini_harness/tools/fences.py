@@ -81,6 +81,9 @@ class DispatchContext:
     goal_policy: GoalPolicy = field(default_factory=GoalPolicy)
     # 目标快照（M13）：派发前按日志折好传进来，工具不自己读日志。
     goal: GoalSnapshot | None = None
+    # 待办表的当前值（`todos` 投影）：`get_todos` 读它；同一批共用一个前缀，
+    # 所以同批里前一条 `todo` 的整表在这条里还看不到。
+    todos: Sequence[Mapping[str, Any]] = ()
     # 本段是否由人类来源开启；goal 轮次里不能创建/改写目标（M13 权威）。
     human_driven: bool = True
     # 会话入口：子会话没有目标权威。取值与 `SessionEntry` 一致。
@@ -96,6 +99,7 @@ class DispatchContext:
         plan_active: bool = False,
         question_gate: QuestionGate | None = None,
         goal: GoalSnapshot | None = None,
+        todos: Sequence[Mapping[str, Any]] = (),
         human_driven: bool = True,
         entry: str = "chat",
     ) -> DispatchContext:
@@ -109,6 +113,7 @@ class DispatchContext:
             question_gate=UNAVAILABLE_QUESTION_GATE if question_gate is None else question_gate,
             goal_policy=settings.goal,
             goal=goal,
+            todos=todos,
             human_driven=human_driven,
             entry=entry,
         )

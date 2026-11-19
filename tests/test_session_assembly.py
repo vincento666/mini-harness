@@ -47,6 +47,7 @@ def test_assemble_returns_a_prepared_for_a_mock_request(tmp_path: Path) -> None:
         "present",
         "ask_user",
         "todo",
+        "get_todos",
         "get_goal",
         "create_goal",
         "update_goal",

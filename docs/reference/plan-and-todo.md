@@ -49,6 +49,8 @@
 
 **推进进度**：`todo(items)` 每次提交**整张表**；工具结果只回计数与一句确认，整表留在 tool call 参数里。回合循环把成功的调用落成 `todo/updated`，缺省字段在这里规范化。
 
+**读回**：`get_todos()` 无入参，读 `todos` 投影（与 `/todo`、快照接口同值），不写事件。它补的是「被遮蔽后看不见表」：整表只活在工具历史里，剪枝或压缩一挡就没了。段首清空之后读回为空——段作用域，不跨段继承。
+
 **回显**：`todos` 投影单元按事件推进——`todo/updated` 整表替换，`segment/start` 清空，`segment/end` 保留；`GET /sessions/{id}/projections/todos` 给快照，SSE 在变化时推 `session/projection` 帧，增量 apply，不重算全量。
 
 ## 3. 决策与依据
@@ -80,7 +82,7 @@
 ### 4.3 mini 独有的简化代价
 
 - 投影在 `segment/start` 清空，而日志仍保留最后一张表：新段里 `/todo` 为空，DSH 的 last-write-wins 不会这样；
-- 没有读回工具，压缩后模型可能看不到表；
+- ~~没有读回工具，压缩后模型可能看不到表~~（M13 task 4.5 补 `get_todos`：读投影、不落事件、段首为空）；
 - 计划正文不自动注入；
 - 投影只服务 `todos`，没有第二单元。
 

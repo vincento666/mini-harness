@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from mini_harness.events.projection import project
+from mini_harness.events.projection import project, render_todos
 from mini_harness.events.record import EventRecord
 from mini_harness.skills import Skill, read_skill_body
 
@@ -106,9 +106,7 @@ def execute_command(
         if arguments.strip():
             return CommandOutcome(False, "用法：/todo")
         items = project(records, "todos")["value"]
-        if not items:
-            return CommandOutcome(True, "（没有待办）")
-        lines = [f"- [{item['status']}] {item['id']} {item['text']}" for item in items]
-        return CommandOutcome(True, "\n".join(lines))
+        lines = render_todos(items)
+        return CommandOutcome(True, "\n".join(lines) if lines else "（没有待办）")
     # 直接技能名由壳走「注入 + 开段」的执行路径；这里只处理内置命令。
     return None

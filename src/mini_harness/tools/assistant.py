@@ -7,6 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from mini_harness.events.projection import render_todos
 from mini_harness.events.writer import LogWriteFailure
 from mini_harness.tools.fences import DispatchContext
 from mini_harness.tools.registry import ToolArgs, ToolDefinition, ToolResult
@@ -103,8 +104,41 @@ async def _todo(args: TodoArgs, context: DispatchContext) -> ToolResult:
     return ToolResult("OK", text, meta={"todo_updated": True})
 
 
+class GetTodosArgs(ToolArgs):
+    """无入参：读回当前待办表。"""
+
+
+async def _get_todos(args: GetTodosArgs, context: DispatchContext) -> ToolResult:
+    """读回这一段的待办表；只读，不写 `todo/updated`。
+
+    事实只有一个来源：`todos` 投影。所以它读到的与 `/todo`、`GET /projections/todos`
+    是同一个值——`segment/start` 清空之后这里也是空表。
+    """
+    items = list(context.todos)
+    if not items:
+        return ToolResult(
+            "OK",
+            "当前待办为空：本段还没有提交过待办表（`todo` 提交整表后才会出现）",
+            meta={"todo_read": True, "todo_count": 0},
+        )
+    counts = {"pending": 0, "in_progress": 0, "completed": 0}
+    for item in items:
+        status = item.get("status")
+        if status in counts:
+            counts[status] += 1
+    header = (
+        f"当前待办：{counts['pending']} 待办，{counts['in_progress']} 进行中，"
+        f"{counts['completed']} 完成"
+    )
+    return ToolResult(
+        "OK",
+        "\n".join([header, *render_todos(items)]),
+        meta={"todo_read": True, "todo_count": len(items)},
+    )
+
+
 def assistant_tool_definitions() -> list[ToolDefinition]:
-    """`exit_plan_mode` 与 `todo`。"""
+    """`exit_plan_mode`、`present`、`ask_user`、`todo` 与 `get_todos`。"""
     return [
         ToolDefinition(
             name="exit_plan_mode",
@@ -137,5 +171,13 @@ def assistant_tool_definitions() -> list[ToolDefinition]:
             mutates=False,
             concurrency="parallel",
             run=_todo,
+        ),
+        ToolDefinition(
+            name="get_todos",
+            description="读回本段当前的待办表；上下文里看不见表（例如被压缩遮住）时用它。",
+            args_model=GetTodosArgs,
+            mutates=False,
+            concurrency="parallel",
+            run=_get_todos,
         ),
     ]

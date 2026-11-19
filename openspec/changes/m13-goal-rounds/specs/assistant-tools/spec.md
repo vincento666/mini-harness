@@ -51,3 +51,29 @@
 
 - **WHEN** 客户端 GET `/sessions/{id}/projections/todos`
 - **THEN** 返回 `{name, state_version, value}`；未知名字 404
+
+## ADDED Requirements
+
+### Requirement: `get_todos` 读回本段待办表
+
+系统 SHALL 提供无入参的只读工具 `get_todos`，返回**本段**当前的待办表：内容取 `todos` 投影，与 `/todo`、`GET /sessions/{id}/projections/todos` MUST 同值；逐条形如 `- [status] id text`，并带一行计数（`pending` / `in_progress` / `completed`）。读回 MUST NOT 写 `todo/updated`、MUST NOT 改动任何状态。`segment/start` 之后读回 SHALL 是空表（投影在段首清空）；空表的结果 SHALL 说明「本段还没有提交过待办表」，MUST NOT 把上一段的表当成本段的。`get_todos` MUST NOT 被计划模式拦截，MUST NOT 触发审批，`meta` SHALL 带 `todo_read` 与 `todo_count`。
+
+#### Scenario: 读回刚提交的表
+
+- **WHEN** 模型在同一段里先 `todo(items=[t1, t2])`，再 `get_todos`
+- **THEN** 结果是 `OK`，内容含 `- [in_progress] t1 …` 与 `- [pending] t2 …`，日志里 `todo/updated` 只有提交那一条
+
+#### Scenario: 新段读回空表
+
+- **WHEN** 上一段提交过表，新段的第一条调用是 `get_todos`
+- **THEN** 结果是 `OK` 且说明当前待办为空；日志里不新增 `todo/updated`，上一段的表仍在日志里
+
+#### Scenario: 计划模式与只读档位
+
+- **WHEN** 计划模式 active（或 `--sandbox read-only`）时调用 `get_todos`
+- **THEN** 结果是 `OK`，不是 `DENIED_BY_PLAN`，也没有审批请求
+
+#### Scenario: 同批读回看到的是批首的表
+
+- **WHEN** 同一批里既有一条 `todo` 又有一条 `get_todos`
+- **THEN** `get_todos` 的内容是这一批开始之前的表——批首前缀只取样一次，与 `reads`、`goal` 同一条规则

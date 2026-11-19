@@ -23,10 +23,11 @@
 
 ## 4. 轮次驱动（seam ①⑦）
 
-- [x] 4.1 段后判定 + 四事件顺序（`segment/start` → goal 来源 `user/message` → 首条 `turn/start` → `goal/updated`），`rounds_started` 递增、`revision` 不变
+- [x] 4.1 段后判定 + 四事件顺序（`segment/start` → goal 来源 `user/message` → 首条 `turn/start` → 首条 `context/assembled` → `goal/updated`），`rounds_started` 递增、`revision` 不变
 - [x] 4.2 达上限：写 `blocked {code: "round-limit"}`，不起新段
 - [x] 4.3 五类失败收尾（`ABORTED` / `FENCE_DENIED` / `PROVIDER_ERROR` / `CONTEXT_WINDOW_EXCEEDED` / `MAX_TURNS`）不续跑、不开新段；`ABORTED` 另写一条 `goal/updated` 把 `phase` 置 `paused`，其余只解除武装
 - [x] 4.4 `replay` 校验 goal 轮次：轮号非正、同一 `goal_id` 内跳号、超 `max_rounds`、`revision` 落后、`phase` 已停 → 退出码非零；正常日志退出 0
+- [x] 4.5 `get_todos` 读回（D8 的配套）：读 `todos` 投影、不落事件、段首为空、计划模式放行；`DispatchContext.todos` 由批首前缀折好传入
 
 ## 5. 武装与命令面（seam ⑥）
 
