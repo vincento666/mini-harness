@@ -161,7 +161,7 @@ ComponentRegistry.compose(settings, overrides, component_dirs)
 
 ## 8. 风险
 
-- **过度抽象**：只抽 M10/M11/M14/MEM1 已经稳定下来的行为；不要为「将来可能」抽。
+- **过度抽象**：只抽 M10/M11/M14/MEM1 已经稳定下来的行为；不要为「将来可能」抽。行为补齐的顺序见 `docs/reference/dsh-core-components.md`：接缝不能替代 M15a 的进程收容与 MEM1 的记忆，它们必须先有行为可抽。
 - **replay 漂移**：组件版本必须进 payload；跨版本必须显式，不许静默。
 - **配置爆炸**：默认组件不暴露旋钮；先只有 `overrides`，等 E1 量到再加。
 - **性能**：直接调用，不做事件总线；setup 只在会话开始。
