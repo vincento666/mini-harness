@@ -100,7 +100,9 @@ def _command(*args: str) -> list[str]:
 
 def _child_env(env: dict[str, str] | None) -> dict[str, str]:
     child_env = dict(os.environ if env is None else env)
-    child_env["COVERAGE_FILE"] = str(REPO_ROOT / ".coverage")
+    # 外层可以用 `COVERAGE_FILE=<dir>/.coverage` 把一次运行的所有 partial 收在同一个目录里，
+    # 这样 `coverage combine` 只合并本次的数据，不会把仓库根的历史 partial 一起算进来。
+    child_env["COVERAGE_FILE"] = os.environ.get("COVERAGE_FILE", str(REPO_ROOT / ".coverage"))
     return child_env
 
 

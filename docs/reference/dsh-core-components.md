@@ -23,7 +23,7 @@
 | 评测 runner、任务集、held-out 基线 | 元层 | **缺**（`scripts/eval/` 只有 README） | E1 | 是（它就是评测构建本身） |
 | 组件接缝（可在会话间替换） | L2 | **缺** | E2 | 是（A/B 与归因的前提） |
 | OS 级写拒绝（ACL / landlock / bwrap） | L5 | **缺** | M15b | 否（壳后） |
-| 工作流编排（PTC / workflow 工具） | L7 之上 | **未立项** | 待裁 | 否（见第三节） |
+| 工作流编排（PTC / workflow 工具） | L7 之上 | **未立项（路线已定：E1 后做固定 schema 的批量原语）** | 待裁 | 否（见第三节） |
 | 多目标调度（优先级、公平性） | L7 | **deferred** | `parallel-goal-scheduler` | 否 |
 | UI / GoalBar / 壳 | L1 | 缺（不在本仓库） | 壳阶段 | 否 |
 
@@ -43,11 +43,51 @@
 
 ## 三、workflow 类能力：不是核心前置
 
-DSH 的 `workflow-ptc` / `dsh-tool-workflow` 是**编排面**：让模型写一段脚本，用 `agent()` / `parallel()` / `pipeline()` 派子任务。它建立在子代理、工具管线与日志之上，不是「没有它就跑不了会话」的部件。
+### 3.1 DSH 自己的层次与定位（一手）
 
-- **现在不立项的理由**：E1 还没有 held-out 基线；没有基线就加调度策略或 workflow，无法判断它是变好还是只是变复杂（roadmap 对 R1 的同一判断）。
+`DSH运行时架构剖析.html:1415` 起写得很清楚：三层分工，**定义 / 实现 / 模型面**。
+
+| 层 | 包 | 职责 |
+|---|---|---|
+| 接缝 | `dsh-workflow` | 类型 + Service 定义，服务键 `workflowEngine`；无实现、无配置 |
+| 实现 | `dsh-workflow-ptc` | `PtcWorkflowEngine extends WorkflowEngine`；PTC（Programmatic Tool Calling）运行时 |
+| 模型面 | `dsh-tool-workflow` | 把引擎投影成工具；`inject: tools, workflowEngine, systemPrompt` |
+
+执行形状：guest 源码是一段内嵌的 JS（`WORKFLOW_GUEST_SOURCE`，解码后 1050 行），经 `data:text/javascript` 动态 import，在**受 sandboxPolicy 约束的独立 Node 进程**里跑；guest 内部再开一个空 `vm` context，只注入 6 个冻结全局。脚本**没有** fs / network / timer / Node API，只能调编排原语：
+
+- `agent(prompt, opts)`：起一个子代理；`opts` 只允许 `label/phase/schema/provider/model`；有 `schema` 时返回 `result.structured`，缺失算失败。
+- `parallel(thunks)`：`Promise.all`，**barrier**——全部到齐才进下一步。
+- `pipeline(items, ...stages)`：每个 item 独立串完所有 stage，**stage 之间无 barrier**。
+- `phase(title)` / `log(message)` / `args`：阶段标记、日志（不渲染给模型）、只读输入。
+
+上限是硬编码的：`maxTotalAgents 1000`、`maxItemsPerCall 4096`、`maxConcurrentAgents 0 → min(16, cpu-2)`、`syncTimeoutMs 5000`、`maxResultChars 5e4`。触顶**整脚本终止**，不静默截断；错误分 fatal 与普通（普通错降级成 `null`）；返回值必须是 lossless JSON，否则 `RESULT_UNSERIALIZABLE`。
+
+`dsh-tool-ralph` 复用同一个 `workflowEngine` 跑一段**部署固定**的脚本：模型只提供数据，不能改循环、路由或 schema。
+
+**定位结论**：workflow 是**委派层的编排面**（与 subagent 同组，`isolate: {workflowEngine: true}`），建立在子代理、工具管线、日志之上。它不是「没有它就跑不了会话」的部件，也不是内核。
+
+### 3.2 「批量并行 + 结果聚合」是不是通用模式
+
+是**第一种**通用模式，但不是全部。编排的通用形状有四种，DSH 原语与它们一一对应：
+
+| 通用模式 | 形状 | DSH 原语 | 用途 |
+|---|---|---|---|
+| fan-out / fan-in（map-reduce） | 一批并行，全部到齐再聚合 | `parallel()` | 多文件审查、多方案对比、批量修复 |
+| pipeline | 每个 item 串完所有阶段，互不等待 | `pipeline()` | 每文件「读→改→测」，item 之间无依赖 |
+| router | 按输入挑一个执行者 | 脚本里的 `if`/`switch` | 按语言/目录分流 |
+| supervisor | 一个协调者按结果决定下一步 | 脚本里的循环 + `agent()` | 动态重规划 |
+
+所以「批量并行 + 结果聚合」是 fan-out/fan-in，是最小可用的第一步；缺的是 pipeline（依赖排序）与 supervisor（动态路由）。
+
+**主流 harness 的对照**：Claude Code 与 Codex CLI 都**没有**一等的内建 workflow DSL。它们的并行靠「一次响应里发多个工具调用（含多个 subagent）」；要写控制流，得在外部用 Agent SDK / 自己的代码编排。把「模型写脚本编排子代理」做成一等能力的，DSH 是少数。这意味着 mini 不补 workflow 并不会「不如主流」——它是 DSH 的特色面，不是 harness 的入场券。
+
+### 3.3 mini 的路线：固定 schema 的批量原语，不是 DSL
+
+- **现在不立项**：E1 还没有 held-out 基线；没有基线就加调度策略或 workflow，无法判断它是变好还是只是变复杂。
 - **进入条件**：E1 有 runner 与基线、E2 能换 `SubagentPolicy`、并且有一个真实的「多子任务 + 依赖排序」场景。
-- **届时的最小形状**：不复制 DSH 的脚本 DSL；先在 `subagent` 工具上做「一批并行 + 结果聚合」，把 workflow 当作调度策略的消费者，而不是新内核。
+- **届时的最小形状**：不复制 DSH 的脚本 DSL。先做**固定 schema 的批量工具**——模型给一个任务数组，harness 用 `asyncio.gather` 并行起子会话、把结果聚合成一个结构化 tool result（fan-out/fan-in）。需要 pipeline 时，第二个工具接收「items + 有序 stages」，由 harness 执行，模型不写代码。
+- **为什么不用脚本**：mini 没有内嵌 JS/Python 运行时；给模型一段可执行脚本要再引一套沙箱、资源上限与错误分类（DSH 为此写了 1050 行 guest + realm 校验）。固定 schema 覆盖同样的前两种模式，成本是一个工具定义。
+- **不对齐的代价**：失去 supervisor 式的动态控制流（模型不能在编排中途改路由）。这个能力等 E1 证明「多子任务场景真实存在且当前 subagent 不够用」再谈；到时可以加「模型给 DAG」而不是「模型给脚本」。
 
 ## 四、与 E2 的关系
 

@@ -184,6 +184,6 @@ DSH 只有写表工具（`packages/todo/tool-todo/`），没有读回。mini 加
 
 - **队列**：`submit_message` 的深度 1 队列就是 `competingQueued` 的角色；优先级是**人话先于自动轮**。DSH 的驱动条件原文含 `!competingQueued`（图 7-1），mini 在段边界让位，粒度等价。host 原来只跑一段、不调驱动，是实现分叉，已由公共 `settle_segment` 修掉。
 - **问题**：DSH 的 `ask_user` 超时返回 `{pending: true, callId}`，并说明答案会以 `answer_to_pending_question` 用户消息回来（架构剖析「协作型工具的实现细节」）。据此 D11 的「paused + `/goal resume`」改为 D15：目标保持 `active/armed`，回答是人类段、不推进 `rounds_started`，回答段收尾后自动续下一 goal 轮。
-- **完成**：完成是模型的声明（`update_goal complete`），harness 不能验证；能加的是**零工具调用的停滞熔断**（D14，`added`，不是 DSH 对齐项），以及 `max_rounds` + `/goal edit --max-rounds` + `/goal complete` 的控制面。Codex / Claude Code 在模型不调工具时就停，DSH 的 goal 循环不看工具调用——mini 取两者之间。
+- **完成**：完成是模型的声明（`update_goal complete`），harness 不能验证。2026-11-20 二裁改为**默认对齐 DSH**：零动作不停；`stall_rounds` 是要显式打开的闸门（D14）。控制面仍是 `max_rounds` + `/goal edit --max-rounds` + `/goal complete`。查证补充：Claude Code 的 `/goal` 有独立评估器（met / not yet met / impossible）与 stall detection（连续几轮不用工具才停、保留 goal）；Codex CLI 的 goal mode 是 structured `update_goal` + 建议性 token 预算（命中后 wrap-up，不硬杀）。DSH 与它们都不同：只认声明与上限。
 - **`rounds_started`**：当前 goal 轮号（goal 消息准入后等于 n），不是会话段数；`max_rounds` 是单目标上限。人类段不计数。
 - **edit**：DSH 的 `edit` 需人类直接消息、不改 phase 也不改 activation；mini 的工具面原本就是这样，2026-11-20 补了 `/goal edit` 命令面，人不必借模型的手改目标。

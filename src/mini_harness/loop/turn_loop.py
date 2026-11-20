@@ -1493,12 +1493,21 @@ def settle_segment(
     goal = goal_after(env.log)
     if isinstance(goal, LogReadFailure):
         return RoundSettlement(RoundDecision("stop"), _segment_failure(goal, turns))
+    # 连续空转轮数：goal 轮次零工具调用加一，有动作清零；人类段一律清零
+    # （人参与了，空转链断了）。只有 `stall_rounds > 0` 时这个数才参与判定。
+    if goal_round:
+        env.goal_runtime.idle_rounds = (
+            env.goal_runtime.idle_rounds + 1 if segment.tool_calls == 0 else 0
+        )
+    else:
+        env.goal_runtime.idle_rounds = 0
     decision = next_round(
         goal=goal,
         armed=env.goal_runtime.armed,
         stop_reason=segment.stop_reason,
         question_pending=env.questions.pending is not None,
-        tool_calls=segment.tool_calls,
+        idle_rounds=env.goal_runtime.idle_rounds,
+        stall_rounds=env.settings.goal.stall_rounds,
         goal_round=goal_round,
     )
     if decision.kind == "exhausted":
@@ -1507,7 +1516,9 @@ def settle_segment(
         )
     if decision.kind == "stalled":
         # 空转不改相位、不落事件：`armed` 本来就是进程内的自动推进开关（D14）。
+        # 计数清零，`/goal resume` 之后重新给满阈值。
         env.goal_runtime.armed = False
+        env.goal_runtime.idle_rounds = 0
         return RoundSettlement(decision)
     if decision.kind == "stop" and segment.stop_reason in NO_CONTINUE_REASONS:
         return RoundSettlement(decision, close_failed_round(env=env, segment=segment))

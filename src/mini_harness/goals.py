@@ -19,15 +19,20 @@ GoalPhase = Literal["active", "paused", "blocked", "complete"]
 # 部署策略：缺省 32 轮（同时是模型可请求的硬顶）、门槛 3 轮、允许并行任务（2026-11-17 人裁）。
 DEFAULT_MAX_ROUNDS = 32
 DEFAULT_BLOCKED_AFTER = 3
+# 停滞闸门默认关（2026-11-20 人裁「对齐 DSH」）：DSH 的 goal 循环不因零工具调用而停，
+# 完成只由模型 `complete` 声明。要开就把阈值设成连续几轮（Claude Code 的 shape），
+# 单轮阈值会把「读文件后判断没新内容」的研究型轮次误杀。
+DEFAULT_STALL_ROUNDS = 0
 
 
 @dataclass(frozen=True)
 class GoalPolicy:
-    """`[goal]` 段的三键。工具与驱动都读这一份，不各自解释配置。"""
+    """`[goal]` 段的四键。工具与驱动都读这一份，不各自解释配置。"""
 
     max_rounds: int = DEFAULT_MAX_ROUNDS
     blocked_after_consecutive_rounds: int = DEFAULT_BLOCKED_AFTER
     allow_parallel_in_progress: bool = True
+    stall_rounds: int = DEFAULT_STALL_ROUNDS
 
 
 class GoalBlockReason(BaseModel):
@@ -98,9 +103,12 @@ def fold_goal(events: Sequence[EventRecord]) -> GoalSnapshot | None:
 
 @dataclass
 class GoalRuntime:
-    """进程内的武装位：永不落盘（design D5）。会话启动与 `--resume` 之后一律为假。"""
+    """进程内状态：武装位与「连续空转轮数」。永不落盘（design D5）。"""
 
     armed: bool = False
+    # 连续多少个 goal 轮次零工具调用；有任何动作或人类段插入都不清零，
+    # 由 `settle_segment` 维护。只有 `stall_rounds > 0` 时才有意义。
+    idle_rounds: int = 0
 
 
 @dataclass(frozen=True)

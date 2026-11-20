@@ -11,7 +11,12 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from mini_harness.config.load import ConfigCode, ConfigFailure
-from mini_harness.goals import DEFAULT_BLOCKED_AFTER, DEFAULT_MAX_ROUNDS, GoalPolicy
+from mini_harness.goals import (
+    DEFAULT_BLOCKED_AFTER,
+    DEFAULT_MAX_ROUNDS,
+    DEFAULT_STALL_ROUNDS,
+    GoalPolicy,
+)
 from mini_harness.skills import Skill
 from mini_harness.tools import ToolRegistry
 from mini_harness.tools.assistant import assistant_tool_definitions
@@ -152,19 +157,28 @@ def build_goal_policy(raw: Mapping[str, Any] | None) -> GoalPolicy | ConfigFailu
     """
     if raw is None:
         return GoalPolicy()
-    known = {"max_rounds", "blocked_after_consecutive_rounds", "allow_parallel_in_progress"}
+    known = {
+        "max_rounds",
+        "blocked_after_consecutive_rounds",
+        "allow_parallel_in_progress",
+        "stall_rounds",
+    }
     unknown = sorted(set(raw) - known)
     if unknown:
         return _invalid(f"[goal] 里有未知的键：{_names_joined(unknown)}", "CONFIG_UNKNOWN_KEY")
     max_rounds = raw.get("max_rounds", DEFAULT_MAX_ROUNDS)
     threshold = raw.get("blocked_after_consecutive_rounds", DEFAULT_BLOCKED_AFTER)
     parallel = raw.get("allow_parallel_in_progress", True)
+    stall_rounds = raw.get("stall_rounds", DEFAULT_STALL_ROUNDS)
     for name, value in (
         ("max_rounds", max_rounds),
         ("blocked_after_consecutive_rounds", threshold),
     ):
         if isinstance(value, bool) or not isinstance(value, int) or value < 1:
             return _invalid(f"[goal] {name} 必须是正整数")
+    # 0 是合法值：它表示关闭停滞闸门（默认，对齐 DSH）。
+    if isinstance(stall_rounds, bool) or not isinstance(stall_rounds, int) or stall_rounds < 0:
+        return _invalid("[goal] stall_rounds 必须是 0 或正整数（0 表示关闭）")
     if not isinstance(parallel, bool):
         return _invalid("[goal] allow_parallel_in_progress 必须是布尔值")
     if threshold > max_rounds:
@@ -176,6 +190,7 @@ def build_goal_policy(raw: Mapping[str, Any] | None) -> GoalPolicy | ConfigFailu
         max_rounds=max_rounds,
         blocked_after_consecutive_rounds=threshold,
         allow_parallel_in_progress=parallel,
+        stall_rounds=stall_rounds,
     )
 
 

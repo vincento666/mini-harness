@@ -165,7 +165,10 @@ def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
         "--max-turns",
         type=int,
         default=None,
-        help=f"一个 session 最多跑几个回合。默认 {DEFAULT_MAX_TURNS}。",
+        help=(
+            f"一轮最多跑几个回合（一个回合 = 一次模型往返）。默认 {DEFAULT_MAX_TURNS}。"
+            "多轮目标会把它乘以轮次；它不限制轮次。"
+        ),
     )
     parser.add_argument(
         "--window",

@@ -256,6 +256,7 @@ def build_session_env(
     registry: ToolRegistry | None = None,
     approval_gate: ApprovalGate | None = None,
     on_delta: TurnDeltaSink | None = None,
+    goal: GoalPolicy | None = None,
 ) -> tuple[EventLog, SessionEnv]:
     """seam ① 的「一个会话的冻结环境」形状：建日志、建设置、冻成 `SessionEnv`。
 
@@ -271,6 +272,7 @@ def build_session_env(
         window=window,
         reserve=reserve,
         endpoint=endpoint,
+        goal=GoalPolicy() if goal is None else goal,
     )
     env = SessionEnv(
         provider=provider,

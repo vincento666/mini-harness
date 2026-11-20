@@ -1,4 +1,4 @@
-"""seam ②⑥：`[goal]` 三键的读取与 `todo` 并行纪律（M13 task 2.2）。"""
+"""seam ②⑥：`[goal]` 四键的读取与 `todo` 并行纪律（M13 task 2.2）。"""
 
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ def test_defaults_when_the_section_is_absent() -> None:
     assert policy.max_rounds == 32
     assert policy.blocked_after_consecutive_rounds == 3
     assert policy.allow_parallel_in_progress is True
+    assert policy.stall_rounds == 0  # 默认关：对齐 DSH，不因零动作停
 
 
 def test_partial_section_keeps_the_other_defaults() -> None:
@@ -95,3 +96,15 @@ async def test_two_in_progress_rejected_when_parallel_is_off(tmp_path: Path) -> 
     outcome = await _dispatch_todo(tmp_path, GoalPolicy(allow_parallel_in_progress=False))
 
     assert outcome.result.outcome == "TODO_PARALLEL_DISABLED"
+
+
+def test_stall_rounds_accepts_zero_and_positive_integers() -> None:
+    assert build_goal_policy({"stall_rounds": 0}).stall_rounds == 0
+    assert build_goal_policy({"stall_rounds": 2}).stall_rounds == 2
+
+
+def test_negative_stall_rounds_is_a_config_failure() -> None:
+    for bad in (-1, True, "2"):
+        failure = build_goal_policy({"stall_rounds": bad})
+        assert isinstance(failure, ConfigFailure)
+        assert failure.code == "CONFIG_INVALID_VALUE"

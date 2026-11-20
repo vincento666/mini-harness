@@ -126,17 +126,26 @@ DSH 的驱动条件里有一条 `!competingQueued`（`docs/dsh-reference/DSH运�
 
 **host 原来没有驱动**：`_run_segment` 只跑一段就回 idle，`/goal resume` 之后什么也不会发生。这是实现分叉，不是设计取舍。现在段后收尾抽成 `settle_segment`，`run` / `chat` / `host` 三处共用；host 在队列为空且判定 `continue` 时自己开下一轮。
 
-## D14 停滞熔断：goal 轮次零工具调用就停自动推进
+## D14 停滞闸门：默认关，开了才按「连续 N 轮零动作」停
 
-「完成了还不会停」的现场是：模型在第 4 轮说「没有新内容可写」，没有调用 `update_goal`，段以 `MODEL_COMPLETED` 收尾，驱动照常开下一轮。根因不是驱动判错，而是**完成是模型声明的事实，驱动没有可读的证据**；唯一能观察到的反面证据是「这一轮什么也没做」。
+「完成了还不会停」的现场是：模型在第 4 轮说「没有新内容可写」，没有调用 `update_goal`，段以 `MODEL_COMPLETED` 收尾，驱动照常开下一轮。根因不是驱动判错，而是**完成是模型声明的事实，驱动没有可读的证据**。
 
-- **判据**：一个 goal 轮次里成功派发的工具调用数为 0（`SegmentOutcome.tool_calls`，落进 `segment/end.tool_calls`）。取消、未派发、围栏拒绝都不算动作。
-- **处置**：`next_round` 返回 `stalled`；入口解除武装、**不改相位**、不落 `goal/updated`，回到提示符/idle。人可以用 `/goal resume` 再给一轮，或用 `/goal complete` 结束。为什么不是 `paused`：`armed` 本来就是「要不要自动推进」的进程内开关（D5），`phase` 是目标本身的状态；「已完成但没声明」不该被写成「暂停」。
+第一版把「一个 goal 轮次零工具调用」直接当停止信号。2026-11-20 人裁推翻了这个默认：**对齐 DSH**——DSH 的 goal 循环不看工具调用，只认 `complete` / `blocked` / 上限；宁可多跑一轮，也不要因为「这一轮只在读和想」而早停。于是改成：
+
+- **判据**：`[goal] stall_rounds = N`（正整数，缺省 `0` 表示关闭）。连续 N 个 goal 轮次零成功派发的工具调用才触发；有任何动作就清零。人类段一律清零（人参与了，空转链断了）。
+- **计数**：`GoalRuntime.idle_rounds`，进程内，与武装位同一层（不落盘）。`segment/end.tool_calls` 仍落盘，供审计与回放读。
+- **处置**：`next_round` 返回 `stalled`；入口解除武装、**不改相位**、不落 `goal/updated`，回到提示符/idle，并把计数清零（`/goal resume` 后重新给满阈值）。为什么不是 `paused`：`armed` 是「要不要自动推进」的进程内开关（D5），`phase` 是目标本身的状态；「已完成但没声明」不该被写成「暂停」。
 - **为什么不是自动标完成**：完成需要证据，驱动没有；替模型写 `complete` 会让 `replay` 里出现一条没人做过的声明。为什么不是自动 `blocked`：`blocked` 的语义是「同一阻碍持续到门槛」，空转不是阻碍。
-- **提示词是第一道**：`<goal_round>` 的末行要求三选一（complete / blocked / 现在做一个具体动作），并明说「只复述计划、不调用任何工具会被视为停滞」。提示词挡不住的，由熔断兜底。
-- **残余**：如果模型在一轮里读了文件、然后说「没有新内容」，`tool_calls > 0`，熔断不触发；这一轮仍会被计为有动作。要更强只能读工作区指纹或要求每轮一个 `todo` 更新——两者都会把「研究型轮次」误杀，暂不做。
+- **提示词仍是第一道**：`<goal_round>` 的末行要求三选一（complete / blocked / 现在做一个具体动作）。它不依赖熔断也能把「只复述计划」的概率压低。
 
-**与主流 harness 的对照**：Codex / Claude Code 这类「一问一答」循环在模型不调工具时就停；DSH 的 goal 循环不看工具调用，只看 `complete` / `blocked` / 上限。mini 取两者之间：默认照 DSH 续跑，但把「零动作」当作停止信号。这是 `added`，不是对齐项。
+**与主流 harness 的对照（2026-11-20 查证）**：
+
+- DSH：goal 循环不看工具调用，只认 `complete` / `blocked` / `max_rounds`。**没有**停滞判据。
+- Claude Code 的 `/goal`：每轮结束由独立的小模型判定 not yet met / met / impossible；**有** stall detection，但是「连续几轮只回答评估器、不用工具」才停，且**保留 goal**，下一次人类提示后评估恢复。
+- Codex CLI 的 goal mode：Ralph loop（Plan→Act→Test→Review），状态经结构化 `update_goal` 转移；token 预算是建议性的（命中后注入 wrap-up 引导，不是硬杀）。
+- 结论：停滞判据不是 mini 的怪招，但**阈值不能是 1 轮**。默认关 = 对齐 DSH；要开就用 2–3 轮，形状对齐 Claude Code。
+
+**残余**：开了闸门后，如果模型每轮都读一个文件再说「没有新内容」，`tool_calls > 0`，闸门不触发。要更强只能读工作区指纹或要求每轮更新 todo——两者都会把研究型轮次误杀，不做。
 
 ## D15 问题交回人类；完成与轮次的控制面
 
