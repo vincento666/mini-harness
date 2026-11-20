@@ -30,6 +30,7 @@
 - **P0 预算读数未复现**：`fix-post-compaction-budget-reading` 20 个 task 未 apply；2026-10-27 的真实端点诊断没复现「遮蔽后 tokens 后 > 前」。要么补稳定样本，要么降级为未复现的历史缺陷。
 - **`SESSION_BUSY` 状态码自相矛盾**：spec 表写 409，实现按 429 归档；留到后续 spec 修正时裁。
 - **委派的三处语义原语未对齐**：子级审批继承父模式、没有「沙箱升级才问人」的阶梯、工具表只是组合过滤。见 `docs/verification/m12-subagent-delegation-dsh-review.md`。
+- **host 的 goal 只到命令面（2026-11-20 发现）**：`/goal` 四个命令在 host 可用（`session/host.py:150` 起），但 `_run_segment` 只跑一段、不调 `next_round`（`session/host.py:469`），所以 `/goal resume` 之后没有驱动；驱动目前有两份实现（`loop/turn_loop.py` 的 `run_session_env` 与 `cli/main.py` 的 REPL），host 没有。是否把驱动抽成公共件、host 是否也要自动续跑，待裁。
 - **UI 服务端 allowlist 暂缓**：H2 保持日志逐行镜像 + 客户端过滤；公网/多客户端时再判。
 - **fork 与插件容器暂不做**（ADR-0035）；**OS 级沙箱**在 M15a。
 
