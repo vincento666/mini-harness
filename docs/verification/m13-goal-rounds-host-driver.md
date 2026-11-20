@@ -9,7 +9,7 @@
 | 1 | host 的 goal | 只到 `/goal` 命令面，`/goal resume` 之后没有驱动 | 段后收尾与 `run` / `chat` 共用 `settle_segment`；队列空且判定 `continue` 时自动开下一轮 |
 | 2 | 队列优先级 | host 队列只在段尾先跑；chat 无队列 | 队列人话**先于**自动轮；chat 提示符上的下一条输入同样先于自动轮（D13） |
 | 3 | 未决问题 | `paused` + 解除武装，人回答后要 `/goal resume` | 目标保持 `active/armed`；回答是人类段（`rounds_started` 不变），段收尾后自动续下一 goal 轮（D15） |
-| 4 | 完成但没声明 | 驱动继续开轮，白烧额度 | 默认对齐 DSH：不停（只由 `complete`/`blocked`/上限决定）；配置 `[goal] stall_rounds = N` 后才在连续 N 轮零动作时 `stalled`：解除武装、相位不变、回到入口（D14）；`segment/end.tool_calls` 落盘 |
+| 4 | 完成但没声明 | 驱动继续开轮，白烧额度 | 停滞闸门默认开、阈值 2：连续两轮零动作才 `stalled`（解除武装、相位不变、回到入口，D14）；一轮空转不误杀，`0` 可关闭；`segment/end.tool_calls` 落盘 |
 | 5 | 命令面 | `/goal` 四条；host 的 `/goal resume` 只改状态 | 另加 `/goal edit [--max-rounds N] [正文]`（不动相位/武装位）与 `/goal complete`；host 的 `/goal resume` 与 chat 一样立刻开下一轮 |
 
 ## 二、判据与证据
@@ -22,8 +22,8 @@
 | host 的 `/goal resume` 立刻开段 | `...::test_goal_resume_command_starts_the_next_round_immediately` |
 | chat 里回答是 human 段、不推进轮号 | `tests/test_chat_goal_driver.py::test_an_answer_is_a_human_segment_and_the_goal_resumes_after_it` |
 | 未决问题不再 paused | `...::test_a_question_asked_in_a_round_returns_to_the_prompt_without_burning_the_next`、`tests/test_goal_rounds.py::test_an_unanswered_question_hands_control_back_without_burning_the_next_round` |
-| 零动作默认继续（对齐 DSH） | `tests/test_goal_rounds.py::test_a_goal_round_with_no_tool_calls_keeps_running_by_default` |
-| 停滞闸门开启后按连续轮数停 | `...::test_a_stall_gate_stops_after_consecutive_idle_rounds_when_enabled` |
+| 默认阈值 2：连续两轮才停 | `tests/test_goal_rounds.py::test_two_idle_goal_rounds_in_a_row_trip_the_stall_gate_by_default` |
+| `stall_rounds = 0` 完全关闭 | `...::test_stall_rounds_zero_disables_the_gate_entirely` |
 | 五档判定（stop/continue/exhausted/awaiting/stalled） | `...::test_the_round_decision_only_looks_at_the_snapshot_the_arm_and_the_stop_reason` |
 | `/goal edit` 不动相位/武装位 | `tests/test_goal_commands.py::test_edit_changes_objective_without_touching_phase_or_arm` |
 | `edit --max-rounds` 解锁 `round-limit` | `...::test_edit_can_raise_the_cap_on_a_blocked_goal` |
@@ -39,8 +39,8 @@
 
 ## 四、残余与不在本报告内的事
 
-- **UAT 6.2 仍需人跑**：场次 1/2 已按 D15 改口；重点看「回答问题后自动续跑」。空转默认不停，看到它跑满上限不算失败。
-- **`stalled` 的灰度**：默认关；开了之后仍只看「连续 N 轮 `tool_calls == 0`」；读了文件再说「没有新内容」的轮次不会触发。更强的判据（工作区指纹 / 每轮必须更新 todo）会误杀研究型轮次，不做（design D14 残余）。
+- **UAT 6.2 仍需人跑**：场次 1/2 已按 D15 改口；重点看「回答问题后自动续跑」。空转默认连续两轮才停，第一轮只说不动仍会继续。
+- **`stalled` 的灰度**：只看「连续 N 轮 `tool_calls == 0`」（缺省 N=2）；读了文件再说「没有新内容」的轮次不会触发。更强的判据（工作区指纹 / 每轮必须更新 todo）会误杀研究型轮次，不做（design D14 残余）。
 - **`awaiting_input` 不落持久原因**：日志只有 `question/asked` 没有 `question/answered`；这是可接受的线索，但不是显式状态。
 - **命名 C**：`align-turn-step-naming` 已 propose（含 schema v2 上迁设计），未 apply。
 - **host 的 goal 投影 / GoalBar**：仍不在 M13 范围。

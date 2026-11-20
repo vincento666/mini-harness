@@ -30,7 +30,7 @@ uv run minihns chat --provider deepseek --workspace .tmp/uat/m13 --session-dir .
 
 - 期望：这一段结束后**不出现 `> ` 提示符**，stderr 先打 `[轮] 1/2`、再打 `[轮] 2/2`；第 2 轮之后写 `goal/updated {phase: "blocked", blocked_reason.code: "round-limit"}` 并打一行 `已用尽 2/2`，回到提示符；`notes.md` 里有两节（第 3 节没写）。
 - 另一种合法收尾（2026-11-20 起，D15）：模型在轮次里调 `ask_user` 但没人能答时，**不再续跑**——stderr 出现 `[轮] n/2` 后跟 `目标保持 active`；提示符回到你手里，**目标不暂停**。你直接输入答案：那是一条人类段（不是 goal 轮），它收尾后自动接下一轮，不需要 `/goal resume`。看到这个不算失败。
-- 空转**默认不会停**（D14，2026-11-20 改口对齐 DSH）：模型某一轮只说话、没调用工具，驱动仍会开下一轮，跑到 `max_rounds` 才停。看到「明明没事可做还在跑」不算失败——这是 DSH 的形状。只有配置了 `[goal] stall_rounds = N` 才会在连续 N 轮零工具调用后出现「已停止自动推进」。
+- 空转**默认连续两轮才停**（D14，2026-11-20 三裁）：第一轮只说不动会照常开下一轮；连续第二轮仍零工具调用时，stderr 出现「已停止自动推进」，提示符回到你手里，目标仍是 `active`。用 `/goal resume` 再给两轮，或 `/goal complete` 收尾。配 `[goal] stall_rounds = 0` 可完全关闭，一路跑到上限。
 - 观察：无人输入时是否自己推进；轮次提示是否清楚（`Round: n/2`）；阻塞后是否停下不动。
 - 结果：**待填**
 

@@ -20,7 +20,7 @@ def test_defaults_when_the_section_is_absent() -> None:
     assert policy.max_rounds == 32
     assert policy.blocked_after_consecutive_rounds == 3
     assert policy.allow_parallel_in_progress is True
-    assert policy.stall_rounds == 0  # 默认关：对齐 DSH，不因零动作停
+    assert policy.stall_rounds == 2  # 默认开、阈值 2：连续两轮零动作才停
 
 
 def test_partial_section_keeps_the_other_defaults() -> None:
@@ -99,8 +99,8 @@ async def test_two_in_progress_rejected_when_parallel_is_off(tmp_path: Path) -> 
 
 
 def test_stall_rounds_accepts_zero_and_positive_integers() -> None:
-    assert build_goal_policy({"stall_rounds": 0}).stall_rounds == 0
-    assert build_goal_policy({"stall_rounds": 2}).stall_rounds == 2
+    assert build_goal_policy({"stall_rounds": 0}).stall_rounds == 0  # 0 = 关闭
+    assert build_goal_policy({"stall_rounds": 3}).stall_rounds == 3
 
 
 def test_negative_stall_rounds_is_a_config_failure() -> None:

@@ -127,7 +127,7 @@ goal 来源消息的 `round` MUST 等于写入时快照的 `rounds_started + 1`�
 
 `rounds_started` 是**当前 goal 轮次的序号**：goal 消息被准入（`context/assembled` 落盘）之后它就是本轮的 n；人类段的 `user/message` MUST NOT 推进它。`max_rounds` 是**单个目标**的轮次上限，不是会话的段数上限。两者都由 `/goal edit --max-rounds` 随时改写。
 
-goal 轮次以零个成功派发的工具调用收尾（模型只说话、没有动作）时，系统 MUST NOT 因此停止自动推进——完成只由模型的 `update_goal complete` / `blocked` 声明，或由 `max_rounds` 截断（对齐 DSH，2026-11-20 人裁）。部署者可以用 `[goal] stall_rounds = N`（正整数）显式打开停滞闸门：连续 N 个 goal 轮次零工具调用时，系统 SHALL 解除武装、MUST NOT 开下一段，`phase` MUST 保持不变。`stall_rounds` 缺省为 `0`，表示关闭。人类段 MUST NOT 受这条约束，并把连续空转计数清零。
+goal 轮次以零个成功派发的工具调用收尾（模型只说话、没有动作）时，系统 SHALL 累加「连续空转轮数」；连续轮数达到 `[goal] stall_rounds` 时 SHALL 解除武装、MUST NOT 开下一段，`phase` MUST 保持不变（完成与否不是驱动能替模型判断的事实）。`stall_rounds` 缺省为 `2`：一轮可能只是「想清楚再答」，连续两轮才判死循环；配置 `0` 表示关闭该闸门（完全对齐 DSH，只由 `complete` / `blocked` / `max_rounds` 决定）。任何有工具调用的 goal 轮次把计数清零；人类段 MUST NOT 受这条约束，并把计数清零。判据单位是**轮**（一次准入），不是回合；一轮里只要有一个成功派发的工具调用就不算空转。
 
 轮次额度 SHALL 在**首条 `context/assembled` 落盘之后**消耗：该轮真的装进了上下文才算数；该段在装配完成之前失败（provider 立刻失败、注入失败、折叠失败、装配内压缩失败）MUST NOT 计入 `rounds_started`——这是 DSH「进模型历史才计数」在 mini 的等价物。
 
@@ -142,15 +142,20 @@ goal 轮次以零个成功派发的工具调用收尾（模型只说话、没有
 - **WHEN** 段以 `MODEL_COMPLETED` 收尾，目标 `active`、已武装、`rounds_started == 1`、`max_rounds == 3`
 - **THEN** 日志依次出现 `segment/start`（新 `segment_id`）、`source.round == 2` 的 `user/message`、`turn/start`、`context/assembled`、`rounds_started == 2` 的 `goal/updated`
 
-#### Scenario: 空转不提前结束（默认）
+#### Scenario: 一轮空转不误杀
 
-- **WHEN** 某一 goal 轮次零工具调用，`[goal]` 没有 `stall_rounds`（或为 `0`），目标仍 `active`、已武装、还有额度
-- **THEN** 驱动照常开下一段；`segment/end.tool_calls == 0` 只留在日志里作审计
+- **WHEN** 一个 goal 轮次零工具调用，上一轮有工具调用（计数从 0 起），目标仍 `active`、已武装、还有额度
+- **THEN** 驱动照常开下一段；`segment/end.tool_calls == 0` 只作审计
 
-#### Scenario: 开了停滞闸门按连续轮数停
+#### Scenario: 连续两轮空转按默认阈值停
 
-- **WHEN** `[goal] stall_rounds = 2`，连续两个 goal 轮次零工具调用
-- **THEN** 第二个轮次之后不再开段、武装位解除、`phase` 仍 `active`；下一次 `/goal resume` 从零重新计
+- **WHEN** `[goal]` 没有 `stall_rounds`（缺省 2），连续两个 goal 轮次零工具调用
+- **THEN** 第二个轮次之后不再开段、武装位解除、`phase` 仍 `active`、计数清零；下一次 `/goal resume` 从零重新计
+
+#### Scenario: 关闭闸门就完全对齐 DSH
+
+- **WHEN** `[goal] stall_rounds = 0`，goal 轮次连续空转
+- **THEN** 驱动一路开到 `max_rounds`，最后落 `blocked{round-limit}`，不因空转提前停
 
 #### Scenario: 上限不再开段
 

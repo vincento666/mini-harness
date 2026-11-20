@@ -19,10 +19,10 @@ GoalPhase = Literal["active", "paused", "blocked", "complete"]
 # 部署策略：缺省 32 轮（同时是模型可请求的硬顶）、门槛 3 轮、允许并行任务（2026-11-17 人裁）。
 DEFAULT_MAX_ROUNDS = 32
 DEFAULT_BLOCKED_AFTER = 3
-# 停滞闸门默认关（2026-11-20 人裁「对齐 DSH」）：DSH 的 goal 循环不因零工具调用而停，
-# 完成只由模型 `complete` 声明。要开就把阈值设成连续几轮（Claude Code 的 shape），
-# 单轮阈值会把「读文件后判断没新内容」的研究型轮次误杀。
-DEFAULT_STALL_ROUNDS = 0
+# 停滞闸门默认开、阈值 2（2026-11-20 三裁）：连续两个 goal 轮次零工具调用才停。
+# 一轮可能只是「想清楚再答」，两轮连续空转更像死循环；阈值取 1 会误杀研究型轮次
+# （读文件后判断没新内容），取 3 以上则白烧额度。`0` 表示关闭（完全对齐 DSH）。
+DEFAULT_STALL_ROUNDS = 2
 
 
 @dataclass(frozen=True)

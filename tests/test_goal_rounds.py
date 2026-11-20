@@ -400,7 +400,7 @@ def test_the_round_decision_only_looks_at_the_snapshot_the_arm_and_the_stop_reas
         next_round(goal=active, armed=True, stop_reason="MODEL_COMPLETED", idle_rounds=5).kind
         == "continue"
     )
-    # 显式打开闸门后才按连续轮数停；人类段不受这条约束。
+    # 默认阈值是 2（`[goal] stall_rounds` 的缺省）：连续两轮才停。
     assert (
         next_round(
             goal=active,
@@ -498,59 +498,10 @@ def test_a_failed_round_limit_write_is_reported(tmp_path: Path, monkeypatch: Any
     assert env.goal_runtime.armed is False
 
 
-async def test_a_goal_round_with_no_tool_calls_keeps_running_by_default(
+async def test_two_idle_goal_rounds_in_a_row_trip_the_stall_gate_by_default(
     tmp_path: Path,
 ) -> None:
-    """零工具调用的轮次默认**不**停：对齐 DSH，完成只由模型 `complete` 声明。
-
-    这是 2026-11-20 的裁决：宁可多跑一轮，也不要早停。停不停由 `max_rounds`
-    与模型的 `complete` / `blocked` 决定。
-    """
-    provider = FixtureProvider(
-        entries=[
-            {
-                "content": "先立个目标",
-                "finish_reason": "tool_calls",
-                "tool_calls": [
-                    {
-                        "id": "c1",
-                        "name": "create_goal",
-                        "arguments": {"objective": OBJECTIVE, "max_rounds": 3},
-                    }
-                ],
-            },
-            {"content": "建完目标", "finish_reason": "stop"},
-            {"content": "没有新内容可写", "finish_reason": "stop"},
-            {"content": "还是没有", "finish_reason": "stop"},
-            {"content": "第三轮", "finish_reason": "stop"},
-        ]
-    )
-    log, env = build_session_env(tmp_path, "s-idle", provider, registry=_registry())
-    outcome = await run_session_env(prompt="开始", entry=ENTRY_RUN, env=env, cancel=asyncio.Event())
-    records = read_events(log.path)
-
-    # 人类段 s1 + 三个零动作的 goal 轮次：一路跑到上限，不因空转提前停。
-    assert list(_segments(records)) == ["s1", "s2", "s3", "s4"]
-    goal = fold_goal(records)
-    assert goal is not None
-    assert goal.phase == "blocked"
-    assert goal.blocked_reason is not None
-    assert goal.blocked_reason.code == "round-limit"
-    assert goal.rounds_started == 3
-    assert outcome.stop_reason == "MODEL_COMPLETED"
-    ends = [record for record in records if record.type == "segment/end"]
-    assert [record.payload["tool_calls"] for record in ends] == [1, 0, 0, 0]
-
-
-async def test_a_stall_gate_stops_after_consecutive_idle_rounds_when_enabled(
-    tmp_path: Path,
-) -> None:
-    """显式打开 `stall_rounds` 才按连续空转停：阈值是「连续 N 轮」，不是一轮。
-
-    Claude Code 的 `/goal` 也是这个形状（连续几轮只答评估器、不用工具才停），
-    差别是它保留 goal 等下一次人类提示。mini 解除武装、相位不动，`/goal resume`
-    可以重新放行。
-    """
+    """默认阈值 2：连续两个 goal 轮次零工具调用才停，一轮空转不误杀（D14）。"""
     provider = FixtureProvider(
         entries=[
             {
@@ -570,17 +521,11 @@ async def test_a_stall_gate_stops_after_consecutive_idle_rounds_when_enabled(
             {"content": "不应该跑到这一轮", "finish_reason": "stop"},
         ]
     )
-    log, env = build_session_env(
-        tmp_path,
-        "s-gated",
-        provider,
-        registry=_registry(),
-        goal=GoalPolicy(stall_rounds=2),
-    )
+    log, env = build_session_env(tmp_path, "s-idle", provider, registry=_registry())
     outcome = await run_session_env(prompt="开始", entry=ENTRY_RUN, env=env, cancel=asyncio.Event())
     records = read_events(log.path)
 
-    # 一轮空转还不够（阈值 2）；第二轮之后停，不再开 s4。
+    # 人类段 s1 + 两轮空转（s2/s3）；第二轮之后停，不再开 s4。
     assert list(_segments(records)) == ["s1", "s2", "s3"]
     assert env.goal_runtime.armed is False
     assert env.goal_runtime.idle_rounds == 0  # 停时清零，resume 后重新给满阈值
@@ -588,4 +533,47 @@ async def test_a_stall_gate_stops_after_consecutive_idle_rounds_when_enabled(
     assert goal is not None
     assert goal.phase == "active"  # 不改相位：完成与否是模型/人的判断
     assert goal.rounds_started == 2
+    assert outcome.stop_reason == "MODEL_COMPLETED"
+    ends = [record for record in records if record.type == "segment/end"]
+    assert [record.payload["tool_calls"] for record in ends] == [1, 0, 0]
+
+
+async def test_stall_rounds_zero_disables_the_gate_entirely(tmp_path: Path) -> None:
+    """`stall_rounds = 0` 完全对齐 DSH：一路跑到上限，空转不是停的理由。"""
+    provider = FixtureProvider(
+        entries=[
+            {
+                "content": "先立个目标",
+                "finish_reason": "tool_calls",
+                "tool_calls": [
+                    {
+                        "id": "c1",
+                        "name": "create_goal",
+                        "arguments": {"objective": OBJECTIVE, "max_rounds": 3},
+                    }
+                ],
+            },
+            {"content": "建完目标", "finish_reason": "stop"},
+            {"content": "没有新内容可写", "finish_reason": "stop"},
+            {"content": "还是没有", "finish_reason": "stop"},
+            {"content": "第三轮", "finish_reason": "stop"},
+        ]
+    )
+    log, env = build_session_env(
+        tmp_path,
+        "s-nogate",
+        provider,
+        registry=_registry(),
+        goal=GoalPolicy(stall_rounds=0),
+    )
+    outcome = await run_session_env(prompt="开始", entry=ENTRY_RUN, env=env, cancel=asyncio.Event())
+    records = read_events(log.path)
+
+    assert list(_segments(records)) == ["s1", "s2", "s3", "s4"]
+    goal = fold_goal(records)
+    assert goal is not None
+    assert goal.phase == "blocked"
+    assert goal.blocked_reason is not None
+    assert goal.blocked_reason.code == "round-limit"
+    assert goal.rounds_started == 3
     assert outcome.stop_reason == "MODEL_COMPLETED"

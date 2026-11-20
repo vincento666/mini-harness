@@ -39,7 +39,7 @@
 - [x] 5.6 `/goal resume` 之后立刻起下一轮（D12，2026-11-19 UAT 场次 2）：命令成功即进段循环，`[轮] n/cap` 紧跟回执；不再需要人敲「继续」（`test_chat_goal_driver::test_goal_resume_in_chat_starts_the_next_round_without_another_line`）
 - [x] 5.7 段后收尾抽公共件（D13）：`settle_segment` 被 `run_session_env` / `chat` / host 共用；host 队列人话优先，队列空才开 goal 轮（`test_host_goal_driver` 三条）
 - [x] 5.8 未决问题交回人类（D15，取代 D11）：不落 `paused`、保持 `active/armed`；回答是人类段、不推进轮号，段后续跑（`test_a_question_asked_in_a_round_returns_to_the_prompt_without_burning_the_next`、`test_an_answer_is_a_human_segment_and_the_goal_resumes_after_it`、host 同名用例）
-- [x] 5.9 停滞闸门（D14，2026-11-20 改口）：默认 `stall_rounds = 0` 不停（对齐 DSH）；配置正整数后连续 N 个 goal 轮次零动作才 `stalled`、解除武装、相位不动；`segment/end.tool_calls` 落盘（`test_a_goal_round_with_no_tool_calls_keeps_running_by_default`、`test_a_stall_gate_stops_after_consecutive_idle_rounds_when_enabled`）
+- [x] 5.9 停滞闸门（D14，2026-11-20 三裁）：`stall_rounds` 缺省 `2`，连续两轮 goal 轮次零动作才 `stalled`、解除武装、相位不动、计数清零；`0` 关闭（完全对齐 DSH）；`segment/end.tool_calls` 落盘（`test_two_idle_goal_rounds_in_a_row_trip_the_stall_gate_by_default`、`test_stall_rounds_zero_disables_the_gate_entirely`）
 - [x] 5.10 `/goal edit` 与 `/goal complete`：edit 不动相位/武装位，可改 `max_rounds` 解锁 `round-limit`（`test_edit_*`、`test_complete_*`）
 
 ## 6. 收尾
