@@ -296,6 +296,7 @@ async def test_an_overflow_closes_the_segment_not_the_session(tmp_path: Path) ->
         "segment_id": "s1",
         "stop_reason": "CONTEXT_WINDOW_EXCEEDED",
         "turns": 1,
+        "tool_calls": 0,
     }
 
 

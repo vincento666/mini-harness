@@ -203,3 +203,14 @@ def test_the_default_registry_mounts_the_goal_tools() -> None:
     assert isinstance(registry, ToolRegistry)
     names = {tool.name for tool in registry.definitions()}
     assert {"get_goal", "create_goal", "update_goal"} <= names
+
+
+async def test_a_requested_cap_is_clamped_to_the_deployment_ceiling(tmp_path: Path) -> None:
+    """部署上限是硬顶：模型可以要得更少，不能用一个更大的数字绕开预算。"""
+    env = _env(tmp_path)
+
+    outcome = await _call(tmp_path, env, "create_goal", {"objective": "跑很久", "max_rounds": 100})
+
+    assert outcome.result.outcome == "OK"
+    goal = read_events(env.log.path)[0].payload["goal"]
+    assert goal["max_rounds"] == 32

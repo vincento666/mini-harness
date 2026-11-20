@@ -94,7 +94,10 @@ async def _create_goal(args: CreateGoalArgs, context: DispatchContext) -> ToolRe
         revision=1,
         objective=args.objective,
         phase="active",
-        max_rounds=policy.max_rounds if args.max_rounds is None else args.max_rounds,
+        # 部署上限是硬顶：模型可以要得更少，不能要得更多（否则预算形同虚设）。
+        max_rounds=policy.max_rounds
+        if args.max_rounds is None
+        else min(args.max_rounds, policy.max_rounds),
         rounds_started=0,
     )
     session = context.session
@@ -134,7 +137,10 @@ async def _update_goal(args: UpdateGoalArgs, context: DispatchContext) -> ToolRe
     armed = _armed(context)
     if args.action == "edit":
         result: GoalSnapshot | GoalRefusal = edit_goal(
-            current, objective=args.objective, max_rounds=args.max_rounds
+            current,
+            objective=args.objective,
+            max_rounds=args.max_rounds,
+            ceiling=context.goal_policy.max_rounds,
         )
     elif args.action == "pause":
         result = pause_goal(current)

@@ -47,16 +47,13 @@ from mini_harness.loop import (
     SessionEntry,
     SessionEnv,
     SessionSettings,
-    close_failed_round,
     end_session,
-    exhaust_goal_rounds,
-    goal_after,
-    pause_for_question,
+    next_goal_round,
     run_session,
     run_turn_segment,
+    settle_segment,
     start_session,
 )
-from mini_harness.loop.goal_driver import NO_CONTINUE_REASONS, next_round
 from mini_harness.loop.settings import (
     DEFAULT_MAX_TURNS,
     DEFAULT_RESERVE,
@@ -606,23 +603,20 @@ def _run_chat_command(prepared: Prepared, text: str, env: SessionEnv | None = No
     return None
 
 
-def _resume_round(env: SessionEnv, text: str) -> GoalRound | None:
+def _resume_round(env: SessionEnv, text: str, *, was_armed: bool) -> GoalRound | None:
     """`/goal resume` 之后驱动立刻开的那个轮次；其余命令返回 `None`（design D12）。
 
-    只认命令面确实把武装位放开的三种事实：命令是 `resume`、目标 `active`、还有额度。
+    只认命令面确实把武装位**从假翻到真**的三种事实：命令是 `resume`、目标 `active`、
+    还有额度。`was_armed` 是命令执行前的武装位：已经在自动推进时，`/goal resume` 只是
+    一句「无需 resume」，不能再起一轮——尤其是问题未决、目标保持 active 的时候。
     读不动日志就不猜——返回 `None`，让人留在一个能看见提示符的状态里。
     """
     name, _, arguments = text.partition(" ")
     if name != "/goal" or arguments.strip() != "resume":
         return None
-    if not env.goal_runtime.armed:
+    if was_armed or not env.goal_runtime.armed:
         return None
-    goal = goal_after(env.log)
-    if isinstance(goal, LogReadFailure) or goal is None or goal.phase != "active":
-        return None
-    if goal.rounds_started >= goal.max_rounds:
-        return None
-    return GoalRound(goal=goal, round=goal.rounds_started + 1)
+    return next_goal_round(env)
 
 
 async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
@@ -696,11 +690,12 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
                     continue
                 if text.startswith("/"):
                     # 命令本身不写 user/message；`/<技能名> 指令` 会展开成一条消息再开段。
+                    was_armed = env.goal_runtime.armed
                     expanded = _run_chat_command(prepared, text, env)
                     if expanded is None:
                         # `/goal resume` 把武装位放开之后，驱动立刻开下一轮——不必再等一行
                         # （design D12）。其余命令仍然回到提示符。
-                        goal_round = _resume_round(env, text)
+                        goal_round = _resume_round(env, text, was_armed=was_armed)
                         if goal_round is None:
                             continue
                     else:
@@ -762,44 +757,38 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
                     if isinstance(replies, LogReadFailure):
                         return _report_failure(replies.code, replies.detail, EXIT_INTERNAL_ERROR)
                     printed = replies
-                    # 段后驱动（design D3）：目标 active 且已武装时不打印提示符，直接判下一轮。
-                    # 判定只读三样——快照、进程内武装位、本段 stop_reason。
-                    goal = goal_after(env.log)
-                    if isinstance(goal, LogReadFailure):
-                        return _report_failure(goal.code, goal.detail, EXIT_INTERNAL_ERROR)
-                    decision = next_round(
-                        goal=goal,
-                        armed=env.goal_runtime.armed,
-                        stop_reason=segment.stop_reason,
-                        question_pending=env.questions.pending is not None,
+                    # 段后驱动（design D3/D13）：目标 active 且已武装时不打印提示符，直接判下一轮。
+                    # 收尾只有一份实现（`settle_segment`），host 与本入口共用。
+                    settlement = settle_segment(
+                        env=env,
+                        segment=segment,
+                        turns=turn_index - 1,
+                        goal_round=goal_round is not None,
                     )
-                    if decision.kind == "awaiting_input":
-                        failed = pause_for_question(
-                            env=env, decision=decision, turns=turn_index - 1
+                    if settlement.failure is not None:
+                        failed = settlement.failure
+                        return _report_failure(
+                            failed.failure_code or failed.stop_reason,
+                            failed.detail,
+                            EXIT_INTERNAL_ERROR,
                         )
-                        if failed is not None:
-                            return _report_failure(
-                                failed.failure_code or failed.stop_reason,
-                                failed.detail,
-                                EXIT_INTERNAL_ERROR,
-                            )
+                    decision = settlement.decision
+                    if decision.kind == "awaiting_input":
                         print(
-                            "[轮] 本轮有一个没答完的问题：目标已暂停，"
-                            "直接回答，再用 /goal resume 继续",
+                            "[轮] 本轮有一个没答完的问题：目标保持 active；"
+                            "直接回答，回答后自动继续",
+                            file=sys.stderr,
+                        )
+                        break
+                    if decision.kind == "stalled":
+                        print(
+                            "[轮] 本轮没有工具调用：已停止自动推进"
+                            "（/goal resume 继续，/goal complete 结束）",
                             file=sys.stderr,
                         )
                         break
                     if decision.kind == "exhausted":
                         assert decision.goal is not None
-                        failed = exhaust_goal_rounds(
-                            env=env, decision=decision, turns=turn_index - 1
-                        )
-                        if failed is not None:
-                            return _report_failure(
-                                failed.failure_code or failed.stop_reason,
-                                failed.detail,
-                                EXIT_INTERNAL_ERROR,
-                            )
                         print(
                             f"[轮] 已用尽 {decision.goal.rounds_started}/"
                             f"{decision.goal.max_rounds}：目标置为 blocked（round-limit）",
@@ -807,14 +796,6 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
                         )
                         break
                     if decision.kind == "stop":
-                        if segment.stop_reason in NO_CONTINUE_REASONS:
-                            failed = close_failed_round(env=env, segment=segment)
-                            if failed is not None:
-                                return _report_failure(
-                                    failed.failure_code or failed.stop_reason,
-                                    failed.detail,
-                                    EXIT_INTERNAL_ERROR,
-                                )
                         break
                     assert decision.goal is not None
                     goal_round = GoalRound(goal=decision.goal, round=decision.round)

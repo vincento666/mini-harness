@@ -143,7 +143,7 @@ M14 之后技能面的两个已记账缺口，排期如下（2026-11-11 裁）�
 - **顺序**：**排在 M14c（plan）之后**（2026-11-10 人裁决：goal 后置到 plan 之后；M14 与 plan 提前）。
 - **change**：`m13-goal-rounds`
 - **层**：委派
-- **内容**：持久 goal 对象 + 轮次续跑 + 轮次上限 + `blocked` 需同一阻碍持续三轮；**单目标**（对齐 DSH 的 `current goal`，ADR-0042）；**任务并行即状态并行**——一次 `todo` 调用可标多个 `in_progress`（`todos` 仍每段清空，对齐 DSH）；**todo 并行纪律**（等价 `allowParallelInProgress`，默认 `true`，关闭时拒绝第二个；2026-11-17 人裁决纳入本 change）。
+- **内容**：持久 goal 对象 + 轮次续跑 + 轮次上限 + `blocked` 需同一阻碍持续三轮；**单目标**（对齐 DSH 的 `current goal`，ADR-0042）；**任务并行即状态并行**——一次 `todo` 调用可标多个 `in_progress`（`todos` 仍每轮清空，对齐 DSH）；**todo 并行纪律**（等价 `allowParallelInProgress`，默认 `true`，关闭时拒绝第二个；2026-11-17 人裁决纳入本 change）；**段后收尾是公共件**——`run` / `chat` / `host` 共用，host 队列人话优先（2026-11-20 人裁）；**未决问题交回人类**、**空转熔断**、`/goal edit` / `complete`。
 - **完成判据**：**seam ⑦**——小上限下自动续跑 N 轮、轮号连续且落在 goal 来源的 `user/message` 上；同一阻碍持续三轮落 `blocked`、两轮不落；**多任务互不覆盖**——两个任务同时 `in_progress`、完成其一后另一仍在；todo 允许同时标记多个 `in_progress`，策略关闭时拒绝第二个。
 - **依赖**：M12；**排在 M14c（plan）之后**（2026-11-10 裁决）。
 
@@ -221,6 +221,7 @@ M14 之后技能面的两个已记账缺口，排期如下（2026-11-11 裁）�
 - **首批组件**：`Provider`、`ApprovalGate`、`ToolPolicy`、`ContextPolicy`、`CompactionPolicy`、`FailurePolicy`、`MemoryStore`、`SkillCatalog`/`CommandRegistry`、`SubagentPolicy`、`Verifier`、`CommandRunner`。其中 **`MemoryStore` 在 MEM1 里直接按组件接口生出来**（greenfield，不做二次抽取），因为 R1/R2 都要换记忆策略。
 - **边界**：**不做 HMR**、不做插件市场、不做远程代码加载、不做多租户/多 worker、不做通用 DI/事件总线、不重写 `turn_loop.py`、不改内核语义；日志只多 `session/start.payload.components`。
 - **离线热插拔**：会话边界换组件版本（进程可继续、运行中会话不变）；不是运行中会话内替换。
+- **组件缺口与前置顺序**：`docs/reference/dsh-core-components.md`（2026-11-20 立档）。
 - **验收**：默认组合行为不变；测试里换 fake `ContextPolicy`/`CompactionPolicy` 不改 `turn_loop.py`；同版本 replay 逐点相等、跨版本显式；E1 能做 A/B 与归因；组件异常不崩 host。
 - **进入条件**：H1/H2/M10/M11/M14/**M14a**/MEM1 完成、E1 有 held-out 基线；M12/M13/M14b/M14c 可选。
 - **明确不做**：E2 本身不做 RSI 实验；R1–R4 是消费者。
@@ -239,7 +240,7 @@ M14 之后技能面的两个已记账缺口，排期如下（2026-11-11 裁）�
 5. **M13 目标轮次**：长任务不靠人反复续跑；
 6. **M14c plan**：研究计划本身要有可执行的形状。
 
-**当前距离**：6 项前置完成 **0 项**；已具备的是 M1–M12、M14、M14a、M14b（内核、工具、日志、压缩、技能、契约、计量）。按 roadmap 顺序，接下来是 M14c → M13 → M15a → MEM1 → E1 runner → E2 → R1。粗略估计 6–10 周（按每 change 3–5 天，属估算不是承诺）。
+**当前距离**：6 项前置完成 **2 项**（M14c plan、M13 目标轮次）；已具备的是 M1–M12、M13、M14、M14a、M14b、M14c（内核、工具、日志、压缩、技能、契约、计量、助理工具、目标轮次）。按 roadmap 顺序，接下来是 M15a → MEM1 → E1 runner → E2 → R1；命名对齐 change 排在 M15a 之前。逐组件缺口与顺序见 `docs/reference/dsh-core-components.md`。粗略估计 4–8 周（按每 change 3–5 天，属估算不是承诺）。
 
 **每日论文/项目复现（R0 准备，未启动）**：
 

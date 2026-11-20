@@ -1,7 +1,7 @@
 """目标轮次驱动（M13）：一个段结束后要不要再开一段，以及开段要带什么。
 
-判定只看三样：当前快照、进程内的武装位、本段的 `stop_reason`。不看时间、不看队列——
-mini 没有 inbox，段结束就是唯一可能的驱动时机（design D3）。
+判定只看四样：当前快照、进程内的武装位、本段的 `stop_reason`、本段有没有实际动作。
+不看时间、不看队列——队列由入口先清（人话优先），见 design D13。
 """
 
 from __future__ import annotations
@@ -23,12 +23,12 @@ NO_CONTINUE_REASONS: frozenset[str] = frozenset(
     }
 )
 
-RoundDecisionKind = Literal["stop", "continue", "exhausted", "awaiting_input"]
+RoundDecisionKind = Literal["stop", "continue", "exhausted", "awaiting_input", "stalled"]
 
 
 @dataclass(frozen=True)
 class RoundDecision:
-    """段之后的四选一：停、续下一轮、额度用尽（落 blocker）、等人回答问题。"""
+    """段之后的五选一：停、续下一轮、额度用尽、等人回答、本轮空转。"""
 
     kind: RoundDecisionKind
     goal: GoalSnapshot | None = None
@@ -41,11 +41,17 @@ def next_round(
     armed: bool,
     stop_reason: str,
     question_pending: bool = False,
+    tool_calls: int = 1,
+    goal_round: bool = True,
 ) -> RoundDecision:
     """`phase == active` + 已武装 + 该收尾允许继续，才开新段；到上限则落 blocker。
 
-    `question_pending` 是本段末尾仍未回答的问题：自动轮次里没人能回答，继续开段只会
-    白烧额度，所以先停、由入口把目标置 `paused`。额度用尽优先（那是更硬的事实）。
+    `question_pending` 是本段末尾仍未回答的问题：自动轮次里没人能回答，先停、
+    把控制权交回人类；目标保持 `active` 与武装，人的回答段结束后自动继续（D13）。
+
+    `tool_calls == 0` 的 goal 轮次是空转：模型只说了话、没有落地任何动作。再开一轮
+    只会重复同一段话，所以立即停自动推进（不改相位，只解除武装，D14）。它只看
+    goal 轮次——人类段本来就可以是一句纯回答。
     """
     if goal is None or goal.phase != "active" or not armed:
         return RoundDecision("stop", goal)
@@ -55,4 +61,6 @@ def next_round(
         return RoundDecision("exhausted", goal, goal.rounds_started + 1)
     if question_pending:
         return RoundDecision("awaiting_input", goal, goal.rounds_started + 1)
+    if goal_round and tool_calls == 0:
+        return RoundDecision("stalled", goal, goal.rounds_started + 1)
     return RoundDecision("continue", goal, goal.rounds_started + 1)

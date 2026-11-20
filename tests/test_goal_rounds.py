@@ -9,7 +9,7 @@ from typing import Any
 from mini_harness.events import EventRecord, read_events
 from mini_harness.events.writer import LogWriteFailure
 from mini_harness.goals import GoalSnapshot, fold_goal
-from mini_harness.loop import ENTRY_RUN, pause_for_question, run_session_env
+from mini_harness.loop import ENTRY_RUN, exhaust_goal_rounds, run_session_env
 from mini_harness.loop.goal_driver import RoundDecision, next_round
 from mini_harness.provider import AssistantTurn, FixtureProvider, ProviderFailure, ToolCall
 from mini_harness.tools import ToolRegistry
@@ -25,10 +25,11 @@ def _registry() -> ToolRegistry:
 
 
 class _Scripted:
-    """按调用序号回答：第 1 次建目标，`complete_at` 那次标完成，其余收尾。
+    """按「goal 轮号」回答：第 1 次建目标，之后每一轮先探一下再收尾。
 
-    目标 id 由工具生成，所以「标完成」必须在运行时读日志取 id 与 revision——
-    这同时把 CAS 走了一遍：轮次不改 `revision`，模型读到的值下一轮仍然有效。
+    零工具调用的 goal 轮会被驱动判成停滞（D14），所以这里每轮先发一个只读的
+    `get_goal` 探针，再由下一次调用收尾；一个轮次因此是两跳，但轮号只加一次。
+    `complete_at` / `abort_at` / `fail_at` 都按 goal 轮号（从 1 起）说话。
     """
 
     def __init__(
@@ -47,15 +48,17 @@ class _Scripted:
         self.log_path: Path | None = None
         self.calls = 0
 
+    def _round(self) -> int:
+        assert self.log_path is not None
+        goal = fold_goal(read_events(self.log_path))
+        assert goal is not None
+        # 进入模型时这一轮已经被计入 `rounds_started`，所以当前轮号就是它。
+        return goal.rounds_started
+
     async def generate(
         self, messages: Any, tools: Any, signal: Any, on_delta: Any = None
     ) -> AssistantTurn | ProviderFailure:
         self.calls += 1
-        if self.abort_at is not None and self.calls == self.abort_at:
-            assert self.cancel is not None
-            self.cancel.set()
-        if self.fail_at is not None and self.calls == self.fail_at:
-            return ProviderFailure("PROVIDER_HTTP_STATUS", "上游 400")
         if self.calls == 1:
             return AssistantTurn(
                 content="先立个目标",
@@ -68,7 +71,17 @@ class _Scripted:
                     )
                 ],
             )
-        if self.complete_at is not None and self.calls == self.complete_at:
+        if messages[-1].role == "tool":
+            # 同一轮的第二跳：工具结果已经回来了，这一轮到此收尾。
+            return AssistantTurn(content="这一步做完了", finish_reason="stop")
+
+        round_number = self._round()
+        if self.abort_at is not None and round_number == self.abort_at:
+            assert self.cancel is not None
+            self.cancel.set()
+        if self.fail_at is not None and round_number == self.fail_at:
+            return ProviderFailure("PROVIDER_HTTP_STATUS", "上游 400")
+        if self.complete_at is not None and round_number == self.complete_at:
             assert self.log_path is not None
             goal = fold_goal(read_events(self.log_path))
             assert goal is not None
@@ -87,7 +100,12 @@ class _Scripted:
                     )
                 ],
             )
-        return AssistantTurn(content="这一步做完了", finish_reason="stop")
+        # 只读探针：让本轮有一个真实的工具调用，避免被停滞熔断（D14）。
+        return AssistantTurn(
+            content="先读一下目标",
+            finish_reason="tool_calls",
+            tool_calls=[ToolCall(id=f"g{round_number}", name="get_goal", arguments={})],
+        )
 
 
 async def _run(
@@ -223,10 +241,13 @@ class _AsksThenStops:
         return AssistantTurn(content="等你回答", finish_reason="stop")
 
 
-async def test_an_unanswered_question_pauses_instead_of_burning_the_next_round(
+async def test_an_unanswered_question_hands_control_back_without_burning_the_next_round(
     tmp_path: Path,
 ) -> None:
-    """自动轮次里问不到人：目标落 paused、解除武装，不再开下一段（design D9）。"""
+    """自动轮次里问不到人：不开下一段，但目标保持 active/armed（design D13）。
+
+    一次入口没有人可等，所以这里直接收会话；下一次人类段结束后，驱动会接着开轮次。
+    """
     log, env = build_session_env(
         tmp_path, "s-question", _AsksThenStops(), registry=_registry(), max_turns=8
     )
@@ -236,10 +257,10 @@ async def test_an_unanswered_question_pauses_instead_of_burning_the_next_round(
     records = read_events(log.path)
 
     assert list(_segments(records)) == ["s1", "s2"]
-    assert env.goal_runtime.armed is False
+    assert env.goal_runtime.armed is True
     goal = fold_goal(records)
     assert goal is not None
-    assert goal.phase == "paused"
+    assert goal.phase == "active"
     assert goal.rounds_started == 1
     assert outcome.stop_reason == "MODEL_COMPLETED"
     types = [record.type for record in records]
@@ -258,7 +279,7 @@ async def test_an_unanswered_question_pauses_instead_of_burning_the_next_round(
 
 
 async def test_a_completed_goal_no_longer_opens_segments(tmp_path: Path) -> None:
-    records, goal, outcome, _ = await _run(tmp_path, max_rounds=3, complete_at=4)
+    records, goal, outcome, _ = await _run(tmp_path, max_rounds=3, complete_at=2)
 
     segments = _segments(records)
     assert list(segments) == ["s1", "s2", "s3"]
@@ -367,13 +388,41 @@ def test_the_round_decision_only_looks_at_the_snapshot_the_arm_and_the_stop_reas
     decision = next_round(goal=active, armed=True, stop_reason="MODEL_COMPLETED")
     assert (decision.kind, decision.round) == ("continue", 2)
 
+    # 未决问题优先于停滞：先告诉人「等你回答」，不再开轮次。
+    assert (
+        next_round(
+            goal=active, armed=True, stop_reason="MODEL_COMPLETED", question_pending=True
+        ).kind
+        == "awaiting_input"
+    )
+    # 零工具调用的 goal 轮次是空转；人类段不受这条约束。
+    assert (
+        next_round(goal=active, armed=True, stop_reason="MODEL_COMPLETED", tool_calls=0).kind
+        == "stalled"
+    )
+    assert (
+        next_round(
+            goal=active,
+            armed=True,
+            stop_reason="MODEL_COMPLETED",
+            tool_calls=0,
+            goal_round=False,
+        ).kind
+        == "continue"
+    )
+    # 额度用尽比未决问题更硬：最后一轮里问了问题也先落 blocker。
     at_cap = active.model_copy(update={"rounds_started": 3})
-    assert next_round(goal=at_cap, armed=True, stop_reason="MODEL_COMPLETED").kind == "exhausted"
+    assert (
+        next_round(
+            goal=at_cap, armed=True, stop_reason="MODEL_COMPLETED", question_pending=True
+        ).kind
+        == "exhausted"
+    )
 
 
 async def test_a_cancelled_round_pauses_the_goal_and_disarms_it(tmp_path: Path) -> None:
     """取消即按停：ABORTED 之后目标落 paused、武装位归假，人才能决定下一步。"""
-    records, goal, outcome, env = await _run(tmp_path, max_rounds=3, abort_at=3)
+    records, goal, outcome, env = await _run(tmp_path, max_rounds=3, abort_at=1)
 
     assert list(_segments(records)) == ["s1", "s2"]
     assert goal is not None
@@ -386,7 +435,7 @@ async def test_a_cancelled_round_pauses_the_goal_and_disarms_it(tmp_path: Path) 
 
 async def test_a_provider_error_keeps_the_goal_active_but_disarmed(tmp_path: Path) -> None:
     """上游坏了不是目标的错：`phase` 留在 active，解除武装等人 resume。"""
-    records, goal, outcome, env = await _run(tmp_path, max_rounds=3, fail_at=3)
+    records, goal, outcome, env = await _run(tmp_path, max_rounds=3, fail_at=1)
 
     assert list(_segments(records)) == ["s1", "s2"]
     assert goal is not None
@@ -408,20 +457,59 @@ def test_a_broken_log_is_reported_instead_of_guessed(tmp_path: Path) -> None:
     assert isinstance(goal_after(log), LogReadFailure)
 
 
-def test_a_failed_pause_write_is_reported(tmp_path: Path, monkeypatch: Any) -> None:
-    """暂停写不进日志：段以失败收尾、武装位已经解除（人至少不会被留在「已武装」上）。"""
+def test_a_failed_round_limit_write_is_reported(tmp_path: Path, monkeypatch: Any) -> None:
+    """额度用尽写不进日志：段以失败收尾、武装位已经解除。"""
     log, env = build_session_env(
-        tmp_path, "s-pause-fail", FixtureProvider(entries=[]), registry=_registry()
+        tmp_path, "s-limit-fail", FixtureProvider(entries=[]), registry=_registry()
     )
     goal = GoalSnapshot(
-        id="g1", revision=1, objective=OBJECTIVE, phase="active", max_rounds=3, rounds_started=1
+        id="g1", revision=1, objective=OBJECTIVE, phase="active", max_rounds=2, rounds_started=1
     )
     monkeypatch.setattr(
         env.log, "append", lambda *args, **kwargs: LogWriteFailure(log.path, "只读")
     )
 
-    failed = pause_for_question(env=env, decision=RoundDecision("awaiting_input", goal, 2), turns=2)
+    failed = exhaust_goal_rounds(env=env, decision=RoundDecision("exhausted", goal, 2), turns=2)
 
     assert failed is not None
     assert failed.failure_code == "LOG_WRITE_FAILED"
     assert env.goal_runtime.armed is False
+
+
+async def test_a_goal_round_with_no_tool_calls_disarms_instead_of_burning_another(
+    tmp_path: Path,
+) -> None:
+    """完成了却没标 complete：零工具调用的一轮就停，不再开下一段（D14）。"""
+    provider = FixtureProvider(
+        entries=[
+            {
+                "content": "先立个目标",
+                "finish_reason": "tool_calls",
+                "tool_calls": [
+                    {
+                        "id": "c1",
+                        "name": "create_goal",
+                        "arguments": {"objective": OBJECTIVE, "max_rounds": 4},
+                    }
+                ],
+            },
+            {"content": "建完目标", "finish_reason": "stop"},
+            {"content": "没有新内容可写", "finish_reason": "stop"},
+            {"content": "不应该跑到这一轮", "finish_reason": "stop"},
+        ]
+    )
+    log, env = build_session_env(tmp_path, "s-stalled", provider, registry=_registry())
+    outcome = await run_session_env(prompt="开始", entry=ENTRY_RUN, env=env, cancel=asyncio.Event())
+    records = read_events(log.path)
+
+    # 人类段 s1 + 一个 goal 轮次 s2；零工具调用的那一轮之后不再开 s3。
+    assert list(_segments(records)) == ["s1", "s2"]
+    assert env.goal_runtime.armed is False
+    goal = fold_goal(records)
+    assert goal is not None
+    assert goal.phase == "active"  # 不改相位：完成与否是模型/人的判断，不是驱动的
+    assert goal.rounds_started == 1
+    assert outcome.stop_reason == "MODEL_COMPLETED"
+    # 段尾字段把「这一轮有没有动作」留在日志里，供审计与回放读。
+    ends = [record for record in records if record.type == "segment/end"]
+    assert [record.payload["tool_calls"] for record in ends] == [1, 0]

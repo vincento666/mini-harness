@@ -8,11 +8,11 @@
 
 - **`goal` 域**：`goal/updated` 整值替换事件（`null` 表示清除），载荷含 `id`、`revision`、`objective`、`phase`、`max_rounds`、`rounds_started`、可选 `blocked_reason`；`phase ∈ active | paused | blocked | complete`；`revision` 只随控制面动作（create / edit / pause / resume / complete / blocked / clear）递增，轮次推进不改它，用作比较交换。
 - **三个工具**：`get_goal()`、`create_goal(objective, max_rounds?)`、`update_goal(goal_id, revision, action, ...)`；`action ∈ edit | pause | resume | complete | blocked`。**单 goal**：只在无目标或上一个已 `complete` 时才能创建；`resume` 接受 `active`（重新武装）与 `blocked`（回 `active` 并清阻塞原因），拒绝 `paused`。
-- **轮次驱动**：`turn/end` 之后若目标 `active`、已武装、且还有轮次额度，则开新段并写一条 goal 来源的 `user/message`（`source.round` 连续递增），继续主循环；额度用尽则落 `phase = blocked`、`blocked_reason.code = "round-limit"`。
+- **轮次驱动**：`turn/end` 之后若目标 `active`、已武装、且还有轮次额度，则开新段并写一条 goal 来源的 `user/message`（`source.round` 连续递增），继续主循环；额度用尽则落 `phase = blocked`、`blocked_reason.code = "round-limit"`。**`run` / `chat` / `host` 共用同一份段后收尾**：host 的待跑队列先跑人话，队列为空才开自动轮次（对齐 DSH 的 `competingQueued`）。
 - **`user/message` 增 `source`**：`{kind: "user"}`（缺省）或 `{kind: "goal", goal_id, revision, round}`；旧日志缺字段按 `{kind: "user"}` 读。
 - **任务并行**：`todo` 允许一次标多个 `in_progress`；`allow_parallel_in_progress = false` 时第二个 `in_progress` 被拒（`TODO_PARALLEL_DISABLED`）。
 - **`todos` 投影清空条件不变**：`segment/start` 一律清空，goal 轮次也是新段（对齐 DSH 的 `turn/start`）；跨轮的任务连续性由模型每轮重交整表负责。
-- **CLI `/goal`**：查看当前目标与剩余轮次、`pause`、`resume`、`clear`。
+- **CLI `/goal`**：查看当前目标与剩余轮次、`pause`、`resume`、`complete`、`edit [--max-rounds N] [正文]`、`clear`。
 - **配置**：`[goal]` 段三键——`max_rounds`（默认 32）、`blocked_after_consecutive_rounds`（默认 3）、`allow_parallel_in_progress`（默认 `true`）。
 
 ## Capabilities
@@ -24,17 +24,19 @@
 ### Modified
 
 - `assistant-tools`：`todo` 的并行校验与 `todos` 投影的清空条件。
-- `turn-loop`：段结束后按目标条件续跑。
+- `turn-loop`：段结束后按目标条件续跑；段尾 `tool_calls`；三个入口共用收尾。
+- `goal`：`edit` / `complete` 命令面；未决问题交回人类；空转熔断。
+- `host-api`：host 自动续跑目标轮次，队列人话优先。
 - `cli`：`/goal` 命令面。
 - `config-layering`：`[goal]` 段。
 
 ## Impact
 
-- 事件词表 +1：`goal/updated`；`user/message` payload 增 `source` 字段。
+- 事件词表 +1：`goal/updated`；`user/message` payload 增 `source` 字段；`segment/end` payload 增 `tool_calls`（停滞判据）。
 - 结果词 +6：`GOAL_ALREADY_ACTIVE`、`GOAL_REF_STALE`、`GOAL_AUTHORITY_REQUIRED`、`GOAL_RESUME_BY_TOOL_DENIED`、`GOAL_BLOCK_TOO_EARLY`、`TODO_PARALLEL_DISABLED`。
 - 工具注册表 +3；CLI 命令 +1；配置段 +1。
 - 折叠：`goal/updated` 取最后值；`user/message` 的 `source` 参与轮次校验，不参与折叠。
-- 回合主循环多一个出口：段结束后可能再开一段（显式条件，不引入隐式重试）。
+- 回合主循环多一个出口：段结束后可能再开一段（显式条件，不引入隐式重试）；三个入口共用 `settle_segment`，host 也自动续跑。
 
 ## 人裁决
 
@@ -52,7 +54,7 @@
 - 多 goal 并存、轮次调度、优先级与公平性（deferred，见 ADR-0042）。
 - token / 金额 / 墙钟预算；`max_rounds` 不是资源上限。
 - 独立 evaluator 或验收代理；完成与「同一阻碍」的判断权在模型。
-- GoalBar、host 的 goal 回显与投影帧；只落事件与 CLI。
+- GoalBar 与 host 的 goal 回显 / 投影帧；只落事件、CLI 与 host 的驱动。
 - 被取消轮次的自动重跑：取消即暂停。
 
 ## 提案扩展（2026-11-18，实现 3.2 时补）

@@ -71,7 +71,17 @@ def test_chat_keeps_running_rounds_without_another_line(tmp_path: Path) -> None:
             _CREATE_GOAL,
             # 人类这一段自己的第二个回合：建完目标就收尾，轮次从下一段开始。
             {"content": "先看一下", "finish_reason": "stop"},
+            {
+                "content": "先读一下目标",
+                "finish_reason": "tool_calls",
+                "tool_calls": [{"id": "g1", "name": "get_goal", "arguments": {}}],
+            },
             {"content": "第一轮做了一点", "finish_reason": "stop"},
+            {
+                "content": "先读一下目标",
+                "finish_reason": "tool_calls",
+                "tool_calls": [{"id": "g2", "name": "get_goal", "arguments": {}}],
+            },
             {"content": "第二轮做完了", "finish_reason": "stop"},
         ],
     )
@@ -96,10 +106,10 @@ def test_chat_keeps_running_rounds_without_another_line(tmp_path: Path) -> None:
     assert "已用尽 2/2" in result.stderr
 
 
-def test_a_question_asked_in_a_round_pauses_instead_of_burning_the_next(
+def test_a_question_asked_in_a_round_returns_to_the_prompt_without_burning_the_next(
     tmp_path: Path,
 ) -> None:
-    """自动轮次里问不到人：回到提示符、目标暂停，不再白烧下一轮（design D9）。"""
+    """自动轮次里问不到人：回到提示符，目标保持 active/armed（design D13）。"""
     fixture = _fixture(
         tmp_path,
         [
@@ -131,14 +141,15 @@ def test_a_question_asked_in_a_round_pauses_instead_of_burning_the_next(
         ],
     )
 
-    result = _chat(tmp_path, fixture, "开始\n")
+    # 问题未决时目标仍是 active/armed；习惯性敲 `/goal resume` 不能再起一轮。
+    result = _chat(tmp_path, fixture, "开始\n/goal resume\n")
 
     assert result.returncode == 0
     records = _records(tmp_path)
     assert [record.type for record in records].count("segment/start") == 2
     goal = fold_goal(records)
     assert goal is not None
-    assert goal.phase == "paused"
+    assert goal.phase == "active"
     assert goal.rounds_started == 1
     types = [record.type for record in records]
     assert types.count("question/asked") == 1
@@ -147,7 +158,77 @@ def test_a_question_asked_in_a_round_pauses_instead_of_burning_the_next(
     assert "不应该跑到这一轮" not in result.stdout
     assert "[轮] 1/3" in result.stderr
     assert "[轮] 2/3" not in result.stderr
-    assert "目标已暂停" in result.stderr
+    assert "目标保持 active" in result.stderr
+    assert "无需 resume" in result.stdout
+
+
+def test_an_answer_is_a_human_segment_and_the_goal_resumes_after_it(
+    tmp_path: Path,
+) -> None:
+    """回答不是 goal 轮：它开人类段，段结束后驱动再开下一 goal 轮（D13）。"""
+    fixture = _fixture(
+        tmp_path,
+        [
+            {
+                "content": "先立个目标",
+                "finish_reason": "tool_calls",
+                "tool_calls": [
+                    {
+                        "id": "c1",
+                        "name": "create_goal",
+                        "arguments": {"objective": "修好失败的用例", "max_rounds": 2},
+                    }
+                ],
+            },
+            {"content": "建完", "finish_reason": "stop"},
+            {
+                "content": "我先问一句",
+                "finish_reason": "tool_calls",
+                "tool_calls": [
+                    {
+                        "id": "q1",
+                        "name": "ask_user",
+                        "arguments": {"question": "用 A 还是 B", "options": ["A", "B"]},
+                    }
+                ],
+            },
+            {"content": "等你回答", "finish_reason": "stop"},
+            {"content": "收到答案：用 A", "finish_reason": "stop"},
+            {
+                "content": "先读一下目标",
+                "finish_reason": "tool_calls",
+                "tool_calls": [{"id": "g2", "name": "get_goal", "arguments": {}}],
+            },
+            {"content": "第二轮做完了", "finish_reason": "stop"},
+        ],
+    )
+
+    # 第二行就是人对问题的回答；它不写成 goal 来源。
+    result = _chat(tmp_path, fixture, "开始\n用 A\n")
+
+    assert result.returncode == 0
+    records = _records(tmp_path)
+    assert [record.type for record in records].count("segment/start") == 4
+    messages = [record.payload for record in records if record.type == "user/message"]
+    assert [message["source"]["kind"] for message in messages] == [
+        "user",
+        "goal",
+        "user",
+        "goal",
+    ]
+    assert [
+        message["source"]["round"] for message in messages if message["source"]["kind"] == "goal"
+    ] == [1, 2]
+    goal = fold_goal(records)
+    assert goal is not None
+    assert goal.rounds_started == 2
+    assert goal.phase == "blocked"
+    assert goal.blocked_reason is not None
+    assert goal.blocked_reason.code == "round-limit"
+    assert "收到答案：用 A" in result.stdout
+    assert "第二轮做完了" in result.stdout
+    assert "目标保持 active" in result.stderr
+    assert "[轮] 2/2" in result.stderr
 
 
 def test_resume_does_not_continue_an_active_goal(tmp_path: Path) -> None:
@@ -209,7 +290,17 @@ def test_goal_resume_in_chat_starts_the_next_round_without_another_line(
     )
     log.append("goal/updated", {"goal": paused.model_dump(exclude_none=True)})
 
-    fixture = _fixture(tmp_path, [{"content": "第二轮做完了", "finish_reason": "stop"}])
+    fixture = _fixture(
+        tmp_path,
+        [
+            {
+                "content": "先读一下目标",
+                "finish_reason": "tool_calls",
+                "tool_calls": [{"id": "g2", "name": "get_goal", "arguments": {}}],
+            },
+            {"content": "第二轮做完了", "finish_reason": "stop"},
+        ],
+    )
     # 只给命令、不给后续输入：轮次仍然要跑起来。
     result = _chat(tmp_path, fixture, "/goal resume\n", "--resume", "s-resume-paused")
 
@@ -252,24 +343,27 @@ def test_resume_round_only_drives_on_a_successful_resume(tmp_path: Path) -> None
     )
     log.append("goal/updated", {"goal": active.model_dump(exclude_none=True)})
 
-    assert _resume_round(env, "/goal pause") is None
-    assert _resume_round(env, "/goal resume") is None  # 还没武装
+    assert _resume_round(env, "/goal pause", was_armed=False) is None
+    assert _resume_round(env, "/goal resume", was_armed=False) is None  # 还没武装
     env.goal_runtime.armed = True
-    assert _resume_round(env, "/goal") is None
-    assert _resume_round(env, "/goal resume extra") is None
+    assert _resume_round(env, "/goal", was_armed=False) is None
+    assert _resume_round(env, "/goal resume extra", was_armed=False) is None
+    # 命令执行前就已武装：`/goal resume` 只是「无需 resume」，不能再起一轮。
+    assert _resume_round(env, "/goal resume", was_armed=True) is None
 
-    decision = _resume_round(env, "/goal resume")
+    decision = _resume_round(env, "/goal resume", was_armed=False)
     assert decision is not None
     assert decision.round == 2
     assert decision.goal is not None
 
+    env.goal_runtime.armed = False
     paused = active.model_copy(update={"phase": "paused", "revision": 2})
     log.append("goal/updated", {"goal": paused.model_dump(exclude_none=True)})
-    assert _resume_round(env, "/goal resume") is None
+    assert _resume_round(env, "/goal resume", was_armed=False) is None
 
     at_cap = active.model_copy(update={"rounds_started": 3, "revision": 3})
     log.append("goal/updated", {"goal": at_cap.model_dump(exclude_none=True)})
-    assert _resume_round(env, "/goal resume") is None
+    assert _resume_round(env, "/goal resume", was_armed=False) is None
 
     log.append("goal/updated", {"goal": None})
-    assert _resume_round(env, "/goal resume") is None
+    assert _resume_round(env, "/goal resume", was_armed=False) is None

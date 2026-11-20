@@ -26,7 +26,10 @@ def _registry() -> ToolRegistry:
 
 
 class _ThreeRounds:
-    """第一次建目标（上限 3），其后每次都收尾：跑满三轮后由驱动落 `round-limit`。"""
+    """第一次建目标（上限 3），其后每轮先探一下再收尾：跑满三轮后落 `round-limit`。
+
+    零工具调用的 goal 轮会被停滞熔断（D14），所以每轮要有一个真实的工具调用。
+    """
 
     def __init__(self) -> None:
         self.calls = 0
@@ -47,7 +50,13 @@ class _ThreeRounds:
                     )
                 ],
             )
-        return AssistantTurn(content="这一轮做完了", finish_reason="stop")
+        if messages[-1].role == "tool":
+            return AssistantTurn(content="这一轮做完了", finish_reason="stop")
+        return AssistantTurn(
+            content="先读一下目标",
+            finish_reason="tool_calls",
+            tool_calls=[ToolCall(id=f"g{self.calls}", name="get_goal", arguments={})],
+        )
 
 
 def _rounds_log(tmp_path: Path) -> tuple[str, Path]:

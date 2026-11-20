@@ -265,6 +265,7 @@ def test_a_one_shot_run_writes_exactly_one_segment(tmp_path: Path) -> None:
         "segment_id": "s1",
         "stop_reason": "MODEL_COMPLETED",
         "turns": 1,
+        "tool_calls": 0,
     }
 
 

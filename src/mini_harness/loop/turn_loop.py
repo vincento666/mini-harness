@@ -31,7 +31,6 @@ from mini_harness.events.reader import LogReadFailure, read_events
 from mini_harness.events.record import EventRecord
 from mini_harness.events.writer import EventLog, LogWriteFailure
 from mini_harness.goals import (
-    GoalRefusal,
     GoalRound,
     GoalRuntime,
     GoalSnapshot,
@@ -41,7 +40,6 @@ from mini_harness.goals import (
     exhaust_goal,
     fold_goal,
     opened_by_human,
-    pause_goal,
     render_goal_round,
 )
 from mini_harness.loop.goal_driver import NO_CONTINUE_REASONS, RoundDecision, next_round
@@ -172,12 +170,17 @@ class SessionEnv:
 
 @dataclass(frozen=True)
 class SegmentOutcome:
-    """一个段怎么停的。会话是否继续由入口决定（ADR-0011），内核只报这一段。"""
+    """一个段怎么停的。会话是否继续由入口决定（ADR-0011），内核只报这一段。
+
+    `tool_calls` 是本段真正派发过的工具调用数（含失败；取消/未派发不算）。驱动的停滞
+    判定只看它：零调用的 goal 轮次是空转，不再开下一轮（D14）。
+    """
 
     stop_reason: str
     turns: int
     failure_code: str | None = None
     detail: str = ""
+    tool_calls: int = 0
 
 
 def _append_all(
@@ -234,6 +237,8 @@ class _BatchOutcome:
     failure: LogWriteFailure | LogReadFailure | InternalFailure | None = None
     denial_code: str | None = None
     denial_detail: str = ""
+    # 真正派发出去、产出了结果的调用数。取消与「未派发」不算动作（D14）。
+    tool_calls: int = 0
 
 
 async def _race_with_cancel(
@@ -440,6 +445,12 @@ async def _dispatch_batch(
         }
         if dispatched.result.meta is not None:
             result_payload.update(dispatched.result.meta)
+        # 停滞判定只看「有没有真的派发过一个调用」：取消、未派发、围栏拒绝都不算动作。
+        if (
+            dispatched.result.outcome not in CANCELLED_OUTCOMES
+            and dispatched.result.outcome != "ABORTED_BEFORE_DISPATCH"
+        ):
+            outcome.tool_calls += 1
         written.append(("tool/result", result_payload))
         if dispatched.plan_exit:
             written.append(("plan/mode", {"active": False}))
@@ -1037,6 +1048,7 @@ async def run_turn_segment(
                     "segment_id": segment_id,
                     "stop_reason": outcome.stop_reason,
                     "turns": outcome.turns,
+                    "tool_calls": outcome.tool_calls,
                 },
             ),
         ],
@@ -1191,6 +1203,7 @@ async def _run_turns(
     denial_code: str | None = None
     denial_detail = ""
     turns = 0
+    tool_calls = 0
     for offset in range(settings.max_turns):
         turn_index = first_turn_index + offset
         turns = offset + 1
@@ -1339,6 +1352,7 @@ async def _run_turns(
         )
         if batch.failure is not None:
             return _segment_failure(batch.failure, turns)
+        tool_calls += batch.tool_calls
         if batch.denial_code is not None:
             fence_denied = True
             denial_code = batch.denial_code
@@ -1382,6 +1396,7 @@ async def _run_turns(
         turns=turns,
         failure_code=denial_code,
         detail=denial_detail,
+        tool_calls=tool_calls,
     )
 
 
@@ -1430,6 +1445,22 @@ def goal_after(log: EventLog) -> GoalSnapshot | LogReadFailure | None:
     return fold_goal(events)
 
 
+def next_goal_round(env: SessionEnv) -> GoalRound | None:
+    """已武装、`active`、还有额度时算出下一轮；否则 `None`。
+
+    `/goal resume` 的即时驱动（chat 与 host）共用这一份判定：命令层只负责确认
+    「武装位确实从假翻到真」，目标相位与额度在这里读一次。
+    """
+    if not env.goal_runtime.armed:
+        return None
+    goal = goal_after(env.log)
+    if isinstance(goal, LogReadFailure) or goal is None or goal.phase != "active":
+        return None
+    if goal.rounds_started >= goal.max_rounds:
+        return None
+    return GoalRound(goal=goal, round=goal.rounds_started + 1)
+
+
 def exhaust_goal_rounds(
     *, env: SessionEnv, decision: RoundDecision, turns: int
 ) -> SegmentOutcome | None:
@@ -1443,22 +1474,44 @@ def exhaust_goal_rounds(
     return None
 
 
-def pause_for_question(
-    *, env: SessionEnv, decision: RoundDecision, turns: int
-) -> SegmentOutcome | None:
-    """自动轮次以未回答的问题收尾：落 `paused` 并解除武装，等人回答。
+@dataclass(frozen=True)
+class RoundSettlement:
+    """一段之后的收尾结果：判定 + 可能的写日志失败（失败时入口应当收会话）。"""
 
-    与 `ABORTED` 同一条收尾理由：自动化停在这里，人回答之后用 `/goal resume` 再放行。
-    已经 `blocked` / `complete` / `paused` 的目标不改写——那些相位已经是人的决定。
+    decision: RoundDecision
+    failure: SegmentOutcome | None = None
+
+
+def settle_segment(
+    *, env: SessionEnv, segment: SegmentOutcome, turns: int, goal_round: bool
+) -> RoundSettlement:
+    """段后收尾的唯一实现：读目标、判下一轮、把该落的副作用落掉。
+
+    `run` / `chat` / `host` 三处入口都调它，避免「host 只有命令面、没有驱动」这类分叉
+    （2026-11-20 人裁）。它自己不打印、不决定入口怎么停——只回答「接下来该不该开段」。
     """
-    env.goal_runtime.armed = False
-    assert decision.goal is not None
-    paused = pause_goal(decision.goal)
-    assert not isinstance(paused, GoalRefusal)  # `next_round` 只在 active 时给这一档
-    written = env.log.append("goal/updated", {"goal": paused.model_dump(exclude_none=True)})
-    if isinstance(written, LogWriteFailure):
-        return _segment_failure(written, turns)
-    return None
+    goal = goal_after(env.log)
+    if isinstance(goal, LogReadFailure):
+        return RoundSettlement(RoundDecision("stop"), _segment_failure(goal, turns))
+    decision = next_round(
+        goal=goal,
+        armed=env.goal_runtime.armed,
+        stop_reason=segment.stop_reason,
+        question_pending=env.questions.pending is not None,
+        tool_calls=segment.tool_calls,
+        goal_round=goal_round,
+    )
+    if decision.kind == "exhausted":
+        return RoundSettlement(
+            decision, exhaust_goal_rounds(env=env, decision=decision, turns=turns)
+        )
+    if decision.kind == "stalled":
+        # 空转不改相位、不落事件：`armed` 本来就是进程内的自动推进开关（D14）。
+        env.goal_runtime.armed = False
+        return RoundSettlement(decision)
+    if decision.kind == "stop" and segment.stop_reason in NO_CONTINUE_REASONS:
+        return RoundSettlement(decision, close_failed_round(env=env, segment=segment))
+    return RoundSettlement(decision)
 
 
 def close_failed_round(*, env: SessionEnv, segment: SegmentOutcome) -> SegmentOutcome | None:
@@ -1501,6 +1554,7 @@ async def run_session_env(
 
     segments = 0
     turns = 0
+    goal_round: GoalRound | None = None
     segment = await run_turn_segment(env=env, segment_id="s1", first_turn_index=1, cancel=cancel)
     while True:
         if segment.stop_reason not in STOP_REASONS:
@@ -1509,38 +1563,24 @@ async def run_session_env(
         segments += 1
         turns += segment.turns
 
-        goal = goal_after(log)
-        if isinstance(goal, LogReadFailure):
-            return _run_outcome(log, _segment_failure(goal, turns))
-        decision = next_round(
-            goal=goal,
-            armed=env.goal_runtime.armed,
-            stop_reason=segment.stop_reason,
-            question_pending=env.questions.pending is not None,
+        settlement = settle_segment(
+            env=env, segment=segment, turns=turns, goal_round=goal_round is not None
         )
-        if decision.kind == "awaiting_input":
-            failed = pause_for_question(env=env, decision=decision, turns=turns)
-            if failed is not None:
-                return _run_outcome(log, failed)
-            break
-        if decision.kind == "exhausted":
-            failed = exhaust_goal_rounds(env=env, decision=decision, turns=turns)
-            if failed is not None:
-                return _run_outcome(log, failed)
-            break
-        if decision.kind == "stop":
-            if segment.stop_reason in NO_CONTINUE_REASONS:
-                failed = close_failed_round(env=env, segment=segment)
-                if failed is not None:
-                    return _run_outcome(log, failed)
+        if settlement.failure is not None:
+            return _run_outcome(log, settlement.failure)
+        decision = settlement.decision
+        if decision.kind != "continue":
+            # `stop` / `exhausted` / `awaiting_input` / `stalled` 都回到入口：
+            # 一次性入口没有人可等，问题未决时直接收会话（目标保持 active，下次 resume 再续）。
             break
         assert decision.goal is not None
+        goal_round = GoalRound(goal=decision.goal, round=decision.round)
         segment = await run_turn_segment(
             env=env,
             segment_id=f"s{segments + 1}",
             first_turn_index=turns + 1,
             cancel=cancel,
-            goal_round=GoalRound(goal=decision.goal, round=decision.round),
+            goal_round=goal_round,
         )
 
     ended = end_session(env=env, stop_reason=segment.stop_reason, turns=turns)

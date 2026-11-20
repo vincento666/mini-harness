@@ -447,7 +447,12 @@ async def test_a_cancel_closes_the_segment_and_the_entry_closes_the_session(tmp_
     assert segment.stop_reason == "ABORTED"
     assert [record.type for record in records][-3:] == ["error/abort", "turn/end", "segment/end"]
     assert "session/end" not in [record.type for record in records]
-    assert records[-1].payload == {"segment_id": "s1", "stop_reason": "ABORTED", "turns": 1}
+    assert records[-1].payload == {
+        "segment_id": "s1",
+        "stop_reason": "ABORTED",
+        "turns": 1,
+        "tool_calls": 0,
+    }
 
     assert end_session(env=env, stop_reason=segment.stop_reason, turns=segment.turns) is None
     assert [record.type for record in read_events(log.path)][-1:] == ["session/end"]

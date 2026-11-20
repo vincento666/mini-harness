@@ -16,7 +16,7 @@ from mini_harness.events.record import EventRecord
 
 GoalPhase = Literal["active", "paused", "blocked", "complete"]
 
-# 部署策略：缺省 32 轮、门槛 3 轮、允许并行任务（2026-11-17 人裁）。
+# 部署策略：缺省 32 轮（同时是模型可请求的硬顶）、门槛 3 轮、允许并行任务（2026-11-17 人裁）。
 DEFAULT_MAX_ROUNDS = 32
 DEFAULT_BLOCKED_AFTER = 3
 
@@ -120,12 +120,19 @@ class GoalRound:
 
 
 def render_goal_round(goal: GoalSnapshot, round_number: int) -> str:
-    """goal 来源消息的正文（spec：`<goal_round>` 块，至少 `Objective` 与 `Round` 两行）。"""
+    """goal 来源消息的正文（spec：`<goal_round>` 块，至少 `Objective` 与 `Round` 两行）。
+
+    末行是终局约束（D14）：本轮必须留下一个可观察的动作，不能只用文字宣告完成。
+    模型仍可能不照做，所以驱动侧另有零工具调用的停滞熔断；提示词只是第一道。
+    """
     return (
         "<goal_round>\n"
         f"Objective: {json.dumps(goal.objective, ensure_ascii=False)}\n"
         f"Round: {round_number}/{goal.max_rounds}\n"
-        "以工作区、工具结果与持久状态为准：完成前取证，确认完成后调用 update_goal 标 complete。\n"
+        "以工作区、工具结果与持久状态为准：完成前取证。\n"
+        "本轮结束前必须三选一：完成则调用 update_goal 标 complete；已达阻塞门槛则调用 "
+        "update_goal 标 blocked；否则现在就执行下一步的具体动作。只复述计划、不调用任何"
+        "工具，会被视为停滞并停止自动推进。\n"
         "</goal_round>"
     )
 
@@ -168,14 +175,22 @@ def _next(current: GoalSnapshot, **changes: Any) -> GoalSnapshot:
 
 
 def edit_goal(
-    current: GoalSnapshot, *, objective: str | None, max_rounds: int | None
+    current: GoalSnapshot,
+    *,
+    objective: str | None,
+    max_rounds: int | None,
+    ceiling: int | None = None,
 ) -> GoalSnapshot | GoalRefusal:
-    """部分替换：空串与 0 视为省略；一个有效字段都没有就是参数错误。"""
+    """部分替换：空串与 0 视为省略；一个有效字段都没有就是参数错误。
+
+    `ceiling` 是部署上限：请求值超过它时按它落，避免模型用一个大数字绕开预算。
+    人类命令同样走这条上限——要真正跑更多轮，改部署配置。
+    """
     changes: dict[str, Any] = {}
     if objective:
         changes["objective"] = objective
     if max_rounds:
-        changes["max_rounds"] = max_rounds
+        changes["max_rounds"] = max_rounds if ceiling is None else min(max_rounds, ceiling)
     if not changes:
         return GoalRefusal(
             "TOOL_ARGS_INVALID", "edit 至少要给一个有效字段（objective 或 max_rounds）"

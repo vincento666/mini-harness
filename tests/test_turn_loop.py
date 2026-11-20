@@ -108,8 +108,8 @@ async def test_two_segments_number_segments_and_turns_continuously(tmp_path: Pat
         "segment/end",
     ]
     assert [r.payload for r in records if r.type == "segment/end"] == [
-        {"segment_id": "s1", "stop_reason": "MAX_TURNS", "turns": 3},
-        {"segment_id": "s2", "stop_reason": "MODEL_COMPLETED", "turns": 2},
+        {"segment_id": "s1", "stop_reason": "MAX_TURNS", "turns": 3, "tool_calls": 3},
+        {"segment_id": "s2", "stop_reason": "MODEL_COMPLETED", "turns": 2, "tool_calls": 1},
     ]
     assert [r.payload["turn_id"] for r in records if r.type == "turn/start"] == [
         "t1",

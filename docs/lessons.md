@@ -186,6 +186,42 @@
 - Next use: 新增工具回执先问「这条路径从 bash 的 cwd 看得到吗」；工作区在装配时绝对化，展示用工作区相对路径
 - Status: inbox
 
+### L-092
+- Seen: 1（2026-11-20）
+- Date: 2026-11-20
+- Context: 讨论「mini 还没有段中人类消息队列」时，实际查代码发现 host 早就有 `submit_message` 的深度 1 队列；缺的是 host 的轮次驱动，不是队列本身
+- Observation: 把「某个能力没有」当成结论之前先按**入口**查一遍：同一个语义可能已经在 host 存在、只在 chat 缺；也可能三处入口各有一份实现。功能缺口与入口分叉是两类问题，修法不同
+- Evidence: `session/host.py::submit_message`（队列）与 `_run_segment`（原来只跑一段）；2026-11-20 抽 `settle_segment` 后三处共用
+- Next use: 听到「mini 没有 X」时，先列 `run` / `chat` / `host` / `subagent` 四个入口，逐个查；先判分叉再判缺失
+- Status: inbox
+
+### L-093
+- Seen: 1（2026-11-20）
+- Date: 2026-11-20
+- Context: 目标「完成了却不停」——模型说「没有新内容可写」，没调 `update_goal complete`，驱动照常开下一轮
+- Observation: 完成是模型声明的事实，harness 验证不了；能观测的反面证据只有「这一轮什么也没做」。自动循环的停止判据应包含一条**零动作熔断**，而不是替模型宣布完成或阻塞
+- Evidence: `loop/goal_driver.py` 的 `stalled`；`segment/end.tool_calls`；design D14
+- Next use: 设计自动续跑时，先问「完成信号由谁给、给不出时最小可观测证据是什么」；不要用「没有新内容」这类自然语言当判据
+- Status: inbox
+
+### L-094
+- Seen: 1（2026-11-20）
+- Date: 2026-11-20
+- Context: 原 D11 把「问不到人」处理成 `paused` + 解除武装，人回答后还要 `/goal resume`；DSH 的一手行为是答案以用户消息回来，目标继续
+- Observation: 「暂停」和「等人」是两种状态：暂停是人做的决定，等人是流程中的一个等待点。把等人写成暂停，会把系统的等待成本转嫁给用户（多敲一次命令），也会让日志把「等着」记成「人叫停」
+- Evidence: DSH `ask_user` 的 `{pending: true}` 与 `answer_to_pending_question`；design D15；host 里回答是 human turn
+- Next use: 任何「等外部输入」的状态，先问它是否应该改变持久相位；默认保持原相位 + 交回控制权，只有人的显式动作才改相位
+- Status: inbox
+
+### L-095
+- Seen: 1（2026-11-20）
+- Date: 2026-11-20
+- Context: 计划把 `segment → turn`、`turn → step` 全量改名；两遍直接替换会互相覆盖（第一遍产生的 `turn` 会被第二遍改成 `step`）
+- Observation: 交换型改名必须用占位符分步落位；日志改名则应把兼容放在**读取侧的上迁**，不重写旧文件——原始证据保留，内部只有一种形状
+- Evidence: `openspec/changes/align-turn-step-naming/design.md` D1/D2；`events/record.py` 的 `migrate_schema` 是现成落点
+- Next use: 遇到 A→B、B→C 的链式改名，先写占位符顺序再动手；schema 变更优先读取时上迁，写入只写新形状
+- Status: inbox
+
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 - 每个里程碑收尾扫一次，**允许输出 `NO-PROMOTION`**（没有可复用信号就不写条目）。
 - 收件箱条目超过 **15 条**必须先消化再收新的：合并同类、把已被代码或规格自证的条目删掉。

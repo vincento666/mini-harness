@@ -9,7 +9,7 @@ from typing import Any
 from mini_harness.commands import execute_command
 from mini_harness.events import EventLog, read_events
 from mini_harness.events.writer import LogWriteFailure
-from mini_harness.goals import GoalRuntime, GoalSnapshot, fold_goal
+from mini_harness.goals import GoalPolicy, GoalRuntime, GoalSnapshot, fold_goal
 
 
 def _snapshot(**changes: Any) -> GoalSnapshot:
@@ -26,7 +26,11 @@ def _snapshot(**changes: Any) -> GoalSnapshot:
 
 
 def _env(log: EventLog, *, armed: bool = False) -> Any:
-    return SimpleNamespace(log=log, goal_runtime=GoalRuntime(armed=armed))
+    return SimpleNamespace(
+        log=log,
+        goal_runtime=GoalRuntime(armed=armed),
+        settings=SimpleNamespace(goal=GoalPolicy()),
+    )
 
 
 def _log(tmp_path: Path, snapshot: GoalSnapshot | None = None) -> EventLog:
@@ -218,3 +222,100 @@ def test_a_clear_write_failure_keeps_the_goal(tmp_path: Path, monkeypatch: Any) 
     assert "清除写不进日志" in outcome.text
     assert fold_goal(read_events(log.path)) is not None
     assert env.goal_runtime.armed is True
+
+
+def test_edit_changes_objective_without_touching_phase_or_arm(tmp_path: Path) -> None:
+    """edit 只改正文：相位与武装位都不动（照 DSH 的 invariant）。"""
+    log = _log(tmp_path, _snapshot(rounds_started=1))
+    env = _env(log, armed=False)
+
+    outcome = execute_command("goal", "edit 把测试修到全绿", [], read_events(log.path), env)
+
+    assert outcome is not None and outcome.ok is True
+    goal = fold_goal(read_events(log.path))
+    assert goal is not None
+    assert goal.objective == "把测试修到全绿"
+    assert goal.max_rounds == 3
+    assert goal.phase == "active"
+    assert goal.revision == 2
+    assert env.goal_runtime.armed is False
+
+
+def test_edit_can_raise_the_cap_on_a_blocked_goal(tmp_path: Path) -> None:
+    """轮次用尽后先调大上限，再 resume：这是唯一的解锁路径（照 DSH）。"""
+    log = _log(
+        tmp_path,
+        _snapshot(
+            phase="blocked",
+            rounds_started=3,
+            blocked_reason={"code": "round-limit", "message": "轮次用尽"},
+        ),
+    )
+    env = _env(log)
+
+    edited = execute_command("goal", "edit --max-rounds 8", [], read_events(log.path), env)
+    assert edited is not None and edited.ok is True
+    goal = fold_goal(read_events(log.path))
+    assert goal is not None and goal.max_rounds == 8
+    assert goal.phase == "blocked"
+
+    resumed = execute_command("goal", "resume", [], read_events(log.path), env)
+    assert resumed is not None and resumed.ok is True
+    goal = fold_goal(read_events(log.path))
+    assert goal is not None and goal.phase == "active"
+    assert env.goal_runtime.armed is True
+
+
+def test_edit_accepts_both_fields_and_rejects_bad_arguments(tmp_path: Path) -> None:
+    log = _log(tmp_path, _snapshot())
+    env = _env(log, armed=True)
+
+    both = execute_command("goal", "edit --max-rounds 5 写成两节", [], read_events(log.path), env)
+    assert both is not None and both.ok is True
+    goal = fold_goal(read_events(log.path))
+    assert goal is not None
+    assert (goal.objective, goal.max_rounds) == ("写成两节", 5)
+
+    before = len(_goal_events(log))
+    for bad in ("edit", "edit --max-rounds", "edit --max-rounds 0", "edit --max-rounds x"):
+        outcome = execute_command("goal", bad, [], read_events(log.path), env)
+        assert outcome is not None and outcome.ok is False
+        assert "用法" in outcome.text or "正整数" in outcome.text
+    assert len(_goal_events(log)) == before
+    assert env.goal_runtime.armed is True
+
+
+def test_complete_writes_complete_and_disarms(tmp_path: Path) -> None:
+    log = _log(tmp_path, _snapshot(rounds_started=2))
+    env = _env(log, armed=True)
+
+    outcome = execute_command("goal", "complete", [], read_events(log.path), env)
+
+    assert outcome is not None and outcome.ok is True
+    goal = fold_goal(read_events(log.path))
+    assert goal is not None
+    assert goal.phase == "complete"
+    assert goal.revision == 2
+    assert env.goal_runtime.armed is False
+
+
+def test_complete_on_a_completed_goal_refuses(tmp_path: Path) -> None:
+    log = _log(tmp_path, _snapshot(phase="complete"))
+    env = _env(log)
+
+    outcome = execute_command("goal", "complete", [], read_events(log.path), env)
+
+    assert outcome is not None and outcome.ok is False
+    assert "已经完成" in outcome.text
+
+
+def test_edit_clamps_the_cap_to_the_deployment_ceiling(tmp_path: Path) -> None:
+    """人类命令也走部署上限：要真的跑更多轮，改配置，不是敲一个大数字。"""
+    log = _log(tmp_path, _snapshot(max_rounds=2))
+    env = _env(log)
+
+    outcome = execute_command("goal", "edit --max-rounds 100", [], read_events(log.path), env)
+
+    assert outcome is not None and outcome.ok is True
+    goal = fold_goal(read_events(log.path))
+    assert goal is not None and goal.max_rounds == 32

@@ -406,7 +406,12 @@ def test_sigint_mid_segment_cancels_the_segment_not_the_session(tmp_path: Path) 
     types = [str(record["type"]) for record in records]
     assert "error/abort" in types
     segments = [record["payload"] for record in records if record["type"] == "segment/end"]
-    assert segments[0] == {"segment_id": "s1", "stop_reason": "ABORTED", "turns": 1}
+    assert segments[0] == {
+        "segment_id": "s1",
+        "stop_reason": "ABORTED",
+        "turns": 1,
+        "tool_calls": 0,
+    }
     # 会话还在：`session/end` 只在 stdin 关闭之后出现一次。
     assert types.count("session/end") == 1
     assert types[-2:] == ["segment/end", "session/end"]

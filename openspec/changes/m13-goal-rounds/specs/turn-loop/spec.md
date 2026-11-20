@@ -4,7 +4,7 @@
 
 ### Requirement: 段结束后按目标条件续跑
 
-每个 `segment/end` 之后，系统 SHALL 判定是否续跑，判定只看当前目标快照与本次段的 `stop_reason`：`phase == "active"`、`armed` 为真、`rounds_started < max_rounds`、且 `stop_reason` 不在 `{ABORTED, FENCE_DENIED, PROVIDER_ERROR, CONTEXT_WINDOW_EXCEEDED, MAX_TURNS}` 之内时，SHALL 开新段；否则 MUST NOT 开新段。
+每个 `segment/end` 之后，系统 SHALL 判定是否续跑，判定只看当前目标快照、本次段的 `stop_reason` 与本段是否产生过工具调用：`phase == "active"`、`armed` 为真、`rounds_started < max_rounds`、`stop_reason` 不在 `{ABORTED, FENCE_DENIED, PROVIDER_ERROR, CONTEXT_WINDOW_EXCEEDED, MAX_TURNS}` 之内，且（人类段或本段至少有一个工具调用）时，SHALL 开新段；否则 MUST NOT 开新段。段尾仍有未决问题时 SHALL 回到入口等待人类输入，MUST NOT 开自动轮次。
 
 开新段时，系统 SHALL 按固定顺序写：`segment/start`、goal 来源的 `user/message`（`source.round` 等于快照的 `rounds_started + 1`）、首条 `turn/start`、首条 `context/assembled`、`goal/updated`（`rounds_started` 递增，`revision` 不变）。
 
@@ -36,7 +36,7 @@
 
 ### Requirement: 一条输入开一个段，段的边界在日志里
 
-系统 SHALL 把一条输入（一次性 `run` 与 `serve` 的 prompt、REPL 的一条输入）展开成一个**段**，并把段的边界 durable 写进日志：段开始时写 `segment/start`（payload 含 `segment_id`），段结束时写 `segment/end`（payload 含 `segment_id`、该段最后一个回合的 `stop_reason`、该段实际跑掉的回合数 `turns`）。`segment_id` 在会话内连续编号（`s1`、`s2`…）且 MUST NOT 重复。`segment/*` MUST NOT 产出上下文里的消息。照 DSH：段的边界对应 DSH 的 `turn` 边界（`turn = phase.turn + 1` 后 `session.append("turn/start", {turn})`，编号单调且落日志），本项目的「回合」仍是 DSH 的 `step`（GLOSSARY）。
+系统 SHALL 把一条输入（一次性 `run` 与 `serve` 的 prompt、REPL 的一条输入）展开成一个**段**，并把段的边界 durable 写进日志：段开始时写 `segment/start`（payload 含 `segment_id`），段结束时写 `segment/end`（payload 含 `segment_id`、该段最后一个回合的 `stop_reason`、该段实际跑掉的回合数 `turns`、该段真正派发过的工具调用数 `tool_calls`）。`tool_calls` 是驱动的停滞判据（零调用 = 空转），MUST 在收尾时落盘，方便审计与回放读。`segment_id` 在会话内连续编号（`s1`、`s2`…）且 MUST NOT 重复。`segment/*` MUST NOT 产出上下文里的消息。照 DSH：段的边界对应 DSH 的 `turn` 边界（`turn = phase.turn + 1` 后 `session.append("turn/start", {turn})`，编号单调且落日志），本项目的「回合」仍是 DSH 的 `step`（GLOSSARY）。
 
 一次性入口（`run` / `serve`）的段数 SHALL 由目标轮次决定：没有目标续跑时恰有一个段；有目标续跑时每轮一段，段数等于「一加起的轮次数」。REPL 的每个段仍由一条输入或一轮目标驱动。
 
@@ -78,3 +78,17 @@
 
 - **WHEN** 目标连跑三轮，`max_turns = 2`
 - **THEN** 每个段各自最多两个回合，第三段的 `turns` 不从前面累加
+
+### Requirement: 段后收尾只有一份实现
+
+`run` / `chat` / `host` 三个入口 MUST 调同一个段后收尾实现（读目标 → 判下一轮 → 落额度/停滞/失败收尾），MUST NOT 各自复制一份判定。入口之间的差别只允许在「谁来提供下一条输入」：`run` 没有输入、`chat` 回到提示符、`host` 从待跑队列取。
+
+#### Scenario: host 也自动续跑
+
+- **WHEN** host 会话里的人类段建了一个 `active` 目标并正常收尾
+- **THEN** 日志出现 goal 来源的下一段，不需要再来一条 `POST /messages`
+
+#### Scenario: 三个入口的判定一致
+
+- **WHEN** 同一份目标状态与同一个 `stop_reason` 分别交给三个入口
+- **THEN** 是否开下一段的结论相同；差异只在下一段由谁触发

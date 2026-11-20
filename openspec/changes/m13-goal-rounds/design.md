@@ -95,7 +95,7 @@ mini 没有 inbox、没有可插队的竞争输入、主循环是显式的（不
 
 **与 DSH 的两处差异**：① `resume` 对 `paused` 在工具层拒绝，交给 `/goal resume`（DSH 是 `GOAL_TOOL_RESUME_PAUSED`，同一分界）；② DSH 用 `GOAL_INVALID_TRANSITION` 表达「相位不允许」，mini 补了同名结果词——这是实现时发现的缺口，记在 proposal 的「提案扩展」。
 
-## D11 未回答的问题不续跑：暂停而不是跳过
+## D11 未回答的问题不续跑：暂停而不是跳过（已被 D15 取代，2026-11-20）
 
 `ask_user` 在自动轮次里通常问不到人（`QUESTION_UNAVAILABLE`）。原来的行为是：模型拿到「问题未决」，段照常以 `MODEL_COMPLETED` 收尾，驱动接着开下一轮——问题还悬着，额度却继续烧。2026-11-19 的 UAT 场次 1 撞上这个形状（两轮全用在「问一个没人能答的问题」上）。
 
@@ -115,6 +115,39 @@ mini 没有 inbox、没有可插队的竞争输入、主循环是显式的（不
 - **只认三种事实**：命令是 `resume`、`armed` 已为真、目标 `active` 且还有额度；任一不成立就回到提示符。
 - **代价**：`/goal resume` 立刻开始花钱。这是人的显式命令，且回执与 `[轮]` 行都在动手之前打出来，可 Ctrl-C 取消。
 - **不动 `run` / `serve`**：它们没有命令面，本来就在段尾驱动。
+
+## D13 人类竞争输入优先：段边界让位，不做步内插队
+
+DSH 的驱动条件里有一条 `!competingQueued`（`docs/dsh-reference/DSH运行时架构剖析.html` 图 7-1；`goal-round-driver` 的 `readyToDrive`）：只要有排队的人类消息，自动轮次就不开，让人先说话。mini 的 host 已经有这条队列——`submit_message` 在段进行中把消息放进深度 1 的 `deque`（`session/host.py`），段收尾后取队首。所以这不是「mini 还没有的功能」，而是「chat 没接、host 有队列但没有驱动」。
+
+**对齐的形状**：段（DSH 的 turn）收尾后按「队列人话 → goal 轮次」排序；队列非空时 MUST NOT 先开 goal 轮。差别只在粒度：mini 不在一个段内部的模型步之间插队，DSH 的排队消息也要等当前 turn 收尾才成为下一条 user 消息，二者在 turn 边界上等价。
+
+**chat 没有队列**：REPL 是同步 `readline`，段进行中人不拥有提示符；Ctrl-C 是唯一的中断手段。这不是语义缺失，是本地调试入口的形态；host 才是通用入口（2026-11-20 人裁）。
+
+**host 原来没有驱动**：`_run_segment` 只跑一段就回 idle，`/goal resume` 之后什么也不会发生。这是实现分叉，不是设计取舍。现在段后收尾抽成 `settle_segment`，`run` / `chat` / `host` 三处共用；host 在队列为空且判定 `continue` 时自己开下一轮。
+
+## D14 停滞熔断：goal 轮次零工具调用就停自动推进
+
+「完成了还不会停」的现场是：模型在第 4 轮说「没有新内容可写」，没有调用 `update_goal`，段以 `MODEL_COMPLETED` 收尾，驱动照常开下一轮。根因不是驱动判错，而是**完成是模型声明的事实，驱动没有可读的证据**；唯一能观察到的反面证据是「这一轮什么也没做」。
+
+- **判据**：一个 goal 轮次里成功派发的工具调用数为 0（`SegmentOutcome.tool_calls`，落进 `segment/end.tool_calls`）。取消、未派发、围栏拒绝都不算动作。
+- **处置**：`next_round` 返回 `stalled`；入口解除武装、**不改相位**、不落 `goal/updated`，回到提示符/idle。人可以用 `/goal resume` 再给一轮，或用 `/goal complete` 结束。为什么不是 `paused`：`armed` 本来就是「要不要自动推进」的进程内开关（D5），`phase` 是目标本身的状态；「已完成但没声明」不该被写成「暂停」。
+- **为什么不是自动标完成**：完成需要证据，驱动没有；替模型写 `complete` 会让 `replay` 里出现一条没人做过的声明。为什么不是自动 `blocked`：`blocked` 的语义是「同一阻碍持续到门槛」，空转不是阻碍。
+- **提示词是第一道**：`<goal_round>` 的末行要求三选一（complete / blocked / 现在做一个具体动作），并明说「只复述计划、不调用任何工具会被视为停滞」。提示词挡不住的，由熔断兜底。
+- **残余**：如果模型在一轮里读了文件、然后说「没有新内容」，`tool_calls > 0`，熔断不触发；这一轮仍会被计为有动作。要更强只能读工作区指纹或要求每轮一个 `todo` 更新——两者都会把「研究型轮次」误杀，暂不做。
+
+**与主流 harness 的对照**：Codex / Claude Code 这类「一问一答」循环在模型不调工具时就停；DSH 的 goal 循环不看工具调用，只看 `complete` / `blocked` / 上限。mini 取两者之间：默认照 DSH 续跑，但把「零动作」当作停止信号。这是 `added`，不是对齐项。
+
+## D15 问题交回人类；完成与轮次的控制面
+
+DSH 的 `ask_user` 超时返回 `{pending: true, callId}`，并说明「用户仍可回答，答案会以 `answer_to_pending_question` 用户消息回来」（`docs/dsh-reference/DSH运行时架构剖析.html`「协作型工具的实现细节」）。这推翻了 D11 的「暂停 + `/goal resume`」：
+
+- **未决问题**：段尾仍有 `session.questions.pending` 时，驱动 MUST NOT 开自动轮次，但目标保持 `active` 与武装；入口回到人手里（chat 提示符、host idle）。
+- **回答是一条人类段**：`source.kind == "user"`，`rounds_started` 不推进。该段收尾后，驱动照常判定并开下一 goal 轮（`source.round == n+1`）。所以「人回答后算不算新开一个 goal 轮」的答案是：回答本身不算，回答之后的那一轮才算。
+- **目标随时可 edit**：`edit` 只改 `objective` / `max_rounds`，`revision + 1`，相位与武装位都不动（DSH 的 invariant；`docs/dsh-reference/DSH运行时架构剖析.html`：「edit 不改 phase 也不改 activation」）。工具面仍要求人类段；命令面补 `/goal edit`，人不必借模型的手改目标。
+- **完成与轮次不是完全不可控**：模型可以 `complete` / `blocked`；`max_rounds` 是硬上限，且**部署策略的 `max_rounds` 是硬顶**——`create_goal` 与 `edit` 的请求值大于它时按它落，模型不能用一个大数字绕开预算（2026-11-20 补）；`/goal edit --max-rounds` 在硬顶内随时改上限；`/goal complete` 给人一个直接收尾的口子；空转熔断（D14）在模型不声明时兜底。模型仍拥有「什么时候算完成」的判断权——这是 DSH 的分层，不假装 harness 能验证完成。
+
+**代价**：`awaiting_input` 不再落 `paused`，日志里看不到「为什么停在这一轮」的持久记录；`segment/end` 只有 `stop_reason=MODEL_COMPLETED` 与 `tool_calls`，`question/asked` 没有配对 `question/answered` 是唯一线索。这是可接受的：问题本身在日志里，人能读。
 
 ## 风险
 

@@ -9,7 +9,7 @@
 | 项 | DSH（一手） | mini（change 位置） | 结论 | 记账 |
 |---|---|---|---|---|
 | 1 形状 | `GoalSnapshot{id,revision,objective,phase,blockedReason?,maxGoalRounds}`，`roundsStarted` 是 `GoalView` 的派生值（`docs/subsystems/goal.md:44-70`）；`goal/change` 带 `operation` 与墓碑 | 快照把 `rounds_started` 写进载荷、`goal/updated{goal\|null}` | simplified | design D2 + ADR-0043；本轮修：轮次推进不再递增 `revision`；4.4 补 replay 交叉校验（`goal_round_defect`） |
-| 2 机制 | 空闲 → `flush` 检查点 → 预约 → `followup` → `pre-step` 前后两次围栏（`driver_index.ts:106-221,372-452`） | 段后同协程判定 + 写三事件 | simplified | D3；丢 `competingQueued` 让位 |
+| 2 机制 | 空闲 → `flush` 检查点 → 预约 → `followup` → `pre-step` 前后两次围栏（`driver_index.ts:106-221,372-452`） | 段后同协程判定 + 写三事件；host 队列人话优先 | simplified | D3 + D13；2026-11-20 host 已接驱动，`competingQueued` 在段边界等价 |
 | 3 语义 | `create` 可替换 `complete`；`resume` 接受已停目标（含 blocked）并清旧 blocker，且要有轮次余量（`goal README:68`） | 原稿只写 paused 拒绝、active 武装，blocked 无出口 | **blocker，本轮修** | 补 `blocked → active` 且清 `blocked_reason` |
 | 4 不变量 | `roundsStarted` 只由进入模型历史的 goal 消息推进；activation 永不落盘 | 首条 `context/assembled` 之后推进（2026-11-19 起）；`armed` 同样不落盘 | simplified | ADR-0043；计数点已贴住「进上下文」 |
 | 5 面 | 模型面 = `<goal_round>`（objective + `Round: n/cap` + 指令，`prompt.ts:12-26`）+ `tool:goal` 政策段 | 无正文形状要求、无政策文本 | **blocker，本轮修正文；政策段记 deferred** | 正文补 Requirement；政策段触发条件：出现「模型反复试错才知门槛」的真实记录 |
@@ -93,7 +93,7 @@
 
 ### D.5 决策位置（simplified，已在项 2 记）
 
-段后同协程判定，不是独立 consumer：省掉预约、`flush` 检查点与 `pre-step` 围栏；代价是丢 `competingQueued` 让位（人只能等这一段收敛或取消）。REPL 侧也已在 5.4 接上同一套判定（`chat` 段尾判定通过就不打印提示符，直接起下一轮）。
+段后同协程判定，不是独立 consumer：省掉预约、`flush` 检查点与 `pre-step` 围栏。2026-11-20 起 host 的待跑队列在段收尾后先跑人话、队列空才开 goal 轮（D13），与 DSH 的 `competingQueued` 在 turn 边界上等价；chat 仍没有段中队列（同步 `readline`），提示符上的下一条输入同样先于自动轮次。三处入口共用 `settle_segment`。
 
 ### D.6 等价物核对：turn / step / round 与 goal（2026-11-19，逐条对代码）
 
@@ -177,3 +177,13 @@ DSH 只有写表工具（`packages/todo/tool-todo/`），没有读回。mini 加
 - **原行为**：`/goal resume` 只放武装位；REPL 只在段尾判定，所以人还得敲一行「继续」。那一行开的是**人类段**——模型在里面写了第二节，轮次计数却没动（场次 2 的 `[轮] 3/4` 直接跳过了这活）。
 - **现行为**：命令成功后立刻算下一轮并进段循环，`[轮] n/cap` 紧跟回执（design D12）。
 - **对齐状态**：DSH 在 whole-agent idle 时驱动；命令返回就是 idle，所以这条是向 DSH 靠，而不是新增偏离。mini 仍缺 inbox 与 `pre-step` 围栏（D.5 的 `simplified` 不变）。
+
+### D.9 2026-11-20 补裁：问题、队列、停滞与命令面
+
+人提出六点后补的裁决与证据（详见 design D13–D15）：
+
+- **队列**：`submit_message` 的深度 1 队列就是 `competingQueued` 的角色；优先级是**人话先于自动轮**。DSH 的驱动条件原文含 `!competingQueued`（图 7-1），mini 在段边界让位，粒度等价。host 原来只跑一段、不调驱动，是实现分叉，已由公共 `settle_segment` 修掉。
+- **问题**：DSH 的 `ask_user` 超时返回 `{pending: true, callId}`，并说明答案会以 `answer_to_pending_question` 用户消息回来（架构剖析「协作型工具的实现细节」）。据此 D11 的「paused + `/goal resume`」改为 D15：目标保持 `active/armed`，回答是人类段、不推进 `rounds_started`，回答段收尾后自动续下一 goal 轮。
+- **完成**：完成是模型的声明（`update_goal complete`），harness 不能验证；能加的是**零工具调用的停滞熔断**（D14，`added`，不是 DSH 对齐项），以及 `max_rounds` + `/goal edit --max-rounds` + `/goal complete` 的控制面。Codex / Claude Code 在模型不调工具时就停，DSH 的 goal 循环不看工具调用——mini 取两者之间。
+- **`rounds_started`**：当前 goal 轮号（goal 消息准入后等于 n），不是会话段数；`max_rounds` 是单目标上限。人类段不计数。
+- **edit**：DSH 的 `edit` 需人类直接消息、不改 phase 也不改 activation；mini 的工具面原本就是这样，2026-11-20 补了 `/goal edit` 命令面，人不必借模型的手改目标。

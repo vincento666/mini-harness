@@ -24,6 +24,7 @@ from mini_harness.events import (
     LogWriteFailure,
     read_events,
 )
+from mini_harness.goals import GoalRound
 from mini_harness.loop import (
     ENTRY_HOST,
     STOP_MODEL_COMPLETED,
@@ -31,7 +32,9 @@ from mini_harness.loop import (
     SessionEnv,
     SessionSettings,
     end_session,
+    next_goal_round,
     run_turn_segment,
+    settle_segment,
     start_session,
 )
 from mini_harness.session.assembly import (
@@ -157,6 +160,8 @@ def run_command(handle: HostSession, name: str, arguments: str) -> CommandRespon
         return Failure("UNKNOWN_COMMAND", f"未知命令：{name}", EXIT_INVALID_ARGUMENT)
     records = read_events(handle.log.path)
     command_id = uuid.uuid4().hex
+    # 命令执行前的武装位：`/goal resume` 只在「从假翻到真」时立刻驱动下一轮。
+    was_armed = handle.env.goal_runtime.armed
     # `command/run` 先落：`/goal` 的 `goal/updated` 排在它之后，回放时因果不倒置。
     handle.log.append(
         "command/run",
@@ -177,6 +182,17 @@ def run_command(handle: HostSession, name: str, arguments: str) -> CommandRespon
         written = handle.log.append("plan/mode", {"active": outcome.plan_active})
         if isinstance(written, LogWriteFailure):
             return Failure("INTERNAL", "计划状态写不进日志", EXIT_INTERNAL_ERROR)
+    if (
+        name == "goal"
+        and arguments.strip() == "resume"
+        and outcome.ok
+        and not was_armed
+        and handle.status == SESSION_IDLE
+    ):
+        # 与 chat 的 D12 对齐：命令把武装位放开之后立刻开下一轮，不等客户端再 POST 一条。
+        goal_round = next_goal_round(handle.env)
+        if goal_round is not None:
+            _begin_segment(handle, None, goal_round)
     return CommandResponse(ok=outcome.ok, text=outcome.text, cursor=handle.last_seq)
 
 
@@ -451,32 +467,54 @@ def submit_message(handle: HostSession, content: str) -> MessageAccepted | Failu
     return MessageAccepted(segment_id=segment_id, queued=False)
 
 
-def _begin_segment(handle: HostSession, content: str) -> str:
+def _begin_segment(
+    handle: HostSession,
+    content: str | None,
+    goal_round: GoalRound | None = None,
+) -> str:
     handle.segments += 1
     segment_id = f"s{handle.segments}"
     handle.status = SESSION_RUNNING
     cancel = asyncio.Event()
     handle.cancel = cancel
-    handle.task = asyncio.create_task(_run_segment(handle, segment_id, content, cancel))
+    handle.task = asyncio.create_task(_run_segment(handle, segment_id, content, cancel, goal_round))
     return segment_id
 
 
 async def _run_segment(
-    handle: HostSession, segment_id: str, content: str, cancel: asyncio.Event
+    handle: HostSession,
+    segment_id: str,
+    content: str | None,
+    cancel: asyncio.Event,
+    goal_round: GoalRound | None = None,
 ) -> None:
     failed = False
+    decision = None
     try:
         segment = await run_turn_segment(
             env=handle.env,
             segment_id=segment_id,
             first_turn_index=handle.turns + 1,
             cancel=cancel,
-            user_message=content,
+            user_message=None if goal_round is not None else content,
+            goal_round=goal_round,
         )
         handle.turns += segment.turns
         # 词表外才是内核失败；FENCE_DENIED / CONTEXT_WINDOW_EXCEEDED 也带 failure_code，
         # 但它们只停段、会话仍可用（ADR-0019 / design D6）。
         failed = segment.stop_reason not in STOP_REASONS
+        if not failed:
+            # 段后收尾与 chat / run 同一份实现：host 不再只有命令面而没有驱动（2026-11-20）。
+            settlement = settle_segment(
+                env=handle.env,
+                segment=segment,
+                turns=handle.turns,
+                goal_round=goal_round is not None,
+            )
+            if settlement.failure is not None:
+                failed = True
+            else:
+                decision = settlement.decision
     finally:
         handle.cancel = None
         handle.task = None
@@ -486,10 +524,18 @@ async def _run_segment(
             handle.queue.clear()
         else:
             handle.status = SESSION_IDLE
-            if not handle.stopping and handle.queue:
-                _begin_segment(handle, handle.queue.popleft())
-            elif handle.stopping:
+            if handle.stopping:
                 handle.queue.clear()
+            elif handle.queue:
+                # 人话优先：DSH 的 `competingQueued` 让自动轮次让位（design D13）。
+                _begin_segment(handle, handle.queue.popleft())
+            elif decision is not None and decision.kind == "continue":
+                assert decision.goal is not None
+                _begin_segment(
+                    handle,
+                    None,
+                    GoalRound(goal=decision.goal, round=decision.round),
+                )
 
 
 def cancel_session(handle: HostSession) -> bool:

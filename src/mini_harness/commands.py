@@ -16,6 +16,8 @@ from mini_harness.events.writer import LogWriteFailure
 from mini_harness.goals import (
     GoalRefusal,
     GoalSnapshot,
+    complete_goal,
+    edit_goal,
     fold_goal,
     pause_goal,
     resume_goal,
@@ -40,11 +42,46 @@ COMMANDS: tuple[CommandSpec, ...] = (
     CommandSpec("skill", "加载一个技能的正文"),
     CommandSpec("plan", "进入计划模式；`/plan off` 退出"),
     CommandSpec("todo", "打印当前待办表"),
-    CommandSpec("goal", "查看目标；`/goal pause` / `resume` / `clear`"),
+    CommandSpec(
+        "goal",
+        "查看目标；`/goal pause` / `resume` / `complete` / `edit` / `clear`",
+    ),
 )
 
 
 RESERVED = frozenset(command.name for command in COMMANDS) | {"help"}
+
+
+def _parse_goal_edit(rest: str) -> tuple[str | None, int | None] | str:
+    """`/goal edit` 的参数：`[--max-rounds N] [新目标正文]`，至少给一个有效字段。
+
+    只做命令面这一层的语法；相位与权威仍由 `edit_goal` 与调用方保证。返回字符串即
+    给人看的用法错误。
+    """
+    tokens = rest.split()
+    max_rounds: int | None = None
+    consumed = 0
+    if tokens and tokens[0].startswith("--max-rounds="):
+        raw = tokens[0].split("=", 1)[1]
+        consumed = 1
+    elif tokens and tokens[0] == "--max-rounds":
+        if len(tokens) < 2:
+            return "用法：/goal edit [--max-rounds N] [新目标正文]"
+        raw = tokens[1]
+        consumed = 2
+    else:
+        raw = ""
+    if consumed:
+        try:
+            max_rounds = int(raw)
+        except ValueError:
+            return f"--max-rounds 需要一个正整数，收到 {raw!r}"
+        if max_rounds < 1:
+            return "--max-rounds 必须是正整数"
+    objective = " ".join(tokens[consumed:]).strip() or None
+    if objective is None and max_rounds is None:
+        return "用法：/goal edit [--max-rounds N] [新目标正文]"
+    return objective, max_rounds
 
 
 def command_catalog(skills: Sequence[Skill]) -> list[CommandSpec]:
@@ -86,7 +123,7 @@ class CommandOutcome:
 def _goal_command(
     arguments: str, records: Sequence[EventRecord], env: SessionEnv | None
 ) -> CommandOutcome:
-    """`/goal` 四个命令：查看、暂停、恢复、清除。没有目标只打印，不写事件。"""
+    """`/goal` 命令面：查看、暂停、恢复、完成、改写、清除。没有目标只打印，不写事件。"""
     goal = fold_goal(records)
     action = arguments.strip()
     armed = env is not None and env.goal_runtime.armed
@@ -102,14 +139,19 @@ def _goal_command(
             lines.append(f"阻塞 {goal.blocked_reason.code}：{goal.blocked_reason.message}")
         return CommandOutcome(True, "\n".join(lines))
 
-    if action not in {"pause", "resume", "clear"}:
-        return CommandOutcome(False, "用法：/goal、/goal pause、/goal resume、/goal clear")
+    verb, _, rest = action.partition(" ")
+    if verb not in {"pause", "resume", "complete", "edit", "clear"}:
+        return CommandOutcome(
+            False,
+            "用法：/goal、/goal pause、/goal resume、/goal complete、"
+            "/goal edit [--max-rounds N] [新目标正文]、/goal clear",
+        )
     if goal is None:
-        return CommandOutcome(False, f"没有当前目标：无法执行 /goal {action}")
+        return CommandOutcome(False, f"没有当前目标：无法执行 /goal {verb}")
     if env is None:
         return CommandOutcome(False, "这个入口没有会话运行期状态，/goal 不可用")
 
-    if action == "clear":
+    if verb == "clear":
         # 清空是整值替换：`goal: null` 让 fold 回 None，也让旧引用失效。
         written = env.log.append("goal/updated", {"goal": None})
         if isinstance(written, LogWriteFailure):
@@ -117,21 +159,42 @@ def _goal_command(
         env.goal_runtime.armed = False
         return CommandOutcome(True, "已清除当前目标")
 
-    if action == "resume" and goal.phase == "active" and armed:
+    if verb == "resume" and goal.phase == "active" and armed:
         return CommandOutcome(True, "目标已经在自动推进（无需 resume）")
 
-    # 人的 resume 才放行 `paused`；工具面仍然拒绝（GOAL_RESUME_BY_TOOL_DENIED）。
-    result: GoalSnapshot | GoalRefusal = (
-        pause_goal(goal) if action == "pause" else resume_goal(goal, armed=armed, human=True)
-    )
+    result: GoalSnapshot | GoalRefusal
+    if verb == "pause":
+        result = pause_goal(goal)
+    elif verb == "complete":
+        result = complete_goal(goal)
+    elif verb == "edit":
+        parsed = _parse_goal_edit(rest.strip())
+        if isinstance(parsed, str):
+            return CommandOutcome(False, parsed)
+        objective, max_rounds = parsed
+        ceiling = None if env is None else env.settings.goal.max_rounds
+        result = edit_goal(goal, objective=objective, max_rounds=max_rounds, ceiling=ceiling)
+    else:
+        # 人的 resume 才放行 `paused`；工具面仍然拒绝（GOAL_RESUME_BY_TOOL_DENIED）。
+        result = resume_goal(goal, armed=armed, human=True)
     if isinstance(result, GoalRefusal):
         return CommandOutcome(False, result.detail)
     written = env.log.append("goal/updated", {"goal": result.model_dump(exclude_none=True)})
     if isinstance(written, LogWriteFailure):
         return CommandOutcome(False, "改动写不进日志，本次操作作废")
-    if action == "pause":
+    if verb == "pause":
         env.goal_runtime.armed = False
         return CommandOutcome(True, "已暂停目标")
+    if verb == "complete":
+        env.goal_runtime.armed = False
+        return CommandOutcome(True, "已把目标标为完成")
+    if verb == "edit":
+        # edit 不改相位、也不改武装位（照 DSH 的 invariant）：改正文不等于重启目标。
+        return CommandOutcome(
+            True,
+            f"已改写目标（revision {result.revision}）："
+            f"{result.objective} · 上限 {result.max_rounds} 轮",
+        )
     env.goal_runtime.armed = True
     return CommandOutcome(True, "已恢复目标：继续自动推进")
 
