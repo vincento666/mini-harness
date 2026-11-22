@@ -44,44 +44,12 @@ COMMANDS: tuple[CommandSpec, ...] = (
     CommandSpec("todo", "打印当前待办表"),
     CommandSpec(
         "goal",
-        "查看目标；`/goal pause` / `resume` / `complete` / `edit` / `clear`",
+        "查看目标；`/goal pause` / `resume` / `complete` / `clear`；`/goal edit <新正文>` 改目标",
     ),
 )
 
 
 RESERVED = frozenset(command.name for command in COMMANDS) | {"help"}
-
-
-def _parse_goal_edit(rest: str) -> tuple[str | None, int | None] | str:
-    """`/goal edit` 的参数：`[--max-rounds N] [新目标正文]`，至少给一个有效字段。
-
-    只做命令面这一层的语法；相位与权威仍由 `edit_goal` 与调用方保证。返回字符串即
-    给人看的用法错误。
-    """
-    tokens = rest.split()
-    max_rounds: int | None = None
-    consumed = 0
-    if tokens and tokens[0].startswith("--max-rounds="):
-        raw = tokens[0].split("=", 1)[1]
-        consumed = 1
-    elif tokens and tokens[0] == "--max-rounds":
-        if len(tokens) < 2:
-            return "用法：/goal edit [--max-rounds N] [新目标正文]"
-        raw = tokens[1]
-        consumed = 2
-    else:
-        raw = ""
-    if consumed:
-        try:
-            max_rounds = int(raw)
-        except ValueError:
-            return f"--max-rounds 需要一个正整数，收到 {raw!r}"
-        if max_rounds < 1:
-            return "--max-rounds 必须是正整数"
-    objective = " ".join(tokens[consumed:]).strip() or None
-    if objective is None and max_rounds is None:
-        return "用法：/goal edit [--max-rounds N] [新目标正文]"
-    return objective, max_rounds
 
 
 def command_catalog(skills: Sequence[Skill]) -> list[CommandSpec]:
@@ -123,7 +91,12 @@ class CommandOutcome:
 def _goal_command(
     arguments: str, records: Sequence[EventRecord], env: SessionEnv | None
 ) -> CommandOutcome:
-    """`/goal` 命令面：查看、暂停、恢复、完成、改写、清除。没有目标只打印，不写事件。"""
+    """`/goal` 命令面：查看、暂停、恢复、完成、清除、替换正文。
+
+    会话内只做**无参数动词**；带参数的定义编辑归 CLI（`minihns goal <id> edit`）与
+    `update_goal` 工具。`/goal <新正文>` 是最主流的形状（Codex `/goal "..."`、
+    DSH `/goal <objective>`）：整段替换 objective，相位与武装位都不动。
+    """
     goal = fold_goal(records)
     action = arguments.strip()
     armed = env is not None and env.goal_runtime.armed
@@ -140,11 +113,28 @@ def _goal_command(
         return CommandOutcome(True, "\n".join(lines))
 
     verb, _, rest = action.partition(" ")
-    if verb not in {"pause", "resume", "complete", "edit", "clear"}:
+    verbs = {"pause", "resume", "complete", "clear", "edit"}
+    if verb not in verbs:
+        # 不是已知动词：整段当新正文。这是 `/goal 把测试修到全绿` 的路径。
+        if goal is None:
+            return CommandOutcome(False, "没有当前目标：无法改写。先用 create_goal 建一个")
+        if env is None:
+            return CommandOutcome(False, "这个入口没有会话运行期状态，/goal 不可用")
+        return _replace_objective(goal, action, env)
+    if verb == "edit":
+        # `edit` 吃正文、不吃 flag：带参数的上限编辑归 CLI（C 方案）。
+        if not rest.strip():
+            return CommandOutcome(False, "用法：/goal edit <新正文>")
+        if goal is None:
+            return CommandOutcome(False, "没有当前目标：无法改写。先用 create_goal 建一个")
+        if env is None:
+            return CommandOutcome(False, "这个入口没有会话运行期状态，/goal 不可用")
+        return _replace_objective(goal, rest.strip(), env)
+    if rest.strip():
+        # 其余动词不吃参数：`/goal pause 现在` 是打错了，不猜。
         return CommandOutcome(
             False,
-            "用法：/goal、/goal pause、/goal resume、/goal complete、"
-            "/goal edit [--max-rounds N] [新目标正文]、/goal clear",
+            f"/goal {verb} 不接受参数；改正文用 `/goal edit <新正文>`",
         )
     if goal is None:
         return CommandOutcome(False, f"没有当前目标：无法执行 /goal {verb}")
@@ -167,13 +157,6 @@ def _goal_command(
         result = pause_goal(goal)
     elif verb == "complete":
         result = complete_goal(goal)
-    elif verb == "edit":
-        parsed = _parse_goal_edit(rest.strip())
-        if isinstance(parsed, str):
-            return CommandOutcome(False, parsed)
-        objective, max_rounds = parsed
-        ceiling = None if env is None else env.settings.goal.max_rounds
-        result = edit_goal(goal, objective=objective, max_rounds=max_rounds, ceiling=ceiling)
     else:
         # 人的 resume 才放行 `paused`；工具面仍然拒绝（GOAL_RESUME_BY_TOOL_DENIED）。
         result = resume_goal(goal, armed=armed, human=True)
@@ -188,15 +171,26 @@ def _goal_command(
     if verb == "complete":
         env.goal_runtime.armed = False
         return CommandOutcome(True, "已把目标标为完成")
-    if verb == "edit":
-        # edit 不改相位、也不改武装位（照 DSH 的 invariant）：改正文不等于重启目标。
-        return CommandOutcome(
-            True,
-            f"已改写目标（revision {result.revision}）："
-            f"{result.objective} · 上限 {result.max_rounds} 轮",
-        )
     env.goal_runtime.armed = True
     return CommandOutcome(True, "已恢复目标：继续自动推进")
+
+
+def _replace_objective(goal: GoalSnapshot, objective: str, env: SessionEnv) -> CommandOutcome:
+    """`/goal <新正文>`：只换正文，`revision + 1`，相位与武装位不动。
+
+    上限不在这里改：它是部署预算，归 CLI 的 `minihns goal <id> edit --max-rounds`
+    或模型的 `update_goal edit`。会话内命令保持无参数，避免在提示符上做 flag 解析。
+    """
+    result = edit_goal(goal, objective=objective, max_rounds=None)
+    if isinstance(result, GoalRefusal):
+        return CommandOutcome(False, result.detail)
+    written = env.log.append("goal/updated", {"goal": result.model_dump(exclude_none=True)})
+    if isinstance(written, LogWriteFailure):
+        return CommandOutcome(False, "改动写不进日志，本次操作作废")
+    return CommandOutcome(
+        True,
+        f"已改写目标（revision {result.revision}）：{result.objective}",
+    )
 
 
 def execute_command(

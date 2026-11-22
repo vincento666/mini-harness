@@ -153,14 +153,50 @@ def test_view_without_a_goal_is_not_an_error(tmp_path: Path) -> None:
     assert outcome.text == "没有当前目标"
 
 
-def test_an_unknown_action_is_a_usage_error(tmp_path: Path) -> None:
+def test_edit_without_a_flag_replaces_the_objective(tmp_path: Path) -> None:
+    """`/goal edit <正文>` 与 DSH 同形：正文靠自然语言，flag 不住在提示符上。"""
     log = _log(tmp_path, _snapshot())
+    env = _env(log)
+
+    outcome = execute_command("goal", "edit 把测试修到全绿", [], read_events(log.path), env)
+
+    assert outcome is not None and outcome.ok is True
+    goal = fold_goal(read_events(log.path))
+    assert goal is not None and goal.objective == "把测试修到全绿"
+
+
+def test_edit_without_text_is_a_usage_error(tmp_path: Path) -> None:
+    log = _log(tmp_path, _snapshot())
+    before = len(_goal_events(log))
+
+    outcome = execute_command("goal", "edit", [], read_events(log.path), _env(log))
+
+    assert outcome is not None and outcome.ok is False
+    assert "用法" in outcome.text
+    assert len(_goal_events(log)) == before
+
+
+def test_a_bare_text_replaces_the_objective(tmp_path: Path) -> None:
+    """`/goal <新正文>` 是最主流的形状；不是已知动词就整段当正文。"""
+    log = _log(tmp_path, _snapshot())
+    env = _env(log)
+
+    outcome = execute_command("goal", "跳一下", [], read_events(log.path), env)
+
+    assert outcome is not None and outcome.ok is True
+    goal = fold_goal(read_events(log.path))
+    assert goal is not None and goal.objective == "跳一下"
+    assert goal.revision == 2
+
+
+def test_a_bare_text_without_a_goal_is_refused_and_writes_nothing(tmp_path: Path) -> None:
+    log = _log(tmp_path)
     before = len(_goal_events(log))
 
     outcome = execute_command("goal", "跳一下", [], read_events(log.path), _env(log))
 
     assert outcome is not None and outcome.ok is False
-    assert "用法" in outcome.text
+    assert "没有当前目标" in outcome.text
     assert len(_goal_events(log)) == before
 
 
@@ -224,12 +260,12 @@ def test_a_clear_write_failure_keeps_the_goal(tmp_path: Path, monkeypatch: Any) 
     assert env.goal_runtime.armed is True
 
 
-def test_edit_changes_objective_without_touching_phase_or_arm(tmp_path: Path) -> None:
-    """edit 只改正文：相位与武装位都不动（照 DSH 的 invariant）。"""
+def test_replacing_the_objective_does_not_touch_phase_or_arm(tmp_path: Path) -> None:
+    """替换正文只改定义：相位与武装位都不动（照 DSH 的 invariant）。"""
     log = _log(tmp_path, _snapshot(rounds_started=1))
     env = _env(log, armed=False)
 
-    outcome = execute_command("goal", "edit 把测试修到全绿", [], read_events(log.path), env)
+    outcome = execute_command("goal", "把测试修到全绿", [], read_events(log.path), env)
 
     assert outcome is not None and outcome.ok is True
     goal = fold_goal(read_events(log.path))
@@ -241,48 +277,28 @@ def test_edit_changes_objective_without_touching_phase_or_arm(tmp_path: Path) ->
     assert env.goal_runtime.armed is False
 
 
-def test_edit_can_raise_the_cap_on_a_blocked_goal(tmp_path: Path) -> None:
-    """轮次用尽后先调大上限，再 resume：这是唯一的解锁路径（照 DSH）。"""
-    log = _log(
-        tmp_path,
-        _snapshot(
-            phase="blocked",
-            rounds_started=3,
-            blocked_reason={"code": "round-limit", "message": "轮次用尽"},
-        ),
-    )
-    env = _env(log)
-
-    edited = execute_command("goal", "edit --max-rounds 8", [], read_events(log.path), env)
-    assert edited is not None and edited.ok is True
-    goal = fold_goal(read_events(log.path))
-    assert goal is not None and goal.max_rounds == 8
-    assert goal.phase == "blocked"
-
-    resumed = execute_command("goal", "resume", [], read_events(log.path), env)
-    assert resumed is not None and resumed.ok is True
-    goal = fold_goal(read_events(log.path))
-    assert goal is not None and goal.phase == "active"
-    assert env.goal_runtime.armed is True
-
-
-def test_edit_accepts_both_fields_and_rejects_bad_arguments(tmp_path: Path) -> None:
+def test_a_verb_does_not_take_arguments(tmp_path: Path) -> None:
+    """`/goal pause 现在` 是打错了：不猜，直接报用法。"""
     log = _log(tmp_path, _snapshot())
     env = _env(log, armed=True)
-
-    both = execute_command("goal", "edit --max-rounds 5 写成两节", [], read_events(log.path), env)
-    assert both is not None and both.ok is True
-    goal = fold_goal(read_events(log.path))
-    assert goal is not None
-    assert (goal.objective, goal.max_rounds) == ("写成两节", 5)
-
     before = len(_goal_events(log))
-    for bad in ("edit", "edit --max-rounds", "edit --max-rounds 0", "edit --max-rounds x"):
-        outcome = execute_command("goal", bad, [], read_events(log.path), env)
-        assert outcome is not None and outcome.ok is False
-        assert "用法" in outcome.text or "正整数" in outcome.text
+
+    outcome = execute_command("goal", "pause 现在", [], read_events(log.path), env)
+
+    assert outcome is not None and outcome.ok is False
+    assert "不接受参数" in outcome.text
     assert len(_goal_events(log)) == before
     assert env.goal_runtime.armed is True
+
+
+def test_an_empty_objective_is_refused(tmp_path: Path) -> None:
+    log = _log(tmp_path, _snapshot())
+    before = len(_goal_events(log))
+
+    outcome = execute_command("goal", "   ", [], read_events(log.path), _env(log))
+
+    assert outcome is not None and outcome.ok is True  # 空参数 = 查看
+    assert len(_goal_events(log)) == before
 
 
 def test_complete_writes_complete_and_disarms(tmp_path: Path) -> None:
@@ -307,15 +323,3 @@ def test_complete_on_a_completed_goal_refuses(tmp_path: Path) -> None:
 
     assert outcome is not None and outcome.ok is False
     assert "已经完成" in outcome.text
-
-
-def test_edit_clamps_the_cap_to_the_deployment_ceiling(tmp_path: Path) -> None:
-    """人类命令也走部署上限：要真的跑更多轮，改配置，不是敲一个大数字。"""
-    log = _log(tmp_path, _snapshot(max_rounds=2))
-    env = _env(log)
-
-    outcome = execute_command("goal", "edit --max-rounds 100", [], read_events(log.path), env)
-
-    assert outcome is not None and outcome.ok is True
-    goal = fold_goal(read_events(log.path))
-    assert goal is not None and goal.max_rounds == 32

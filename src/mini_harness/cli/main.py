@@ -28,7 +28,15 @@ from mini_harness.events import (
     read_events,
 )
 from mini_harness.events.fold import assembled_payload, assembly_points, fold
-from mini_harness.goals import GoalRound, goal_round_defect
+from mini_harness.goals import (
+    DEFAULT_MAX_ROUNDS,
+    GoalRefusal,
+    GoalRound,
+    GoalSnapshot,
+    edit_goal,
+    fold_goal,
+    goal_round_defect,
+)
 from mini_harness.loop import (
     ENTRY_CHAT,
     ENTRY_RUN,
@@ -240,6 +248,15 @@ def build_parser() -> argparse.ArgumentParser:
     usage.add_argument("session_id")
     usage.add_argument("--session-dir", default=None)
     usage.add_argument("--config", default=None)
+
+    # 带参数的目标编辑放在这里，不放在会话内命令：提示符上不做 flag 解析（C 方案）。
+    # 它是**离线**操作：只改日志里的目标定义，不碰运行中进程的武装位。
+    goal = subcommands.add_parser("goal", help="查看或改写一个会话的目标定义（离线）")
+    goal.add_argument("session_id")
+    goal.add_argument("--session-dir", default=None)
+    goal.add_argument("action", choices=("show", "edit", "clear"), nargs="?", default="show")
+    goal.add_argument("--max-rounds", type=int, default=None)
+    goal.add_argument("objective", nargs="*", help="新的目标正文（整段替换）")
     return parser
 
 
@@ -871,6 +888,65 @@ def _replay(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _goal(args: argparse.Namespace) -> int:
+    """`minihns goal <id> [show|edit|clear]`：离线读写目标定义。
+
+    只做定义层（正文、上限、清除），不做 `pause` / `resume` / `complete`——
+    那三个是运行期控制，离线写只会让日志出现「没人按过」的动作，而且 `--resume`
+    之后武装位仍为假。运行中的会话请用 REPL 的 `/goal` 或 host 的命令面。
+    """
+    session_dir = _session_dir(args.session_dir)
+    path = session_dir / f"{args.session_id}.jsonl"
+    if not path.is_file():
+        return _report_failure("SESSION_NOT_FOUND", f"找不到日志：{path}", 1)
+    records = read_events(path)
+    if isinstance(records, LogReadFailure):
+        return _report_failure(records.code, records.detail, EXIT_INTERNAL_ERROR)
+    goal = fold_goal(records)
+    if args.action == "show":
+        if goal is None:
+            print("没有当前目标")
+            return 0
+        print(f"目标 {goal.id}（revision {goal.revision}）：{goal.objective}")
+        print(f"相位 {goal.phase} · 轮次 {goal.rounds_started}/{goal.max_rounds}")
+        if goal.blocked_reason is not None:
+            print(f"阻塞 {goal.blocked_reason.code}：{goal.blocked_reason.message}")
+        return 0
+
+    opened = EventLog.open(session_dir, args.session_id)
+    if isinstance(opened, LogWriteFailure):
+        return _report_failure(opened.code, opened.detail, EXIT_INTERNAL_ERROR)
+    if goal is None:
+        return _report_failure("GOAL_NOT_FOUND", "这个会话没有当前目标", 1)
+
+    if args.action == "clear":
+        written = opened.append("goal/updated", {"goal": None})
+        if isinstance(written, LogWriteFailure):
+            return _report_failure(written.code, written.detail, EXIT_INTERNAL_ERROR)
+        print("已清除当前目标")
+        return 0
+
+    objective = " ".join(args.objective).strip() or None
+    if objective is None and args.max_rounds is None:
+        return _report_failure("INVALID_ARGUMENT", "edit 至少要给一个新正文或 --max-rounds", 2)
+    if args.max_rounds is not None and args.max_rounds < 1:
+        return _report_failure("INVALID_ARGUMENT", "--max-rounds 必须是正整数", 2)
+    result: GoalSnapshot | GoalRefusal = edit_goal(
+        goal,
+        objective=objective,
+        max_rounds=args.max_rounds,
+        ceiling=DEFAULT_MAX_ROUNDS,
+    )
+    if isinstance(result, GoalRefusal):
+        return _report_failure(result.outcome, result.detail, 2)
+    written = opened.append("goal/updated", {"goal": result.model_dump(exclude_none=True)})
+    if isinstance(written, LogWriteFailure):
+        return _report_failure(written.code, written.detail, EXIT_INTERNAL_ERROR)
+    print(f"已改写目标（revision {result.revision}）：{result.objective}")
+    print(f"上限 {result.max_rounds} 轮")
+    return 0
+
+
 def _usage(args: argparse.Namespace) -> int:
     session_id: str = args.session_id
     session_dir = _session_dir(args.session_dir)
@@ -931,6 +1007,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return host_main(args)
     if args.command == "usage":
         return _usage(args)
+    if args.command == "goal":
+        return _goal(args)
     return _replay(args)
 
 

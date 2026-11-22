@@ -155,8 +155,8 @@ DSH 的 `ask_user` 超时返回 `{pending: true, callId}`，并说明「用户�
 
 - **未决问题**：段尾仍有 `session.questions.pending` 时，驱动 MUST NOT 开自动轮次，但目标保持 `active` 与武装；入口回到人手里（chat 提示符、host idle）。
 - **回答是一条人类段**：`source.kind == "user"`，`rounds_started` 不推进。该段收尾后，驱动照常判定并开下一 goal 轮（`source.round == n+1`）。所以「人回答后算不算新开一个 goal 轮」的答案是：回答本身不算，回答之后的那一轮才算。
-- **目标随时可 edit**：`edit` 只改 `objective` / `max_rounds`，`revision + 1`，相位与武装位都不动（DSH 的 invariant；`docs/dsh-reference/DSH运行时架构剖析.html`：「edit 不改 phase 也不改 activation」）。工具面仍要求人类段；命令面补 `/goal edit`，人不必借模型的手改目标。
-- **完成与轮次不是完全不可控**：模型可以 `complete` / `blocked`；`max_rounds` 是硬上限，且**部署策略的 `max_rounds` 是硬顶**——`create_goal` 与 `edit` 的请求值大于它时按它落，模型不能用一个大数字绕开预算（2026-11-20 补）；`/goal edit --max-rounds` 在硬顶内随时改上限；`/goal complete` 给人一个直接收尾的口子；空转熔断（D14）在模型不声明时兜底。模型仍拥有「什么时候算完成」的判断权——这是 DSH 的分层，不假装 harness 能验证完成。
+- **目标随时可 edit**：`edit` 只改 `objective` / `max_rounds`，`revision + 1`，相位与武装位都不动（DSH 的 invariant；`docs/dsh-reference/DSH运行时架构剖析.html`：「edit 不改 phase 也不改 activation」）。工具面仍要求人类段；命令面补 `/goal edit <正文>`，人不必借模型的手改正文。**上限**的编辑走 CLI（`minihns goal <id> edit --max-rounds`），会话内命令不接受 `--flag`（2026-11-23 人裁：flag 属于 CLI，不属于提示符）。
+- **完成与轮次不是完全不可控**：模型可以 `complete` / `blocked`；`max_rounds` 是硬上限，且**部署策略的 `max_rounds` 是硬顶**——`create_goal` 与 `edit` 的请求值大于它时按它落，模型不能用一个大数字绕开预算（2026-11-20 补）；`minihns goal <id> edit --max-rounds` 在硬顶内随时改上限；`/goal complete` 给人一个直接收尾的口子；空转熔断（D14）在模型不声明时兜底。模型仍拥有「什么时候算完成」的判断权——这是 DSH 的分层，不假装 harness 能验证完成。
 
 **代价**：`awaiting_input` 不再落 `paused`，日志里看不到「为什么停在这一轮」的持久记录；`segment/end` 只有 `stop_reason=MODEL_COMPLETED` 与 `tool_calls`，`question/asked` 没有配对 `question/answered` 是唯一线索。这是可接受的：问题本身在日志里，人能读。
 

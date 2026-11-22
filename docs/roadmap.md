@@ -143,7 +143,7 @@ M14 之后技能面的两个已记账缺口，排期如下（2026-11-11 裁）�
 - **顺序**：**排在 M14c（plan）之后**（2026-11-10 人裁决：goal 后置到 plan 之后；M14 与 plan 提前）。
 - **change**：`m13-goal-rounds`
 - **层**：委派
-- **内容**：持久 goal 对象 + 轮次续跑 + 轮次上限 + `blocked` 需同一阻碍持续三轮；**单目标**（对齐 DSH 的 `current goal`，ADR-0042）；**任务并行即状态并行**——一次 `todo` 调用可标多个 `in_progress`（`todos` 仍每轮清空，对齐 DSH）；**todo 并行纪律**（等价 `allowParallelInProgress`，默认 `true`，关闭时拒绝第二个；2026-11-17 人裁决纳入本 change）；**段后收尾是公共件**——`run` / `chat` / `host` 共用，host 队列人话优先（2026-11-20 人裁）；**未决问题交回人类**、**空转熔断**、`/goal edit` / `complete`。
+- **内容**：持久 goal 对象 + 轮次续跑 + 轮次上限 + `blocked` 需同一阻碍持续三轮；**单目标**（对齐 DSH 的 `current goal`，ADR-0042）；**任务并行即状态并行**——一次 `todo` 调用可标多个 `in_progress`（`todos` 仍每轮清空，对齐 DSH）；**todo 并行纪律**（等价 `allowParallelInProgress`，默认 `true`，关闭时拒绝第二个；2026-11-17 人裁决纳入本 change）；**段后收尾是公共件**——`run` / `chat` / `host` 共用，host 队列人话优先（2026-11-20 人裁）；**未决问题交回人类**、**停滞闸门（默认 2 轮）**、`/goal edit` / `complete`（会话内无 flag；上限编辑在 CLI `minihns goal`）。
 - **完成判据**：**seam ⑦**——小上限下自动续跑 N 轮、轮号连续且落在 goal 来源的 `user/message` 上；同一阻碍持续三轮落 `blocked`、两轮不落；**多任务互不覆盖**——两个任务同时 `in_progress`、完成其一后另一仍在；todo 允许同时标记多个 `in_progress`，策略关闭时拒绝第二个。
 - **依赖**：M12；**排在 M14c（plan）之后**（2026-11-10 裁决）。
 

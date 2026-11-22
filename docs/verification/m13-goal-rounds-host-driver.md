@@ -10,7 +10,7 @@
 | 2 | 队列优先级 | host 队列只在段尾先跑；chat 无队列 | 队列人话**先于**自动轮；chat 提示符上的下一条输入同样先于自动轮（D13） |
 | 3 | 未决问题 | `paused` + 解除武装，人回答后要 `/goal resume` | 目标保持 `active/armed`；回答是人类段（`rounds_started` 不变），段收尾后自动续下一 goal 轮（D15） |
 | 4 | 完成但没声明 | 驱动继续开轮，白烧额度 | 停滞闸门默认开、阈值 2：连续两轮零动作才 `stalled`（解除武装、相位不变、回到入口，D14）；一轮空转不误杀，`0` 可关闭；`segment/end.tool_calls` 落盘 |
-| 5 | 命令面 | `/goal` 四条；host 的 `/goal resume` 只改状态 | 另加 `/goal edit [--max-rounds N] [正文]`（不动相位/武装位）与 `/goal complete`；host 的 `/goal resume` 与 chat 一样立刻开下一轮 |
+| 5 | 命令面 | `/goal` 四条；host 的 `/goal resume` 只改状态 | 另加 `/goal edit <正文>`（不动相位/武装位）与 `/goal complete`；带参数的上限编辑在 CLI `minihns goal`；host 的 `/goal resume` 与 chat 一样立刻开下一轮 |
 
 ## 二、判据与证据
 
@@ -25,8 +25,8 @@
 | 默认阈值 2：连续两轮才停 | `tests/test_goal_rounds.py::test_two_idle_goal_rounds_in_a_row_trip_the_stall_gate_by_default` |
 | `stall_rounds = 0` 完全关闭 | `...::test_stall_rounds_zero_disables_the_gate_entirely` |
 | 五档判定（stop/continue/exhausted/awaiting/stalled） | `...::test_the_round_decision_only_looks_at_the_snapshot_the_arm_and_the_stop_reason` |
-| `/goal edit` 不动相位/武装位 | `tests/test_goal_commands.py::test_edit_changes_objective_without_touching_phase_or_arm` |
-| `edit --max-rounds` 解锁 `round-limit` | `...::test_edit_can_raise_the_cap_on_a_blocked_goal` |
+| `/goal edit` 不动相位/武装位 | `tests/test_goal_commands.py::test_replacing_the_objective_does_not_touch_phase_or_arm` |
+| CLI `goal edit` 改上限并截到部署硬顶 | `tests/test_cli_goal.py::test_edit_replaces_the_objective_and_the_cap`、`...::test_edit_clamps_the_cap_to_the_deployment_ceiling` |
 | `/goal complete` | `...::test_complete_writes_complete_and_disarms` |
 
 ## 三、门禁

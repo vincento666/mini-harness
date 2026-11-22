@@ -125,7 +125,7 @@ goal 来源消息的 `round` MUST 等于写入时快照的 `rounds_started + 1`�
 
 段结束且 `turn/end.stop_reason` 不在 `{ABORTED, FENCE_DENIED, PROVIDER_ERROR, CONTEXT_WINDOW_EXCEEDED, MAX_TURNS}` 之内时，系统 SHALL 检查当前目标：`phase == active`、`armed` 为真、`rounds_started < max_rounds` 三者同时成立才 SHALL 开新段，并按顺序写 `segment/start`、goal 来源的 `user/message`、该段首条 `turn/start`、该段首条 `context/assembled`、`goal/updated`（`rounds_started` 递增，`revision` 不变）。三者任一不成立 MUST NOT 开新段。
 
-`rounds_started` 是**当前 goal 轮次的序号**：goal 消息被准入（`context/assembled` 落盘）之后它就是本轮的 n；人类段的 `user/message` MUST NOT 推进它。`max_rounds` 是**单个目标**的轮次上限，不是会话的段数上限。两者都由 `/goal edit --max-rounds` 随时改写。
+`rounds_started` 是**当前 goal 轮次的序号**：goal 消息被准入（`context/assembled` 落盘）之后它就是本轮的 n；人类段的 `user/message` MUST NOT 推进它。`max_rounds` 是**单个目标**的轮次上限，不是会话的段数上限。`max_rounds` 由 CLI 的 `minihns goal <id> edit --max-rounds` 或模型的 `update_goal edit` 改写；会话内的 `/goal edit` 只改正文。
 
 goal 轮次以零个成功派发的工具调用收尾（模型只说话、没有动作）时，系统 SHALL 累加「连续空转轮数」；连续轮数达到 `[goal] stall_rounds` 时 SHALL 解除武装、MUST NOT 开下一段，`phase` MUST 保持不变（完成与否不是驱动能替模型判断的事实）。`stall_rounds` 缺省为 `2`：一轮可能只是「想清楚再答」，连续两轮才判死循环；配置 `0` 表示关闭该闸门（完全对齐 DSH，只由 `complete` / `blocked` / `max_rounds` 决定）。任何有工具调用的 goal 轮次把计数清零；人类段 MUST NOT 受这条约束，并把计数清零。判据单位是**轮**（一次准入），不是回合；一轮里只要有一个成功派发的工具调用就不算空转。
 
@@ -260,4 +260,4 @@ goal 轮次以零个成功派发的工具调用收尾（模型只说话、没有
 #### Scenario: 请求的上限被部署上限截住
 
 - **WHEN** 部署 `[goal] max_rounds = 32`，模型调用 `create_goal(max_rounds=100)`
-- **THEN** 落盘快照的 `max_rounds == 32`；`/goal edit --max-rounds 100` 同样落 32
+- **THEN** 落盘快照的 `max_rounds == 32`；`minihns goal <id> edit --max-rounds 100` 同样落 32

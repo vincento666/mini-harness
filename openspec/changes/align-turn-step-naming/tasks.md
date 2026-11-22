@@ -22,6 +22,8 @@
 
 ## 3. 入口与配置（seam ⑥）
 
+- [x] 3.0 会话内命令去 flag（2026-11-23 先落，先于全量改名）：`/goal edit` 只吃正文；`--max-rounds` 移到 `minihns goal <id> edit`；会话内动词不吃参数（`tests/test_goal_commands.py`、`tests/test_cli_goal.py`）
+
 - [ ] 3.1 `--max-steps` 主名 + `--max-turns` 隐藏别名（弃用提示一次）
 - [ ] 3.2 `[session] max_steps` 主键 + 旧键 `max_turns` 映射；两者冲突 → `INVALID_ARGUMENT`
 - [ ] 3.3 `subagent` 的 `max_turns → max_steps`（旧参数名仍接受）

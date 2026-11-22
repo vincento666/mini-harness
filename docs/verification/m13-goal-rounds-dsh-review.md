@@ -186,4 +186,4 @@ DSH 只有写表工具（`packages/todo/tool-todo/`），没有读回。mini 加
 - **问题**：DSH 的 `ask_user` 超时返回 `{pending: true, callId}`，并说明答案会以 `answer_to_pending_question` 用户消息回来（架构剖析「协作型工具的实现细节」）。据此 D11 的「paused + `/goal resume`」改为 D15：目标保持 `active/armed`，回答是人类段、不推进 `rounds_started`，回答段收尾后自动续下一 goal 轮。
 - **完成**：完成是模型的声明（`update_goal complete`），harness 不能验证。2026-11-20 二裁改为**默认对齐 DSH**：零动作不停；`stall_rounds` 是要显式打开的闸门（D14）。控制面仍是 `max_rounds` + `/goal edit --max-rounds` + `/goal complete`。查证补充：Claude Code 的 `/goal` 有独立评估器（met / not yet met / impossible）与 stall detection（连续几轮不用工具才停、保留 goal）；Codex CLI 的 goal mode 是 structured `update_goal` + 建议性 token 预算（命中后 wrap-up，不硬杀）。DSH 与它们都不同：只认声明与上限。
 - **`rounds_started`**：当前 goal 轮号（goal 消息准入后等于 n），不是会话段数；`max_rounds` 是单目标上限。人类段不计数。
-- **edit**：DSH 的 `edit` 需人类直接消息、不改 phase 也不改 activation；mini 的工具面原本就是这样，2026-11-20 补了 `/goal edit` 命令面，人不必借模型的手改目标。
+- **edit**：DSH 的 `edit` 需人类直接消息、不改 phase 也不改 activation；mini 的工具面原本就是这样。命令面在 2026-11-20 补了 `/goal edit`，2026-11-23 按 C 方案收敛为 `/goal edit <正文>`（无 flag）；带参数的上限编辑移到 CLI `minihns goal`，与 DSH「命令不进模型请求、参数不驻留提示符」的分工一致。

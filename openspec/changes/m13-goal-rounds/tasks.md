@@ -32,7 +32,7 @@
 ## 5. 武装与命令面（seam ⑥）
 
 - [x] 5.1 `armed` 只活在进程内：启动与 `--resume` 后为假，`pause` / `complete` / `blocked` / 撞上限置假（`test_goal_update`、`test_chat_goal_driver::test_resume_does_not_continue_an_active_goal`）
-- [x] 5.2 `/goal`、`/goal pause`、`/goal resume`、`/goal complete`、`/goal edit`、`/goal clear`；无目标不写事件（`test_goal_commands`；host 同一条 `execute_command`，带 env）
+- [x] 5.2 `/goal`、`/goal pause`、`/goal resume`、`/goal complete`、`/goal clear`、`/goal edit <正文>`；无目标不写事件（`test_goal_commands`；host 同一条 `execute_command`，带 env）
 - [x] 5.3 CLI 黑盒：`--resume` 之后第一次模型调用前没有 goal 来源消息，`/goal resume` 之后才有（`test_chat_goal_driver` 的两条 chat 用例）
 - [x] 5.4 REPL 段后驱动：`chat` 里目标 `active` 且已武装时，段结束不开提示符、直接起下一轮；提示符只在驱动停下时出现（`test_chat_goal_driver::test_chat_keeps_running_rounds_without_another_line`）
 - [x] 5.5 未决问题不续跑（D11，2026-11-19 UAT 场次 1 暴露）：`ask_user` 拿到 `QUESTION_UNAVAILABLE` 时记在会话上，段尾 `awaiting_input` → `paused` + 解除武装；段首清空；chat 打 `[轮] n/cap`（`test_goal_rounds`、`test_chat_goal_driver`）
@@ -40,7 +40,7 @@
 - [x] 5.7 段后收尾抽公共件（D13）：`settle_segment` 被 `run_session_env` / `chat` / host 共用；host 队列人话优先，队列空才开 goal 轮（`test_host_goal_driver` 三条）
 - [x] 5.8 未决问题交回人类（D15，取代 D11）：不落 `paused`、保持 `active/armed`；回答是人类段、不推进轮号，段后续跑（`test_a_question_asked_in_a_round_returns_to_the_prompt_without_burning_the_next`、`test_an_answer_is_a_human_segment_and_the_goal_resumes_after_it`、host 同名用例）
 - [x] 5.9 停滞闸门（D14，2026-11-20 三裁）：`stall_rounds` 缺省 `2`，连续两轮 goal 轮次零动作才 `stalled`、解除武装、相位不动、计数清零；`0` 关闭（完全对齐 DSH）；`segment/end.tool_calls` 落盘（`test_two_idle_goal_rounds_in_a_row_trip_the_stall_gate_by_default`、`test_stall_rounds_zero_disables_the_gate_entirely`）
-- [x] 5.10 `/goal edit` 与 `/goal complete`：edit 不动相位/武装位，可改 `max_rounds` 解锁 `round-limit`（`test_edit_*`、`test_complete_*`）
+- [x] 5.10 `/goal edit <正文>` 与 `/goal complete`：edit 不动相位/武装位（`test_edit_without_a_flag_*`、`test_complete_*`）；带参数的上限编辑移到 CLI `minihns goal`（2026-11-23，`test_cli_goal`）
 
 ## 6. 收尾
 
