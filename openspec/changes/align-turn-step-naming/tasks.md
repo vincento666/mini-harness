@@ -40,6 +40,9 @@
 ## 5. 收尾
 
 - [ ] 5.1 机械替换漏网扫描：`rg '\bsegment|segment_id|max_turns|first_turn_index' src tests` 只剩兼容层与 v1 fixture
-- [ ] 5.2 全量门禁 + 覆盖率；`openspec validate --all --strict`
-- [ ] 5.3 在 `CURRENT.md` 记兼容删除点（D4 三条）与当前 schema 版本
-- [ ] 5.4 Learning Gate：把「交换型改名必须用占位符」「schema 上迁优于重写文件」记进 `docs/lessons.md`（若可复用）
+- [ ] 5.2 删除前基线门禁：全量测试 + 覆盖率 + `openspec validate --all --strict`；金样本 `replay` exit 0（一次性证书拿到）
+- [ ] 5.3 **删除兼容层**（design D4；合并前必做，未勾不得归档、不得合入 `main`）：`LEGACY_EVENT_TYPES`、`_V1_TYPE_MAP`、`_V1_KEY_MAP`、`_upcast_v1`、`migrate_schema` 的 N-1 分支、`is_known_type`（与 `is_current_type` 合流）、`tests/test_v1_fixture.py`、v1 fixture、`--max-turns` 隐藏别名、`[session] max_turns` 键映射、`subagent` 旧参数名
+- [ ] 5.4 版本门前置：`_records_from_lines` 先看 `schema_version` 再 `model_validate`，v1 行读到 `SCHEMA_UNSUPPORTED` 而非 `LOG_UNREADABLE`（`test_event_schema_v2`）
+- [ ] 5.5 删除后复跑四道门禁与 `validate`；任取一份 `sessions/*.jsonl` 跑 `replay`，确认报 `SCHEMA_UNSUPPORTED`——不是崩溃，也不是 `LOG_UNREADABLE`
+- [ ] 5.6 `CURRENT.md` 记账：schema 版本 2、`sessions/` 14 份 v1 样本作废、兼容层已删与删除提交号
+- [ ] 5.7 Learning Gate：把「交换型改名必须用占位符」「金样本是一次性证书不是常驻资产」「删兼容层不需要升 schema 版本」记进 `docs/lessons.md`（若可复用）

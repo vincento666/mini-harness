@@ -10,7 +10,7 @@
 - **清理 partial 的办法（避开批量删除守卫）**：`mkdir -p .tmp/cov-archive && mv .coverage.* .coverage .tmp/cov-archive/`——移动不算删除。攒多了在**单独一条命令**里删归档目录，或由人批一次批量确认。
 - **不做「关 parallel + 单文件 append」**（2026-11-18 判断，理由留档）：partial 是子进程覆盖率的常规采集方式；append 到同一个 SQLite 在并发子进程下有写冲突风险，收益只是少一步 `combine`。今天的问题已查明是「反复跑 report 吃掉 partial」，不是 partial 机制本身。
 - **沙箱会把长命令掐断**：全量测试在沙箱里跑时，两次都在十几分钟后被 `sitecustomize._BrokerProtocolError: execution capability 已过期` 打断，日志只剩空文件（partial 已写 160 份，说明测试本身在跑）。四道门禁与覆盖率两步因此在**沙箱外**跑（每轮约 3 分钟）；沙箱内跑单个测试文件没问题。
-- **日志 schema 已到 v2（2026-11-23）**：`SCHEMA_VERSION = 2`；写入只认 v2 名字（`turn/*` 是段、`step/*` 是步），v1 旧名在 `read_events` / `LogTail` 入口由 `_upcast_v1` 整表上迁；`segment/*` 写出去会落 `error/internal`。v1 金样本 `tests/fixtures/logs/v1-goal-tools.jsonl` 仍可 `replay`（exit 0）。兼容删除点按 `align-turn-step-naming` design D4。
+- **日志 schema 已到 v2（2026-11-23）**：`SCHEMA_VERSION = 2`；写入只认 v2 名字（`turn/*` 是段、`step/*` 是步），v1 旧名在 `read_events` / `LogTail` 入口由 `_upcast_v1` 整表上迁；`segment/*` 写出去会落 `error/internal`。v1 金样本 `tests/fixtures/logs/v1-goal-tools.jsonl` 现在可 `replay`（exit 0）。**这份兼容是改造期脚手架**：按 design D4，`align-turn-step-naming` 合并前删除（tasks 5.3），删后 `sessions/` 下 14 份 v1 样本作废。
 - **活动 change（两条，stacked）**：`m13-goal-rounds`（分支 `change/m13-goal-rounds`，只剩人跑 UAT）；`align-turn-step-naming`（分支 `change/align-turn-step-naming`，基于 m13；1.1–1.5、2.1–2.2 已落，下一步 2.3 数量词与 `max_turns`/`STOP_MAX_TURNS`）。
 - **m13 明细**：apply 到 5.x：**1.1–5.10 已落**——goal 事件与折叠、`user/message.source`、`[goal]` 四键与 todo 并行纪律、三个目标工具（CAS / 相位矩阵 / 阻塞门槛）、段后续跑（四事件顺序、`round-limit`、失败收尾）、`replay` 的轮次校验、`get_todos` 读回（补 D8 的遮蔽缺口）、武装位收口、`/goal` 六条命令（edit 不带 flag）、`--resume` 黑盒、REPL 段后驱动、host 驱动与队列人话优先、未决问题交回人类、停滞闸门（默认开、阈值 2）、`/goal edit` / `complete`。**6.1 真实端点已通过**（`deepseek-chat`，A/B 两场）；**6.3 变异已完成**（六条全杀，M5 单点覆盖记为薄弱处）；**6.4 Learning Gate 已完成**（L-086–L-089 进收件箱，无晋升）。只剩 **6.2 UAT**（人跑；场次 1 已按 D15 改口）。六问已答：单目标 + 任务并行（ADR-0042）。
 - **已裁（M13，2026-11-19）**：轮次准入点从「首条 `turn/start` 之后」挪到「首条 `context/assembled` 之后」——装配完成才算一轮，注入/折叠/装配内压缩失败不再白烧额度。四事件顺序随之变成 `segment/start → goal 消息 → turn/start → context/assembled → goal/updated`；契约行为 1 新增一条顺序判据。ADR-0043 已改为 accepted。
@@ -34,7 +34,7 @@
 - **P0 预算读数未复现**：`fix-post-compaction-budget-reading` 20 个 task 未 apply；2026-10-27 的真实端点诊断没复现「遮蔽后 tokens 后 > 前」。要么补稳定样本，要么降级为未复现的历史缺陷。
 - **`SESSION_BUSY` 状态码自相矛盾**：spec 表写 409，实现按 429 归档；留到后续 spec 修正时裁。
 - **委派的三处语义原语未对齐**：子级审批继承父模式、没有「沙箱升级才问人」的阶梯、工具表只是组合过滤。见 `docs/verification/m12-subagent-delegation-dsh-review.md`。
-- **命名兼容层的删除点（2026-11-20）**：`align-turn-step-naming` 计划用日志 schema v2 在读取时上迁 v1；删除条件见该 change 的 design D4（两个里程碑 + 无 v1 日志要回放 + 外部消费者升级完）。到期未删要在这里记账。
+- **命名兼容层必须在本 change 合并前删除（2026-11-23 改裁）**：`align-turn-step-naming` 的 v1 上迁只作改造期验证用；删除点从「合并后两个里程碑」提前到「合并前」，依据是项目未上线、`sessions/` 14 份 v1 日志全是开发样本、无外部消费者。删除清单与判据见该 change design D4 与 tasks 5.3–5.6；未勾不得归档。删后这 14 份样本作废，`replay` 报 `SCHEMA_UNSUPPORTED` 属预期。
 - **覆盖率合并链路待修（2026-11-20）**：单次口径 78.47%、累积口径 96.66%、本次 partial 合并 74.59%，三个数不可比。先查 `coverage combine` 为何跳过 96 个 partial（`COVERAGE_FILE` 与 `-p` 后缀的组合），再决定是修链路还是把地板改成单次口径。修好之前，门禁读数不得再引用 96.66% 当「本次」。
 - **UI 服务端 allowlist 暂缓**：H2 保持日志逐行镜像 + 客户端过滤；公网/多客户端时再判。
 - **fork 与插件容器暂不做**（ADR-0035）；**OS 级沙箱**在 M15a。

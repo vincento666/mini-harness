@@ -50,7 +50,7 @@
    - 类型：`segment/start|end → turn/start|end`；`turn/start|end → step/start|end`。
    - 键：`segment_id → turn_id`；`turn_id → step_id`；`turns → steps`。
    - 值不变，`seq` / `ts` / `session_id` 不变。
-3. 词表拆成两套：`CONCRETE_EVENT_TYPES` 只放 v2 名字（新写入的唯一合法集）；`LEGACY_EVENT_TYPES` 只放 v1 名字，**读取时**允许通过校验，交给上迁。`EventRecord._type_is_in_the_vocabulary` 读 `is_known_type`，后者对两套都返回真；写侧另用 `is_current_type` 拒绝旧名。
+3. 词表拆成两套：`CONCRETE_EVENT_TYPES` 只放 v2 名字（新写入的唯一合法集）；`LEGACY_EVENT_TYPES` 只放 v1 名字，**读取时**允许通过校验，交给上迁。`EventRecord._type_is_in_the_vocabulary` 读 `is_known_type`，后者对两套都返回真；写侧另用 `is_current_type` 拒绝旧名。**两套词表只在改造期成立**：删除点见 D4，合并前回到一套。
 4. `read_events` 逐行 parse → `migrate_schema` → 交给调用方。投影、折叠、replay、SSE 都只看见 v2。
 5. 旧日志文件 MUST NOT 被重写：上迁是纯函数，磁盘上的 v1 行保持原样；下一次追加才写 v2。混合文件不可能出现——一个会话一个文件，schema 在 `session/start` 时固定。
 
@@ -66,17 +66,25 @@
 - `[session] max_steps` 是主键；旧键 `max_turns` 仍被接受，装载时映射并打一次弃用提示；两个键同时出现且值不同 → `INVALID_ARGUMENT`，不猜。
 - `subagent` 工具的参数 `max_steps` 是主名；旧 `max_turns` 仍接受（模型可能从旧提示词里学到它），映射到同一字段。
 - 事件名与日志 schema **不提供双写**：新日志只写 v2，旧日志只读。
-- 兼容窗口的长度：见 D4。
+- 兼容窗口到本 change 合并前为止：旧 flag / 旧配置键 / 旧参数名与日志上迁共用同一个删除点（D4）。
 
-## D4 兼容删除点
+## D4 兼容层的删除点：本 change 合并前
 
-删除条件三条同时成立：
+**已裁（2026-11-23）**：不留常驻兼容层。依据是可核实的事实——项目未上线，`sessions/` 下 14 份日志全部 `schema_version=1`（其中 12 份含 `segment/*`，每份 2–8 行），仓库外没有消费者，没有任何读者依赖旧日志可读。常驻 `LEGACY_EVENT_TYPES` + `_upcast_v1` 会把本仓库永久维持在两套事件词表上，而它换来的价值接近零。
 
-1. 距离本 change 合并至少 **两个里程碑**（按 roadmap 顺序，不是墙钟）；
-2. `sessions/` 下不再有需要 `replay` 的 v1 日志（或已归档到不再读取的位置）；
-3. 没有外部消费者依赖 v1 事件名（host/UI 仓库同批升级完成）。
+所以 v1 上迁是**改造期的临时脚手架**，不是产品特性：
 
-删除动作：`LEGACY_EVENT_TYPES`、`_upcast_v1`、旧 CLI/配置别名与对应测试一起删；`SCHEMA_VERSION` 不动（v1 变成「不支持」，读到即 `SchemaUnsupported`）。**不**保留「只读旧名」的永久分支——那会把兼容层变成第二套词表。
+1. **它服务什么**：证明这次置换没做错。`turn` 在两版里指称相反（v1=回合，v2=轮），字面替换不可判定；唯一可靠的判据是「旧代码产生的输入 + 新代码跑出的输出 + 逐点相等」，而这份输入必须在动代码之前冻结。该输入就是 `tests/fixtures/logs/v1-goal-tools.jsonl`（50 事件）。
+2. **什么时候删**：4.x 改词完成、5.1 漏扫干净、5.2 门禁绿之后，**在本分支上、归档与合并之前**。删除提交排在归档提交之前；5.3 未勾不得归档。
+3. **删除动作**（一次提交做全，不留半套）：
+   - `vocabulary.py`：删 `LEGACY_EVENT_TYPES`；`is_known_type` 与 `is_current_type` 合流成一个读写共用谓词（只认 v2 名字与 `error/*`）。
+   - `record.py`：删 `_V1_TYPE_MAP`、`_V1_KEY_MAP`、`_upcast_v1`、`migrate_schema` 的 `SCHEMA_VERSION - 1` 分支；`migrate_schema` 退化为「版本必须是当前版本，否则 `SchemaUnsupported`」。
+   - `reader.py`：版本门**前置**——先看 `schema_version` 再 `model_validate`。否则 v1 行会先在类型校验处失败，得到 `LOG_UNREADABLE` 而不是 `SCHEMA_UNSUPPORTED`。
+   - 测试：删 `tests/test_v1_fixture.py` 与 v1 fixture；`test_event_schema_v2.py` 只留 v2 用例；补一条「v1 日志读到 `SCHEMA_UNSUPPORTED`」的判据。
+   - 入口：删 `--max-turns` 隐藏别名、`[session] max_turns` 键映射、`subagent` 的旧参数名。
+4. **删除后 v1 日志的表现**：`minihns replay sessions/*.jsonl` 对这些文件一律返回 `SCHEMA_UNSUPPORTED`。这是**预期行为**，不是缺陷；那 14 份文件在 `CURRENT.md` 记为作废样本，不再参与任何判据。
+5. **`SCHEMA_VERSION` 不动**：保持 2。升到 3 会把现有 v2 日志变成「旧版」，凭空造出新的兼容负担；删兼容层不需要升版本。
+6. **不保留「只读旧名」的分支**：那等于把兼容层变成第二套词表，永久存在，正是本节要消除的东西。
 
 ## D5 中文术语：段→轮、回合→步
 
@@ -85,7 +93,7 @@
 - **轮（turn）**：一条输入展开的那串步；`run` 起手一轮，goal 续跑每轮一轮。
 - **步（step）**：一次「装配 → 调模型 → 派发」。
 - **目标轮（goal round）**：一次 goal 来源的轮；`rounds_started` 数它。
-- 现有「段」全部改「轮」；现有「回合」全部改「步」。`[段]` 这行 stderr 文案改成 `[轮]`？不——`[轮] n/cap` 已经被 goal 轮占用。普通轮的收尾提示改成 `[轮]` 会与 goal 轮混淆；保留一个中性的 `[turn]` 或改成 `[轮] 收尾`。设计选 `[轮]` + 明确后缀（见 tasks 5.4），具体文案在实现时由 chat-repl 规格钉住。
+- 现有「段」全部改「轮」；现有「回合」全部改「步」。`[段]` 这行 stderr 文案改成 `[轮]`？不——`[轮] n/cap` 已经被 goal 轮占用。普通轮的收尾提示改成 `[轮]` 会与 goal 轮混淆；保留一个中性的 `[turn]` 或改成 `[轮] 收尾`。设计选 `[轮]` + 明确后缀（见 tasks 3.5），具体文案在实现时由 chat-repl 规格钉住。
 
 **历史文档不改**：`docs/CURRENT-history.md`、`docs/lessons-archive.md`、`openspec/changes/archive/` 保持原词。它们是当时的事实记录，改词等于伪造历史；新文档用新词，并在 `GLOSSARY.md` 留一行「2026-11 之前写作段/回合」。
 
@@ -98,7 +106,7 @@
 
 ## D7 验证策略
 
-- **v1 金样本**：把当前 `sessions/` 里挑一份含 goal 轮、工具、压缩的日志冻结为 `tests/fixtures/logs/v1-*.jsonl`；改名后 `replay` 必须退出 0 且逐点相等。
+- **v1 金样本（一次性证书，不是永久资产）**：`tests/fixtures/logs/v1-goal-tools.jsonl` 在动代码之前冻结；改名的每一步都跑它，`replay` 必须退出 0 且逐点相等。它的有效期到 5.3 删除兼容层为止——验完与兼容层一起删（D4）。
 - **v2 形状**：新会话的事件类型集合与 v2 词表完全相等；不出现 `segment/*` 或旧 `turn/*` 语义。
 - **别名**：`--max-steps` 与 `--max-turns` 跑同一 fixture，日志除 `session/start` 的配置快照外逐字段相等；旧配置键可用。
 - **机械替换的漏网**：`rg '\bsegment|segment_id|max_turns|first_turn_index' src tests` 必须只剩兼容层与历史 fixture；`rg '"turn/start"'` 在 src 里必须只指向 step 的新名（即 `step/start`）。
@@ -110,4 +118,4 @@
 - **`turn_id` 语义翻转**：旧 `turn_id` 是 step，新 `turn_id` 是 turn；任何只改类型名不改键的地方都会让日志自洽校验变松。
 - **旧日志在投影层的表现**：`todos` 在 `segment/start` 清空，改名后是 `turn/start`；如果上迁漏了这条，旧日志的待办投影会变成「从不清空」。
 - **文档大面积改动**：`openspec/specs/` 里所有提到 `turn/start` 的 requirement 都要改；漏一处就会在 `validate` 或下一次 apply 时暴露。
-- **兼容层长期不删**：D4 的三条是硬条件，到期未删要在 `CURRENT.md` 的开放缺口里记账。
+- **删除动作被拖延**：兼容层拖过一次合并就变成常驻负债，而它换来的价值接近零（项目未上线、无外部消费者）。D4 的删除点是硬条件，5.3 未勾不得归档、不得合入 `main`。
