@@ -493,7 +493,7 @@ async def test_dispatch_batch_reads_plan_state_from_log(tmp_path) -> None:
 
     first = await _dispatch_batch(
         log=log,
-        turn_id="t1",
+        step_id="t1",
         calls=[call],
         registry=build_registry(None),
         settings=settings,
@@ -508,7 +508,7 @@ async def test_dispatch_batch_reads_plan_state_from_log(tmp_path) -> None:
     log.append("plan/mode", {"active": False})
     second = await _dispatch_batch(
         log=log,
-        turn_id="t2",
+        step_id="t2",
         calls=[ToolCall(id="c2", name="write", arguments={"file_path": "a.txt", "content": "x"})],
         registry=build_registry(None),
         settings=settings,

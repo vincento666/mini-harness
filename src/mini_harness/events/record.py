@@ -19,7 +19,7 @@ _V1_TYPE_MAP: dict[str, str] = {
     "turn/end": "step/end",
 }
 
-# 载荷键同样整表换：`segment_id` 是段 id，`turn_id` 是回合 id。
+# 载荷键同样整表换：`turn_id` 是段 id，`step_id` 是回合 id。
 _V1_KEY_MAP: dict[str, str] = {
     "segment_id": "turn_id",
     "turn_id": "step_id",

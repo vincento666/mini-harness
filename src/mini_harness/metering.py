@@ -57,7 +57,7 @@ class Pricing:
 
 @dataclass(frozen=True)
 class TurnUsage:
-    turn_id: str
+    step_id: str
     usage: Usage
 
 
@@ -91,16 +91,16 @@ def collect_usage(records: Sequence[EventRecord]) -> tuple[tuple[TurnUsage, ...]
     for record in records:
         if record.type != "model/response":
             continue
-        turn_id = record.payload.get("step_id")
-        if not isinstance(turn_id, str):
+        step_id = record.payload.get("step_id")
+        if not isinstance(step_id, str):
             continue
         usage = usage_from_payload(record.payload)
         if usage is None:
             continue
-        if turn_id not in per_turn:
-            order.append(turn_id)
-        per_turn[turn_id] = usage
-    turns = tuple(TurnUsage(turn_id, per_turn[turn_id]) for turn_id in order)
+        if step_id not in per_turn:
+            order.append(step_id)
+        per_turn[step_id] = usage
+    turns = tuple(TurnUsage(step_id, per_turn[step_id]) for step_id in order)
     total = Usage()
     for turn in turns:
         total = total.plus(turn.usage)

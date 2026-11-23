@@ -16,7 +16,7 @@ from mini_harness.events.fold import (
     assembly_points,
     fold,
 )
-from mini_harness.loop import ENTRY_RUN, run_turn_segment, start_session
+from mini_harness.loop import ENTRY_RUN, run_turn, start_session
 from mini_harness.loop.turn_loop import SUMMARY_INSTRUCTION
 from mini_harness.provider import FixtureProvider, ProviderFailure
 from mini_harness.provider.contract import AssistantTurn, ToolSpec
@@ -278,9 +278,7 @@ async def test_an_overflow_closes_the_segment_not_the_session(tmp_path: Path) ->
     )
 
     assert start_session(prompt="x" * 20000, entry=ENTRY_RUN, env=env) is None
-    segment = await run_turn_segment(
-        env=env, segment_id="s1", first_turn_index=1, cancel=asyncio.Event()
-    )
+    segment = await run_turn(env=env, turn_id="s1", first_step_index=1, cancel=asyncio.Event())
 
     records = read_events(log.path)
     assert segment.stop_reason == "CONTEXT_WINDOW_EXCEEDED"
@@ -507,7 +505,7 @@ async def test_the_request_level_retry_records_the_context_it_actually_sent(
         max_turns=3,
     )
     records = read_events(log.path)
-    points = [point for point in assembly_points(records) if point.turn_id == "t2"]
+    points = [point for point in assembly_points(records) if point.step_id == "t2"]
 
     assert len(points) == 2
     for point in points:
@@ -727,7 +725,7 @@ async def test_the_compaction_record_has_the_keys_the_real_run_wrote(tmp_path: P
     )
 
     written = _records_of(log.path, "compaction/summary")[0]
-    # 真端点 fixture 是 v1 时代的载荷：`turn_id` 指 step 的 id，v2 里叫 `step_id`。
+    # 真端点 fixture 是 v1 时代的载荷：`step_id` 指 step 的 id，v2 里叫 `step_id`。
     expected_keys = {"step_id" if key == "turn_id" else key for key in real["payload"]}
     assert set(written.payload) == expected_keys
     assert set(written.payload["shadowed_range"]) == set(real["payload"]["shadowed_range"])

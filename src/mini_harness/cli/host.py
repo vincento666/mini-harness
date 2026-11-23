@@ -285,7 +285,7 @@ class HostServer:
             return web.json_response(
                 {
                     "queued": accepted.queued,
-                    "segment_id": accepted.segment_id,
+                    "segment_id": accepted.turn_id,
                     "cursor": handle.last_seq,
                 },
                 status=202,
@@ -317,7 +317,7 @@ class HostServer:
             return _error(404, "SESSION_NOT_FOUND", accepted.detail)
         return web.json_response(
             {
-                "segment_id": accepted.segment_id,
+                "segment_id": accepted.turn_id,
                 "cursor": handle.last_seq,
                 "queued": accepted.queued,
             },

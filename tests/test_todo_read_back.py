@@ -9,7 +9,7 @@ from typing import Any
 from mini_harness.config import build_registry
 from mini_harness.events.projection import project
 from mini_harness.events.reader import read_events
-from mini_harness.loop import ENTRY_RUN, end_session, run_turn_segment, start_session
+from mini_harness.loop import ENTRY_RUN, end_session, run_turn, start_session
 from mini_harness.provider import FixtureProvider
 from mini_harness.provider.contract import ToolCall
 from mini_harness.tools.dispatch import dispatch_tool_call
@@ -51,9 +51,7 @@ async def test_read_back_returns_the_last_table_without_writing_an_event(tmp_pat
         registry=build_registry(None),
     )
     assert start_session(prompt="两条待办", entry=ENTRY_RUN, env=env) is None
-    outcome = await run_turn_segment(
-        env=env, segment_id="s1", first_turn_index=1, cancel=asyncio.Event()
-    )
+    outcome = await run_turn(env=env, turn_id="s1", first_step_index=1, cancel=asyncio.Event())
     assert end_session(env=env, stop_reason=outcome.stop_reason, turns=outcome.turns) is None
 
     records = read_events(log.path)
@@ -79,11 +77,9 @@ async def test_read_back_is_empty_after_a_new_segment_starts(tmp_path: Path) -> 
         registry=build_registry(None),
     )
     assert start_session(prompt="第一段提交表", entry=ENTRY_RUN, env=env) is None
-    first = await run_turn_segment(
-        env=env, segment_id="s1", first_turn_index=1, cancel=asyncio.Event()
-    )
-    second = await run_turn_segment(
-        env=env, segment_id="s2", first_turn_index=first.turns + 1, cancel=asyncio.Event()
+    first = await run_turn(env=env, turn_id="s1", first_step_index=1, cancel=asyncio.Event())
+    second = await run_turn(
+        env=env, turn_id="s2", first_step_index=first.turns + 1, cancel=asyncio.Event()
     )
     assert end_session(env=env, stop_reason=second.stop_reason, turns=second.turns) is None
 

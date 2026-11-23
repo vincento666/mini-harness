@@ -15,8 +15,8 @@
 
 ## 2. 内核标识符（seam ①）
 
-- [ ] 2.1 `SegmentOutcome → TurnOutcome`、`run_turn_segment → run_turn`、`_run_turns → _run_steps`
-- [ ] 2.2 `segment_id → turn_id`、`turn_id → step_id`；`first_turn_index → first_step_index`
+- [x] 2.1 `SegmentOutcome → TurnOutcome`、`run_turn_segment → run_turn`、`_run_turns → _run_steps`
+- [x] 2.2 `segment_id → turn_id`、`turn_id → step_id`；`first_turn_index → first_step_index`（裸标识符；API JSON 键仍留旧名到 3.4）
 - [ ] 2.3 `RunOutcome.turns → steps`；`SessionSettings.max_turns → max_steps`；`STOP_MAX_TURNS → STOP_MAX_STEPS`
 - [ ] 2.4 `TurnDeltaSink → StepDeltaSink`；注释与 docstring 里的「段/回合」改「轮/步」
 

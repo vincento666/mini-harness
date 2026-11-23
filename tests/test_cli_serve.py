@@ -780,7 +780,7 @@ def test_ctrl_c_in_a_serve_subprocess_exits_with_five_without_a_dangling_colon(
 ) -> None:
     """seam ⑥ 1.9：serve 进程里真 Ctrl-C → 退出码 5、那一行含 `ABORTED` 且不以冒号结尾。
 
-    取消没有失败结果：`SegmentOutcome.detail` 不带「取消被置位」（design D6 已裁决），
+    取消没有失败结果：`TurnOutcome.detail` 不带「取消被置位」（design D6 已裁决），
     所以那一行只剩失败码，尾巴上不该挂一个冒号。
     """
     (tmp_path / "loop.py").write_text(_HANG_SCRIPT, encoding="utf-8")

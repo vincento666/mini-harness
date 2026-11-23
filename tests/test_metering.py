@@ -40,7 +40,7 @@ def test_four_buckets_are_summed() -> None:
 
     turns, total = collect_usage(records)
 
-    assert [turn.turn_id for turn in turns] == ["t1", "t2"]
+    assert [turn.step_id for turn in turns] == ["t1", "t2"]
     # 适配器的 input_tokens 已是未缓存部分；命中单列在 cache_read。
     assert total.input_uncached == 150
     assert total.cache_read == 20
@@ -70,7 +70,7 @@ def test_a_turn_without_usage_is_skipped() -> None:
 
     turns, total = collect_usage(records)
 
-    assert [turn.turn_id for turn in turns] == ["t2"]
+    assert [turn.step_id for turn in turns] == ["t2"]
     assert total.input_uncached == 5
 
 

@@ -20,7 +20,7 @@ from mini_harness.loop import (
     SessionSettings,
     end_session,
     run_session,
-    run_turn_segment,
+    run_turn,
     start_session,
 )
 from mini_harness.provider import AssistantTurn, FixtureProvider, Provider, ProviderFailure
@@ -90,11 +90,9 @@ async def test_two_segments_number_segments_and_turns_continuously(tmp_path: Pat
     )
 
     assert start_session(prompt="第一条输入", entry=ENTRY_RUN, env=env) is None
-    first = await run_turn_segment(
-        env=env, segment_id="s1", first_turn_index=1, cancel=asyncio.Event()
-    )
-    second = await run_turn_segment(
-        env=env, segment_id="s2", first_turn_index=first.turns + 1, cancel=asyncio.Event()
+    first = await run_turn(env=env, turn_id="s1", first_step_index=1, cancel=asyncio.Event())
+    second = await run_turn(
+        env=env, turn_id="s2", first_step_index=first.turns + 1, cancel=asyncio.Event()
     )
     assert end_session(env=env, stop_reason=second.stop_reason, turns=second.turns) is None
 
@@ -131,9 +129,7 @@ async def test_a_serve_entry_session_is_one_segment_closed_on_disk(tmp_path: Pat
     )
 
     assert start_session(prompt="第一条输入", entry=ENTRY_SERVE, env=env) is None
-    segment = await run_turn_segment(
-        env=env, segment_id="seg-1", first_turn_index=1, cancel=asyncio.Event()
-    )
+    segment = await run_turn(env=env, turn_id="seg-1", first_step_index=1, cancel=asyncio.Event())
     assert end_session(env=env, stop_reason=segment.stop_reason, turns=segment.turns) is None
 
     records = read_events(log.path)
@@ -161,8 +157,8 @@ async def test_each_turn_is_closed_before_the_next_one_starts(tmp_path: Path) ->
     assert len(starts) == 3
     assert len(ends) == 3
     assert all(ends[index] < starts[index + 1] for index in range(2))
-    turn_ids = [record.payload["step_id"] for record in records if record.type == "step/start"]
-    assert len(set(turn_ids)) == 3
+    step_ids = [record.payload["step_id"] for record in records if record.type == "step/start"]
+    assert len(set(step_ids)) == 3
 
 
 async def test_a_log_that_becomes_unwritable_ends_the_run_as_a_failure_result(
@@ -347,8 +343,8 @@ class _DeltaProvider:
 async def test_the_turn_loop_passes_a_delta_sink_to_the_provider(tmp_path: Path) -> None:
     seen: list[tuple[str, str]] = []
 
-    async def sink(turn_id: str, text: str) -> None:
-        seen.append((turn_id, text))
+    async def sink(step_id: str, text: str) -> None:
+        seen.append((step_id, text))
 
     provider = _DeltaProvider()
     log, _ = await run_session_fixture(
@@ -388,8 +384,8 @@ async def test_a_provider_aborted_stream_turn_ends_aborted(tmp_path: Path) -> No
     cancel = asyncio.Event()
     seen: list[tuple[str, str]] = []
 
-    async def sink(turn_id: str, text: str) -> None:
-        seen.append((turn_id, text))
+    async def sink(step_id: str, text: str) -> None:
+        seen.append((step_id, text))
 
     log, outcome = await run_session_fixture(
         tmp_path,
@@ -476,8 +472,8 @@ async def test_a_cancel_during_stream_aborts_without_a_model_response(tmp_path: 
     cancel = asyncio.Event()
     seen: list[tuple[str, str]] = []
 
-    async def sink(turn_id: str, text: str) -> None:
-        seen.append((turn_id, text))
+    async def sink(step_id: str, text: str) -> None:
+        seen.append((step_id, text))
 
     log, outcome = await run_session_fixture(
         tmp_path,

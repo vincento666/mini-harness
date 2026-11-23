@@ -7,7 +7,7 @@ from pathlib import Path
 
 from mini_harness.events import EventRecord, read_events
 from mini_harness.events.fold import fold
-from mini_harness.loop import ENTRY_RUN, ENTRY_SERVE, end_session, run_turn_segment, start_session
+from mini_harness.loop import ENTRY_RUN, ENTRY_SERVE, end_session, run_turn, start_session
 from mini_harness.provider import FixtureProvider
 from mini_harness.tools.fences import ApprovalDecision
 from tool_harness import (
@@ -64,7 +64,7 @@ async def test_a_timed_out_call_does_not_stop_the_rest_of_the_batch(tmp_path: Pa
     assert isinstance(records, list)
     assert result_outcomes(records) == [("c1", "TOOL_TIMEOUT"), ("c2", "OK")]
 
-    # 1.3 的 payload 形状：只有 `turn_id` 与 `tool_call_id`，不带命令输出。
+    # 1.3 的 payload 形状：只有 `step_id` 与 `tool_call_id`，不带命令输出。
     assert len(_cancelled(records)) == 1
     assert _cancelled(records)[0].payload["tool_call_id"] == "c1"
     assert set(_cancelled(records)[0].payload) == {"step_id", "tool_call_id"}
@@ -441,7 +441,7 @@ async def test_a_cancel_closes_the_segment_and_the_entry_closes_the_session(tmp_
     )
 
     assert start_session(prompt="任务", entry=ENTRY_RUN, env=env) is None
-    segment = await run_turn_segment(env=env, segment_id="s1", first_turn_index=1, cancel=cancel)
+    segment = await run_turn(env=env, turn_id="s1", first_step_index=1, cancel=cancel)
 
     records = read_events(log.path)
     assert segment.stop_reason == "ABORTED"

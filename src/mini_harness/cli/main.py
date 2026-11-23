@@ -51,14 +51,14 @@ from mini_harness.loop import (
     STOP_REASONS,
     STOP_TOOL_CALLS,
     RunOutcome,
-    SegmentOutcome,
     SessionEntry,
     SessionEnv,
     SessionSettings,
+    TurnOutcome,
     end_session,
     next_goal_round,
     run_session,
-    run_turn_segment,
+    run_turn,
     settle_segment,
     start_session,
 )
@@ -531,7 +531,7 @@ def _print_new_replies(log: EventLog, printed: int) -> int | LogReadFailure:
 _SEGMENT_NOTE_SUPPRESSED = frozenset({STOP_MODEL_COMPLETED})
 
 
-def _print_segment_note(segment: SegmentOutcome) -> None:
+def _print_segment_note(segment: TurnOutcome) -> None:
     """段级收尾给人一行（design D5）：走 stderr，不是日志的投影，也不写进日志。
 
     组装规则是 design D3：停止理由 → 与它**不同**的 `code` → 非空 `detail`，一律不截断。
@@ -683,7 +683,7 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
     previous_stop_reason: str | None = None
     said_cannot_come_down = False
 
-    def finish() -> SegmentOutcome | None:
+    def finish() -> TurnOutcome | None:
         """会话收尾：先换一个什么都不做的处理器，再写 `session/end`（design D7）。
 
         收尾已经开始就走完——`session/end` 不会被写成半条，也不留未捕获异常。
@@ -735,10 +735,10 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
                     cancel = asyncio.Event()
                     signals.active = cancel
                     try:
-                        segment = await run_turn_segment(
+                        segment = await run_turn(
                             env=env,
-                            segment_id=f"s{segments}",
-                            first_turn_index=turn_index,
+                            turn_id=f"s{segments}",
+                            first_step_index=turn_index,
                             cancel=cancel,
                             user_message=None if goal_round is not None else text,
                             goal_round=goal_round,
@@ -872,7 +872,7 @@ def _replay(args: argparse.Namespace) -> int:
         # 折叠入参只从该点之前的事实派生：工具块与追加段都在 `session/start` 里，
         # 回放侧不存在「进程内注册表」这个第二真源。
         recomputed = fold(point.prefix)
-        if assembled_payload(point.turn_id, recomputed) != point.record.payload:
+        if assembled_payload(point.step_id, recomputed) != point.record.payload:
             return _report_failure(
                 "REPLAY_MISMATCH",
                 f"error/replay seq={point.record.seq} 的 context/assembled 与其前缀的重算不一致",
@@ -977,7 +977,7 @@ def _usage(args: argparse.Namespace) -> int:
             if pricing is not None:
                 cost = round(pricing.cost(total), 6)
     payload = {
-        "turns": [{"turn_id": turn.turn_id, **turn.usage.as_dict()} for turn in turns],
+        "turns": [{"turn_id": turn.step_id, **turn.usage.as_dict()} for turn in turns],
         "total": total.as_dict(),
         "cost": cost,
     }

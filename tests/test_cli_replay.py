@@ -64,7 +64,7 @@ async def test_replay_is_equal_with_and_without_streaming(tmp_path: Path) -> Non
     )
     seen: list[str] = []
 
-    async def sink(turn_id: str, text: str) -> None:
+    async def sink(step_id: str, text: str) -> None:
         seen.append(text)
 
     stream_log, _ = await run_session_fixture(

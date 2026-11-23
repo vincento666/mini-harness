@@ -530,7 +530,7 @@ async def test_a_fold_with_no_tools_still_matches_replay(tmp_path: Path) -> None
         if record.type != "context/assembled":
             continue
         points += 1
-        # 记录里多带一个 `turn_id`：那是「哪一回合记录的」，不是上下文的一部分。
+        # 记录里多带一个 `step_id`：那是「哪一回合记录的」，不是上下文的一部分。
         recorded = {key: value for key, value in record.payload.items() if key != "step_id"}
         assert fold(records[:index]).model_dump(mode="json") == recorded
     assert points == 1
@@ -796,7 +796,7 @@ def test_assembly_points_carry_their_own_prefix_and_turn_id() -> None:
     points = assembly_points(records)
 
     assert [point.record.seq for point in points] == [3, 8]
-    assert [point.turn_id for point in points] == ["t1", "t2"]
+    assert [point.step_id for point in points] == ["t1", "t2"]
     # 前缀止于该点之前：该点自己与它之后的事件都不算进来。
     assert [record.seq for record in points[0].prefix] == [0, 1, 2]
     assert [record.seq for record in points[1].prefix] == [0, 1, 2, 3, 4, 5, 6, 7]
@@ -809,7 +809,7 @@ def test_an_assembly_point_without_a_turn_start_carries_an_empty_turn_id() -> No
         _rec(1, "context/assembled", {"step_id": "", "messages": []}),
     ]
 
-    assert [point.turn_id for point in assembly_points(records)] == [""]
+    assert [point.step_id for point in assembly_points(records)] == [""]
 
 
 def _range_events() -> list[EventRecord]:

@@ -216,10 +216,10 @@ def test_a_segment_that_uses_up_max_turns_returns_to_the_prompt(tmp_path: Path) 
     assert [segment["stop_reason"] for segment in segments] == ["MAX_TURNS", "MAX_TURNS"]
     assert [segment["steps"] for segment in segments] == [2, 2]
     # 回合编号在整个会话里连续：第二个段从 t3 起，不重置。
-    turn_ids = [
+    step_ids = [
         record["payload"]["step_id"] for record in records if record["type"] == "step/start"
     ]
-    assert turn_ids == ["t1", "t2", "t3", "t4"]
+    assert step_ids == ["t1", "t2", "t3", "t4"]
     assert records[-1]["type"] == "session/end"
 
 
@@ -305,10 +305,10 @@ def test_a_provider_failure_inside_a_segment_leaves_the_session_running(tmp_path
         ("s1", "PROVIDER_ERROR"),
         ("s2", "PROVIDER_ERROR"),
     ]
-    turn_ids = [
+    step_ids = [
         record["payload"]["step_id"] for record in records if record["type"] == "step/start"
     ]
-    assert turn_ids == ["t1", "t2", "t3", "t4"]
+    assert step_ids == ["t1", "t2", "t3", "t4"]
     assert records[-1]["type"] == "session/end"
     assert records[-1]["payload"]["stop_reason"] == "MODEL_COMPLETED"
 

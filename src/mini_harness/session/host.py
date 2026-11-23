@@ -33,7 +33,7 @@ from mini_harness.loop import (
     SessionSettings,
     end_session,
     next_goal_round,
-    run_turn_segment,
+    run_turn,
     settle_segment,
     start_session,
 )
@@ -245,11 +245,11 @@ class HostSession:
         for queue in list(self.event_subscribers):
             queue.put_nowait(record)
 
-    async def publish_delta(self, turn_id: str, text: str) -> None:
+    async def publish_delta(self, step_id: str, text: str) -> None:
         """把一个正文增量广播给当前所有订阅者；慢读者丢最旧，不反压 provider。"""
-        index = self.delta_indexes.get(turn_id, 0)
-        self.delta_indexes[turn_id] = index + 1
-        frame: dict[str, object] = {"turn_id": turn_id, "index": index, "text": text}
+        index = self.delta_indexes.get(step_id, 0)
+        self.delta_indexes[step_id] = index + 1
+        frame: dict[str, object] = {"turn_id": step_id, "index": index, "text": text}
         for queue in list(self.subscribers):
             if queue.full():
                 with contextlib.suppress(asyncio.QueueEmpty):
@@ -425,9 +425,9 @@ def resolve_approval(handle: HostSession, tool_call_id: str, *, approve: bool) -
 
 @dataclass(frozen=True)
 class MessageAccepted:
-    """一次 `POST /messages` 的结果：直接起段时带 `segment_id`，排队时为 `None`。"""
+    """一次 `POST /messages` 的结果：直接起段时带 `turn_id`，排队时为 `None`。"""
 
-    segment_id: str | None
+    turn_id: str | None
     queued: bool
 
 
@@ -462,9 +462,9 @@ def submit_message(handle: HostSession, content: str) -> MessageAccepted | Failu
         if handle.queue:
             return Failure("SESSION_BUSY", "会话的待跑队列已满", EXIT_INVALID_ARGUMENT)
         handle.queue.append(content)
-        return MessageAccepted(segment_id=None, queued=True)
-    segment_id = _begin_segment(handle, content)
-    return MessageAccepted(segment_id=segment_id, queued=False)
+        return MessageAccepted(turn_id=None, queued=True)
+    turn_id = _begin_segment(handle, content)
+    return MessageAccepted(turn_id=turn_id, queued=False)
 
 
 def _begin_segment(
@@ -473,17 +473,17 @@ def _begin_segment(
     goal_round: GoalRound | None = None,
 ) -> str:
     handle.segments += 1
-    segment_id = f"s{handle.segments}"
+    turn_id = f"s{handle.segments}"
     handle.status = SESSION_RUNNING
     cancel = asyncio.Event()
     handle.cancel = cancel
-    handle.task = asyncio.create_task(_run_segment(handle, segment_id, content, cancel, goal_round))
-    return segment_id
+    handle.task = asyncio.create_task(_run_segment(handle, turn_id, content, cancel, goal_round))
+    return turn_id
 
 
 async def _run_segment(
     handle: HostSession,
-    segment_id: str,
+    turn_id: str,
     content: str | None,
     cancel: asyncio.Event,
     goal_round: GoalRound | None = None,
@@ -491,10 +491,10 @@ async def _run_segment(
     failed = False
     decision = None
     try:
-        segment = await run_turn_segment(
+        segment = await run_turn(
             env=handle.env,
-            segment_id=segment_id,
-            first_turn_index=handle.turns + 1,
+            turn_id=turn_id,
+            first_step_index=handle.turns + 1,
             cancel=cancel,
             user_message=None if goal_round is not None else content,
             goal_round=goal_round,

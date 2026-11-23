@@ -8,7 +8,7 @@ from typing import Any
 
 from mini_harness.events import read_events
 from mini_harness.goals import message_source_of
-from mini_harness.loop import ENTRY_RUN, end_session, run_turn_segment, start_session
+from mini_harness.loop import ENTRY_RUN, end_session, run_turn, start_session
 from mini_harness.provider import FixtureProvider
 from mini_harness.tools import ToolRegistry
 from tool_harness import build_session_env
@@ -27,8 +27,8 @@ def _env(tmp_path: Path) -> Any:
 async def test_default_source_is_human(tmp_path: Path) -> None:
     log, env = _env(tmp_path)
     assert start_session(prompt="开始", entry=ENTRY_RUN, env=env) is None
-    outcome = await run_turn_segment(
-        env=env, segment_id="s1", first_turn_index=1, cancel=asyncio.Event(), user_message="开始"
+    outcome = await run_turn(
+        env=env, turn_id="s1", first_step_index=1, cancel=asyncio.Event(), user_message="开始"
     )
     assert end_session(env=env, stop_reason=outcome.stop_reason, turns=outcome.turns) is None
 
@@ -40,10 +40,10 @@ async def test_goal_source_is_recorded_verbatim(tmp_path: Path) -> None:
     log, env = _env(tmp_path)
     assert start_session(prompt="开始", entry=ENTRY_RUN, env=env) is None
     source = {"kind": "goal", "goal_id": "g1", "revision": 1, "round": 1}
-    outcome = await run_turn_segment(
+    outcome = await run_turn(
         env=env,
-        segment_id="s1",
-        first_turn_index=1,
+        turn_id="s1",
+        first_step_index=1,
         cancel=asyncio.Event(),
         user_message="<goal_round>",
         message_source=source,
