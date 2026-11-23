@@ -1,6 +1,6 @@
 # 当前状态
 
-**更新：2026-11-20**。以 `git status --short` 与 `git log --oneline -3` 为准；本文件只写「现在」，历史在 `docs/CURRENT-history.md`、`docs/verification/` 与 `openspec/changes/archive/`。
+**更新：2026-11-23**。以 `git status --short` 与 `git log --oneline -3` 为准；本文件只写「现在」，历史在 `docs/CURRENT-history.md`、`docs/verification/` 与 `openspec/changes/archive/`。
 
 ## 现在
 
@@ -40,6 +40,7 @@
 ## 地图
 
 - 里程碑与执行顺序：`docs/roadmap.md`　· 八阶段：`docs/stage-map.md`
+- 运行时教学模型：`docs/reference/runtime-layers-and-control-plane.md`　· 目标轮次：`docs/reference/goal-rounds.md`
 - 教训：`docs/lessons.md`（只读 Active；归档 `docs/lessons-archive.md` 不读）
 - 流程与升级清单：`docs/process/devops-loop.md`（推理账 `docs/process/devops-loop-rationale.md`，改流程时才读）
 - 延后重构账：`docs/adr/0002-deferred-refactors.md`

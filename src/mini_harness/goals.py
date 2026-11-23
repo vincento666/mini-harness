@@ -106,7 +106,7 @@ class GoalRuntime:
     """进程内状态：武装位与「连续空转轮数」。永不落盘（design D5）。"""
 
     armed: bool = False
-    # 连续多少个 goal 轮次零工具调用；有任何动作或人类段插入都不清零，
+    # 连续多少个 goal 轮次零工具调用；有任何动作或人类段插入都清零，
     # 由 `settle_segment` 维护。只有 `stall_rounds > 0` 时才有意义。
     idle_rounds: int = 0
 
@@ -131,7 +131,7 @@ def render_goal_round(goal: GoalSnapshot, round_number: int) -> str:
     """goal 来源消息的正文（spec：`<goal_round>` 块，至少 `Objective` 与 `Round` 两行）。
 
     末行是终局约束（D14）：本轮必须留下一个可观察的动作，不能只用文字宣告完成。
-    模型仍可能不照做，所以驱动侧另有零工具调用的停滞熔断；提示词只是第一道。
+    模型仍可能不照做，所以驱动侧另有「连续零工具调用」的停滞闸门；提示词只是第一道。
     """
     return (
         "<goal_round>\n"
@@ -140,7 +140,7 @@ def render_goal_round(goal: GoalSnapshot, round_number: int) -> str:
         "以工作区、工具结果与持久状态为准：完成前取证。\n"
         "本轮结束前必须三选一：完成则调用 update_goal 标 complete；已达阻塞门槛则调用 "
         "update_goal 标 blocked；否则现在就执行下一步的具体动作。只复述计划、不调用任何"
-        "工具，会被视为停滞并停止自动推进。\n"
+        "工具会被记为停滞；连续两轮如此将停止自动推进。\n"
         "</goal_round>"
     )
 

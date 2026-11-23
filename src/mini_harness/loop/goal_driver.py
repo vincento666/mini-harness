@@ -51,8 +51,9 @@ def next_round(
     把控制权交回人类；目标保持 `active` 与武装，人的回答段结束后自动继续（D13）。
 
     `stall_rounds > 0` 时，连续这么多轮 goal 轮次零工具调用就停自动推进（不改相位，
-    只解除武装，D14）。默认 `0` 表示关闭——对齐 DSH：完成只由模型 `complete` 声明，
-    空转不是停的理由。它只看 goal 轮次；人类段本来就可以是一句纯回答。
+    只解除武装，D14）。**本参数**缺省 `0`（不给即关闭）；部署策略 `[goal] stall_rounds`
+    的缺省是 `2`，由 `settle_segment` 传进来。`0` 完全对齐 DSH：完成只由模型
+    `complete` 声明，空转不是停的理由。它只看 goal 轮次；人类段本来就可以是一句纯回答。
     """
     if goal is None or goal.phase != "active" or not armed:
         return RoundDecision("stop", goal)

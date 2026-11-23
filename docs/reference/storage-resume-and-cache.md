@@ -23,6 +23,46 @@ JSONL 日志 = 唯一真源
 - 跳版返回 `SCHEMA_UNSUPPORTED`，不改日志；
 - 迁移只改内存副本。
 
+### 2.1 上迁（upcast）是什么
+
+**上迁 = 读的时候把旧版本的记录翻译成当前形状，磁盘上的字节一个都不动。** 它是 append-only 日志的标配：日志是证据，重写历史会让「回放」和「审计」失去可信度；翻译放在读取入口（`read_events` / `LogTail` 共用的 `_records_from_lines`），一次翻译，下游只看见一种形状。
+
+```text
+磁盘（v1 行保持原样）
+  └─ read_events → EventRecord(v1) → migrate_schema → _upcast_v1 → EventRecord(v2)
+                                                                    │
+                                              fold / 投影 / replay / SSE 只看见 v2
+```
+
+### 2.2 为什么 C 方案必须升到 `SCHEMA_VERSION = 2`
+
+改名不是「加几个别名」那么简单，因为**同一个字符串在两版里意思相反**：
+
+| v1 名字 | v1 含义 | v2 名字 | v2 含义 |
+|---|---|---|---|
+| `segment/start` | 段 | `turn/start` | 段 |
+| `turn/start` | 回合 | `step/start` | 回合 |
+
+如果只把旧名留在词表里当同义词，读到一条 `turn/start` 就无法判断它是「v1 的回合」还是「v2 的段」——**不是不认识，而是认错**。所以版本号在这里不是可选的元数据，而是消歧的唯一依据。
+
+`_upcast_v1` 按**一张映射表、逐条记录**翻译，不能做两遍字符串替换（`segment→turn` 的产物会被第二遍 `turn→step` 再改一次，全部塌成 `step`）：
+
+- 类型：`segment/start|end → turn/start|end`；`turn/start|end → step/start|end`；
+- 键：`segment_id → turn_id`；`turn_id → step_id`；`turns → steps`；
+- `seq` / `ts` / `session_id` / payload 里的值不变。
+
+### 2.3 词表拆成两套
+
+- `CONCRETE_EVENT_TYPES`：**只放 v2 名字**，新写入的唯一合法集；
+- `LEGACY_EVENT_TYPES`：只放 v1 名字，**只允许读**，交给上迁；
+- `is_known_type` 对两套都真（读侧校验），`is_current_type` 只认 v2（写侧校验）。
+
+这样内部只有一种形状，投影与 replay 不用到处分支。代价是兼容窗口内两套名字都在代码里，测试要同时覆盖「v1 能读」与「v2 才写」。
+
+### 2.4 混合文件与删除点
+
+信封有逐行 `schema_version`，所以同一文件里 v1/v2 混排也能逐行翻译；新追加永远写 v2。删除兼容层的条件（design D4，三条同时成立）：距合并至少两个里程碑、`sessions/` 下不再有需要 `replay` 的 v1 日志、没有外部消费者依赖 v1 事件名。删除时 `LEGACY_EVENT_TYPES`、`_upcast_v1`、旧 CLI/配置别名一起删，`SCHEMA_VERSION` 不动——v1 变成「不支持」，读到即 `SchemaUnsupported`。
+
 ## 3. fold 缓存到底是什么
 
 ```text

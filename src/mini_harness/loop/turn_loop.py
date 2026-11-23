@@ -1003,7 +1003,7 @@ async def run_turn_segment(
     `message_source` 区分这条输入是人打的还是目标轮次注入的（M13）：缺省 `{"kind": "user"}`。
 
     `goal_round` 是 goal 轮次的唯一入口：正文与来源都由它派生，且由 `_run_turns` 在首条
-    `turn/start` 之后补写 `goal/updated`（额度那时才消耗，design D3）。
+    `context/assembled` 之后与它同批补写 `goal/updated`（装配成功才消耗额度，ADR-0043）。
     """
     # 段首清空：上一段没答完的问题不带进新段（与 `todos` 的段作用域同一条边界）。
     env.questions.pending = None

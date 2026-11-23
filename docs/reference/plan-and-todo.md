@@ -63,7 +63,7 @@
 | 段 | 一条输入展开的那串回合 | turn | `segment/start` 清空 |
 | 轮 | 一次目标驱动的段 | goal round（就是一次 admitted user-message turn） | 同段，清空 |
 
-所以 goal 轮次与普通对话在表上没有区别：**每轮开头都是空表**。跨轮连续性不靠表——靠目标、工作区与（可能被压缩的）历史；表是「这一轮的常备计划」。详见 `docs/verification/m13-goal-rounds-dsh-review.md` D.7.2。
+所以 goal 轮次与普通对话在表上没有区别：**每轮开头都是空表**。跨轮连续性不靠表——靠目标、工作区与（可能被压缩的）历史；表是「这一轮的常备计划」。详见 `docs/verification/m13-goal-rounds-dsh-review.md` D.7.2；轮次本身的形状、判定与收尾见 [`goal-rounds.md`](goal-rounds.md)。
 
 ## 3. 决策与依据
 
