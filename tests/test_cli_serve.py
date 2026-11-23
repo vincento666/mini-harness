@@ -630,7 +630,7 @@ def test_budget_overflow_in_serve_is_a_process_exit(tmp_path: Path) -> None:
     types = [record["type"] for record in records]
     assert result.returncode == 4
     assert "CONTEXT_WINDOW_EXCEEDED" in result.stderr
-    assert types[-4:] == ["error/context", "turn/end", "segment/end", "session/end"]
+    assert types[-4:] == ["error/context", "step/end", "turn/end", "session/end"]
     assert records[-4]["payload"]["code"] == "CONTEXT_WINDOW_EXCEEDED"
     assert result.stdout.splitlines() == [_log_files(tmp_path)[0].stem]
 
@@ -762,7 +762,7 @@ def test_sigint_in_a_serve_subprocess_exits_with_five(tmp_path: Path) -> None:
     assert not lines[0].rstrip().endswith(":"), f"那一行不带悬空冒号：{lines[0]!r}"
     assert "ABORTED" not in stdout, "stdout 归 session id，那一行不在它上面"
     assert "Traceback" not in stderr
-    assert types[-4:] == ["error/abort", "turn/end", "segment/end", "session/end"]
+    assert types[-4:] == ["error/abort", "step/end", "turn/end", "session/end"]
     assert records[-1]["payload"]["stop_reason"] == "ABORTED"
 
 
@@ -846,7 +846,7 @@ def test_ctrl_c_in_a_serve_subprocess_exits_with_five_without_a_dangling_colon(
     assert process.returncode == 5
     assert "Traceback" not in stderr
     types = [record["type"] for record in records]
-    assert types[-4:] == ["error/abort", "turn/end", "segment/end", "session/end"]
+    assert types[-4:] == ["error/abort", "step/end", "turn/end", "session/end"]
     assert records[-1]["payload"]["stop_reason"] == "ABORTED"
 
 

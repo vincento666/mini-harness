@@ -67,9 +67,9 @@ async def test_a_timed_out_call_does_not_stop_the_rest_of_the_batch(tmp_path: Pa
     # 1.3 的 payload 形状：只有 `turn_id` 与 `tool_call_id`，不带命令输出。
     assert len(_cancelled(records)) == 1
     assert _cancelled(records)[0].payload["tool_call_id"] == "c1"
-    assert set(_cancelled(records)[0].payload) == {"turn_id", "tool_call_id"}
+    assert set(_cancelled(records)[0].payload) == {"step_id", "tool_call_id"}
 
-    turn_end = [record for record in records if record.type == "turn/end"]
+    turn_end = [record for record in records if record.type == "step/end"]
     assert [record.payload["stop_reason"] for record in turn_end] == [
         "TOOL_CALLS",
         "MODEL_COMPLETED",
@@ -111,7 +111,7 @@ async def test_a_cancel_interrupts_the_call_that_is_running(tmp_path: Path) -> N
     assert result_outcomes(records) == [("c1", "TOOL_CANCELLED")]
     assert call_ids(records, "tool/cancelled") == ["c1"]
     assert [record.type for record in records if record.type == "error/abort"] == ["error/abort"]
-    turn_end = [record for record in records if record.type == "turn/end"]
+    turn_end = [record for record in records if record.type == "step/end"]
     assert [record.payload["stop_reason"] for record in turn_end] == ["ABORTED"]
     assert records[-1].type == "session/end"
     assert records[-1].payload["stop_reason"] == "ABORTED"
@@ -197,13 +197,13 @@ async def test_the_undispatched_call_gets_no_tool_cancelled(tmp_path: Path) -> N
     types = [record.type for record in records]
     last_result = max(index for index, name in enumerate(types) if name == "tool/result")
     abort = types.index("error/abort")
-    turn_end = types.index("turn/end")
+    turn_end = types.index("step/end")
     assert last_result < abort < turn_end < len(types) - 1
     assert types[-1] == "session/end"
     assert [
         record.payload["stop_reason"]
         for record in records
-        if record.type in {"turn/end", "session/end"}
+        if record.type in {"step/end", "session/end"}
     ] == ["ABORTED", "ABORTED"]
 
 
@@ -414,8 +414,8 @@ async def test_a_cancel_arrives_while_the_human_is_being_asked(tmp_path: Path) -
     assert [record.payload["tool_call_id"] for record in _cancelled(records)] == ["c1"]
     assert [record.type for record in records][-4:] == [
         "error/abort",
+        "step/end",
         "turn/end",
-        "segment/end",
         "session/end",
     ]
     assert outcome.stop_reason == "ABORTED"
@@ -423,7 +423,7 @@ async def test_a_cancel_arrives_while_the_human_is_being_asked(tmp_path: Path) -
 
 
 async def test_a_cancel_closes_the_segment_and_the_entry_closes_the_session(tmp_path: Path) -> None:
-    """取消终止当前段：段写 `segment/end(ABORTED)` 就停，会话怎么收尾归入口（ADR-0011）。
+    """取消终止当前段：段写 `turn/end(ABORTED)` 就停，会话怎么收尾归入口（ADR-0011）。
 
     一次性 run 的入口补写 `session/end` 并映射退出码 5，那条判据在 `tests/test_cli_run.py`。
     """
@@ -445,12 +445,12 @@ async def test_a_cancel_closes_the_segment_and_the_entry_closes_the_session(tmp_
 
     records = read_events(log.path)
     assert segment.stop_reason == "ABORTED"
-    assert [record.type for record in records][-3:] == ["error/abort", "turn/end", "segment/end"]
+    assert [record.type for record in records][-3:] == ["error/abort", "step/end", "turn/end"]
     assert "session/end" not in [record.type for record in records]
     assert records[-1].payload == {
-        "segment_id": "s1",
+        "turn_id": "s1",
         "stop_reason": "ABORTED",
-        "turns": 1,
+        "steps": 1,
         "tool_calls": 0,
     }
 
@@ -491,8 +491,8 @@ async def test_a_cancel_at_the_serve_entry_closes_the_session_the_same_way(
     assert records[0].payload["entry"] == "serve"
     assert [record.type for record in records][-4:] == [
         "error/abort",
+        "step/end",
         "turn/end",
-        "segment/end",
         "session/end",
     ]
     assert records[-1].payload["stop_reason"] == "ABORTED"

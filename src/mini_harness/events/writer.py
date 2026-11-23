@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from mini_harness.events.record import SCHEMA_VERSION, EventRecord
-from mini_harness.events.vocabulary import is_known_type
+from mini_harness.events.vocabulary import is_current_type
 
 
 class LogWriteFailure:
@@ -76,7 +76,7 @@ class EventLog:
         return cls.open(session_dir, session_id)
 
     def append(self, event_type: str, payload: dict[str, Any]) -> EventRecord | LogWriteFailure:
-        if not is_known_type(event_type):
+        if not is_current_type(event_type):
             payload = {"unrecognized_type": event_type, **payload}
             event_type = "error/internal"
         record = EventRecord(

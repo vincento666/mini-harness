@@ -198,7 +198,7 @@ def _append_all(
 class InternalFailure:
     """执行段逃出来的异常：不是工具的结果，是内核自己的故障。
 
-    `code` 故意在 `StopReason` 词表外——写不出 `turn/end`，也就不写；它走 `error/internal`。
+    `code` 故意在 `StopReason` 词表外——写不出 `step/end`，也就不写；它走 `error/internal`。
     """
 
     code: str
@@ -209,8 +209,8 @@ class InternalFailure:
 def _segment_failure(
     failure: LogWriteFailure | LogReadFailure | InternalFailure, turns: int
 ) -> SegmentOutcome:
-    """内核失败作为段的结果。`stop_reason` 取失败码，它不是 `turn/end` 的词表值：
-    内核坏了就写不出 `turn/end`，也就写不出 `segment/end`。"""
+    """内核失败作为段的结果。`stop_reason` 取失败码，它不是 `step/end` 的词表值：
+    内核坏了就写不出 `step/end`，也就写不出 `turn/end`。"""
     return SegmentOutcome(
         stop_reason=failure.code,
         turns=turns,
@@ -307,7 +307,7 @@ def _todo_event_payload(call: ToolCall, outcome: str) -> dict[str, Any] | None:
 def _approval_request_payload(turn_id: str, call: ToolCall) -> dict[str, Any]:
     """`approval/request` 的形状；计划复核额外带 `purpose` 与计划正文（M14c）。"""
     payload: dict[str, Any] = {
-        "turn_id": turn_id,
+        "step_id": turn_id,
         "tool_call_id": call.id,
         "name": call.name,
         "arguments": call.arguments,
@@ -409,7 +409,7 @@ async def _dispatch_batch(
             [
                 (
                     "error/internal",
-                    {"turn_id": turn_id, "tool_call_id": call.id, "detail": detail},
+                    {"step_id": turn_id, "tool_call_id": call.id, "detail": detail},
                 )
             ],
         )
@@ -431,14 +431,14 @@ async def _dispatch_batch(
                 (
                     "approval/response",
                     {
-                        "turn_id": turn_id,
+                        "step_id": turn_id,
                         "tool_call_id": call.id,
                         "decision": dispatched.approval,
                     },
                 )
             )
         result_payload: dict[str, Any] = {
-            "turn_id": turn_id,
+            "step_id": turn_id,
             "tool_call_id": call.id,
             "outcome": dispatched.result.outcome,
             "content": dispatched.result.content,
@@ -464,7 +464,7 @@ async def _dispatch_batch(
             written.append(
                 (
                     "tool/cancelled",
-                    {"turn_id": turn_id, "tool_call_id": call.id},
+                    {"step_id": turn_id, "tool_call_id": call.id},
                 )
             )
         if dispatched.fence_code is not None:
@@ -472,7 +472,7 @@ async def _dispatch_batch(
                 (
                     "error/fence",
                     {
-                        "turn_id": turn_id,
+                        "step_id": turn_id,
                         "tool_call_id": call.id,
                         "code": dispatched.fence_code,
                         "path": dispatched.path,
@@ -588,7 +588,7 @@ def _retry_events(
 ) -> list[tuple[str, dict[str, Any]]]:
     """重试事实随结果回到回合循环，由循环写进日志（不变量 A）。"""
     return [
-        ("model/retry", {"turn_id": turn_id, "attempt": attempt.attempt, "status": attempt.status})
+        ("model/retry", {"step_id": turn_id, "attempt": attempt.attempt, "status": attempt.status})
         for attempt in turn.attempts
     ]
 
@@ -609,8 +609,8 @@ def _abort_turn(log: EventLog, turn_id: str, turns: int) -> SegmentOutcome:
     failure = _append_all(
         log,
         [
-            ("error/abort", {"turn_id": turn_id, "code": STOP_ABORTED, "detail": "取消被置位"}),
-            ("turn/end", {"turn_id": turn_id, "stop_reason": STOP_ABORTED}),
+            ("error/abort", {"step_id": turn_id, "code": STOP_ABORTED, "detail": "取消被置位"}),
+            ("step/end", {"step_id": turn_id, "stop_reason": STOP_ABORTED}),
         ],
     )
     if failure is not None:
@@ -625,7 +625,7 @@ async def _provider_error(
     turns: int,
     retry_events: Sequence[tuple[str, dict[str, Any]]],
 ) -> SegmentOutcome:
-    """provider 失败作为**回合**收尾：`error/model` + `turn/end`（design D7）。
+    """provider 失败作为**回合**收尾：`error/model` + `step/end`（design D7）。
 
     段的边界与 `session/end` 不在这里——它们归段与入口（ADR-0011）。
     """
@@ -633,8 +633,8 @@ async def _provider_error(
         log,
         [
             *retry_events,
-            ("error/model", {"turn_id": turn_id, "code": failure.code, "detail": failure.detail}),
-            ("turn/end", {"turn_id": turn_id, "stop_reason": STOP_PROVIDER_ERROR}),
+            ("error/model", {"step_id": turn_id, "code": failure.code, "detail": failure.detail}),
+            ("step/end", {"step_id": turn_id, "stop_reason": STOP_PROVIDER_ERROR}),
         ],
     )
     if written is not None:
@@ -664,9 +664,9 @@ async def _context_overflow(
             *retry_events,
             (
                 "error/context",
-                {"turn_id": turn_id, "code": STOP_CONTEXT_WINDOW_EXCEEDED, "detail": detail},
+                {"step_id": turn_id, "code": STOP_CONTEXT_WINDOW_EXCEEDED, "detail": detail},
             ),
-            ("turn/end", {"turn_id": turn_id, "stop_reason": STOP_CONTEXT_WINDOW_EXCEEDED}),
+            ("step/end", {"step_id": turn_id, "stop_reason": STOP_CONTEXT_WINDOW_EXCEEDED}),
         ],
     )
     if written is not None:
@@ -763,7 +763,7 @@ async def _recover_overflowed_request(
         return _segment_failure(reread, turns)
     # `_compact_if_over_line` 的 `None` 只说「没失败」：真压没压要看日志里这条回合的摘要记录。
     compacted_here = any(
-        event.type == "compaction/summary" and event.payload.get("turn_id") == turn_id
+        event.type == "compaction/summary" and event.payload.get("step_id") == turn_id
         for event in reread
     )
     if not compacted_here:
@@ -785,7 +785,7 @@ async def _recover_overflowed_request(
         log,
         [
             ("context/assembled", assembled_payload(turn_id, folded)),
-            ("model/request", {"turn_id": turn_id, "tools": tool_names}),
+            ("model/request", {"step_id": turn_id, "tools": tool_names}),
         ],
     )
     if written is not None:
@@ -859,7 +859,7 @@ async def _compact_if_over_line(
 
     written = _append_all(
         log,
-        [("model/request", {"turn_id": turn_id, "tools": [], "purpose": PURPOSE_COMPACTION})],
+        [("model/request", {"step_id": turn_id, "tools": [], "purpose": PURPOSE_COMPACTION})],
     )
     if written is not None:
         return written
@@ -886,7 +886,7 @@ async def _compact_if_over_line(
             (
                 "model/response",
                 {
-                    "turn_id": turn_id,
+                    "step_id": turn_id,
                     "content": generated.content,
                     "tool_calls": [],
                     "usage": generated.usage.model_dump(mode="json"),
@@ -897,7 +897,7 @@ async def _compact_if_over_line(
             (
                 "compaction/summary",
                 {
-                    "turn_id": turn_id,
+                    "step_id": turn_id,
                     "shadowed_range": rng,
                     "summary": generated.content,
                     "tokens_before": tokens_before,
@@ -994,8 +994,8 @@ async def run_turn_segment(
 ) -> SegmentOutcome:
     """跑一个回合段：一条输入展开的那串往返。段内上限是 `max_turns`，会话级没有上限。
 
-    段的边界在这里落盘——`segment/start` 在第一个 `turn/start` 之前、`segment/end` 在最后一个
-    `turn/end` 之后（design D3）。这里不写 `session/end`：会话是否结束由入口决定（ADR-0011）。
+    段的边界在这里落盘——`turn/start` 在第一个 `step/start` 之前、`turn/end` 在最后一个
+    `step/end` 之后（design D3）。这里不写 `session/end`：会话是否结束由入口决定（ADR-0011）。
 
     `user_message` 是开启这个段的那条输入：给了就写成一条 `user/message`，落在段边界之内
     （design D5）。不给是 `run`——它的人话住在 `session/start`（design D6 记的不对称）。
@@ -1017,13 +1017,13 @@ async def run_turn_segment(
             "revision": goal_round.goal.revision,
             "round": goal_round.round,
         }
-    opening: list[tuple[str, dict[str, Any]]] = [("segment/start", {"segment_id": segment_id})]
+    opening: list[tuple[str, dict[str, Any]]] = [("turn/start", {"turn_id": segment_id})]
     if user_message is not None:
         source: dict[str, Any] = (
             {"kind": "user"} if message_source is None else dict(message_source)
         )
         opening.append(
-            ("user/message", {"segment_id": segment_id, "content": user_message, "source": source})
+            ("user/message", {"turn_id": segment_id, "content": user_message, "source": source})
         )
     failure = _append_all(env.log, opening)
     if failure is not None:
@@ -1037,17 +1037,17 @@ async def run_turn_segment(
         goal_round=goal_round,
     )
     if outcome.stop_reason not in STOP_REASONS:
-        # 内核坏了：写不出 `turn/end`，也就不写 `segment/end`。
+        # 内核坏了：写不出 `step/end`，也就不写 `turn/end`。
         return outcome
     written = _append_all(
         env.log,
         [
             (
-                "segment/end",
+                "turn/end",
                 {
-                    "segment_id": segment_id,
+                    "turn_id": segment_id,
                     "stop_reason": outcome.stop_reason,
-                    "turns": outcome.turns,
+                    "steps": outcome.turns,
                     "tool_calls": outcome.tool_calls,
                 },
             ),
@@ -1112,7 +1112,7 @@ def _maybe_emit_contracts(env: SessionEnv, segment_id: str) -> LogWriteFailure |
         if state.last_digest == render.digest and not shadowed:
             return None
         payload: dict[str, Any] = {
-            "segment_id": segment_id,
+            "turn_id": segment_id,
             "content": render.text,
             "source": "workspace-instructions",
             "digest": render.digest,
@@ -1131,7 +1131,7 @@ def _maybe_emit_contracts(env: SessionEnv, segment_id: str) -> LogWriteFailure |
         if state.last_digest is None or state.last_digest == render.digest:
             return None
         payload = {
-            "segment_id": segment_id,
+            "turn_id": segment_id,
             "content": render_removed(state.last_paths or ("AGENTS.md",)),
             "source": "workspace-instructions",
             "removed": True,
@@ -1171,7 +1171,7 @@ def _maybe_emit_catalog(env: SessionEnv, segment_id: str) -> LogWriteFailure | N
     record = env.log.append(
         "user/message",
         {
-            "segment_id": segment_id,
+            "turn_id": segment_id,
             "content": render_catalog_message(model_skills, discovery.complete),
             "source": "skill-catalog",
             "incomplete": not discovery.complete,
@@ -1211,7 +1211,7 @@ async def _run_turns(
         tool_names = [spec.name for spec in registry.specs()]
         text_sink = _forward_delta(env.on_delta, turn_id)
 
-        failure = _append_all(log, [("turn/start", {"turn_id": turn_id})])
+        failure = _append_all(log, [("step/start", {"step_id": turn_id})])
         if failure is not None:
             return _segment_failure(failure, turns)
 
@@ -1255,7 +1255,7 @@ async def _run_turns(
                 # 措辞跟着日志里的事实走：真写过摘要才说「压缩之后」；什么都没遮蔽才说
                 # 「无可遮蔽」；有可遮蔽的那一段、只是它本身就装不进窗口，就说它装不下。
                 compacted_here = any(
-                    event.type == "compaction/summary" and event.payload.get("turn_id") == turn_id
+                    event.type == "compaction/summary" and event.payload.get("step_id") == turn_id
                     for event in events
                 )
                 if compacted_here:
@@ -1274,7 +1274,7 @@ async def _run_turns(
             # 装配之前失败（注入、折叠、压缩）不扣轮次（ADR-0043）。
             advanced = advance_round(goal_round.goal, goal_round.round)
             opening.append(("goal/updated", {"goal": advanced.model_dump(exclude_none=True)}))
-        opening.append(("model/request", {"turn_id": turn_id, "tools": tool_names}))
+        opening.append(("model/request", {"step_id": turn_id, "tools": tool_names}))
         failure = _append_all(log, opening)
         if failure is not None:
             return _segment_failure(failure, turns)
@@ -1325,7 +1325,7 @@ async def _run_turns(
                 (
                     "model/response",
                     {
-                        "turn_id": turn_id,
+                        "step_id": turn_id,
                         "content": generated.content,
                         "tool_calls": [
                             call.model_dump(mode="json") for call in generated.tool_calls
@@ -1374,10 +1374,10 @@ async def _run_turns(
             closing_events.append(
                 (
                     "error/abort",
-                    {"turn_id": turn_id, "code": STOP_ABORTED, "detail": "取消被置位"},
+                    {"step_id": turn_id, "code": STOP_ABORTED, "detail": "取消被置位"},
                 )
             )
-        closing_events.append(("turn/end", {"turn_id": turn_id, "stop_reason": stop_reason}))
+        closing_events.append(("step/end", {"step_id": turn_id, "stop_reason": stop_reason}))
 
         failure = _append_all(log, closing_events)
         if failure is not None:
@@ -1402,7 +1402,7 @@ async def _run_turns(
 
 def end_session(*, env: SessionEnv, stop_reason: str, turns: int) -> SegmentOutcome | None:
     """写 `session/end`。成功返回 None，日志层坏了就返回失败结果。"""
-    failure = _append_all(env.log, [("session/end", {"stop_reason": stop_reason, "turns": turns})])
+    failure = _append_all(env.log, [("session/end", {"stop_reason": stop_reason, "steps": turns})])
     if failure is not None:
         return _segment_failure(failure, turns)
     return None
@@ -1555,7 +1555,7 @@ async def run_session_env(
     「开始 → 若干段 → 结束」只有一份实现。
 
     段数由目标决定（design D3）：没有可续跑的目标时恰一个段；目标 `active` 且已武装时，
-    每个 `segment/end` 之后按 `next_round` 判定，续跑就再开一段。驱动不另起协程：判定与
+    每个 `turn/end` 之后按 `next_round` 判定，续跑就再开一段。驱动不另起协程：判定与
     开段在同一个协程里顺序做完，写日志成功即准入。
     """
     log = env.log

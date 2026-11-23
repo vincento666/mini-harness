@@ -166,16 +166,16 @@ def test_todo_projection_clears_on_segment_start() -> None:
     from mini_harness.events.projection import project
 
     records = [
-        _rec(0, "segment/start", {"segment_id": "s1"}),
+        _rec(0, "turn/start", {"turn_id": "s1"}),
         _rec(1, "todo/updated", {"items": [{"id": "t1", "text": "写判据", "status": "pending"}]}),
         _rec(2, "todo/updated", {"items": [{"id": "t1", "text": "写判据", "status": "completed"}]}),
-        _rec(3, "segment/end", {}),
+        _rec(3, "turn/end", {}),
     ]
 
     value = project(records, "todos")["value"]
     assert value == [{"id": "t1", "text": "写判据", "status": "completed"}]
 
-    cleared = project([*records, _rec(4, "segment/start", {"segment_id": "s2"})], "todos")["value"]
+    cleared = project([*records, _rec(4, "turn/start", {"turn_id": "s2"})], "todos")["value"]
     assert cleared == []
 
 
@@ -226,7 +226,7 @@ def test_todo_event_payload_only_for_successful_todo() -> None:
 
 def test_todo_command_prints_the_latest_table() -> None:
     records = [
-        _rec(0, "segment/start", {"segment_id": "s1"}),
+        _rec(0, "turn/start", {"turn_id": "s1"}),
         _rec(
             1,
             "todo/updated",

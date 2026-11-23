@@ -141,7 +141,7 @@ def _stop_reasons(log: EventLog) -> set[str]:
     return {
         str(record.payload["stop_reason"])
         for record in read_events(log.path)
-        if record.type in {"turn/end", "session/end"}
+        if record.type in {"step/end", "session/end"}
     }
 
 

@@ -536,7 +536,7 @@ def _print_segment_note(segment: SegmentOutcome) -> None:
 
     组装规则是 design D3：停止理由 → 与它**不同**的 `code` → 非空 `detail`，一律不截断。
     此前 `CONTEXT_WINDOW_EXCEEDED` 那一行把同一个词打两遍、把日志里那句有用的 detail 丢掉。
-    这一行不是新事实，是 `segment/end` 与 `error/*` 已有的事实说给人听。
+    这一行不是新事实，是 `turn/end` 与 `error/*` 已有的事实说给人听。
     """
     if segment.stop_reason in _SEGMENT_NOTE_SUPPRESSED:
         return
@@ -673,8 +673,8 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
         events = read_events(prepared.log.path)
         if isinstance(events, LogReadFailure):
             return _report_failure(events.code, events.detail, EXIT_INTERNAL_ERROR)
-        segments = sum(1 for event in events if event.type == "segment/start")
-        turns = [event for event in events if event.type == "turn/start"]
+        segments = sum(1 for event in events if event.type == "turn/start")
+        turns = [event for event in events if event.type == "step/start"]
         turn_index = len(turns) + 1
         printed = sum(1 for event in events if event.type == "model/response")
         scanned = events[-1].seq if events else 0
@@ -881,8 +881,8 @@ def _replay(args: argparse.Namespace) -> int:
         print(f"verified seq={point.record.seq}: OK")
 
     for record in records:
-        if record.type == "turn/end":
-            print(f"turn {record.payload['turn_id']}: {record.payload['stop_reason']}")
+        if record.type == "step/end":
+            print(f"step {record.payload['step_id']}: {record.payload['stop_reason']}")
     if points:
         print("final_context: " + json.dumps(points[-1].record.payload, ensure_ascii=False))
     return EXIT_OK

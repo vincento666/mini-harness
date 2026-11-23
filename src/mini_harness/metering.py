@@ -91,7 +91,7 @@ def collect_usage(records: Sequence[EventRecord]) -> tuple[tuple[TurnUsage, ...]
     for record in records:
         if record.type != "model/response":
             continue
-        turn_id = record.payload.get("turn_id")
+        turn_id = record.payload.get("step_id")
         if not isinstance(turn_id, str):
             continue
         usage = usage_from_payload(record.payload)

@@ -8,7 +8,11 @@ from typing import get_args
 
 from mini_harness.events import EventLog
 from mini_harness.events.reader import LogReadFailure, read_events
-from mini_harness.events.vocabulary import ERROR_EVENT_TYPES, is_known_type
+from mini_harness.events.vocabulary import (
+    ERROR_EVENT_TYPES,
+    is_current_type,
+    is_known_type,
+)
 from mini_harness.loop import STOP_REASONS
 from mini_harness.loop.turn_loop import StopReason
 
@@ -29,8 +33,8 @@ def test_approval_types_are_in_the_vocabulary() -> None:
 def test_approval_types_can_be_written_to_the_log(tmp_path: Path) -> None:
     log = EventLog.create(session_dir=tmp_path, session_id="sess-v1")
 
-    log.append("approval/request", {"turn_id": "t1", "tool_name": "write"})
-    log.append("approval/response", {"turn_id": "t1", "decision": "APPROVED"})
+    log.append("approval/request", {"step_id": "t1", "tool_name": "write"})
+    log.append("approval/response", {"step_id": "t1", "decision": "APPROVED"})
 
     types = [json.loads(line)["type"] for line in log.path.read_text(encoding="utf-8").splitlines()]
     assert types == ["approval/request", "approval/response"]
@@ -42,7 +46,7 @@ def test_model_retry_and_tool_cancelled_are_in_the_vocabulary(tmp_path: Path) ->
     assert is_known_type("tool/cancelled")
 
     log = EventLog.create(session_dir=tmp_path, session_id="sess-v2")
-    log.append("tool/cancelled", {"turn_id": "t1", "tool_call_id": "call-1"})
+    log.append("tool/cancelled", {"step_id": "t1", "tool_call_id": "call-1"})
 
     written = json.loads(log.path.read_text(encoding="utf-8").splitlines()[0])
     assert written["type"] == "tool/cancelled"
@@ -63,7 +67,7 @@ def test_compaction_summary_and_error_context_are_in_the_vocabulary(tmp_path: Pa
     log.append(
         "compaction/summary",
         {
-            "turn_id": "t2",
+            "step_id": "t2",
             "shadowed_range": {"start": 3, "end": 9},
             "summary": "前九条记录的摘要",
             "tokens_before": 900,
@@ -76,24 +80,31 @@ def test_compaction_summary_and_error_context_are_in_the_vocabulary(tmp_path: Pa
     assert "unrecognized_type" not in written["payload"]
 
 
-def test_segment_and_user_message_types_are_in_the_vocabulary(tmp_path: Path) -> None:
-    """M6 把回合段的边界与 REPL 的输入收进词表：一个段 = DSH 的 turn，一个回合 = DSH 的 step。"""
+def test_turn_and_user_message_types_are_current_while_segment_is_read_only(
+    tmp_path: Path,
+) -> None:
+    """v2：`turn/*` 是段、`step/*` 是步；v1 的 `segment/*` 只允许读。"""
+    assert is_current_type("turn/start")
+    assert is_current_type("step/start")
     assert is_known_type("segment/start")
-    assert is_known_type("segment/end")
-    assert is_known_type("user/message")
+    assert not is_current_type("segment/start")
 
     log = EventLog.create(session_dir=tmp_path, session_id="sess-v5")
-    log.append("segment/start", {"segment_id": "s1"})
-    log.append("user/message", {"segment_id": "s1", "content": "第一条输入"})
-    log.append("segment/end", {"segment_id": "s1", "stop_reason": "MODEL_COMPLETED", "turns": 1})
+    log.append("turn/start", {"turn_id": "s1"})
+    log.append("user/message", {"turn_id": "s1", "content": "第一条输入"})
+    log.append("turn/end", {"turn_id": "s1", "stop_reason": "MODEL_COMPLETED", "steps": 1})
+    # 旧名写出去不是合法事实：落成 `error/internal`，把原名留在载荷里。
+    log.append("segment/start", {"segment_id": "s0"})
 
     written = [json.loads(line) for line in log.path.read_text(encoding="utf-8").splitlines()]
     assert [record["type"] for record in written] == [
-        "segment/start",
+        "turn/start",
         "user/message",
-        "segment/end",
+        "turn/end",
+        "error/internal",
     ]
-    assert all("unrecognized_type" not in record["payload"] for record in written)
+    assert written[-1]["payload"]["unrecognized_type"] == "segment/start"
+    assert all("unrecognized_type" not in record["payload"] for record in written[:-1])
 
 
 def test_context_window_exceeded_is_a_stop_reason() -> None:

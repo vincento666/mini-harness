@@ -119,7 +119,7 @@ async def test_each_approved_write_asks_once_and_then_succeeds(tmp_path: Path) -
     assert [record.payload["decision"] for record in responses] == ["APPROVED", "APPROVED"]
     assert [record.payload["tool_call_id"] for record in requests] == ["c1", "c2"]
     assert [record.payload["tool_call_id"] for record in responses] == ["c1", "c2"]
-    assert {record.payload["turn_id"] for record in requests} == {"t1"}
+    assert {record.payload["step_id"] for record in requests} == {"t1"}
     assert [record.payload["outcome"] for record in records if record.type == "tool/result"] == [
         "OK",
         "OK",
@@ -202,7 +202,7 @@ async def test_a_denied_write_is_a_result_and_an_error_fence(tmp_path: Path) -> 
     records = read_events(log.path)
     fences = [record for record in records if record.type == "error/fence"]
     assert len(fences) == 1
-    assert fences[0].payload["turn_id"] == "t1"
+    assert fences[0].payload["step_id"] == "t1"
     assert fences[0].payload["tool_call_id"] == "c1"
     assert fences[0].payload["code"] == "APPROVAL_DENIED"
     assert "a.md" in fences[0].payload["detail"]
@@ -418,8 +418,8 @@ async def test_a_cancel_interrupts_a_question_the_human_has_not_answered(tmp_pat
     assert result_outcomes(records) == [("c1", "TOOL_CANCELLED")]
     assert [record.type for record in records][-4:] == [
         "error/abort",
+        "step/end",
         "turn/end",
-        "segment/end",
         "session/end",
     ]
     assert outcome.stop_reason == "ABORTED"

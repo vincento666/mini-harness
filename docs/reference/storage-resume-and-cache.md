@@ -63,6 +63,8 @@ JSONL 日志 = 唯一真源
 
 信封有逐行 `schema_version`，所以同一文件里 v1/v2 混排也能逐行翻译；新追加永远写 v2。删除兼容层的条件（design D4，三条同时成立）：距合并至少两个里程碑、`sessions/` 下不再有需要 `replay` 的 v1 日志、没有外部消费者依赖 v1 事件名。删除时 `LEGACY_EVENT_TYPES`、`_upcast_v1`、旧 CLI/配置别名一起删，`SCHEMA_VERSION` 不动——v1 变成「不支持」，读到即 `SchemaUnsupported`。
 
+**现状（2026-11-23）**：1.x 已落——`SCHEMA_VERSION = 2`，`_upcast_v1` 在 `events/record.py`，写入只认 v2 名字；v1 金样本 `tests/fixtures/logs/v1-goal-tools.jsonl` 的 `replay` 仍通过。2.x 起的标识符改名还没做。
+
 ## 3. fold 缓存到底是什么
 
 ```text

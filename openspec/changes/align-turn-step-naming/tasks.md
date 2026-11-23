@@ -7,11 +7,11 @@
 
 ## 1. 事件 schema v2 与兼容层（seam ④）
 
-- [ ] 1.1 `SCHEMA_VERSION = 2`；`CONCRETE_EVENT_TYPES` 换成 v2 名字（`turn/*` 是段、`step/*` 是步）
-- [ ] 1.2 `LEGACY_EVENT_TYPES` + `is_known_type` 读放行 / `is_current_type` 写拒绝
-- [ ] 1.3 `migrate_schema` 的 `_upcast_v1`：类型与键的整体上迁；`seq` / `ts` / `session_id` 不动
-- [ ] 1.4 旧日志 `replay` 逐点相等；新日志只出现 v2 名字
-- [ ] 1.5 投影（`todos` 在 `turn/start` 清空）、折叠、SSE 都只看见 v2
+- [x] 1.1 `SCHEMA_VERSION = 2`；`CONCRETE_EVENT_TYPES` 换成 v2 名字（`turn/*` 是段、`step/*` 是步）
+- [x] 1.2 `LEGACY_EVENT_TYPES` + `is_known_type` 读放行 / `is_current_type` 写拒绝；写旧名落 `error/internal`（`test_event_vocabulary`、`test_event_schema_v2`）
+- [x] 1.3 `migrate_schema` 的 `_upcast_v1`：类型与键的整体上迁；`seq` / `ts` / `session_id` 不动（`test_event_schema_v2`）
+- [x] 1.4 旧日志 `replay` 逐点相等（`v1-goal-tools` 金样本 exit 0）；新日志只出现 v2 名字（`test_a_new_log_is_written_as_v2_with_current_names`）
+- [x] 1.5 投影（`todos` 在 `turn/start` 清空）、折叠、SSE 都只看见 v2：读入口统一上迁，消费方的类型与键已改 v2
 
 ## 2. 内核标识符（seam ①）
 

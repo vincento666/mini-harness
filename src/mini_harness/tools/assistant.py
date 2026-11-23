@@ -117,7 +117,7 @@ async def _get_todos(args: GetTodosArgs, context: DispatchContext) -> ToolResult
     """读回这一段的待办表；只读，不写 `todo/updated`。
 
     事实只有一个来源：`todos` 投影。所以它读到的与 `/todo`、`GET /projections/todos`
-    是同一个值——`segment/start` 清空之后这里也是空表。
+    是同一个值——`turn/start` 清空之后这里也是空表。
     """
     items = list(context.todos)
     if not items:

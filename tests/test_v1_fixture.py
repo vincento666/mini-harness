@@ -24,10 +24,10 @@ def test_the_v1_sample_parses_and_covers_the_naming_surface() -> None:
     # 这份样本要同时覆盖：段边界、回合边界、goal 快照、工具调用与结果。
     assert {
         "session/start",
-        "segment/start",
-        "segment/end",
         "turn/start",
         "turn/end",
+        "step/start",
+        "step/end",
         "context/assembled",
         "goal/updated",
         "user/message",

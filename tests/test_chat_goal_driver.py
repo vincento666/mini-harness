@@ -90,7 +90,7 @@ def test_chat_keeps_running_rounds_without_another_line(tmp_path: Path) -> None:
 
     assert result.returncode == 0
     records = _records(tmp_path)
-    assert [record.type for record in records].count("segment/start") == 3
+    assert [record.type for record in records].count("turn/start") == 3
     assert [payload["source"]["round"] for payload in _goal_messages(records)] == [1, 2]
     goal = fold_goal(records)
     assert goal is not None
@@ -146,7 +146,7 @@ def test_a_question_asked_in_a_round_returns_to_the_prompt_without_burning_the_n
 
     assert result.returncode == 0
     records = _records(tmp_path)
-    assert [record.type for record in records].count("segment/start") == 2
+    assert [record.type for record in records].count("turn/start") == 2
     goal = fold_goal(records)
     assert goal is not None
     assert goal.phase == "active"
@@ -208,7 +208,7 @@ def test_an_answer_is_a_human_segment_and_the_goal_resumes_after_it(
 
     assert result.returncode == 0
     records = _records(tmp_path)
-    assert [record.type for record in records].count("segment/start") == 4
+    assert [record.type for record in records].count("turn/start") == 4
     messages = [record.payload for record in records if record.type == "user/message"]
     assert [message["source"]["kind"] for message in messages] == [
         "user",

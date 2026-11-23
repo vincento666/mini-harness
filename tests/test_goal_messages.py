@@ -55,11 +55,11 @@ async def test_goal_source_is_recorded_verbatim(tmp_path: Path) -> None:
     assert messages[0].payload["source"] == source
     # 段首仍在驱动消息之前。
     types = [r.type for r in records]
-    assert types.index("segment/start") < types.index("user/message")
+    assert types.index("turn/start") < types.index("user/message")
 
 
 def test_old_log_without_source_reads_as_human() -> None:
-    assert message_source_of({"segment_id": "s1", "content": "老输入"}) == {"kind": "user"}
+    assert message_source_of({"turn_id": "s1", "content": "老输入"}) == {"kind": "user"}
 
 
 def test_unknown_kind_reads_as_human() -> None:

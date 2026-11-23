@@ -114,7 +114,7 @@ def test_the_parent_stream_does_not_forward_child_events(tmp_path: Path) -> None
                 client.post(
                     f"/sessions/{root}/messages", headers=_headers(), json={"content": "任务"}
                 )
-                frames = [first, *_frames_until(lines, "segment/end")]
+                frames = [first, *_frames_until(lines, "turn/end")]
 
             listed = client.get("/sessions", headers=_headers()).json()["sessions"]
             child = next(item for item in listed if item.get("parent_session_id") == root)

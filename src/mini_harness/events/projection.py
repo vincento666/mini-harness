@@ -40,7 +40,7 @@ class TodoProjection:
         if event.type == "todo/updated":
             items = event.payload.get("items")
             return list(items) if isinstance(items, list) else state
-        if event.type == "segment/start":
+        if event.type == "turn/start":
             return []
         return state
 

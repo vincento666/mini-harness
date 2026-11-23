@@ -246,25 +246,25 @@ def test_a_one_shot_run_writes_exactly_one_segment(tmp_path: Path) -> None:
         json.loads(line)
         for line in _log_files(tmp_path)[0].read_text(encoding="utf-8").splitlines()
     ]
-    segments = [record for record in records if record["type"].startswith("segment/")]
+    segments = [record for record in records if record["type"].startswith("turn/")]
 
     assert result.returncode == 0
     assert [record["type"] for record in records] == [
         "session/start",
-        "segment/start",
         "turn/start",
+        "step/start",
         "context/assembled",
         "model/request",
         "model/response",
+        "step/end",
         "turn/end",
-        "segment/end",
         "session/end",
     ]
-    assert segments[0]["payload"] == {"segment_id": "s1"}
+    assert segments[0]["payload"] == {"turn_id": "s1"}
     assert segments[1]["payload"] == {
-        "segment_id": "s1",
+        "turn_id": "s1",
         "stop_reason": "MODEL_COMPLETED",
-        "turns": 1,
+        "steps": 1,
         "tool_calls": 0,
     }
 
@@ -647,7 +647,7 @@ def test_sigint_in_a_real_subprocess_exits_with_five(tmp_path: Path) -> None:
     assert types.count("tool/cancelled") == 1
     outcomes = [r["payload"]["outcome"] for r in records if r["type"] == "tool/result"]
     assert outcomes == ["TOOL_CANCELLED"]
-    assert types[-4:] == ["error/abort", "turn/end", "segment/end", "session/end"]
+    assert types[-4:] == ["error/abort", "step/end", "turn/end", "session/end"]
     assert records[-1]["payload"]["stop_reason"] == "ABORTED"
 
 
@@ -724,7 +724,7 @@ def test_a_hard_kill_leaves_no_half_written_line(tmp_path: Path) -> None:
     results = [record for record in records if record["type"] == "tool/result"]
     assert results, "先完成的那条读已经落了一条完整结果"
     for record in results:
-        assert {"turn_id", "tool_call_id", "outcome", "content"} <= set(record["payload"])
+        assert {"step_id", "tool_call_id", "outcome", "content"} <= set(record["payload"])
     assert "session/end" not in types, "内核被杀在半路，没人写收尾"
 
 
@@ -1248,7 +1248,7 @@ def test_a_run_that_cannot_fit_its_window_exits_four_with_an_error_context(tmp_p
     assert detail in notes[0], "那一行含日志里那句非空 detail"
     assert notes[0] not in result.stdout, "stdout 归 session id，那一行不在它上面"
     assert notes[0] not in "\n".join(lines), "那一行不写进事件日志"
-    assert types[-4:] == ["error/context", "turn/end", "segment/end", "session/end"]
+    assert types[-4:] == ["error/context", "step/end", "turn/end", "session/end"]
     assert "model/request" not in types
     assert records[-4]["payload"]["code"] == "CONTEXT_WINDOW_EXCEEDED"
 
@@ -1280,7 +1280,7 @@ def test_a_log_that_overflowed_before_any_assembly_still_replays(tmp_path: Path)
     # 没有装配点要说清，不能靠「一条都没验」冒充验过。
     assert any("没有装配点" in line for line in printed)
     assert any(
-        line.startswith("turn ") and line.endswith(": CONTEXT_WINDOW_EXCEEDED") for line in printed
+        line.startswith("step ") and line.endswith(": CONTEXT_WINDOW_EXCEEDED") for line in printed
     )
     assert not any(line.startswith("final_context") for line in printed)
 

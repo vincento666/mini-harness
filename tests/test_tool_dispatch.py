@@ -32,7 +32,7 @@ async def test_unregistered_tool_call_is_a_paired_unknown_tool_result(tmp_path: 
     assert calls[0].payload["tool_call_id"] == results[0].payload["tool_call_id"]
     assert calls[0].payload["name"] == "read"
     assert results[0].payload["outcome"] == "UNKNOWN_TOOL"
-    turn_end = [record for record in records if record.type == "turn/end"]
+    turn_end = [record for record in records if record.type == "step/end"]
     assert len(turn_end) == 2
     assert turn_end[0].payload["stop_reason"] == "TOOL_CALLS"
 

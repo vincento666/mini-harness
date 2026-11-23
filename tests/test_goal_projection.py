@@ -30,10 +30,8 @@ def _table() -> list[dict[str, Any]]:
 
 def _base() -> list[EventRecord]:
     return [
-        _rec(0, "segment/start", {"segment_id": "s1"}),
-        _rec(
-            1, "user/message", {"segment_id": "s1", "content": "开工", "source": {"kind": "user"}}
-        ),
+        _rec(0, "turn/start", {"turn_id": "s1"}),
+        _rec(1, "user/message", {"turn_id": "s1", "content": "开工", "source": {"kind": "user"}}),
         _rec(2, "todo/updated", {"items": _table()}),
     ]
 
@@ -41,13 +39,13 @@ def _base() -> list[EventRecord]:
 def test_segment_start_clears_even_for_a_goal_round() -> None:
     records = [
         *_base(),
-        _rec(3, "segment/end", {"segment_id": "s1", "stop_reason": "MODEL_COMPLETED", "turns": 1}),
-        _rec(4, "segment/start", {"segment_id": "s2"}),
+        _rec(3, "turn/end", {"turn_id": "s1", "stop_reason": "MODEL_COMPLETED", "steps": 1}),
+        _rec(4, "turn/start", {"turn_id": "s2"}),
         _rec(
             5,
             "user/message",
             {
-                "segment_id": "s2",
+                "turn_id": "s2",
                 "content": "<goal_round>",
                 "source": {"kind": "goal", "goal_id": "g1", "revision": 1, "round": 1},
             },
@@ -58,13 +56,13 @@ def test_segment_start_clears_even_for_a_goal_round() -> None:
 
 
 def test_segment_end_keeps_the_last_table() -> None:
-    records = [*_base(), _rec(3, "segment/end", {"segment_id": "s1"})]
+    records = [*_base(), _rec(3, "turn/end", {"turn_id": "s1"})]
 
     assert project(records, "todos")["value"] == _table()
 
 
 def test_segment_start_alone_clears() -> None:
-    records = [*_base(), _rec(3, "segment/start", {"segment_id": "s2"})]
+    records = [*_base(), _rec(3, "turn/start", {"turn_id": "s2"})]
 
     assert project(records, "todos")["value"] == []
 
@@ -72,8 +70,8 @@ def test_segment_start_alone_clears() -> None:
 def test_old_log_without_source_clears_the_same_way() -> None:
     records = [
         *_base(),
-        _rec(3, "segment/start", {"segment_id": "s2"}),
-        _rec(4, "user/message", {"segment_id": "s2", "content": "老输入"}),
+        _rec(3, "turn/start", {"turn_id": "s2"}),
+        _rec(4, "user/message", {"turn_id": "s2", "content": "老输入"}),
     ]
 
     assert project(records, "todos")["value"] == []

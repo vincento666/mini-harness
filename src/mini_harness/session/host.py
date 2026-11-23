@@ -101,7 +101,7 @@ def _scan_session_index(defaults: AssemblyRequest) -> dict[str, dict[str, object
         if start is None or not ended:
             continue
         session_id = path.stem
-        turns = sum(1 for record in records if record.type == "turn/start")
+        turns = sum(1 for record in records if record.type == "step/start")
         index[session_id] = _session_entry(
             session_id=session_id,
             status=SESSION_ENDED,
@@ -130,7 +130,7 @@ def register_child_session(state: HostState, env: SessionEnv) -> None:
         workspace=str(env.settings.workspace.resolve()),
         created_at=records[0].ts,
         last_seq=env.log.last_seq,
-        turns=sum(1 for record in records if record.type == "turn/start"),
+        turns=sum(1 for record in records if record.type == "step/start"),
         parent_session_id=env.settings.parent_session_id,
         depth=env.settings.depth,
     )

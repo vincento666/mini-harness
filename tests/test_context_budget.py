@@ -41,7 +41,7 @@ def _start() -> EventRecord:
 
 def _response(seq: int, *, usage: dict[str, int], purpose: str | None = None) -> EventRecord:
     payload: dict[str, Any] = {
-        "turn_id": "t1",
+        "step_id": "t1",
         "content": "回复",
         "tool_calls": [],
         "finish_reason": "stop",
@@ -177,7 +177,7 @@ def _big(seq: int, chars: int) -> EventRecord:
         seq,
         "model/response",
         {
-            "turn_id": f"t{seq}",
+            "step_id": f"t{seq}",
             "content": "x" * chars,
             "tool_calls": [],
             "finish_reason": "stop",
@@ -195,7 +195,7 @@ def _tool_round(
             seq,
             "model/response",
             {
-                "turn_id": f"t{seq}",
+                "step_id": f"t{seq}",
                 "content": "x" * content_chars,
                 "tool_calls": [{"id": call_id, "name": "read", "arguments": arguments}],
                 "finish_reason": "tool_calls",
@@ -204,13 +204,13 @@ def _tool_round(
         _rec(
             seq + 1,
             "tool/call",
-            {"turn_id": f"t{seq}", "tool_call_id": call_id, "name": "read", "arguments": arguments},
+            {"step_id": f"t{seq}", "tool_call_id": call_id, "name": "read", "arguments": arguments},
         ),
         _rec(
             seq + 2,
             "tool/result",
             {
-                "turn_id": f"t{seq}",
+                "step_id": f"t{seq}",
                 "tool_call_id": call_id,
                 "outcome": "OK",
                 "content": "y" * result_chars,
@@ -228,7 +228,7 @@ def test_a_shadowed_measurement_stops_calibrating() -> None:
             2,
             "compaction/summary",
             {
-                "turn_id": "t2",
+                "step_id": "t2",
                 "shadowed_range": {"start": 1, "end": 1},
                 "summary": "摘要",
                 "tokens_before": 5000,
@@ -261,9 +261,9 @@ def test_the_shadowed_range_covers_the_oldest_body_and_keeps_the_tail() -> None:
     """遮蔽的是最老的那段对话体；`session/start`（seq 0）不在范围里。"""
     events = [
         _start(),
-        _rec(1, "turn/start", {"turn_id": "t1"}),
+        _rec(1, "step/start", {"step_id": "t1"}),
         _big(2, 100000),
-        _rec(3, "turn/end", {"turn_id": "t1", "stop_reason": "MODEL_COMPLETED"}),
+        _rec(3, "step/end", {"step_id": "t1", "stop_reason": "MODEL_COMPLETED"}),
         _big(4, 4000),
     ]
 
@@ -277,9 +277,9 @@ def test_the_cut_never_splits_an_assistant_request_from_its_tool_round() -> None
     """
     events = [
         _start(),
-        _rec(1, "turn/start", {"turn_id": "t1"}),
+        _rec(1, "step/start", {"step_id": "t1"}),
         *_tool_round(2, content_chars=100000, call_id="c1", result_chars=4000),
-        _rec(5, "turn/end", {"turn_id": "t1", "stop_reason": "TOOL_CALLS"}),
+        _rec(5, "step/end", {"step_id": "t1", "stop_reason": "TOOL_CALLS"}),
         _big(6, 10000),
     ]
 
@@ -295,7 +295,7 @@ def test_an_existing_summary_is_never_inside_the_range() -> None:
             2,
             "compaction/summary",
             {
-                "turn_id": "t2",
+                "step_id": "t2",
                 "shadowed_range": {"start": 1, "end": 1},
                 "summary": "上一份摘要",
                 "tokens_before": 25000,
@@ -316,7 +316,7 @@ def test_nothing_to_shadow_returns_none() -> None:
     """对话体里只剩一条本身就超预算的记录：遮蔽它之后什么都不剩。"""
     events = [
         _start(),
-        _rec(1, "turn/start", {"turn_id": "t1"}),
+        _rec(1, "step/start", {"step_id": "t1"}),
         _big(2, 100000),
     ]
 
@@ -327,7 +327,7 @@ def test_a_lone_tool_round_that_does_not_fit_returns_none() -> None:
     """整组装不下时不许把组拆开，也不许把整组拉进尾部：没有可遮蔽的内容。"""
     events = [
         _start(),
-        _rec(1, "turn/start", {"turn_id": "t1"}),
+        _rec(1, "step/start", {"step_id": "t1"}),
         *_tool_round(2, content_chars=100000, call_id="c1", result_chars=4000),
     ]
 
@@ -338,8 +338,8 @@ def test_shadowing_only_bookkeeping_records_is_nothing_to_shadow() -> None:
     """遮蔽范围里没有任何产出消息的记录，这次压缩就没有意义。"""
     events = [
         _start(),
-        _rec(1, "turn/start", {"turn_id": "t1"}),
-        _rec(2, "turn/end", {"turn_id": "t1", "stop_reason": "MODEL_COMPLETED"}),
+        _rec(1, "step/start", {"step_id": "t1"}),
+        _rec(2, "step/end", {"step_id": "t1", "stop_reason": "MODEL_COMPLETED"}),
         _big(3, 4000),
     ]
 
@@ -355,10 +355,10 @@ def test_the_tail_budget_is_counted_in_tokens_not_characters() -> None:
     """
     events = [
         _start(),
-        _rec(1, "turn/start", {"turn_id": "t1"}),
+        _rec(1, "step/start", {"step_id": "t1"}),
         _big(2, 100),
-        _rec(3, "turn/end", {"turn_id": "t1", "stop_reason": "TOOL_CALLS"}),
-        _rec(4, "turn/start", {"turn_id": "t2"}),
+        _rec(3, "step/end", {"step_id": "t1", "stop_reason": "TOOL_CALLS"}),
+        _rec(4, "step/start", {"step_id": "t2"}),
         _big(5, 4000),
     ]
 

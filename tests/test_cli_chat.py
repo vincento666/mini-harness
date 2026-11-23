@@ -132,17 +132,17 @@ def test_two_inputs_make_one_log_two_segments_and_two_user_messages(tmp_path: Pa
     types = [str(record["type"]) for record in records]
     assert types.count("session/start") == 1
     assert types.count("session/end") == 1
-    assert types.count("segment/start") == 2
-    assert types.count("segment/end") == 2
-    # `user/message` 在 `segment/start` 之后、该段第一个 `turn/start` 之前。
-    assert types[:4] == ["session/start", "segment/start", "user/message", "turn/start"]
+    assert types.count("turn/start") == 2
+    assert types.count("turn/end") == 2
+    # `user/message` 在 `turn/start` 之后、该段第一个 `step/start` 之前。
+    assert types[:4] == ["session/start", "turn/start", "user/message", "step/start"]
     messages = [record["payload"] for record in records if record["type"] == "user/message"]
     assert [message["content"] for message in messages] == ["第一条", "第二条"]
-    assert [message["segment_id"] for message in messages] == ["s1", "s2"]
+    assert [message["turn_id"] for message in messages] == ["s1", "s2"]
     assert records[-1]["type"] == "session/end"
     assert records[-1]["payload"]["stop_reason"] == "MODEL_COMPLETED"
     # `session/end.turns` 是会话跑掉的回合数，不是回合编号。
-    assert records[-1]["payload"]["turns"] == 2
+    assert records[-1]["payload"]["steps"] == 2
 
 
 def test_an_empty_stdin_is_a_legal_session(tmp_path: Path) -> None:
@@ -153,7 +153,7 @@ def test_an_empty_stdin_is_a_legal_session(tmp_path: Path) -> None:
 
     assert result.returncode == 0
     assert _types(tmp_path) == ["session/start", "session/end"]
-    assert _records(tmp_path)[-1]["payload"]["turns"] == 0
+    assert _records(tmp_path)[-1]["payload"]["steps"] == 0
 
 
 def test_blank_input_writes_no_record_and_opens_no_segment(tmp_path: Path) -> None:
@@ -171,7 +171,7 @@ def test_blank_input_writes_no_record_and_opens_no_segment(tmp_path: Path) -> No
 
     assert result.returncode == 0
     records = _records(tmp_path)
-    assert [str(record["type"]) for record in records].count("segment/start") == 2
+    assert [str(record["type"]) for record in records].count("turn/start") == 2
     messages = [record["payload"] for record in records if record["type"] == "user/message"]
     assert [message["content"] for message in messages] == ["第一条", "第二条"]
 
@@ -211,13 +211,13 @@ def test_a_segment_that_uses_up_max_turns_returns_to_the_prompt(tmp_path: Path) 
 
     assert result.returncode == 0
     records = _records(tmp_path)
-    segments = [record["payload"] for record in records if record["type"] == "segment/end"]
-    assert [segment["segment_id"] for segment in segments] == ["s1", "s2"]
+    segments = [record["payload"] for record in records if record["type"] == "turn/end"]
+    assert [segment["turn_id"] for segment in segments] == ["s1", "s2"]
     assert [segment["stop_reason"] for segment in segments] == ["MAX_TURNS", "MAX_TURNS"]
-    assert [segment["turns"] for segment in segments] == [2, 2]
+    assert [segment["steps"] for segment in segments] == [2, 2]
     # 回合编号在整个会话里连续：第二个段从 t3 起，不重置。
     turn_ids = [
-        record["payload"]["turn_id"] for record in records if record["type"] == "turn/start"
+        record["payload"]["step_id"] for record in records if record["type"] == "step/start"
     ]
     assert turn_ids == ["t1", "t2", "t3", "t4"]
     assert records[-1]["type"] == "session/end"
@@ -274,7 +274,7 @@ def test_a_segment_failure_does_not_end_the_session(tmp_path: Path) -> None:
     records = _records(tmp_path)
     types = [str(record["type"]) for record in records]
     assert "error/fence" in types
-    assert types[-2:] == ["segment/end", "session/end"]
+    assert types[-2:] == ["turn/end", "session/end"]
     assert records[-2]["payload"]["stop_reason"] == "FENCE_DENIED"
     assert records[-1]["payload"]["stop_reason"] == "MODEL_COMPLETED"
 
@@ -300,13 +300,13 @@ def test_a_provider_failure_inside_a_segment_leaves_the_session_running(tmp_path
     failures = [record for record in records if record["type"] == "error/model"]
     assert len(failures) == 2, "两个段各撞上一次 fixture 耗尽"
     assert {str(record["payload"]["code"]) for record in failures} == {"PROVIDER_EXHAUSTED"}
-    segments = [record["payload"] for record in records if record["type"] == "segment/end"]
-    assert [(segment["segment_id"], segment["stop_reason"]) for segment in segments] == [
+    segments = [record["payload"] for record in records if record["type"] == "turn/end"]
+    assert [(segment["turn_id"], segment["stop_reason"]) for segment in segments] == [
         ("s1", "PROVIDER_ERROR"),
         ("s2", "PROVIDER_ERROR"),
     ]
     turn_ids = [
-        record["payload"]["turn_id"] for record in records if record["type"] == "turn/start"
+        record["payload"]["step_id"] for record in records if record["type"] == "step/start"
     ]
     assert turn_ids == ["t1", "t2", "t3", "t4"]
     assert records[-1]["type"] == "session/end"
@@ -387,7 +387,7 @@ def test_sigint_mid_segment_cancels_the_segment_not_the_session(tmp_path: Path) 
 
     _wait_until_log_contains(tmp_path, process, '"tool/call"', "进入工具执行段")
     process.send_signal(signal.SIGINT)
-    _wait_until_log_contains(tmp_path, process, '"segment/end"', "写出被取消段的段边界")
+    _wait_until_log_contains(tmp_path, process, '"turn/end"', "写出被取消段的段边界")
 
     assert process.poll() is None, "取消当前段之后进程不该退出"
 
@@ -405,16 +405,16 @@ def test_sigint_mid_segment_cancels_the_segment_not_the_session(tmp_path: Path) 
     records = _records(tmp_path)
     types = [str(record["type"]) for record in records]
     assert "error/abort" in types
-    segments = [record["payload"] for record in records if record["type"] == "segment/end"]
+    segments = [record["payload"] for record in records if record["type"] == "turn/end"]
     assert segments[0] == {
-        "segment_id": "s1",
+        "turn_id": "s1",
         "stop_reason": "ABORTED",
-        "turns": 1,
+        "steps": 1,
         "tool_calls": 0,
     }
     # 会话还在：`session/end` 只在 stdin 关闭之后出现一次。
     assert types.count("session/end") == 1
-    assert types[-2:] == ["segment/end", "session/end"]
+    assert types[-2:] == ["turn/end", "session/end"]
     assert records[-1]["payload"]["stop_reason"] == "MODEL_COMPLETED"
 
 
@@ -491,8 +491,8 @@ def test_an_overflowed_segment_returns_to_the_prompt(tmp_path: Path) -> None:
     assert types.count("error/context") == 2
     # 溢出走自己那条路，不冒充 provider 失败。
     assert "error/model" not in types
-    segments = [record["payload"] for record in records if record["type"] == "segment/end"]
-    assert [segment["segment_id"] for segment in segments] == ["s1", "s2"]
+    segments = [record["payload"] for record in records if record["type"] == "turn/end"]
+    assert [segment["turn_id"] for segment in segments] == ["s1", "s2"]
     assert [segment["stop_reason"] for segment in segments] == [
         "CONTEXT_WINDOW_EXCEEDED",
         "CONTEXT_WINDOW_EXCEEDED",
@@ -530,9 +530,7 @@ def test_an_overflowed_segment_says_so_on_stderr(tmp_path: Path) -> None:
     assert len(notes) == 2
     assert notes[0] not in result.stdout
     assert notes[0] not in _log_text(tmp_path)
-    segments = [
-        record["payload"] for record in _records(tmp_path) if record["type"] == "segment/end"
-    ]
+    segments = [record["payload"] for record in _records(tmp_path) if record["type"] == "turn/end"]
     assert [segment["stop_reason"] for segment in segments] == [
         "CONTEXT_WINDOW_EXCEEDED",
         "CONTEXT_WINDOW_EXCEEDED",
@@ -557,7 +555,7 @@ def test_a_chat_that_ends_cleanly_prints_no_segment_note(tmp_path: Path) -> None
     assert [
         record["payload"]["stop_reason"]
         for record in _records(tmp_path)
-        if record["type"] == "segment/end"
+        if record["type"] == "turn/end"
     ] == ["MODEL_COMPLETED", "MODEL_COMPLETED"]
 
 
@@ -840,7 +838,7 @@ def test_ctrl_c_mid_segment_prints_the_aborted_note(tmp_path: Path) -> None:
 
     _wait_until_log_contains(tmp_path, process, '"tool/call"', "进入工具执行段")
     _send_ctrl_c(process.pid)
-    _wait_until_log_contains(tmp_path, process, '"segment/end"', "写出被取消段的段边界")
+    _wait_until_log_contains(tmp_path, process, '"turn/end"', "写出被取消段的段边界")
 
     assert process.poll() is None, "取消当前段之后进程不该退出"
     process.stdin.write("第二条\n")
@@ -857,10 +855,10 @@ def test_ctrl_c_mid_segment_prints_the_aborted_note(tmp_path: Path) -> None:
     records = _records(tmp_path)
     types = [str(record["type"]) for record in records]
     assert "error/abort" in types
-    segments = [record["payload"] for record in records if record["type"] == "segment/end"]
+    segments = [record["payload"] for record in records if record["type"] == "turn/end"]
     assert segments[0]["stop_reason"] == "ABORTED"
     assert types.count("session/end") == 1, "会话还在：`session/end` 只在 stdin 关闭之后出现一次"
-    assert types[-2:] == ["segment/end", "session/end"]
+    assert types[-2:] == ["turn/end", "session/end"]
     assert records[-1]["payload"]["stop_reason"] == "MODEL_COMPLETED"
 
 
@@ -961,9 +959,7 @@ def test_consecutive_overflows_say_the_session_cannot_come_down(tmp_path: Path) 
     )
 
     assert result.returncode == 0
-    segments = [
-        record["payload"] for record in _records(tmp_path) if record["type"] == "segment/end"
-    ]
+    segments = [record["payload"] for record in _records(tmp_path) if record["type"] == "turn/end"]
     assert [segment["stop_reason"] for segment in segments] == [
         "CONTEXT_WINDOW_EXCEEDED",
         "CONTEXT_WINDOW_EXCEEDED",
@@ -1058,9 +1054,9 @@ def test_resume_closes_hard_kill_gap_without_rewriting(tmp_path: Path) -> None:
     log = EventLog.create(sessions, "s-half")
     assert isinstance(log, EventLog)
     log.append("session/start", {})
-    log.append("segment/start", {"segment_id": "s1"})
-    log.append("user/message", {"segment_id": "s1", "content": "半截"})
-    log.append("turn/start", {"turn_id": "t1"})
+    log.append("turn/start", {"turn_id": "s1"})
+    log.append("user/message", {"turn_id": "s1", "content": "半截"})
+    log.append("step/start", {"step_id": "t1"})
     original = log.path.read_bytes()
 
     fixture = _fixture(tmp_path, "unused.json", [{"content": "不该跑", "finish_reason": "stop"}])

@@ -453,7 +453,7 @@ class HostServer:
                     await response.write(sse_frame(record))
                     after = record.seq
                     if record.type == "todo/updated" or (
-                        record.type == "segment/start" and todo_state
+                        record.type == "turn/start" and todo_state
                     ):
                         todo_state = todos_unit.apply(todo_state, record)
                         await response.write(
@@ -480,7 +480,7 @@ class HostServer:
                         await response.write(sse_frame(record))
                         after = record.seq
                         if record.type == "todo/updated" or (
-                            record.type == "segment/start" and todo_state
+                            record.type == "turn/start" and todo_state
                         ):
                             todo_state = todos_unit.apply(todo_state, record)
                             await response.write(

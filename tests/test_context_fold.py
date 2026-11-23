@@ -54,13 +54,13 @@ def _one_turn_events(
         start_payload["delegated"] = True
     return [
         _rec(0, "session/start", start_payload),
-        _rec(1, "turn/start", {"turn_id": "t1"}),
+        _rec(1, "step/start", {"step_id": "t1"}),
         _rec(
             2,
             "model/response",
-            {"turn_id": "t1", "content": "hi", "tool_calls": [], "finish_reason": "stop"},
+            {"step_id": "t1", "content": "hi", "tool_calls": [], "finish_reason": "stop"},
         ),
-        _rec(3, "turn/end", {"turn_id": "t1", "stop_reason": "MODEL_COMPLETED"}),
+        _rec(3, "step/end", {"step_id": "t1", "stop_reason": "MODEL_COMPLETED"}),
     ]
 
 
@@ -158,7 +158,7 @@ def test_header_fingerprint_tracks_the_header_not_the_conversation() -> None:
             _rec(
                 4,
                 "model/response",
-                {"turn_id": "t2", "content": "再说一句", "tool_calls": [], "finish_reason": "stop"},
+                {"step_id": "t2", "content": "再说一句", "tool_calls": [], "finish_reason": "stop"},
             ),
         ]
     )
@@ -189,26 +189,26 @@ def test_a_user_message_folds_into_the_conversation_in_seq_order() -> None:
     """REPL 的输入是一条 `user/message` 记录：折成 `role: user` 消息，按 `seq` 进对话体。"""
     events = [
         _rec(0, "session/start", {"append_system_prompt": "", "tools": [], "prompt": ""}),
-        _rec(1, "segment/start", {"segment_id": "s1"}),
-        _rec(2, "user/message", {"segment_id": "s1", "content": "第一条输入"}),
-        _rec(3, "turn/start", {"turn_id": "t1"}),
+        _rec(1, "turn/start", {"turn_id": "s1"}),
+        _rec(2, "user/message", {"turn_id": "s1", "content": "第一条输入"}),
+        _rec(3, "step/start", {"step_id": "t1"}),
         _rec(
             4,
             "model/response",
-            {"turn_id": "t1", "content": "回答一", "tool_calls": [], "finish_reason": "stop"},
+            {"step_id": "t1", "content": "回答一", "tool_calls": [], "finish_reason": "stop"},
         ),
-        _rec(5, "turn/end", {"turn_id": "t1", "stop_reason": "MODEL_COMPLETED"}),
-        _rec(6, "segment/end", {"segment_id": "s1", "stop_reason": "MODEL_COMPLETED", "turns": 1}),
-        _rec(7, "segment/start", {"segment_id": "s2"}),
-        _rec(8, "user/message", {"segment_id": "s2", "content": "第二条输入"}),
-        _rec(9, "turn/start", {"turn_id": "t2"}),
+        _rec(5, "step/end", {"step_id": "t1", "stop_reason": "MODEL_COMPLETED"}),
+        _rec(6, "turn/end", {"turn_id": "s1", "stop_reason": "MODEL_COMPLETED", "steps": 1}),
+        _rec(7, "turn/start", {"turn_id": "s2"}),
+        _rec(8, "user/message", {"turn_id": "s2", "content": "第二条输入"}),
+        _rec(9, "step/start", {"step_id": "t2"}),
         _rec(
             10,
             "model/response",
-            {"turn_id": "t2", "content": "回答二", "tool_calls": [], "finish_reason": "stop"},
+            {"step_id": "t2", "content": "回答二", "tool_calls": [], "finish_reason": "stop"},
         ),
-        _rec(11, "turn/end", {"turn_id": "t2", "stop_reason": "MODEL_COMPLETED"}),
-        _rec(12, "segment/end", {"segment_id": "s2", "stop_reason": "MODEL_COMPLETED", "turns": 1}),
+        _rec(11, "step/end", {"step_id": "t2", "stop_reason": "MODEL_COMPLETED"}),
+        _rec(12, "turn/end", {"turn_id": "s2", "stop_reason": "MODEL_COMPLETED", "steps": 1}),
     ]
 
     context = fold(events)
@@ -226,20 +226,20 @@ def _one_turn_with_segments() -> list[EventRecord]:
     """同一个回合，外面套一段：段的边界是记账记录。"""
     return [
         _rec(0, "session/start", {"append_system_prompt": "", "tools": []}),
-        _rec(1, "segment/start", {"segment_id": "s1"}),
-        _rec(2, "turn/start", {"turn_id": "t1"}),
+        _rec(1, "turn/start", {"turn_id": "s1"}),
+        _rec(2, "step/start", {"step_id": "t1"}),
         _rec(
             3,
             "model/response",
-            {"turn_id": "t1", "content": "hi", "tool_calls": [], "finish_reason": "stop"},
+            {"step_id": "t1", "content": "hi", "tool_calls": [], "finish_reason": "stop"},
         ),
-        _rec(4, "turn/end", {"turn_id": "t1", "stop_reason": "MODEL_COMPLETED"}),
-        _rec(5, "segment/end", {"segment_id": "s1", "stop_reason": "MODEL_COMPLETED", "turns": 1}),
+        _rec(4, "step/end", {"step_id": "t1", "stop_reason": "MODEL_COMPLETED"}),
+        _rec(5, "turn/end", {"turn_id": "s1", "stop_reason": "MODEL_COMPLETED", "steps": 1}),
     ]
 
 
 def test_segment_records_produce_no_messages() -> None:
-    """`segment/start` 与 `segment/end` 与 `turn/*` 一样不产出消息：加与不加，折叠结果相同。"""
+    """`turn/start` 与 `turn/end` 与 `step/*` 一样不产出消息：加与不加，折叠结果相同。"""
     without = fold(_one_turn_events())
     with_segments = fold(_one_turn_with_segments())
 
@@ -254,36 +254,36 @@ def test_a_shadowed_user_message_does_not_enter_the_conversation() -> None:
     """被遮蔽的输入不进对话体；遮蔽段的边界对折叠结果没有效果。"""
     shadowed = [
         _rec(0, "session/start", {"append_system_prompt": "", "tools": [], "prompt": ""}),
-        _rec(1, "segment/start", {"segment_id": "s1"}),
-        _rec(2, "user/message", {"segment_id": "s1", "content": "第一条输入"}),
-        _rec(3, "turn/start", {"turn_id": "t1"}),
+        _rec(1, "turn/start", {"turn_id": "s1"}),
+        _rec(2, "user/message", {"turn_id": "s1", "content": "第一条输入"}),
+        _rec(3, "step/start", {"step_id": "t1"}),
         _rec(
             4,
             "model/response",
-            {"turn_id": "t1", "content": "回答一", "tool_calls": [], "finish_reason": "stop"},
+            {"step_id": "t1", "content": "回答一", "tool_calls": [], "finish_reason": "stop"},
         ),
-        _rec(5, "turn/end", {"turn_id": "t1", "stop_reason": "MODEL_COMPLETED"}),
-        _rec(6, "segment/end", {"segment_id": "s1", "stop_reason": "MODEL_COMPLETED", "turns": 1}),
+        _rec(5, "step/end", {"step_id": "t1", "stop_reason": "MODEL_COMPLETED"}),
+        _rec(6, "turn/end", {"turn_id": "s1", "stop_reason": "MODEL_COMPLETED", "steps": 1}),
         _rec(
             7,
             "compaction/summary",
             {
-                "turn_id": "t2",
+                "step_id": "t2",
                 "shadowed_range": {"start": 1, "end": 6},
                 "summary": "第一段已被摘要",
                 "tokens_before": 900,
                 "tokens_after": 300,
             },
         ),
-        _rec(8, "segment/start", {"segment_id": "s2"}),
-        _rec(9, "user/message", {"segment_id": "s2", "content": "第二条输入"}),
-        _rec(10, "turn/start", {"turn_id": "t2"}),
+        _rec(8, "turn/start", {"turn_id": "s2"}),
+        _rec(9, "user/message", {"turn_id": "s2", "content": "第二条输入"}),
+        _rec(10, "step/start", {"step_id": "t2"}),
         _rec(
             11,
             "model/response",
-            {"turn_id": "t2", "content": "回答二", "tool_calls": [], "finish_reason": "stop"},
+            {"step_id": "t2", "content": "回答二", "tool_calls": [], "finish_reason": "stop"},
         ),
-        _rec(12, "turn/end", {"turn_id": "t2", "stop_reason": "MODEL_COMPLETED"}),
+        _rec(12, "step/end", {"step_id": "t2", "stop_reason": "MODEL_COMPLETED"}),
     ]
 
     context = fold(shadowed)
@@ -318,12 +318,12 @@ def test_folding_the_same_events_twice_gives_identical_results() -> None:
 def _half_log_events() -> list[EventRecord]:
     """构造的半截日志：`call-2` 的 `tool/call` 落了盘却没有结果，之后还有既有消息。"""
     return [
-        _rec(0, "turn/start", {"turn_id": "t1"}),
+        _rec(0, "step/start", {"step_id": "t1"}),
         _rec(
             1,
             "model/response",
             {
-                "turn_id": "t1",
+                "step_id": "t1",
                 "content": "读两个文件",
                 "tool_calls": [
                     {"id": "call-1", "name": "read", "arguments": {"file_path": "a.md"}},
@@ -332,18 +332,18 @@ def _half_log_events() -> list[EventRecord]:
                 "finish_reason": "tool_calls",
             },
         ),
-        _rec(2, "tool/call", {"turn_id": "t1", "tool_call_id": "call-1", "name": "read"}),
+        _rec(2, "tool/call", {"step_id": "t1", "tool_call_id": "call-1", "name": "read"}),
         _rec(
             3,
             "tool/result",
-            {"turn_id": "t1", "tool_call_id": "call-1", "outcome": "OK", "content": "甲\n"},
+            {"step_id": "t1", "tool_call_id": "call-1", "outcome": "OK", "content": "甲\n"},
         ),
-        _rec(4, "tool/call", {"turn_id": "t1", "tool_call_id": "call-2", "name": "read"}),
-        _rec(5, "turn/end", {"turn_id": "t1", "stop_reason": "ABORTED"}),
+        _rec(4, "tool/call", {"step_id": "t1", "tool_call_id": "call-2", "name": "read"}),
+        _rec(5, "step/end", {"step_id": "t1", "stop_reason": "ABORTED"}),
         _rec(
             6,
             "model/response",
-            {"turn_id": "t2", "content": "接着说", "tool_calls": [], "finish_reason": "stop"},
+            {"step_id": "t2", "content": "接着说", "tool_calls": [], "finish_reason": "stop"},
         ),
     ]
 
@@ -374,13 +374,13 @@ def test_a_complete_log_derives_no_closer() -> None:
         _rec(
             5,
             "tool/result",
-            {"turn_id": "t1", "tool_call_id": "call-2", "outcome": "OK", "content": "乙\n"},
+            {"step_id": "t1", "tool_call_id": "call-2", "outcome": "OK", "content": "乙\n"},
         ),
-        _rec(6, "turn/end", {"turn_id": "t1", "stop_reason": "MODEL_COMPLETED"}),
+        _rec(6, "step/end", {"step_id": "t1", "stop_reason": "MODEL_COMPLETED"}),
         _rec(
             7,
             "model/response",
-            {"turn_id": "t2", "content": "接着说", "tool_calls": [], "finish_reason": "stop"},
+            {"step_id": "t2", "content": "接着说", "tool_calls": [], "finish_reason": "stop"},
         ),
     ]
 
@@ -409,12 +409,12 @@ def test_the_derived_closer_is_deterministic() -> None:
 
 def test_fold_puts_the_system_prompt_first_and_keeps_the_body_in_order() -> None:
     events = [
-        _rec(0, "turn/start", {"turn_id": "t1"}),
+        _rec(0, "step/start", {"step_id": "t1"}),
         _rec(
             1,
             "model/response",
             {
-                "turn_id": "t1",
+                "step_id": "t1",
                 "content": "thinking",
                 "tool_calls": [
                     {"id": "call-1", "name": "read", "arguments": {"file_path": "a.md"}}
@@ -422,16 +422,16 @@ def test_fold_puts_the_system_prompt_first_and_keeps_the_body_in_order() -> None
                 "finish_reason": "tool_calls",
             },
         ),
-        _rec(2, "tool/call", {"turn_id": "t1", "tool_call_id": "call-1", "name": "read"}),
+        _rec(2, "tool/call", {"step_id": "t1", "tool_call_id": "call-1", "name": "read"}),
         _rec(
-            3, "tool/result", {"turn_id": "t1", "tool_call_id": "call-1", "outcome": "UNKNOWN_TOOL"}
+            3, "tool/result", {"step_id": "t1", "tool_call_id": "call-1", "outcome": "UNKNOWN_TOOL"}
         ),
         _rec(
             4,
             "model/response",
-            {"turn_id": "t1", "content": "done", "tool_calls": [], "finish_reason": "stop"},
+            {"step_id": "t1", "content": "done", "tool_calls": [], "finish_reason": "stop"},
         ),
-        _rec(5, "turn/end", {"turn_id": "t1", "stop_reason": "MODEL_COMPLETED"}),
+        _rec(5, "step/end", {"step_id": "t1", "stop_reason": "MODEL_COMPLETED"}),
     ]
 
     context = fold(events)
@@ -450,7 +450,7 @@ def test_header_cannot_be_replaced_by_conversation_content() -> None:
         _rec(
             0,
             "model/response",
-            {"turn_id": "t1", "content": SYSTEM_PROMPT, "tool_calls": [], "finish_reason": "stop"},
+            {"step_id": "t1", "content": SYSTEM_PROMPT, "tool_calls": [], "finish_reason": "stop"},
         ),
     ]
 
@@ -476,7 +476,7 @@ def test_long_conversation_is_folded_without_truncation() -> None:
             index,
             "model/response",
             {
-                "turn_id": f"t{index}",
+                "step_id": f"t{index}",
                 "content": f"m{index}",
                 "tool_calls": [],
                 "finish_reason": "stop",
@@ -496,15 +496,15 @@ def test_long_conversation_is_folded_without_truncation() -> None:
 def test_cold_start_fold_matches_the_recorded_context_assembled(tmp_path: Path) -> None:
     log = EventLog.create(session_dir=tmp_path, session_id="s-cold")
     log.append("session/start", {})
-    log.append("turn/start", {"turn_id": "t1"})
+    log.append("step/start", {"step_id": "t1"})
     log.append(
         "model/response",
-        {"turn_id": "t1", "content": "hi", "tool_calls": [], "finish_reason": "stop"},
+        {"step_id": "t1", "content": "hi", "tool_calls": [], "finish_reason": "stop"},
     )
     assembled = fold(read_events(log.path))
     log.append("context/assembled", assembled.model_dump(mode="json"))
-    log.append("model/request", {"turn_id": "t1"})
-    log.append("turn/end", {"turn_id": "t1", "stop_reason": "MODEL_COMPLETED"})
+    log.append("model/request", {"step_id": "t1"})
+    log.append("step/end", {"step_id": "t1", "stop_reason": "MODEL_COMPLETED"})
     log.append("session/end", {"stop_reason": "MODEL_COMPLETED"})
 
     replayed = fold(read_events(log.path))
@@ -531,7 +531,7 @@ async def test_a_fold_with_no_tools_still_matches_replay(tmp_path: Path) -> None
             continue
         points += 1
         # 记录里多带一个 `turn_id`：那是「哪一回合记录的」，不是上下文的一部分。
-        recorded = {key: value for key, value in record.payload.items() if key != "turn_id"}
+        recorded = {key: value for key, value in record.payload.items() if key != "step_id"}
         assert fold(records[:index]).model_dump(mode="json") == recorded
     assert points == 1
 
@@ -540,16 +540,16 @@ def test_model_retry_is_a_fact_that_does_not_enter_the_context(tmp_path: Path) -
     """`model/retry` 进词表、进日志，但不进上下文：重算前缀必须逐字段相等。"""
     log = EventLog.create(session_dir=tmp_path, session_id="s-retry-fold")
     log.append("session/start", {})
-    log.append("turn/start", {"turn_id": "t1"})
+    log.append("step/start", {"step_id": "t1"})
     prefix = fold(read_events(log.path))
     log.append("context/assembled", prefix.model_dump(mode="json"))
-    log.append("model/request", {"turn_id": "t1"})
-    log.append("model/retry", {"turn_id": "t1", "attempt": 1, "status": 429})
+    log.append("model/request", {"step_id": "t1"})
+    log.append("model/retry", {"step_id": "t1", "attempt": 1, "status": 429})
     log.append(
         "model/response",
-        {"turn_id": "t1", "content": "hi", "tool_calls": [], "finish_reason": "stop"},
+        {"step_id": "t1", "content": "hi", "tool_calls": [], "finish_reason": "stop"},
     )
-    log.append("turn/end", {"turn_id": "t1", "stop_reason": "MODEL_COMPLETED"})
+    log.append("step/end", {"step_id": "t1", "stop_reason": "MODEL_COMPLETED"})
     log.append("session/end", {"stop_reason": "MODEL_COMPLETED"})
 
     records = read_events(log.path)
@@ -571,26 +571,26 @@ def test_an_unanswered_approval_request_leaves_the_fold_unchanged() -> None:
     arguments = {"file_path": "a.md"}
     asked = [
         _rec(0, "session/start", {}),
-        _rec(1, "turn/start", {"turn_id": "t1"}),
+        _rec(1, "step/start", {"step_id": "t1"}),
         _rec(
             2,
             "tool/call",
-            {"turn_id": "t1", "tool_call_id": "c1", "name": "write", "arguments": arguments},
+            {"step_id": "t1", "tool_call_id": "c1", "name": "write", "arguments": arguments},
         ),
         _rec(
             3,
             "approval/request",
-            {"turn_id": "t1", "tool_call_id": "c1", "name": "write", "arguments": arguments},
+            {"step_id": "t1", "tool_call_id": "c1", "name": "write", "arguments": arguments},
         ),
         _rec(
-            4, "approval/response", {"turn_id": "t1", "tool_call_id": "c1", "decision": "APPROVED"}
+            4, "approval/response", {"step_id": "t1", "tool_call_id": "c1", "decision": "APPROVED"}
         ),
         _rec(
             5,
             "tool/result",
-            {"turn_id": "t1", "tool_call_id": "c1", "outcome": "OK", "content": "写了"},
+            {"step_id": "t1", "tool_call_id": "c1", "outcome": "OK", "content": "写了"},
         ),
-        _rec(6, "turn/end", {"turn_id": "t1", "stop_reason": "TOOL_CALLS"}),
+        _rec(6, "step/end", {"step_id": "t1", "stop_reason": "TOOL_CALLS"}),
     ]
     half_pair = [record for record in asked if record.type != "approval/response"]
 
@@ -604,17 +604,17 @@ def _compacted_events() -> list[EventRecord]:
     """一份压缩过的日志：seq 1 到 5 被遮蔽，保留尾部从 seq 7 起。"""
     return [
         _rec(0, "session/start", {"prompt": "写一份报告", "tools": ["read"]}),
-        _rec(1, "turn/start", {"turn_id": "t1"}),
+        _rec(1, "step/start", {"step_id": "t1"}),
         _rec(
             2,
             "model/response",
-            {"turn_id": "t1", "content": "第一段", "tool_calls": [], "finish_reason": "stop"},
+            {"step_id": "t1", "content": "第一段", "tool_calls": [], "finish_reason": "stop"},
         ),
         _rec(
             3,
             "tool/call",
             {
-                "turn_id": "t1",
+                "step_id": "t1",
                 "tool_call_id": "c1",
                 "name": "read",
                 "arguments": {"file_path": "a.md"},
@@ -623,13 +623,13 @@ def _compacted_events() -> list[EventRecord]:
         _rec(
             4,
             "tool/result",
-            {"turn_id": "t1", "tool_call_id": "c1", "outcome": "OK", "content": "结果一"},
+            {"step_id": "t1", "tool_call_id": "c1", "outcome": "OK", "content": "结果一"},
         ),
         _rec(
             5,
             "model/response",
             {
-                "turn_id": "t2",
+                "step_id": "t2",
                 "content": "摘要文本",
                 "tool_calls": [],
                 "finish_reason": "stop",
@@ -640,7 +640,7 @@ def _compacted_events() -> list[EventRecord]:
             6,
             "compaction/summary",
             {
-                "turn_id": "t2",
+                "step_id": "t2",
                 "shadowed_range": {"start": 1, "end": 5},
                 "summary": "摘要文本",
                 "tokens_before": 900,
@@ -650,7 +650,7 @@ def _compacted_events() -> list[EventRecord]:
         _rec(
             7,
             "model/response",
-            {"turn_id": "t2", "content": "第二段", "tool_calls": [], "finish_reason": "stop"},
+            {"step_id": "t2", "content": "第二段", "tool_calls": [], "finish_reason": "stop"},
         ),
     ]
 
@@ -693,7 +693,7 @@ def test_two_summaries_are_ordered_by_their_seq() -> None:
             8,
             "model/response",
             {
-                "turn_id": "t3",
+                "step_id": "t3",
                 "content": "第二份摘要正文",
                 "tool_calls": [],
                 "finish_reason": "stop",
@@ -704,7 +704,7 @@ def test_two_summaries_are_ordered_by_their_seq() -> None:
             9,
             "compaction/summary",
             {
-                "turn_id": "t3",
+                "step_id": "t3",
                 "shadowed_range": {"start": 7, "end": 8},
                 "summary": "第二份摘要",
                 "tokens_before": 800,
@@ -733,13 +733,13 @@ def test_an_unmarked_response_still_produces_an_assistant_message() -> None:
         _rec(
             1,
             "model/response",
-            {"turn_id": "t1", "content": "普通回复", "tool_calls": [], "finish_reason": "stop"},
+            {"step_id": "t1", "content": "普通回复", "tool_calls": [], "finish_reason": "stop"},
         ),
         _rec(
             2,
             "model/response",
             {
-                "turn_id": "t2",
+                "step_id": "t2",
                 "content": "摘要文本",
                 "tool_calls": [],
                 "finish_reason": "stop",
@@ -782,15 +782,15 @@ def test_assembly_points_carry_their_own_prefix_and_turn_id() -> None:
     """
     records = [
         _rec(0, "session/start", {"prompt": "任务", "tools": []}),
-        _rec(1, "segment/start", {"segment_id": "s1"}),
-        _rec(2, "turn/start", {"turn_id": "t1"}),
-        _rec(3, "context/assembled", {"turn_id": "t1", "messages": []}),
-        _rec(4, "model/request", {"turn_id": "t1", "tools": []}),
-        _rec(5, "model/response", {"turn_id": "t1", "content": "hi", "tool_calls": []}),
-        _rec(6, "turn/end", {"turn_id": "t1", "stop_reason": "TOOL_CALLS"}),
-        _rec(7, "turn/start", {"turn_id": "t2"}),
-        _rec(8, "context/assembled", {"turn_id": "t2", "messages": []}),
-        _rec(9, "turn/end", {"turn_id": "t2", "stop_reason": "MODEL_COMPLETED"}),
+        _rec(1, "turn/start", {"turn_id": "s1"}),
+        _rec(2, "step/start", {"step_id": "t1"}),
+        _rec(3, "context/assembled", {"step_id": "t1", "messages": []}),
+        _rec(4, "model/request", {"step_id": "t1", "tools": []}),
+        _rec(5, "model/response", {"step_id": "t1", "content": "hi", "tool_calls": []}),
+        _rec(6, "step/end", {"step_id": "t1", "stop_reason": "TOOL_CALLS"}),
+        _rec(7, "step/start", {"step_id": "t2"}),
+        _rec(8, "context/assembled", {"step_id": "t2", "messages": []}),
+        _rec(9, "step/end", {"step_id": "t2", "stop_reason": "MODEL_COMPLETED"}),
     ]
 
     points = assembly_points(records)
@@ -806,7 +806,7 @@ def test_an_assembly_point_without_a_turn_start_carries_an_empty_turn_id() -> No
     """手写日志里装配点之前没有 `turn/start`：回合 id 是空串，不猜、不报错。"""
     records = [
         _rec(0, "session/start", {"prompt": "任务", "tools": []}),
-        _rec(1, "context/assembled", {"turn_id": "", "messages": []}),
+        _rec(1, "context/assembled", {"step_id": "", "messages": []}),
     ]
 
     assert [point.turn_id for point in assembly_points(records)] == [""]
@@ -816,23 +816,23 @@ def _range_events() -> list[EventRecord]:
     """一段够长的对话：seq 3 与 4 是本次要遮蔽的那一段，seq 6 是保留尾部。"""
     return [
         _rec(0, "session/start", {"prompt": "最早的那条人话", "tools": ["read"]}),
-        _rec(1, "turn/start", {"turn_id": "t1"}),
+        _rec(1, "step/start", {"step_id": "t1"}),
         _rec(
             2,
             "model/response",
-            {"turn_id": "t1", "content": "遮蔽区之前的回复", "tool_calls": []},
+            {"step_id": "t1", "content": "遮蔽区之前的回复", "tool_calls": []},
         ),
         _rec(3, "user/message", {"content": "要进摘要的那条输入"}),
         _rec(
             4,
             "model/response",
-            {"turn_id": "t2", "content": "要进摘要的那段回复", "tool_calls": []},
+            {"step_id": "t2", "content": "要进摘要的那段回复", "tool_calls": []},
         ),
         _rec(
             5,
             "tool/result",
             {
-                "turn_id": "t2",
+                "step_id": "t2",
                 "tool_call_id": "c1",
                 "outcome": "OK",
                 "content": "要进摘要的工具结果",
@@ -857,19 +857,19 @@ def test_a_seq_range_excludes_the_protected_events_it_covers() -> None:
     """区间把 `session/start` 与既有 `compaction/summary` 盖住时，它们不折成消息。"""
     records = [
         _rec(0, "session/start", {"prompt": "最早的那条人话", "tools": []}),
-        _rec(1, "model/response", {"turn_id": "t1", "content": "第一段回复", "tool_calls": []}),
+        _rec(1, "model/response", {"step_id": "t1", "content": "第一段回复", "tool_calls": []}),
         _rec(
             2,
             "compaction/summary",
             {
-                "turn_id": "t1",
+                "step_id": "t1",
                 "shadowed_range": {"start": 1, "end": 1},
                 "summary": "上一轮的摘要",
                 "tokens_before": 40,
                 "tokens_after": 10,
             },
         ),
-        _rec(3, "model/response", {"turn_id": "t2", "content": "第二段回复", "tool_calls": []}),
+        _rec(3, "model/response", {"step_id": "t2", "content": "第二段回复", "tool_calls": []}),
     ]
 
     messages = fold_range(records, start=0, end=3)
@@ -886,12 +886,12 @@ def test_an_empty_seq_range_folds_to_no_messages() -> None:
 def test_fold_cache_follows_new_log_seq() -> None:
     events = [
         _rec(0, "session/start", {}),
-        _rec(1, "user/message", {"segment_id": "s1", "content": "一"}),
+        _rec(1, "user/message", {"turn_id": "s1", "content": "一"}),
     ]
     first = fold(events)
     assert [message.content for message in first.messages if message.role == "user"] == ["一"]
 
-    grown = [*events, _rec(2, "user/message", {"segment_id": "s1", "content": "二"})]
+    grown = [*events, _rec(2, "user/message", {"turn_id": "s1", "content": "二"})]
     second = fold(grown)
 
     assert [message.content for message in second.messages if message.role == "user"] == [
@@ -903,7 +903,7 @@ def test_fold_cache_follows_new_log_seq() -> None:
 def test_fold_cache_corruption_falls_back() -> None:
     events = [
         _rec(0, "session/start", {}),
-        _rec(1, "user/message", {"segment_id": "s1", "content": "一"}),
+        _rec(1, "user/message", {"turn_id": "s1", "content": "一"}),
     ]
     expected = fold(events)
     _FOLD_CACHE[_fold_cache_key(events)] = object()  # type: ignore[assignment]
@@ -918,11 +918,11 @@ def test_fold_cache_corruption_falls_back() -> None:
 def test_fold_cache_does_not_collide_on_same_seq_with_different_content() -> None:
     first = [
         _rec(0, "session/start", {}),
-        _rec(1, "user/message", {"segment_id": "s1", "content": "一"}),
+        _rec(1, "user/message", {"turn_id": "s1", "content": "一"}),
     ]
     second = [
         _rec(0, "session/start", {}),
-        _rec(1, "user/message", {"segment_id": "s1", "content": "二"}),
+        _rec(1, "user/message", {"turn_id": "s1", "content": "二"}),
     ]
 
     fold(first)
@@ -934,7 +934,7 @@ def test_fold_cache_does_not_collide_on_same_seq_with_different_content() -> Non
 def test_projection_marks_in_context_shadowed_log_only() -> None:
     events = [
         _rec(0, "session/start", {}),
-        _rec(1, "user/message", {"segment_id": "s1", "content": "一"}),
+        _rec(1, "user/message", {"turn_id": "s1", "content": "一"}),
         _rec(
             2,
             "compaction/summary",
@@ -946,7 +946,7 @@ def test_projection_marks_in_context_shadowed_log_only() -> None:
         _rec(
             3,
             "error/model",
-            {"turn_id": "t1", "code": "PROVIDER_ERROR", "detail": "失败"},
+            {"step_id": "t1", "code": "PROVIDER_ERROR", "detail": "失败"},
         ),
     ]
 

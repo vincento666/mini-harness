@@ -72,9 +72,7 @@ def _messages(handle: HostSession) -> list[dict[str, Any]]:
 def _segments(handle: HostSession) -> list[str]:
     records = read_events(handle.log.path)
     assert isinstance(records, list)
-    return [
-        str(record.payload["segment_id"]) for record in records if record.type == "segment/start"
-    ]
+    return [str(record.payload["turn_id"]) for record in records if record.type == "turn/start"]
 
 
 def _create_goal(max_rounds: int) -> dict[str, Any]:

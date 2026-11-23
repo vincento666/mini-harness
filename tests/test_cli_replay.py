@@ -149,15 +149,15 @@ def test_replay_of_a_log_without_the_platform_facts_still_verifies(tmp_path: Pat
             "tools": ["read"],
         },
     )
-    emit("turn/start", {"turn_id": "t1"})
+    emit("step/start", {"step_id": "t1"})
     assembled = assembled_payload("t1", fold(records))
     emit("context/assembled", assembled)
     emit(
         "model/response",
-        {"turn_id": "t1", "content": "hi", "tool_calls": [], "finish_reason": "stop"},
+        {"step_id": "t1", "content": "hi", "tool_calls": [], "finish_reason": "stop"},
     )
-    emit("turn/end", {"turn_id": "t1", "stop_reason": "MODEL_COMPLETED"})
-    emit("session/end", {"stop_reason": "MODEL_COMPLETED", "turns": 1})
+    emit("step/end", {"step_id": "t1", "stop_reason": "MODEL_COMPLETED"})
+    emit("session/end", {"stop_reason": "MODEL_COMPLETED", "steps": 1})
 
     header = assembled["messages"][0]["content"]
     replay = _cli("replay", "old-no-platform", "--session-dir", str(session_dir), cwd=tmp_path)
@@ -351,13 +351,13 @@ def test_replay_of_a_half_log_derives_the_closer_without_touching_the_log(tmp_pa
 
     written: list[EventRecord] = []
     written.append(emit("session/start", {"prompt": "任务", "tools": ["read"]}))
-    written.append(emit("turn/start", {"turn_id": "t1"}))
+    written.append(emit("step/start", {"step_id": "t1"}))
     written.append(emit("context/assembled", assembled_payload("t1", fold(written))))
     written.append(
         emit(
             "model/response",
             {
-                "turn_id": "t1",
+                "step_id": "t1",
                 "content": "读一个文件",
                 "tool_calls": [
                     {"id": "call-1", "name": "read", "arguments": {"file_path": "a.md"}}
@@ -366,8 +366,8 @@ def test_replay_of_a_half_log_derives_the_closer_without_touching_the_log(tmp_pa
             },
         )
     )
-    written.append(emit("tool/call", {"turn_id": "t1", "tool_call_id": "call-1", "name": "read"}))
-    written.append(emit("turn/start", {"turn_id": "t2"}))
+    written.append(emit("tool/call", {"step_id": "t1", "tool_call_id": "call-1", "name": "read"}))
+    written.append(emit("step/start", {"step_id": "t2"}))
     emit("context/assembled", assembled_payload("t2", fold(written)))
     log_before = log.path.read_bytes()
 
@@ -498,8 +498,8 @@ async def test_a_log_that_ended_in_overflow_replays_pointwise(tmp_path: Path) ->
     assert isinstance(records, list)
     assert [record.type for record in records][-4:] == [
         "error/context",
+        "step/end",
         "turn/end",
-        "segment/end",
         "session/end",
     ]
 

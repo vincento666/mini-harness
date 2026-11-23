@@ -168,7 +168,7 @@ async def test_an_io_failure_stays_a_result_and_the_turn_still_closes(tmp_path: 
 
     assert tool_outcomes(log) == ["TOOL_IO_FAILED"]
     assert (tmp_path / "a.md").read_text(encoding="utf-8") == "原文\n"
-    turn_ends = [record for record in read_events(log.path) if record.type == "turn/end"]
+    turn_ends = [record for record in read_events(log.path) if record.type == "step/end"]
     assert [str(record.payload["stop_reason"]) for record in turn_ends] == [
         "TOOL_CALLS",
         "MODEL_COMPLETED",

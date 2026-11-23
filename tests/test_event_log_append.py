@@ -18,7 +18,7 @@ def test_appended_record_carries_the_six_envelope_fields(tmp_path: Path) -> None
     assert len(lines) == 1, "一次追加应产出一行 JSONL"
 
     record = json.loads(lines[0])
-    assert record["schema_version"] == 1
+    assert record["schema_version"] == 2
     assert record["type"] == "session/start"
     assert record["session_id"] == "sess-1"
     assert isinstance(record["seq"], int)
@@ -29,8 +29,8 @@ def test_appended_record_carries_the_six_envelope_fields(tmp_path: Path) -> None
 def test_seq_starts_at_zero_and_increments_by_one(tmp_path: Path) -> None:
     log = EventLog.create(session_dir=tmp_path, session_id="sess-2")
     log.append("session/start", {})
-    log.append("turn/start", {"turn_id": "t1"})
-    log.append("turn/end", {"turn_id": "t1"})
+    log.append("step/start", {"step_id": "t1"})
+    log.append("step/end", {"step_id": "t1"})
 
     seqs = [json.loads(line)["seq"] for line in log.path.read_text(encoding="utf-8").splitlines()]
     assert seqs == [0, 1, 2]
@@ -45,7 +45,7 @@ def test_open_reads_last_seq_and_appends_next(tmp_path: Path) -> None:
 
     assert isinstance(reopened, EventLog)
     assert reopened.last_seq == 7
-    record = reopened.append("turn/start", {"turn_id": "t1"})
+    record = reopened.append("step/start", {"step_id": "t1"})
     assert record.seq == 8
 
 
@@ -57,16 +57,16 @@ def test_open_empty_log_appends_at_zero(tmp_path: Path) -> None:
 
     assert isinstance(reopened, EventLog)
     assert reopened.last_seq == -1
-    assert reopened.append("turn/start", {"turn_id": "t1"}).seq == 0
+    assert reopened.append("step/start", {"step_id": "t1"}).seq == 0
 
 
 def test_log_is_append_only(tmp_path: Path) -> None:
     log = EventLog.create(session_dir=tmp_path, session_id="sess-3")
     log.append("session/start", {})
-    log.append("turn/start", {"turn_id": "t1"})
+    log.append("step/start", {"step_id": "t1"})
     written_so_far = log.path.read_bytes()
 
-    log.append("turn/end", {"turn_id": "t1"})
+    log.append("step/end", {"step_id": "t1"})
     final = log.path.read_bytes()
 
     assert final.startswith(written_so_far), "已写入的字节必须是最终文件的严格前缀"
@@ -117,7 +117,7 @@ def test_a_log_that_becomes_unwritable_mid_session_is_a_log_write_failure(tmp_pa
     written_so_far = log.path.read_bytes()
     os.chmod(log.path, stat.S_IREAD)
     try:
-        outcome = log.append("turn/start", {"turn_id": "t1"})
+        outcome = log.append("step/start", {"step_id": "t1"})
     finally:
         os.chmod(log.path, stat.S_IREAD | stat.S_IWRITE)
 
@@ -149,11 +149,11 @@ def test_the_tail_consumes_nothing_of_a_half_written_line(tmp_path: Path) -> Non
     torn = json.dumps(
         {
             "schema_version": 1,
-            "type": "turn/start",
+            "type": "step/start",
             "session_id": "sess-tail",
             "seq": 1,
             "ts": "2026-10-22T00:00:00+00:00",
-            "payload": {"turn_id": "t1"},
+            "payload": {"step_id": "t1"},
         },
         ensure_ascii=False,
     )
@@ -172,7 +172,7 @@ def test_the_tail_consumes_nothing_of_a_half_written_line(tmp_path: Path) -> Non
     rest = tail.read_new()
     assert isinstance(rest, list)
     assert [record.seq for record in rest] == [1]
-    assert rest[0].payload == {"turn_id": "t1"}
+    assert rest[0].payload == {"step_id": "t1"}
 
 
 def test_a_corrupt_line_is_a_log_read_failure_for_the_tail_too(tmp_path: Path) -> None:
@@ -196,7 +196,7 @@ def test_append_notifies_observers_until_unsubscribe(tmp_path: Path) -> None:
 
     log.append("session/start", {})
     unsubscribe()
-    log.append("turn/start", {"turn_id": "t1"})
+    log.append("step/start", {"step_id": "t1"})
 
     assert seen == ["session/start"]
 
@@ -220,17 +220,17 @@ def _write_schema_record(path: Path, schema_version: int) -> None:
 
 def test_adjacent_schema_migration(tmp_path: Path) -> None:
     path = tmp_path / "old.jsonl"
-    _write_schema_record(path, 0)
+    _write_schema_record(path, 1)
 
     records = read_events(path)
 
     assert isinstance(records, list)
-    assert records[0].schema_version == 1
+    assert records[0].schema_version == 2
 
 
 def test_schema_skip_is_rejected_without_writing(tmp_path: Path) -> None:
     path = tmp_path / "future.jsonl"
-    _write_schema_record(path, 2)
+    _write_schema_record(path, 3)
     before = path.read_bytes()
 
     outcome = read_events(path)

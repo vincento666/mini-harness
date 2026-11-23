@@ -297,7 +297,7 @@ def test_cancel_while_waiting_for_approval_is_unavailable(tmp_path: Path) -> Non
         responses = [
             record["payload"] for record in records if record["type"] == "approval/response"
         ]
-        ends = [record["payload"] for record in records if record["type"] == "segment/end"]
+        ends = [record["payload"] for record in records if record["type"] == "turn/end"]
         assert responses[-1]["decision"] == "UNAVAILABLE"
         assert ends[-1]["stop_reason"] == "ABORTED"
         assert not (workspace / "notes.md").exists()
@@ -487,7 +487,7 @@ def test_snapshot_precedes_only_new_frames(tmp_path: Path) -> None:
                 new_frame = _next_frame(lines)
 
         assert int(new_frame["id"]) == expected_last + 1
-        assert json.loads(new_frame["data"])["type"] == "segment/start"
+        assert json.loads(new_frame["data"])["type"] == "turn/start"
     finally:
         _stop(process)
 
@@ -805,7 +805,7 @@ def test_sigint_cancels_all_segments_and_writes_session_end(tmp_path: Path) -> N
         assert code == 0
         records = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
         types = [record["type"] for record in records]
-        ends = [record["payload"] for record in records if record["type"] == "segment/end"]
+        ends = [record["payload"] for record in records if record["type"] == "turn/end"]
         assert "error/abort" in types
         assert ends[-1]["stop_reason"] == "ABORTED"
         assert types[-1] == "session/end"
@@ -1187,9 +1187,7 @@ def test_the_host_completion_script(tmp_path: Path) -> None:
             assert json.loads(frame["data"]) == record
         types = [record["type"] for record in records]
         ends = [
-            record["payload"]["stop_reason"]
-            for record in records
-            if record["type"] == "segment/end"
+            record["payload"]["stop_reason"] for record in records if record["type"] == "turn/end"
         ]
         assert types[0] == "session/start"
         assert records[0]["payload"]["entry"] == "host"
@@ -1319,7 +1317,7 @@ def test_host_denies_a_write_over_http(tmp_path: Path) -> None:
             record["payload"] for record in records if record["type"] == "approval/response"
         ]
         results = [record["payload"] for record in records if record["type"] == "tool/result"]
-        ends = [record["payload"] for record in records if record["type"] == "segment/end"]
+        ends = [record["payload"] for record in records if record["type"] == "turn/end"]
         assert responses[-1]["decision"] == "DENIED"
         assert results[-1]["outcome"] == "DENIED_BY_APPROVAL"
         assert ends[-1]["stop_reason"] == "FENCE_DENIED"
@@ -1377,7 +1375,7 @@ def test_cancel_ends_only_the_segment(tmp_path: Path) -> None:
 
         records = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
         types = [record["type"] for record in records]
-        ends = [record["payload"] for record in records if record["type"] == "segment/end"]
+        ends = [record["payload"] for record in records if record["type"] == "turn/end"]
         messages = [
             record["payload"]["content"] for record in records if record["type"] == "user/message"
         ]
@@ -1533,21 +1531,17 @@ def test_a_second_message_queues_and_runs_after_the_first(tmp_path: Path) -> Non
 
         records = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
         starts = [
-            record["payload"]["segment_id"]
-            for record in records
-            if record["type"] == "segment/start"
+            record["payload"]["turn_id"] for record in records if record["type"] == "turn/start"
         ]
         ends = [
-            record["payload"]["stop_reason"]
-            for record in records
-            if record["type"] == "segment/end"
+            record["payload"]["stop_reason"] for record in records if record["type"] == "turn/end"
         ]
         messages = [
             record["payload"]["content"] for record in records if record["type"] == "user/message"
         ]
         types = [record["type"] for record in records]
-        first_end = types.index("segment/end")
-        second_start = types.index("segment/start", first_end)
+        first_end = types.index("turn/end")
+        second_start = types.index("turn/start", first_end)
         assert starts == ["s1", "s2"]
         assert ends == ["MODEL_COMPLETED", "MODEL_COMPLETED"]
         assert messages == ["第一句", "第二句"]
@@ -1585,9 +1579,9 @@ def test_a_message_starts_a_segment(tmp_path: Path) -> None:
             .splitlines()
         ]
         types = [record["type"] for record in records]
-        start = types.index("segment/start")
+        start = types.index("turn/start")
         user = types.index("user/message")
-        end = types.index("segment/end")
+        end = types.index("turn/end")
         assert start < user < end
         assert records[user]["payload"]["content"] == "任务"
         assert records[end]["payload"]["stop_reason"] == "MODEL_COMPLETED"

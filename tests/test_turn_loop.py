@@ -50,13 +50,13 @@ async def test_single_turn_writes_the_expected_event_sequence(tmp_path: Path) ->
     types = [record.type for record in read_events(log.path)]
     assert types == [
         "session/start",
-        "segment/start",
         "turn/start",
+        "step/start",
         "context/assembled",
         "model/request",
         "model/response",
+        "step/end",
         "turn/end",
-        "segment/end",
         "session/end",
     ]
     assert outcome.stop_reason == "MODEL_COMPLETED"
@@ -101,17 +101,17 @@ async def test_two_segments_number_segments_and_turns_continuously(tmp_path: Pat
     records = read_events(log.path)
     assert first.stop_reason == "MAX_TURNS"
     assert second.stop_reason == "MODEL_COMPLETED"
-    assert [record.type for record in records if record.type.startswith("segment/")] == [
-        "segment/start",
-        "segment/end",
-        "segment/start",
-        "segment/end",
+    assert [record.type for record in records if record.type.startswith("turn/")] == [
+        "turn/start",
+        "turn/end",
+        "turn/start",
+        "turn/end",
     ]
-    assert [r.payload for r in records if r.type == "segment/end"] == [
-        {"segment_id": "s1", "stop_reason": "MAX_TURNS", "turns": 3, "tool_calls": 3},
-        {"segment_id": "s2", "stop_reason": "MODEL_COMPLETED", "turns": 2, "tool_calls": 1},
+    assert [r.payload for r in records if r.type == "turn/end"] == [
+        {"turn_id": "s1", "stop_reason": "MAX_TURNS", "steps": 3, "tool_calls": 3},
+        {"turn_id": "s2", "stop_reason": "MODEL_COMPLETED", "steps": 2, "tool_calls": 1},
     ]
-    assert [r.payload["turn_id"] for r in records if r.type == "turn/start"] == [
+    assert [r.payload["step_id"] for r in records if r.type == "step/start"] == [
         "t1",
         "t2",
         "t3",
@@ -139,9 +139,9 @@ async def test_a_serve_entry_session_is_one_segment_closed_on_disk(tmp_path: Pat
     records = read_events(log.path)
     assert records[0].type == "session/start"
     assert records[0].payload["entry"] == "serve"
-    assert [record.type for record in records if record.type.startswith("segment/")] == [
-        "segment/start",
-        "segment/end",
+    assert [record.type for record in records if record.type.startswith("turn/")] == [
+        "turn/start",
+        "turn/end",
     ]
     assert records[-1].type == "session/end"
 
@@ -156,12 +156,12 @@ async def test_each_turn_is_closed_before_the_next_one_starts(tmp_path: Path) ->
     )
 
     records = read_events(log.path)
-    starts = [index for index, record in enumerate(records) if record.type == "turn/start"]
-    ends = [index for index, record in enumerate(records) if record.type == "turn/end"]
+    starts = [index for index, record in enumerate(records) if record.type == "step/start"]
+    ends = [index for index, record in enumerate(records) if record.type == "step/end"]
     assert len(starts) == 3
     assert len(ends) == 3
     assert all(ends[index] < starts[index + 1] for index in range(2))
-    turn_ids = [record.payload["turn_id"] for record in records if record.type == "turn/start"]
+    turn_ids = [record.payload["step_id"] for record in records if record.type == "step/start"]
     assert len(set(turn_ids)) == 3
 
 
@@ -272,7 +272,7 @@ async def test_context_assembled_carries_the_turn_id_it_belongs_to(tmp_path: Pat
 
     assembled = [record for record in read_events(log.path) if record.type == "context/assembled"]
     assert len(assembled) == 2
-    assert [record.payload["turn_id"] for record in assembled] == ["t1", "t2"]
+    assert [record.payload["step_id"] for record in assembled] == ["t1", "t2"]
 
 
 async def test_empty_tool_calls_ends_the_loop_with_model_completed(tmp_path: Path) -> None:
@@ -285,7 +285,7 @@ async def test_empty_tool_calls_ends_the_loop_with_model_completed(tmp_path: Pat
     )
 
     records = read_events(log.path)
-    turn_end = [record for record in records if record.type == "turn/end"]
+    turn_end = [record for record in records if record.type == "step/end"]
     assert len(turn_end) == 1
     assert turn_end[0].payload["stop_reason"] == "MODEL_COMPLETED"
     assert outcome.stop_reason == "MODEL_COMPLETED"
@@ -301,7 +301,7 @@ async def test_reaching_max_turns_stops_with_max_turns_and_no_failure(tmp_path: 
     )
 
     records = read_events(log.path)
-    last_turn_end = [record for record in records if record.type == "turn/end"][-1]
+    last_turn_end = [record for record in records if record.type == "step/end"][-1]
     assert last_turn_end.payload["stop_reason"] == "MAX_TURNS"
     assert outcome.stop_reason == "MAX_TURNS"
     assert outcome.failure_code is None
@@ -320,7 +320,7 @@ async def test_turn_that_requests_tool_calls_closes_with_tool_calls(tmp_path: Pa
     )
 
     records = read_events(log.path)
-    turn_ends = [record.payload["stop_reason"] for record in records if record.type == "turn/end"]
+    turn_ends = [record.payload["stop_reason"] for record in records if record.type == "step/end"]
     assert turn_ends == ["TOOL_CALLS", "MODEL_COMPLETED"]
     assert outcome.stop_reason == "MODEL_COMPLETED"
 
@@ -440,7 +440,7 @@ async def test_cancel_signal_ends_the_turn_with_aborted(tmp_path: Path) -> None:
     )
 
     records = read_events(log.path)
-    turn_end = [record for record in records if record.type == "turn/end"][-1]
+    turn_end = [record for record in records if record.type == "step/end"][-1]
     assert turn_end.payload["stop_reason"] == "ABORTED"
     assert records[-1].type == "session/end"
     assert records[-1].payload["stop_reason"] == "ABORTED"
@@ -461,12 +461,12 @@ async def test_a_cancelled_turn_writes_an_error_abort_event(tmp_path: Path) -> N
     records = read_events(log.path)
     aborts = [record for record in records if record.type == "error/abort"]
     assert len(aborts) == 1
-    assert aborts[0].payload["turn_id"] == "t1"
+    assert aborts[0].payload["step_id"] == "t1"
     assert aborts[0].payload["code"] == "ABORTED"
     assert [record.type for record in records][-4:] == [
         "error/abort",
+        "step/end",
         "turn/end",
-        "segment/end",
         "session/end",
     ]
     assert outcome.stop_reason == "ABORTED"
@@ -511,7 +511,7 @@ async def test_provider_failure_is_recorded_as_error_model_and_provider_error(
     errors = [record for record in records if record.type == "error/model"]
     assert len(errors) == 1
     assert errors[0].payload["code"] == "PROVIDER_EXHAUSTED"
-    assert [record.payload["stop_reason"] for record in records if record.type == "turn/end"] == [
+    assert [record.payload["stop_reason"] for record in records if record.type == "step/end"] == [
         "PROVIDER_ERROR"
     ]
     assert outcome.stop_reason == "PROVIDER_ERROR"
@@ -575,16 +575,16 @@ async def test_a_fence_denial_ends_the_run_without_dispatching_the_rest(
     records = read_events(log.path)
     assert [record.type for record in records] == [
         "session/start",
-        "segment/start",
         "turn/start",
+        "step/start",
         "context/assembled",
         "model/request",
         "model/response",
         "tool/call",
         "tool/result",
         "error/fence",
+        "step/end",
         "turn/end",
-        "segment/end",
         "session/end",
     ]
     assert [r.payload["tool_call_id"] for r in records if r.type == "tool/call"] == ["c1"]
@@ -747,7 +747,7 @@ async def test_one_turn_with_two_tool_calls_dispatches_both(tmp_path: Path) -> N
     records = read_events(log.path)
     calls = [record for record in records if record.type == "tool/call"]
     results = [record for record in records if record.type == "tool/result"]
-    first_turn_end = next(record for record in records if record.type == "turn/end")
+    first_turn_end = next(record for record in records if record.type == "step/end")
 
     assert [record.payload["tool_call_id"] for record in calls] == ["c1", "c2"]
     assert [record.payload["tool_call_id"] for record in results] == ["c1", "c2"]
@@ -802,21 +802,21 @@ async def test_a_429_then_200_retries_once_and_writes_one_model_retry(tmp_path: 
 
     assert types == [
         "session/start",
-        "segment/start",
         "turn/start",
+        "step/start",
         "context/assembled",
         "model/request",
         "model/retry",
         "model/response",
+        "step/end",
         "turn/end",
-        "segment/end",
         "session/end",
     ]
     retries = [record.payload for record in records if record.type == "model/retry"]
     assert len(retries) == 1
     assert retries[0]["attempt"] == 1
     assert retries[0]["status"] == 429
-    assert retries[0]["turn_id"] == records[2].payload["turn_id"]
+    assert retries[0]["step_id"] == records[2].payload["step_id"]
     assert outcome.stop_reason == "MODEL_COMPLETED"
     assert outcome.failure_code is None
 
@@ -831,14 +831,14 @@ async def test_two_500s_write_one_model_retry_then_error_model(tmp_path: Path) -
 
     assert types == [
         "session/start",
-        "segment/start",
         "turn/start",
+        "step/start",
         "context/assembled",
         "model/request",
         "model/retry",
         "error/model",
+        "step/end",
         "turn/end",
-        "segment/end",
         "session/end",
     ]
     retries = [record.payload for record in records if record.type == "model/retry"]
@@ -872,13 +872,13 @@ async def test_a_400_is_not_retried(tmp_path: Path) -> None:
 
     assert types == [
         "session/start",
-        "segment/start",
         "turn/start",
+        "step/start",
         "context/assembled",
         "model/request",
         "error/model",
+        "step/end",
         "turn/end",
-        "segment/end",
         "session/end",
     ]
     assert outcome.failure_code == "PROVIDER_HTTP_STATUS"
@@ -986,7 +986,7 @@ async def test_the_same_scene_through_both_providers_writes_the_same_log(
     )
 
     assert [record.type for record in mock_records] == [record.type for record in openai_records]
-    for key in ("tool/call", "tool/result", "model/response", "turn/end"):
+    for key in ("tool/call", "tool/result", "model/response", "step/end"):
         mine = [record.payload for record in mock_records if record.type == key]
         theirs = [record.payload for record in openai_records if record.type == key]
         assert mine == theirs, key
@@ -1042,7 +1042,7 @@ async def test_a_tool_call_is_unknown_when_the_whitelist_is_empty(tmp_path: Path
 
     records = read_events(log.path)
     assert result_outcomes(records) == [("c1", "UNKNOWN_TOOL")]
-    assert [record.type for record in records].count("turn/end") == 2
+    assert [record.type for record in records].count("step/end") == 2
     assert outcome.stop_reason == "MODEL_COMPLETED"
 
 
@@ -1100,5 +1100,5 @@ async def test_a_builtin_tool_filtered_out_by_the_whitelist_is_unknown(tmp_path:
 
     records = read_events(log.path)
     assert result_outcomes(records) == [("c1", "UNKNOWN_TOOL")]
-    assert [record.type for record in records].count("turn/end") == 2
+    assert [record.type for record in records].count("step/end") == 2
     assert outcome.stop_reason == "MODEL_COMPLETED"

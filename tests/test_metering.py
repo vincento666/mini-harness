@@ -27,14 +27,14 @@ def test_four_buckets_are_summed() -> None:
             1,
             "model/response",
             {
-                "turn_id": "t1",
+                "step_id": "t1",
                 "usage": {"input_tokens": 100, "cache_read_tokens": 20, "output_tokens": 30},
             },
         ),
         _rec(
             2,
             "model/response",
-            {"turn_id": "t2", "usage": {"input_tokens": 50, "output_tokens": 10}},
+            {"step_id": "t2", "usage": {"input_tokens": 50, "output_tokens": 10}},
         ),
     ]
 
@@ -53,7 +53,7 @@ def test_reasoning_is_not_added_twice() -> None:
         _rec(
             0,
             "model/response",
-            {"turn_id": "t1", "usage": {"output_tokens": 30, "reasoning_tokens": 12}},
+            {"step_id": "t1", "usage": {"output_tokens": 30, "reasoning_tokens": 12}},
         )
     ]
 
@@ -64,8 +64,8 @@ def test_reasoning_is_not_added_twice() -> None:
 
 def test_a_turn_without_usage_is_skipped() -> None:
     records = [
-        _rec(0, "model/response", {"turn_id": "t1"}),
-        _rec(1, "model/response", {"turn_id": "t2", "usage": {"input_tokens": 5}}),
+        _rec(0, "model/response", {"step_id": "t1"}),
+        _rec(1, "model/response", {"step_id": "t2", "usage": {"input_tokens": 5}}),
     ]
 
     turns, total = collect_usage(records)
@@ -76,8 +76,8 @@ def test_a_turn_without_usage_is_skipped() -> None:
 
 def test_the_last_response_of_a_turn_wins() -> None:
     records = [
-        _rec(0, "model/response", {"turn_id": "t1", "usage": {"input_tokens": 10}}),
-        _rec(1, "model/response", {"turn_id": "t1", "usage": {"input_tokens": 20}}),
+        _rec(0, "model/response", {"step_id": "t1", "usage": {"input_tokens": 10}}),
+        _rec(1, "model/response", {"step_id": "t1", "usage": {"input_tokens": 20}}),
     ]
 
     turns, total = collect_usage(records)
@@ -105,7 +105,7 @@ def test_the_usage_command_prints_turns_and_total(tmp_path: Path) -> None:
             "seq": 1,
             "ts": "2026-11-14T00:00:01+00:00",
             "payload": {
-                "turn_id": "t1",
+                "step_id": "t1",
                 "usage": {"input_tokens": 10, "output_tokens": 5},
             },
         },
@@ -149,7 +149,7 @@ def test_the_usage_command_computes_cost_from_config(tmp_path: Path) -> None:
             "session_id": "s-cost",
             "seq": 1,
             "ts": "2026-11-14T00:00:01+00:00",
-            "payload": {"turn_id": "t1", "usage": {"input_tokens": 10, "output_tokens": 5}},
+            "payload": {"step_id": "t1", "usage": {"input_tokens": 10, "output_tokens": 5}},
         },
     ]
     (tmp_path / "s-cost.jsonl").write_text(

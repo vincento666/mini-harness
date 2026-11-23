@@ -130,12 +130,12 @@ async def _run(
 
 
 def _segments(records: list[EventRecord]) -> dict[str, list[EventRecord]]:
-    """按 `segment/start` 切段：段外的记录（`session/*`）不算进任何段。"""
+    """按 `turn/start` 切段：段外的记录（`session/*`）不算进任何段。"""
     out: dict[str, list[EventRecord]] = {}
     current: str | None = None
     for record in records:
-        if record.type == "segment/start":
-            current = str(record.payload.get("segment_id"))
+        if record.type == "turn/start":
+            current = str(record.payload.get("turn_id"))
             out[current] = []
         elif record.type in {"session/start", "session/end"}:
             continue
@@ -153,7 +153,7 @@ async def test_three_rounds_run_in_order_and_stop_at_the_cap(tmp_path: Path) -> 
 
     segments = _segments(records)
     assert list(segments) == ["s1", "s2", "s3", "s4"]
-    assert [record.type for record in records].count("segment/end") == 4
+    assert [record.type for record in records].count("turn/end") == 4
 
     goal_messages = [
         record
@@ -169,9 +169,9 @@ async def test_three_rounds_run_in_order_and_stop_at_the_cap(tmp_path: Path) -> 
         segment = segments[f"s{round_number + 1}"]
         types = [record.type for record in segment]
         assert types[:6] == [
-            "segment/start",
-            "user/message",
             "turn/start",
+            "user/message",
+            "step/start",
             "context/assembled",
             "goal/updated",
             "model/request",
@@ -287,7 +287,7 @@ async def test_a_completed_goal_no_longer_opens_segments(tmp_path: Path) -> None
     assert goal.phase == "complete"
     assert goal.rounds_started == 2
     assert goal.revision == 2
-    assert [record.type for record in records].count("segment/start") == 3
+    assert [record.type for record in records].count("turn/start") == 3
     assert outcome.stop_reason == "MODEL_COMPLETED"
 
 
@@ -350,9 +350,9 @@ async def test_a_round_with_two_turns_deducts_only_once(tmp_path: Path) -> None:
         inside: list[EventRecord] = []
         for record in segments[name]:
             inside.append(record)
-            if record.type == "segment/end":
+            if record.type == "turn/end":
                 break
-        assert [record.type for record in inside].count("turn/start") == 2
+        assert [record.type for record in inside].count("step/start") == 2
         snapshots = [record.payload["goal"] for record in inside if record.type == "goal/updated"]
         # 段内只有一条扣额度的快照；两回合若各扣一次，这里会变成 [1, 2] 与 [3]。
         assert [snapshot["rounds_started"] for snapshot in snapshots] == [round_number]
@@ -534,7 +534,7 @@ async def test_two_idle_goal_rounds_in_a_row_trip_the_stall_gate_by_default(
     assert goal.phase == "active"  # 不改相位：完成与否是模型/人的判断
     assert goal.rounds_started == 2
     assert outcome.stop_reason == "MODEL_COMPLETED"
-    ends = [record for record in records if record.type == "segment/end"]
+    ends = [record for record in records if record.type == "turn/end"]
     assert [record.payload["tool_calls"] for record in ends] == [1, 0, 0]
 
 

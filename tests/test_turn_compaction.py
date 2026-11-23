@@ -101,9 +101,9 @@ async def test_an_over_line_assembly_compacts_before_the_assembly_record(tmp_pat
 
     assert len(summaries) == 1
     summary = summaries[0]
-    assert summary.payload["turn_id"] == "t2"
+    assert summary.payload["step_id"] == "t2"
     assert set(summary.payload) == {
-        "turn_id",
+        "step_id",
         "shadowed_range",
         "summary",
         "tokens_before",
@@ -113,8 +113,8 @@ async def test_an_over_line_assembly_compacts_before_the_assembly_record(tmp_pat
     assert summary.payload["tokens_before"] > summary.payload["tokens_after"]
 
     assembled = [record for record in records if record.type == "context/assembled"]
-    assert [record.payload["turn_id"] for record in assembled] == ["t1", "t2"]
-    turn_two = next(record for record in assembled if record.payload["turn_id"] == "t2")
+    assert [record.payload["step_id"] for record in assembled] == ["t1", "t2"]
+    turn_two = next(record for record in assembled if record.payload["step_id"] == "t2")
     assert summary.seq < turn_two.seq
 
     contents = [message["content"] for message in turn_two.payload["messages"]]
@@ -138,7 +138,7 @@ async def test_the_summary_call_is_marked_and_gets_no_tools(tmp_path: Path) -> N
     ]
 
     assert [record.type for record in marked] == ["model/request", "model/response"]
-    assert [record.payload["turn_id"] for record in marked] == ["t2", "t2"]
+    assert [record.payload["step_id"] for record in marked] == ["t2", "t2"]
     assert marked[0].payload["tools"] == []
     assert marked[1].payload["content"] == SUMMARY_TEXT
 
@@ -171,8 +171,8 @@ async def test_overflow_when_nothing_can_be_shadowed(tmp_path: Path) -> None:
 
     assert [record.type for record in records][-4:] == [
         "error/context",
+        "step/end",
         "turn/end",
-        "segment/end",
         "session/end",
     ]
     assert _records_of(log.path, "model/request") == []
@@ -180,7 +180,7 @@ async def test_overflow_when_nothing_can_be_shadowed(tmp_path: Path) -> None:
     assert _records_of(log.path, "compaction/summary") == []
     error = _records_of(log.path, "error/context")[0]
     assert error.payload["code"] == "CONTEXT_WINDOW_EXCEEDED"
-    assert error.payload["turn_id"] == "t1"
+    assert error.payload["step_id"] == "t1"
     # 人手验收里发现的措辞：没有发生压缩时不能说「压缩之后」。
     assert error.payload["detail"].startswith("无可遮蔽的内容")
     # 三个数并排才看得出来死区：预算读数、压力预算 69900、触发线 4364。
@@ -190,7 +190,7 @@ async def test_overflow_when_nothing_can_be_shadowed(tmp_path: Path) -> None:
     closers = [
         record.payload["stop_reason"]
         for record in records
-        if record.type in {"turn/end", "segment/end", "session/end"}
+        if record.type in {"step/end", "turn/end", "session/end"}
     ]
     assert closers == ["CONTEXT_WINDOW_EXCEEDED"] * 3
     assert outcome.stop_reason == "CONTEXT_WINDOW_EXCEEDED"
@@ -220,13 +220,13 @@ async def test_a_dead_zone_reading_that_fits_the_window_is_not_an_overflow(
     assert _records_of(log.path, "compaction/summary") == []
     assert _records_of(log.path, "error/context") == []
     assembled = [record for record in records if record.type == "context/assembled"]
-    assert [record.payload["turn_id"] for record in assembled] == ["t1", "t2"]
+    assert [record.payload["step_id"] for record in assembled] == ["t1", "t2"]
     requests = [
         record
         for record in records
         if record.type == "model/request" and record.payload.get("purpose") != "compaction"
     ]
-    assert [record.payload["turn_id"] for record in requests] == ["t1", "t2"]
+    assert [record.payload["step_id"] for record in requests] == ["t1", "t2"]
     assert outcome.stop_reason == "MODEL_COMPLETED"
 
 
@@ -262,7 +262,7 @@ async def test_a_shadowed_range_too_big_to_trim_sends_no_summary_request(
 
 
 async def test_an_overflow_closes_the_segment_not_the_session(tmp_path: Path) -> None:
-    """溢出是**回合**终止结果：段自己只写到 `segment/end`，会话是否结束归入口（ADR-0011）。
+    """溢出是**回合**终止结果：段自己只写到 `turn/end`，会话是否结束归入口（ADR-0011）。
 
     一次性 run 的入口接着写 `session/end` 并映射退出码 4，那条判据在 `tests/test_cli_run.py`。
 
@@ -286,16 +286,16 @@ async def test_an_overflow_closes_the_segment_not_the_session(tmp_path: Path) ->
     assert segment.stop_reason == "CONTEXT_WINDOW_EXCEEDED"
     assert [record.type for record in records] == [
         "session/start",
-        "segment/start",
         "turn/start",
+        "step/start",
         "error/context",
+        "step/end",
         "turn/end",
-        "segment/end",
     ]
     assert records[-1].payload == {
-        "segment_id": "s1",
+        "turn_id": "s1",
         "stop_reason": "CONTEXT_WINDOW_EXCEEDED",
-        "turns": 1,
+        "steps": 1,
         "tool_calls": 0,
     }
 
@@ -318,15 +318,15 @@ async def test_one_compaction_then_overflow_when_the_context_still_does_not_fit(
     turn_two = [
         record
         for record in records
-        if record.payload.get("turn_id") == "t2"
+        if record.payload.get("step_id") == "t2"
         and record.type in {"context/assembled", "model/request", "tool/call"}
         and record.payload.get("purpose") != "compaction"
     ]
     assert turn_two == []
     assert [record.type for record in records][-4:] == [
         "error/context",
+        "step/end",
         "turn/end",
-        "segment/end",
         "session/end",
     ]
     # 这一条压缩真的发生过，措辞就该是「压缩之后」。
@@ -375,7 +375,7 @@ async def test_a_failed_summary_call_is_a_provider_error(tmp_path: Path) -> None
     closers = [
         record.payload["stop_reason"]
         for record in read_events(log.path)
-        if record.type in {"turn/end", "session/end"}
+        if record.type in {"step/end", "session/end"}
     ]
     assert closers[-2:] == ["PROVIDER_ERROR", "PROVIDER_ERROR"]
     assert outcome.stop_reason == "PROVIDER_ERROR"
@@ -395,8 +395,8 @@ async def test_a_provider_reported_overflow_collapses_into_the_same_result(tmp_p
 
     assert [record.type for record in records][-4:] == [
         "error/context",
+        "step/end",
         "turn/end",
-        "segment/end",
         "session/end",
     ]
     assert _records_of(log.path, "error/model") == []
@@ -423,8 +423,8 @@ async def test_a_provider_reported_overflow_detail_carries_the_three_numbers(
 
     assert [record.type for record in records][-4:] == [
         "error/context",
+        "step/end",
         "turn/end",
-        "segment/end",
         "session/end",
     ]
     assert outcome.stop_reason == "CONTEXT_WINDOW_EXCEEDED"
@@ -470,11 +470,11 @@ async def test_a_provider_reported_overflow_is_compacted_once_and_retried(
         max_turns=3,
     )
     records = read_events(log.path)
-    turn_two = [record for record in records if record.payload.get("turn_id") == "t2"]
+    turn_two = [record for record in records if record.payload.get("step_id") == "t2"]
 
     assert outcome.stop_reason == "MODEL_COMPLETED"
     summaries = _records_of(log.path, "compaction/summary")
-    assert [record.payload["turn_id"] for record in summaries] == ["t2"]
+    assert [record.payload["step_id"] for record in summaries] == ["t2"]
     # 压完之后重试那一次是又一次真实的调用：t2 有两条不带 purpose 的 `model/request`。
     plain_requests = [
         record
@@ -490,7 +490,7 @@ async def test_a_provider_reported_overflow_is_compacted_once_and_retried(
     assert [record.payload["content"] for record in plain_responses] == ["收尾"]
     assert _records_of(log.path, "error/context") == []
     assert _records_of(log.path, "error/model") == []
-    assert [record.payload["stop_reason"] for record in records if record.type == "turn/end"] == [
+    assert [record.payload["stop_reason"] for record in records if record.type == "step/end"] == [
         "TOOL_CALLS",
         "MODEL_COMPLETED",
     ]
@@ -517,7 +517,7 @@ async def test_the_request_level_retry_records_the_context_it_actually_sent(
     # 两条都按各自的前缀重算得出来：新形状没有给 replay 添新规则。
     for point in points:
         recomputed = fold(point.prefix).model_dump(mode="json")
-        payload = {key: value for key, value in point.record.payload.items() if key != "turn_id"}
+        payload = {key: value for key, value in point.record.payload.items() if key != "step_id"}
         assert recomputed == payload
     # 第二条说的是遮蔽之后那份表层：摘要在里面，第一条里没有。
     second = [str(message["content"]) for message in points[1].record.payload["messages"]]
@@ -541,8 +541,8 @@ async def test_a_provider_reported_overflow_that_survives_the_retry_collapses(
     assert len(_records_of(log.path, "compaction/summary")) == 1
     assert [record.type for record in records][-4:] == [
         "error/context",
+        "step/end",
         "turn/end",
-        "segment/end",
         "session/end",
     ]
     assert _records_of(log.path, "error/model") == []
@@ -699,8 +699,8 @@ async def test_a_summary_request_that_cannot_be_made_to_fit_is_never_sent(tmp_pa
     assert _records_of(log.path, "error/model") == []
     assert [record.type for record in records][-4:] == [
         "error/context",
+        "step/end",
         "turn/end",
-        "segment/end",
         "session/end",
     ]
     assert outcome.stop_reason == "CONTEXT_WINDOW_EXCEEDED"
@@ -727,7 +727,9 @@ async def test_the_compaction_record_has_the_keys_the_real_run_wrote(tmp_path: P
     )
 
     written = _records_of(log.path, "compaction/summary")[0]
-    assert set(written.payload) == set(real["payload"])
+    # 真端点 fixture 是 v1 时代的载荷：`turn_id` 指 step 的 id，v2 里叫 `step_id`。
+    expected_keys = {"step_id" if key == "turn_id" else key for key in real["payload"]}
+    assert set(written.payload) == expected_keys
     assert set(written.payload["shadowed_range"]) == set(real["payload"]["shadowed_range"])
     assert isinstance(written.payload["tokens_before"], int)
     assert isinstance(written.payload["tokens_after"], int)

@@ -71,8 +71,8 @@ async def test_subagent_writes_its_own_log(tmp_path: Path) -> None:
     messages = read_events(children[0])
     assert [record.type for record in messages[:3]] == [
         "session/start",
-        "segment/start",
         "turn/start",
+        "step/start",
     ]
 
 

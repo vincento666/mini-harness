@@ -325,14 +325,14 @@ def entry_of(events: Sequence[EventRecord]) -> str:
 
 
 def opened_by_human(events: Sequence[EventRecord]) -> bool:
-    """当前段是否由人类来源开启：看最后一条 `segment/start` 之后的第一条 `user/message`。
+    """当前段是否由人类来源开启：看最后一条 `turn/start` 之后的第一条 `user/message`。
 
     没有段首或其后没有驱动消息（`run` 的 prompt 住在 `session/start`）都按人类读，
     与 `message_source_of` 的旧日志回落同一规则。
     """
     start = -1
     for index, event in enumerate(events):
-        if event.type == "segment/start":
+        if event.type == "turn/start":
             start = index
     for event in events[start + 1 :]:
         if event.type == "user/message":

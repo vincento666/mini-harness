@@ -218,11 +218,11 @@ def test_the_catalog_message_carries_the_manifest_but_not_the_body() -> None:
         _rec(
             1,
             "user/message",
-            {"segment_id": "s1", "content": catalog, "source": "skill-catalog"},
+            {"turn_id": "s1", "content": catalog, "source": "skill-catalog"},
         ),
-        _rec(2, "turn/start", {"turn_id": "t1"}),
-        _rec(3, "model/response", {"turn_id": "t1", "content": "好", "tool_calls": []}),
-        _rec(4, "turn/end", {"turn_id": "t1", "stop_reason": "MODEL_COMPLETED"}),
+        _rec(2, "step/start", {"step_id": "t1"}),
+        _rec(3, "model/response", {"step_id": "t1", "content": "好", "tool_calls": []}),
+        _rec(4, "step/end", {"step_id": "t1", "stop_reason": "MODEL_COMPLETED"}),
     ]
 
     folded = fold(events).messages
@@ -281,7 +281,7 @@ def test_chat_lists_skills_without_a_segment(tmp_path: Path) -> None:
     types = [record["type"] for record in records]
     assert types.count("command/run") == 1
     assert types.count("command/done") == 1
-    assert "segment/start" not in types
+    assert "turn/start" not in types
 
 
 def test_chat_loads_a_skill_without_a_segment(tmp_path: Path) -> None:
@@ -368,7 +368,7 @@ def test_chat_runs_a_skill_directly(tmp_path: Path) -> None:
     records = _chat_log(workspace)
     types = [record["type"] for record in records]
     assert types.count("command/run") == 1
-    assert "segment/start" in types
+    assert "turn/start" in types
     user = next(record["payload"] for record in records if record["type"] == "user/message")
     assert "第一步：写红判据" in user["content"]
     assert "请按技能执行" in user["content"]
@@ -496,7 +496,7 @@ def test_chat_skill_command_with_an_instruction_opens_a_segment(tmp_path: Path) 
     types = [record["type"] for record in records]
     assert types.count("command/run") == 1
     assert types.count("command/done") == 1
-    assert "segment/start" in types
+    assert "turn/start" in types
     user = next(record["payload"] for record in records if record["type"] == "user/message")
     assert "第一步：写红判据" in user["content"]
     assert "帮我改个函数" in user["content"]

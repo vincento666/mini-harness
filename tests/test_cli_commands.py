@@ -123,7 +123,7 @@ def test_host_commands_match_the_cli_and_open_a_segment_for_skills(tmp_path: Pat
             assert text.count('"command/run"') == 5
             assert text.count('"command/done"') == 5
             # 两条技能命令各展开成一个段；其余命令都不开段。
-            assert text.count('"segment/start"') == 2
+            assert text.count('"turn/start"') == 2
     finally:
         _stop(process)
 
