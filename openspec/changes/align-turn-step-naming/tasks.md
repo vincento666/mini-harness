@@ -2,8 +2,8 @@
 
 ## 0. 前置
 
-- [ ] 0.1 冻结 v1 金样本：从现有 `sessions/` 挑一份含 goal 轮、工具调用、压缩的日志，复制到 `tests/fixtures/logs/v1-*.jsonl`（不改字节）
-- [ ] 0.2 写一张机械替换清单（design D1 的表）并核对 `src` / `tests` 的出现面；确认占位符顺序
+- [x] 0.1 冻结 v1 金样本：`tests/fixtures/logs/v1-goal-tools.jsonl`（50 事件：1 个人类段 + 2 个 goal 轮 + 3 次工具调用 + `blocked{round-limit}`；`minihns replay` 通过）。**压缩样本未含**：现有 14 份 `sessions/` 都没有 `compaction/summary`，压缩上迁先由 `test_turn_compaction` 的 fixture 覆盖，后续补一份 `v1-compaction.jsonl`
+- [x] 0.2 机械替换清单与出现面：design D1 的表 + 2026-11-23 实测词频（`segment` 113/261/278、`turn` 275/582/800、`max_turns` 44/167/263）；三个坑已记（`turn_id` 歧义、`turns` 三义、测试读法）
 
 ## 1. 事件 schema v2 与兼容层（seam ④）
 

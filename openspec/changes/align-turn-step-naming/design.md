@@ -20,6 +20,27 @@
 
 **`turn_id` 的歧义**：现名 `turn_id` 是 step 的 id；改名后 `turn_id` 是 turn 的 id。所有 `_rec(..., "turn/start", {"turn_id": "t1"})` 之类必须改成 `step/start` + `step_id`，不能只换外层类型名。测试里的 `turn_ids` 变量也要改成 `step_ids`，否则读起来会以为在数 turn。
 
+**出现面（2026-11-23 实测，只算 `.py/.md/.jsonl/.toml`）**：
+
+| 词根 | src | tests | openspec |
+|---|---:|---:|---:|
+| `segment` | 113 | 261 | 278 |
+| `segment_id` | 39 | 71 | 51 |
+| `segment/`（事件名） | 17 | 127 | 213 |
+| `turn` | 275 | 582 | 800 |
+| `turn_id` | 115 | 213 | 99 |
+| `turn/`（事件名） | 25 | 136 | 337 |
+| `max_turns` / `max-turns` / `MAX_TURNS` | 44 | 167 | 263 |
+| `first_turn_index` | 9 | 10 | 8 |
+
+读法：`turn` 的出现面是 `segment` 的 2–3 倍，因为它同时是「旧 turn（将来的 step）」与「turn/start 事件名」。所以**不能按词频估工作量**——真正的顺序必须是「先事件名、再类型名、再变量名」，每步跑测试。
+
+三个已确认的坑：
+
+1. `turn_id` 现在指 step 的 id，改名后指 turn 的 id。`_rec(..., "turn/start", {"turn_id": "t1"})` 必须变成 `step/start` + `step_id`，不能只换外层。
+2. 变量 `turns` 同时出现在三处语义：段内计数（→ `steps`）、`RunOutcome` 字段（→ `steps`）、host 的 `segments`（→ `turns`）。第三处是**反向**改名，最容易漏。
+3. 测试里的 `turn_ids`、`_segments()`、`first_turn_index` 是断言读法的一部分，改名后测试名也要改，否则「测试说 turn、代码说 step」。
+
 ## D2 日志 schema v2：读取时上迁，不重写文件
 
 信封已有 `schema_version`（`events/record.py`），且 `migrate_schema` 只接受 N-1 → N。这正是兼容层的落点：
