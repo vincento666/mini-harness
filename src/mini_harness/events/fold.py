@@ -12,7 +12,8 @@ from pydantic import BaseModel, Field
 from mini_harness.events.record import EventRecord
 
 SYSTEM_PROMPT = (
-    "你是 mini-harness 的 agent。每一步先装配上下文，再调用工具或回答；工具失败也是结果，不是异常。"
+    "你是 mini-harness 的 agent。在回合里先装配上下文，再调用工具或回答；"
+    "工具失败也是结果，不是异常。"
 )
 
 # 读方闭合的结果词：只出现在折叠出来的消息里，不在日志里。

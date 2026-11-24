@@ -231,6 +231,15 @@
 - Next use: 给自动循环加停止判据时，把「开关」与「阈值」分开定；默认取中间值（2–3），不要取 1，也不要取「永不」
 - Status: inbox
 
+### L-097
+- Seen: 1（2026-11-24）
+- Date: 2026-11-24
+- Context: `align-turn-step-naming` 的 3.5 把 `SYSTEM_PROMPT` 里的「在回合里」改成「每一步」，金样本 `replay` 立刻在 seq=3 报 `REPLAY_MISMATCH`
+- Observation: 改名要按文本的去向分类：人可见文案（stderr、`--help`、HTTP detail）改了只影响观感；模型可见文本（系统提示词、工具 description、工具结果）改了就是行为变化——它进 `context/assembled`，逐点比对立刻红。金样本在这里不是「老日志兼容」的摆设，是「改动有没有越界」的探针
+- Evidence: 改 `SYSTEM_PROMPT` 后 `minihns replay v1-goal-tools` exit 1（`error/replay seq=3`），回退后 exit 0（2026-11-24 两次实跑）；design D5 的「改词只到人可见文案」
+- Next use: 任何改名或改措辞的 change，先给每条文本标去向（日志 / 上下文 / 终端 / HTTP）；进上下文的文本不在改名范围，要动就单独立项并重跑真实端点
+- Status: inbox
+
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 - 每个里程碑收尾扫一次，**允许输出 `NO-PROMOTION`**（没有可复用信号就不写条目）。
 - 收件箱条目超过 **15 条**必须先消化再收新的：合并同类、把已被代码或规格自证的条目删掉。

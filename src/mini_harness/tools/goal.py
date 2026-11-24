@@ -81,7 +81,7 @@ async def _create_goal(args: CreateGoalArgs, context: DispatchContext) -> ToolRe
     if context.entry == "subagent":
         return ToolResult("GOAL_AUTHORITY_REQUIRED", "子会话没有创建目标的权威")
     if not context.human_driven:
-        return ToolResult("GOAL_AUTHORITY_REQUIRED", "只有人类开口的轮才能创建目标；目标轮次里不行")
+        return ToolResult("GOAL_AUTHORITY_REQUIRED", "只有人类开口的段才能创建目标；目标轮次里不行")
     current = context.goal
     if current is not None and current.phase != "complete":
         return ToolResult(
@@ -124,7 +124,7 @@ async def _update_goal(args: UpdateGoalArgs, context: DispatchContext) -> ToolRe
         if not context.human_driven:
             return ToolResult(
                 "GOAL_AUTHORITY_REQUIRED",
-                "只有人类开口的轮才能改写目标；目标轮次里不行",
+                "只有人类开口的段才能改写目标；目标轮次里不行",
             )
     current = context.goal
     if current is None or current.id != args.goal_id or current.revision != args.revision:

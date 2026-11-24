@@ -96,6 +96,8 @@
 - **目标轮（goal round）**：一次 goal 来源的轮；`rounds_started` 数它。
 - 现有「段」全部改「轮」；现有「回合」全部改「步」。`[段]` 这行 stderr 文案改成 `[轮]`？不——`[轮] n/cap` 已经被 goal 轮占用。普通轮的收尾提示改成 `[轮]` 会与 goal 轮混淆；保留一个中性的 `[turn]` 或改成 `[轮] 收尾`。设计选 `[轮]` + 明确后缀（见 tasks 3.5），具体文案在实现时由 chat-repl 规格钉住。
 
+**改词只到人可见文案**：stderr 的 `[轮] 收尾`、`--help`、HTTP 错误 detail 可以改；系统提示词、工具 description、工具结果里的文字**不改**——它们进 `context/assembled`，改一个字符就让 v1 金样本的 `replay` 逐点比对失败（2026-11-24 实测：把 `SYSTEM_PROMPT` 的「回合」改成「步」，`replay` 在 seq=3 报 `REPLAY_MISMATCH`）。那是行为面，要改得单独立项并重跑真实端点。
+
 **历史文档不改**：`docs/CURRENT-history.md`、`docs/lessons-archive.md`、`openspec/changes/archive/` 保持原词。它们是当时的事实记录，改词等于伪造历史；新文档用新词，并在 `GLOSSARY.md` 留一行「2026-11 之前写作段/回合」。
 
 ## D6 不选的方案

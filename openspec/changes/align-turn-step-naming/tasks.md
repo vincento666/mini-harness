@@ -19,7 +19,7 @@
 - [x] 2.2 `segment_id → turn_id`、`turn_id → step_id`；`first_turn_index → first_step_index`（裸标识符；API JSON 键仍留旧名到 3.4）
 - [x] 2.3 `RunOutcome.turns → steps`（连带 `end_session` / `_segment_failure` / `_abort_turn` 等参数与局部变量）；`STOP_MAX_TURNS → STOP_MAX_STEPS`，值 `MAX_TURNS → MAX_STEPS`，`_upcast_v1` 同步迁这个值。**`SessionSettings.max_turns` 与配置键不在本任务**：它与 argparse dest、`BUILTIN_DEFAULTS` 的键是同一根线，单独改会断，随 3.1+3.2 一次做
 - [x] 2.4 `TurnDeltaSink → StepDeltaSink`（`provider/contract.py`、`loop/turn_loop.py`、`tests/tool_harness.py`）
-- [x] 2.5 注释与 docstring 里的「段/回合」改「轮/步」，放在 3.5 之后做（同一句里常同时出现旧字段名与旧文案）。口径：`src` 里已无「回合」；「段」只剩普通语义——`字段`、`阶段`、`[goal]` 节（已改「节」）、`整段替换`、`一段摘要`、`这段前缀`、遮蔽区间（`budget.py`）、`追加段`。`执行段` 统一改「执行区间」，避免与「轮」混淆
+- [x] 2.5 注释与 docstring 里的「段/回合」改「轮/步」，放在 3.5 之后做（同一句里常同时出现旧字段名与旧文案）。口径：`src` 里「回合」只剩 `SYSTEM_PROMPT` 一处（模型可见文本，故意保留，见 3.5）；「段」只剩普通语义——`字段`、`阶段`、`[goal]` 节（已改「节」）、`整段替换`、`一段摘要`、`这段前缀`、遮蔽区间（`budget.py`）、`追加段`。`执行段` 统一改「执行区间」，避免与「轮」混淆
 
 ## 3. 入口与配置（seam ⑥）
 
@@ -29,7 +29,7 @@
 - [x] 3.2 `[session] max_steps` 主键 + 旧键 `max_turns` 映射（`config/load.py::_fold_legacy_keys`）；`BUILTIN_DEFAULTS` 键、`SETTINGS_FIELDS`、`cli/host.py` 的 `_SESSION_INT_FIELDS` 一并改；两键冲突 → `CONFIG_INVALID_VALUE` 承载、出口 `INVALID_ARGUMENT`
 - [x] 3.3 `subagent` 的 `max_steps` + 旧参数名 `max_turns` 仍接受（`model_validator(mode="before")` 搬到同一字段；两个都给且不同 → 校验失败）
 - [x] 3.4 host 的会话视图 `turns` 字段语义改成「轮数」（数 `turn/start`），内部 `segments` 计数改名 `turns`；`steps` 仍数 `step/start`（判据：一轮两步时视图 `turns == 1`，`test_the_session_view_counts_turns_not_steps`）
-- [x] 3.5 `chat` / `host` 的可见文案按「轮/步」改口：`[段]` → `[轮] 收尾`（与目标轮的 `[轮] n/cap` 区分），`usage` 的 help 改「按步汇总」；工具结果与系统提示里的「本段/回合」改「本轮/每一步」。`[轮] n/cap` 仍专指目标轮
+- [x] 3.5 **人可见**文案按「轮/步」改口：`[段]` → `[轮] 收尾`（与目标轮的 `[轮] n/cap` 区分），`usage` 的 help 改「按步汇总」、`SESSION_BUSY` 的 detail 改「会话正在跑一轮」。`[轮] n/cap` 仍专指目标轮。**模型可见文本不改**（`SYSTEM_PROMPT`、工具 `description`、工具结果）：2026-11-24 实测改 `SYSTEM_PROMPT` 会让金样本 `replay` 在 seq=3 报 `REPLAY_MISMATCH`，已回退；那属于行为面，另立 change
 
 ## 4. 规格与文档
 
