@@ -27,7 +27,7 @@ DEFAULT_STALL_ROUNDS = 2
 
 @dataclass(frozen=True)
 class GoalPolicy:
-    """`[goal]` 段的四键。工具与驱动都读这一份，不各自解释配置。"""
+    """`[goal]` 节的四键。工具与驱动都读这一份，不各自解释配置。"""
 
     max_rounds: int = DEFAULT_MAX_ROUNDS
     blocked_after_consecutive_rounds: int = DEFAULT_BLOCKED_AFTER
@@ -106,7 +106,7 @@ class GoalRuntime:
     """进程内状态：武装位与「连续空转轮数」。永不落盘（design D5）。"""
 
     armed: bool = False
-    # 连续多少个 goal 轮次零工具调用；有任何动作或人类段插入都清零，
+    # 连续多少个 goal 轮次零工具调用；有任何动作或人类轮插入都清零，
     # 由 `settle_segment` 维护。只有 `stall_rounds > 0` 时才有意义。
     idle_rounds: int = 0
 
@@ -325,9 +325,9 @@ def entry_of(events: Sequence[EventRecord]) -> str:
 
 
 def opened_by_human(events: Sequence[EventRecord]) -> bool:
-    """当前段是否由人类来源开启：看最后一条 `turn/start` 之后的第一条 `user/message`。
+    """当前轮是否由人类来源开启：看最后一条 `turn/start` 之后的第一条 `user/message`。
 
-    没有段首或其后没有驱动消息（`run` 的 prompt 住在 `session/start`）都按人类读，
+    没有轮首或其后没有驱动消息（`run` 的 prompt 住在 `session/start`）都按人类读，
     与 `message_source_of` 的旧日志回落同一规则。
     """
     start = -1

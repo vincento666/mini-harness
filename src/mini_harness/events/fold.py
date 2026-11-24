@@ -306,13 +306,13 @@ def fold_range(events: Sequence[EventRecord], *, start: int, end: int) -> list[M
 
 
 def assembled_payload(step_id: str, context: AssembledContext) -> dict[str, Any]:
-    """`context/assembled` 的 payload：所属回合的 `step_id` 加折叠结果。"""
+    """`context/assembled` 的 payload：所属步的 `step_id` 加折叠结果。"""
     return {"step_id": step_id, **context.model_dump(mode="json")}
 
 
 @dataclass(frozen=True)
 class AssemblyPoint:
-    """一个装配点：那条 `context/assembled`、它之前的记录前缀、它所属的回合。"""
+    """一个装配点：那条 `context/assembled`、它之前的记录前缀、它所属的步。"""
 
     record: EventRecord
     prefix: tuple[EventRecord, ...]

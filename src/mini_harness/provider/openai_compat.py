@@ -2,7 +2,7 @@
 
 **httpx 只允许出现在这个模块**（design D1）：其它模块 import httpx 就是把外部依赖漏进内核。
 HTTP 层由构造入参注入，seam ⑤ 的判据因此不跑网络、不需要密钥。
-重试事实（429 / 5xx）随结果回到回合循环——provider 不写日志（不变量 A）。
+重试事实（429 / 5xx）随结果回到步循环——provider 不写日志（不变量 A）。
 """
 
 from __future__ import annotations
@@ -301,7 +301,7 @@ def _stream_tool_calls(
 
 
 class OpenAICompatProvider:
-    """模型层的第二个实现：与 mock 同一个 `generate` 契约，回合循环不得因 provider 而改变。"""
+    """模型层的第二个实现：与 mock 同一个 `generate` 契约，步循环不得因 provider 而改变。"""
 
     def __init__(
         self,

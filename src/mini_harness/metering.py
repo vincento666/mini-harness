@@ -85,7 +85,7 @@ def usage_from_payload(payload: Mapping[str, object]) -> Usage | None:
 
 
 def collect_usage(records: Sequence[EventRecord]) -> tuple[tuple[TurnUsage, ...], Usage]:
-    """按回合聚合；同一回合的后一条响应替换前一条，总量是各回合之和。"""
+    """按步聚合；同一步的后一条响应替换前一条，总量是各步之和。"""
     order: list[str] = []
     per_turn: dict[str, Usage] = {}
     for record in records:

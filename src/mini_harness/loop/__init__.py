@@ -1,4 +1,4 @@
-"""回合层：显式主循环。"""
+"""轮层：显式主循环。"""
 
 from mini_harness.loop.settings import (
     APPROVAL_MODES,

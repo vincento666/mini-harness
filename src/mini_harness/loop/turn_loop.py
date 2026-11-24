@@ -1,4 +1,4 @@
-"""显式回合主循环：记账 → 装配上下文 → 调模型 → 派发工具 → 判定停止。"""
+"""显式轮主循环：记账 → 装配上下文 → 调模型 → 派发工具 → 判定停止。"""
 
 from __future__ import annotations
 
@@ -97,7 +97,7 @@ ENTRY_SUBAGENT: SessionEntry = "subagent"
 # provider 失败码里只有这一种触发请求级压缩与一次重试（ADR-0019）。
 PROVIDER_CONTEXT_OVERFLOW = "PROVIDER_CONTEXT_OVERFLOW"
 
-# 同一回合里同时在跑的只读调用上限；会改动文件的调用不吃这个额度，它们串行。
+# 同一步里同时在跑的只读调用上限；会改动文件的调用不吃这个额度，它们串行。
 MAX_PARALLEL_TOOLS = 8
 
 # 被超时或取消打断的结果词，各配一条 `tool/cancelled`。
@@ -134,16 +134,16 @@ class ContractState:
 
 @dataclass
 class QuestionRuntime:
-    """本段最后一个没有答案的问题（进程内，不落盘）。段首清零，段尾还在就不自动续跑。"""
+    """本轮最后一个没有答案的问题（进程内，不落盘）。轮首清零，轮尾还在就不自动续跑。"""
 
     pending: str | None = None
 
 
 @dataclass(frozen=True)
 class SessionEnv:
-    """一次会话的冻结环境：段调用不再一路结伴（ADR-0002 第 21 条）。
+    """一次会话的冻结环境：轮调用不再一路结伴（ADR-0002 第 21 条）。
 
-    `cancel` 故意不在这里——每个段一个取消事件（design D7），它是段的入参而不是会话的。
+    `cancel` 故意不在这里——每一轮一个取消事件（design D7），它是轮的入参而不是会话的。
     """
 
     provider: Provider
@@ -163,16 +163,16 @@ class SessionEnv:
     contracts: ContractState = field(default_factory=ContractState)
     # 目标武装位（M13）：进程内，不落盘（design D5）。
     goal_runtime: GoalRuntime = field(default_factory=GoalRuntime)
-    # 本段里最后一个没有答案的问题（`ask_user` 的 `QUESTION_UNAVAILABLE`）。
-    # 段首清零；段尾还在就是「等人回答」，驱动据此不再自动续跑（design D11）。
+    # 本轮里最后一个没有答案的问题（`ask_user` 的 `QUESTION_UNAVAILABLE`）。
+    # 轮首清零；轮尾还在就是「等人回答」，驱动据此不再自动续跑（design D11）。
     questions: QuestionRuntime = field(default_factory=QuestionRuntime)
 
 
 @dataclass(frozen=True)
 class TurnOutcome:
-    """一个段怎么停的。会话是否继续由入口决定（ADR-0011），内核只报这一段。
+    """一轮怎么停的。会话是否继续由入口决定（ADR-0011），内核只报这一轮。
 
-    `tool_calls` 是本段真正派发过的工具调用数（含失败；取消/未派发不算）。驱动的停滞
+    `tool_calls` 是本轮真正派发过的工具调用数（含失败；取消/未派发不算）。驱动的停滞
     判定只看它：零调用的 goal 轮次是空转，不再开下一轮（D14）。
     """
 
@@ -196,7 +196,7 @@ def _append_all(
 
 @dataclass(frozen=True)
 class InternalFailure:
-    """执行段逃出来的异常：不是工具的结果，是内核自己的故障。
+    """执行区间逃出来的异常：不是工具的结果，是内核自己的故障。
 
     `code` 故意在 `StopReason` 词表外——写不出 `step/end`，也就不写；它走 `error/internal`。
     """
@@ -209,7 +209,7 @@ class InternalFailure:
 def _segment_failure(
     failure: LogWriteFailure | LogReadFailure | InternalFailure, steps: int
 ) -> TurnOutcome:
-    """内核失败作为段的结果。`stop_reason` 取失败码，它不是 `step/end` 的词表值：
+    """内核失败作为轮的结果。`stop_reason` 取失败码，它不是 `step/end` 的词表值：
     内核坏了就写不出 `step/end`，也就写不出 `turn/end`。"""
     return TurnOutcome(
         stop_reason=failure.code,
@@ -220,7 +220,7 @@ def _segment_failure(
 
 
 def _run_outcome(log: EventLog, outcome: TurnOutcome) -> RunOutcome:
-    """段的结果加上 session id 就是一次运行的结果。"""
+    """轮的结果加上 session id 就是一次运行的结果。"""
     return RunOutcome(
         session_id=log.session_id,
         stop_reason=outcome.stop_reason,
@@ -232,7 +232,7 @@ def _run_outcome(log: EventLog, outcome: TurnOutcome) -> RunOutcome:
 
 @dataclass
 class _BatchOutcome:
-    """一个派发批次的结果：内核失败（日志层坏了，或执行段逃出了异常），或第一个围栏拒绝。"""
+    """一个派发批次的结果：内核失败（日志层坏了，或执行区间逃出了异常），或第一个围栏拒绝。"""
 
     failure: LogWriteFailure | LogReadFailure | InternalFailure | None = None
     denial_code: str | None = None
@@ -253,7 +253,7 @@ async def _race_with_cancel(
 
     `dispatch_tool_call` 自己会把 `CancelledError` 塌成结果词；拿不到那个结果时这里补一条，
     于是「有 `tool/call` 必有 `tool/result`」不依赖工具配合。**只有 `CancelledError` 有这个兜底**：
-    从执行段逃出来的其它异常是内核故障，改名成取消就是往日志里写一件没发生过的事。
+    从执行区间逃出来的其它异常是内核故障，改名成取消就是往日志里写一件没发生过的事。
     """
     running = asyncio.create_task(
         dispatch_tool_call(call, registry, context, approval_gate, on_approval_request)
@@ -329,7 +329,7 @@ async def _dispatch_batch(
     cancel: asyncio.Event,
     session: SessionEnv | None = None,
 ) -> _BatchOutcome:
-    """派发一个回合声明的工具调用批次：只读的并发、会改动文件的串行。
+    """派发一步声明的工具调用批次：只读的并发、会改动文件的串行。
 
     `tool/call` 由「前一个已经轮到过——开始派发或放弃」这条链保证按声明顺序落盘；结果在产生时落盘
     （`settle`），所以 `tool/result` 之间是完成顺序。围栏拒绝之后，还没开始的调用不再派发
@@ -402,7 +402,7 @@ async def _dispatch_batch(
         return True
 
     def escaped(call: ToolCall, error: BaseException) -> None:
-        """执行段逃出来的异常不是结果：写 `error/internal`，让 run 以内部错误收尾。"""
+        """执行区间逃出来的异常不是结果：写 `error/internal`，让 run 以内部错误收尾。"""
         detail = f"{call.name}：{type(error).__name__}: {error}"
         written = _append_all(
             log,
@@ -511,7 +511,7 @@ async def _dispatch_batch(
     def abandoned(index: int, call: ToolCall) -> None:
         """取消置位后没轮到派发的调用：落一对记录。
 
-        它被声明过，就要在日志里有个交代——回合收尾后会话续跑时，assistant 的工具请求必须配平。
+        它被声明过，就要在日志里有个交代——步收尾后会话续跑时，assistant 的工具请求必须配平。
         """
         if not begin(index, call):
             return
@@ -577,7 +577,7 @@ async def _dispatch_batch(
     return outcome
 
 
-# 摘要那次调用的指令文本：它进摘要调用的上下文，不进任何回合的上下文。
+# 摘要那次调用的指令文本：它进摘要调用的上下文，不进任何步的上下文。
 SUMMARY_INSTRUCTION = (
     "把上面的对话压缩成一段摘要：任务是什么、已经做了什么、下一步是什么；保留文件路径与关键结论。"
 )
@@ -586,7 +586,7 @@ SUMMARY_INSTRUCTION = (
 def _retry_events(
     step_id: str, turn: AssistantTurn | ProviderFailure
 ) -> list[tuple[str, dict[str, Any]]]:
-    """重试事实随结果回到回合循环，由循环写进日志（不变量 A）。"""
+    """重试事实随结果回到步循环，由循环写进日志（不变量 A）。"""
     return [
         ("model/retry", {"step_id": step_id, "attempt": attempt.attempt, "status": attempt.status})
         for attempt in turn.attempts
@@ -625,9 +625,9 @@ async def _provider_error(
     steps: int,
     retry_events: Sequence[tuple[str, dict[str, Any]]],
 ) -> TurnOutcome:
-    """provider 失败作为**回合**收尾：`error/model` + `step/end`（design D7）。
+    """provider 失败作为**步**收尾：`error/model` + `step/end`（design D7）。
 
-    段的边界与 `session/end` 不在这里——它们归段与入口（ADR-0011）。
+    轮的边界与 `session/end` 不在这里——它们归轮与入口（ADR-0011）。
     """
     written = _append_all(
         log,
@@ -654,7 +654,7 @@ async def _context_overflow(
     detail: str,
     retry_events: Sequence[tuple[str, dict[str, Any]]] = (),
 ) -> TurnOutcome:
-    """上下文装不下时是**回合**终止结果不是异常（不变量 D）：不调回合模型，直接收尾。
+    """上下文装不下时是**步**终止结果不是异常（不变量 D）：不调模型，直接收尾。
 
     两条触发路径共用这里——估算兜底与 provider 报出的超限产出同一个停止理由。会话是否结束归入口。
     """
@@ -761,7 +761,7 @@ async def _recover_overflowed_request(
     reread = read_events(log.path)
     if isinstance(reread, LogReadFailure):
         return _segment_failure(reread, steps)
-    # `_compact_if_over_line` 的 `None` 只说「没失败」：真压没压要看日志里这条回合的摘要记录。
+    # `_compact_if_over_line` 的 `None` 只说「没失败」：真压没压要看日志里这一步的摘要记录。
     compacted_here = any(
         event.type == "compaction/summary" and event.payload.get("step_id") == step_id
         for event in reread
@@ -992,12 +992,12 @@ async def run_turn(
     message_source: Mapping[str, Any] | None = None,
     goal_round: GoalRound | None = None,
 ) -> TurnOutcome:
-    """跑一个回合段：一条输入展开的那串往返。段内上限是 `max_steps`，会话级没有上限。
+    """跑一轮：一条输入展开的那串往返。轮内上限是 `max_steps`，会话级没有上限。
 
-    段的边界在这里落盘——`turn/start` 在第一个 `step/start` 之前、`turn/end` 在最后一个
+    轮的边界在这里落盘——`turn/start` 在第一个 `step/start` 之前、`turn/end` 在最后一个
     `step/end` 之后（design D3）。这里不写 `session/end`：会话是否结束由入口决定（ADR-0011）。
 
-    `user_message` 是开启这个段的那条输入：给了就写成一条 `user/message`，落在段边界之内
+    `user_message` 是开启这一轮的那条输入：给了就写成一条 `user/message`，落在轮边界之内
     （design D5）。不给是 `run`——它的人话住在 `session/start`（design D6 记的不对称）。
 
     `message_source` 区分这条输入是人打的还是目标轮次注入的（M13）：缺省 `{"kind": "user"}`。
@@ -1005,7 +1005,7 @@ async def run_turn(
     `goal_round` 是 goal 轮次的唯一入口：正文与来源都由它派生，且由 `_run_steps` 在首条
     `context/assembled` 之后与它同批补写 `goal/updated`（装配成功才消耗额度，ADR-0043）。
     """
-    # 段首清空：上一段没答完的问题不带进新段（与 `todos` 的段作用域同一条边界）。
+    # 轮首清空：上一轮没答完的问题不带进新轮（与 `todos` 的轮作用域同一条边界）。
     env.questions.pending = None
     if goal_round is not None:
         if user_message is not None or message_source is not None:
@@ -1193,7 +1193,7 @@ async def _run_steps(
     cancel: asyncio.Event,
     goal_round: GoalRound | None = None,
 ) -> TurnOutcome:
-    """段内的显式回合循环：记账 → 装配上下文 → 调模型 → 派发工具 → 判定停止。"""
+    """轮内的显式步循环：记账 → 装配上下文 → 调模型 → 派发工具 → 判定停止。"""
     log = env.log
     provider = env.provider
     registry = env.registry
@@ -1421,9 +1421,9 @@ async def run_session(
     on_delta: StepDeltaSink | None = None,
     skills_registry: SkillRegistry | None = None,
 ) -> RunOutcome:
-    """一次性入口（`run` / `serve`）：开始会话、恰一个段、结束会话。
+    """一次性入口（`run` / `serve`）：开始会话、恰一轮、结束会话。
 
-    段编号与回合编号都从 1 起；REPL 自己数段、给下一个段起始编号（design D3）。
+    轮编号与步编号都从 1 起；REPL 自己数轮、给下一个轮起始编号（design D3）。
     """
     env = SessionEnv(
         provider=provider,
@@ -1464,7 +1464,7 @@ def next_goal_round(env: SessionEnv) -> GoalRound | None:
 def exhaust_goal_rounds(
     *, env: SessionEnv, decision: RoundDecision, steps: int
 ) -> TurnOutcome | None:
-    """额度用尽：落 `blocked{round-limit}` 并解除武装。写不进日志就是段失败。"""
+    """额度用尽：落 `blocked{round-limit}` 并解除武装。写不进日志就是轮失败。"""
     assert decision.goal is not None
     blocked = exhaust_goal(decision.goal)
     written = env.log.append("goal/updated", {"goal": blocked.model_dump(exclude_none=True)})
@@ -1476,7 +1476,7 @@ def exhaust_goal_rounds(
 
 @dataclass(frozen=True)
 class RoundSettlement:
-    """一段之后的收尾结果：判定 + 可能的写日志失败（失败时入口应当收会话）。"""
+    """一轮之后的收尾结果：判定 + 可能的写日志失败（失败时入口应当收会话）。"""
 
     decision: RoundDecision
     failure: TurnOutcome | None = None
@@ -1485,15 +1485,15 @@ class RoundSettlement:
 def settle_segment(
     *, env: SessionEnv, segment: TurnOutcome, steps: int, goal_round: bool
 ) -> RoundSettlement:
-    """段后收尾的唯一实现：读目标、判下一轮、把该落的副作用落掉。
+    """轮后收尾的唯一实现：读目标、判下一轮、把该落的副作用落掉。
 
     `run` / `chat` / `host` 三处入口都调它，避免「host 只有命令面、没有驱动」这类分叉
-    （2026-11-20 人裁）。它自己不打印、不决定入口怎么停——只回答「接下来该不该开段」。
+    （2026-11-20 人裁）。它自己不打印、不决定入口怎么停——只回答「接下来该不该开轮」。
     """
     goal = goal_after(env.log)
     if isinstance(goal, LogReadFailure):
         return RoundSettlement(RoundDecision("stop"), _segment_failure(goal, steps))
-    # 连续空转轮数：goal 轮次零工具调用加一，有动作清零；人类段一律清零
+    # 连续空转轮数：goal 轮次零工具调用加一，有动作清零；人类轮一律清零
     # （人参与了，空转链断了）。只有 `stall_rounds > 0` 时这个数才参与判定。
     if goal_round:
         env.goal_runtime.idle_rounds = (
@@ -1549,14 +1549,14 @@ def close_failed_round(*, env: SessionEnv, segment: TurnOutcome) -> TurnOutcome 
 async def run_session_env(
     *, prompt: str, entry: SessionEntry, env: SessionEnv, cancel: asyncio.Event
 ) -> RunOutcome:
-    """在已装配好的 `env` 上跑一次性会话：开始、按目标轮次展开若干段、结束。
+    """在已装配好的 `env` 上跑一次性会话：开始、按目标轮次展开若干轮、结束。
 
     `run` / `serve` 从 `run_session` 走到这里；`subagent` 直接带着子会话的 env 调用它——
-    「开始 → 若干段 → 结束」只有一份实现。
+    「开始 → 若干轮 → 结束」只有一份实现。
 
-    段数由目标决定（design D3）：没有可续跑的目标时恰一个段；目标 `active` 且已武装时，
-    每个 `turn/end` 之后按 `next_round` 判定，续跑就再开一段。驱动不另起协程：判定与
-    开段在同一个协程里顺序做完，写日志成功即准入。
+    轮数由目标决定（design D3）：没有可续跑的目标时恰一轮；目标 `active` 且已武装时，
+    每个 `turn/end` 之后按 `next_round` 判定，续跑就再开一轮。驱动不另起协程：判定与
+    开轮在同一个协程里顺序做完，写日志成功即准入。
     """
     log = env.log
     started = start_session(prompt=prompt, entry=entry, env=env)
@@ -1569,7 +1569,7 @@ async def run_session_env(
     segment = await run_turn(env=env, turn_id="s1", first_step_index=1, cancel=cancel)
     while True:
         if segment.stop_reason not in STOP_REASONS:
-            # 内核坏了：不再开段，也不写 session/end。
+            # 内核坏了：不再开轮，也不写 session/end。
             return _run_outcome(log, segment)
         segments += 1
         steps += segment.steps
@@ -1597,7 +1597,7 @@ async def run_session_env(
     ended = end_session(env=env, stop_reason=segment.stop_reason, steps=steps)
     if ended is not None:
         return _run_outcome(log, ended)
-    # 段数可能大于一，`steps` 是这次会话的累计；失败码仍取最后一个段。
+    # 轮数可能大于一，`steps` 是这次会话的累计；失败码仍取最后一轮。
     return RunOutcome(
         session_id=log.session_id,
         stop_reason=segment.stop_reason,

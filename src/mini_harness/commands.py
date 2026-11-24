@@ -1,4 +1,4 @@
-"""命令面（M14）：人机直连的 UI 动作，不创建模型消息、不开启段。
+"""命令面（M14）：人机直连的 UI 动作，不创建模型消息、不开启轮。
 
 命令的语法/未知名字是 admission miss——调用方不落任何日志；已知命令的参数错误是
 handler 的结果（`ok=false`），照样落 `command/run` + `command/done`（照 DSH）。
@@ -25,7 +25,7 @@ from mini_harness.goals import (
 from mini_harness.skills import Skill, read_skill_body
 
 if TYPE_CHECKING:
-    # 只给类型检查看：命令面只用到 log 与进程内武装位，不把整个回合循环拉进来。
+    # 只给类型检查看：命令面只用到 log 与进程内武装位，不把整个轮循环拉进来。
     from mini_harness.loop.turn_loop import SessionEnv
 
 
@@ -238,5 +238,5 @@ def execute_command(
         items = project(records, "todos")["value"]
         lines = render_todos(items)
         return CommandOutcome(True, "\n".join(lines) if lines else "（没有待办）")
-    # 直接技能名由壳走「注入 + 开段」的执行路径；这里只处理内置命令。
+    # 直接技能名由壳走「注入 + 开轮」的执行路径；这里只处理内置命令。
     return None

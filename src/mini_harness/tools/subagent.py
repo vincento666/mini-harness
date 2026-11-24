@@ -209,7 +209,7 @@ def _child_result(env: SessionEnv, outcome: RunOutcome) -> ToolResult:
         )
     if outcome.stop_reason == STOP_FENCE_DENIED:
         # 子会话被围栏拒绝：父拿到的也是拒绝结果词，不能读成「成功了但没做成」。
-        # 父自己的回合不因此终止——被拒的是子会话，父还能决定换个做法。
+        # 父自己的步不因此终止——被拒的是子会话，父还能决定换个做法。
         code = outcome.failure_code or "DENIED_BY_FENCE"
         denied: ToolOutcome = (
             "DENIED_BY_APPROVAL" if code.startswith("APPROVAL_") else "DENIED_BY_FENCE"
@@ -319,7 +319,7 @@ async def _run_subagent(
     )
     try:
         try:
-            # shield：父段取消不把子会话半路砍断，子会话自己按 ABORTED 收尾（design D6）。
+            # shield：父轮取消不把子会话半路砍断，子会话自己按 ABORTED 收尾（design D6）。
             # 父取消到达执行器的方式是 `CancelledError`，所以取消桥就只需要下面这一行。
             outcome = await asyncio.shield(task)
         except asyncio.CancelledError:

@@ -28,7 +28,7 @@ class ProjectionUnit(Protocol):
 
 @dataclass(frozen=True)
 class TodoProjection:
-    """待办表：`todo/updated` 整表替换；每段开头清空（照 DSH 的 `turn/start`，含 goal 轮次）。"""
+    """待办表：`todo/updated` 整表替换；每轮开头清空（照 DSH 的 `turn/start`，含 goal 轮次）。"""
 
     name: str = "todos"
     state_version: int = 1
@@ -55,7 +55,7 @@ def render_todos(items: Sequence[Mapping[str, Any]]) -> list[str]:
     """一行一条待办：`- [status] id text`；空表返回空列表。
 
     `/todo`、`get_todos` 与壳的回显共用这一条格式规则——但空表说什么由调用方决定
-    （命令说「没有待办」，工具要说清「本段还没提交过」）。
+    （命令说「没有待办」，工具要说清「本轮还没提交过」）。
     """
     return [f"- [{item['status']}] {item['id']} {item['text']}" for item in items]
 

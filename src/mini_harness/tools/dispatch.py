@@ -1,4 +1,4 @@
-"""工具派发管线：校验 → 围栏与 approval → 执行。任一段的失败都是结果。"""
+"""工具派发管线：校验 → 围栏与 approval → 执行。任一环节的失败都是结果。"""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ class DispatchOutcome:
     fence_code: FenceCode | None = None
     path: str | None = None
     raw_path: str | None = None
-    # 这次调用是否批准了计划退出；回合循环据此写 `plan/mode {active: false}`。
+    # 这次调用是否批准了计划退出；步循环据此写 `plan/mode {active: false}`。
     plan_exit: bool = False
 
 
@@ -51,7 +51,7 @@ async def dispatch_tool_call(
     on_approval_request: ApprovalAsked | None = None,
     on_stage: Callable[[str], None] | None = None,
 ) -> DispatchOutcome:
-    """按六段固定顺序判定。校验失败不做围栏判定，围栏拒绝不执行。"""
+    """按六个环节固定顺序判定。校验失败不做围栏判定，围栏拒绝不执行。"""
     stages = on_stage if on_stage is not None else (lambda _name: None)
 
     def finished(outcome: DispatchOutcome) -> DispatchOutcome:
@@ -167,7 +167,7 @@ async def dispatch_tool_call(
             )
         )
     except asyncio.CancelledError:
-        # ADR-0007：取消打断正在执行的调用，它也是结果；回合循环随后写 `tool/cancelled` 并收尾。
+        # ADR-0007：取消打断正在执行的调用，它也是结果；步循环随后写 `tool/cancelled` 并收尾。
         return finished(
             DispatchOutcome(
                 ToolResult(outcome="TOOL_CANCELLED", content=f"工具 {call.name} 的执行被打断"),
@@ -175,7 +175,7 @@ async def dispatch_tool_call(
             )
         )
     except OSError as exc:
-        # 不变量 B：执行段的 I/O 失败也是结果，不抛异常打断回合。
+        # 不变量 B：执行区间的 I/O 失败也是结果，不抛异常打断步。
         return finished(
             DispatchOutcome(
                 ToolResult(

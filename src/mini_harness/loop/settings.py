@@ -105,5 +105,5 @@ class SessionSettings:
     skills: tuple[Skill, ...] = ()
     # 发现是否完整；根目录扫不动时为 False（skill-invocation-policy）。
     skills_complete: bool = True
-    # 目标轮次策略（M13）：`[goal]` 段的三键，工具与驱动共用。
+    # 目标轮次策略（M13）：`[goal]` 节的三键，工具与驱动共用。
     goal: GoalPolicy = field(default_factory=GoalPolicy)

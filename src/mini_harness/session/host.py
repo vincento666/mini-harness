@@ -119,7 +119,7 @@ def register_child_session(state: HostState, env: SessionEnv) -> None:
     """子会话收尾时登记进列表（M12 design D7）：它已经结束，只读，单独一条日志。
 
     父 SSE 流不转发子流：这里只登记列表条目，不订阅事件、也不进父会话的队列。
-    读不出日志就登记不了——那也不该把父回合拖垮（调用方吞掉异常）。
+    读不出日志就登记不了——那也不该把父轮拖垮（调用方吞掉异常）。
     """
     records = read_events(env.log.path)
     if isinstance(records, LogReadFailure) or not records:
@@ -151,7 +151,7 @@ def visible_skills(handle: HostSession) -> tuple[Skill, ...]:
 
 
 def run_command(handle: HostSession, name: str, arguments: str) -> CommandResponse | Failure:
-    """执行一条命令：写 `command/run` + `command/done`，不开段、不建模型消息（M14）。"""
+    """执行一条命令：写 `command/run` + `command/done`，不开轮、不建模型消息（M14）。"""
     if handle.status == SESSION_ENDED:
         return Failure("SESSION_NOT_FOUND", "会话已经结束", EXIT_INVALID_ARGUMENT)
     if name == "plan" and handle.status == SESSION_RUNNING:
@@ -215,7 +215,7 @@ class HostSession:
     task: asyncio.Task[None] | None = None
     stopping: bool = False
     ended_by_failure: bool = False
-    # 两个独立的里程表：`turns` 数段（`turn/start`），`steps` 数步（`step/start`）。
+    # 两个独立的里程表：`turns` 数轮（`turn/start`），`steps` 数步（`step/start`）。
     turns: int = 0
     steps: int = 0
 
@@ -304,7 +304,7 @@ def create_session(
     request: AssemblyRequest,
     environ: Mapping[str, str],
 ) -> HostSession | Failure:
-    """装配并开一个空闲会话：写 `session/start`（`entry=host`、`prompt=""`），不跑段。"""
+    """装配并开一个空闲会话：写 `session/start`（`entry=host`、`prompt=""`），不跑轮。"""
     if state.active_session_count() >= MAX_SESSIONS:
         return Failure(
             "TOO_MANY_SESSIONS",
@@ -426,7 +426,7 @@ def resolve_approval(handle: HostSession, tool_call_id: str, *, approve: bool) -
 
 @dataclass(frozen=True)
 class MessageAccepted:
-    """一次 `POST /messages` 的结果：直接起段时带 `turn_id`，排队时为 `None`。"""
+    """一次 `POST /messages` 的结果：直接起轮时带 `turn_id`，排队时为 `None`。"""
 
     turn_id: str | None
     queued: bool
@@ -435,7 +435,7 @@ class MessageAccepted:
 def expand_skill_command(
     handle: HostSession, skill: Skill, instruction: str
 ) -> MessageAccepted | Failure:
-    """技能命令 + 指令：写两件套，再把正文与指令作为一条消息投递（空闲起段、忙时排队）。"""
+    """技能命令 + 指令：写两件套，再把正文与指令作为一条消息投递（空闲起轮、忙时排队）。"""
     if handle.status == SESSION_ENDED:
         return Failure("SESSION_NOT_FOUND", "会话已经结束", EXIT_INVALID_ARGUMENT)
     command_id = uuid.uuid4().hex
@@ -456,7 +456,7 @@ def expand_skill_command(
 
 
 def submit_message(handle: HostSession, content: str) -> MessageAccepted | Failure:
-    """空闲时直接起段；段进行中入深度 1 的队列；队列已满是一条 409 的结果。"""
+    """空闲时直接起轮；轮进行中入深度 1 的队列；队列已满是一条 409 的结果。"""
     if handle.status == SESSION_ENDED:
         return Failure("SESSION_NOT_FOUND", "会话已经结束", EXIT_INVALID_ARGUMENT)
     if handle.status == SESSION_RUNNING:
@@ -502,10 +502,10 @@ async def _run_segment(
         )
         handle.steps += segment.steps
         # 词表外才是内核失败；FENCE_DENIED / CONTEXT_WINDOW_EXCEEDED 也带 failure_code，
-        # 但它们只停段、会话仍可用（ADR-0019 / design D6）。
+        # 但它们只停轮、会话仍可用（ADR-0019 / design D6）。
         failed = segment.stop_reason not in STOP_REASONS
         if not failed:
-            # 段后收尾与 chat / run 同一份实现：host 不再只有命令面而没有驱动（2026-11-20）。
+            # 轮后收尾与 chat / run 同一份实现：host 不再只有命令面而没有驱动（2026-11-20）。
             settlement = settle_segment(
                 env=handle.env,
                 segment=segment,
@@ -540,9 +540,9 @@ async def _run_segment(
 
 
 def cancel_session(handle: HostSession) -> bool:
-    """只取消当前段；没有段在跑返回 False（一条记录都不写）。
+    """只取消当前轮；没有轮在跑返回 False（一条记录都不写）。
 
-    段如果停在 approval 上，未决的 future 塌成 `UNAVAILABLE`（design D7），门不默认批准。
+    轮如果停在 approval 上，未决的 future 塌成 `UNAVAILABLE`（design D7），门不默认批准。
     """
     if handle.status != SESSION_RUNNING or handle.cancel is None:
         return False
@@ -557,7 +557,7 @@ def cancel_session(handle: HostSession) -> bool:
 
 
 def close_session(handle: HostSession) -> Failure | None:
-    """空闲时写 `session/end`；段在跑与已关闭都交给调用方映射成 409 / 404。"""
+    """空闲时写 `session/end`；轮在跑与已关闭都交给调用方映射成 409 / 404。"""
     if handle.status == SESSION_RUNNING:
         return Failure("SESSION_BUSY", "会话正在跑一轮", EXIT_INVALID_ARGUMENT)
     if handle.status == SESSION_ENDED:
@@ -592,7 +592,7 @@ def resume_session(state: HostState, session_id: str) -> HostSession | Failure:
 
 
 async def shutdown(state: HostState) -> None:
-    """服务退出：取消所有段、等它们写完收尾记录，再为每个会话写 `session/end`。"""
+    """服务退出：取消所有轮、等它们写完收尾记录，再为每个会话写 `session/end`。"""
     handles = list(state.sessions.values())
     for handle in handles:
         handle.stopping = True
@@ -609,7 +609,7 @@ async def shutdown(state: HostState) -> None:
         await asyncio.gather(*tasks, return_exceptions=True)
     for handle in handles:
         if handle.status == SESSION_RUNNING:
-            # 段没有在取消后收尾（极端情况）：不让它留成半条，直接补 `session/end`。
+            # 轮没有在取消后收尾（极端情况）：不让它留成半条，直接补 `session/end`。
             handle.status = SESSION_IDLE
         if handle.ended_by_failure:
             # 内核失败把会话标成 ended，但 spec 要求退出时为每个会话写 `session/end`。

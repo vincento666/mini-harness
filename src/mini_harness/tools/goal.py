@@ -113,7 +113,7 @@ async def _create_goal(args: CreateGoalArgs, context: DispatchContext) -> ToolRe
     return ToolResult("OK", _view(context, snapshot))
 
 
-# 只有这四个动作要「人类开口的段」；complete / blocked 是模型在轮次里自己收尾的口子。
+# 只有这四个动作要「人类开口的轮」；complete / blocked 是模型在轮次里自己收尾的口子。
 _HUMAN_ONLY_ACTIONS = frozenset({"edit", "pause", "resume"})
 
 

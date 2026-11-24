@@ -1,4 +1,4 @@
-"""Provider 契约：回合循环只依赖 `generate` 这一个方法。"""
+"""Provider 契约：步循环只依赖 `generate` 这一个方法。"""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ class Usage(BaseModel):
 
 
 class ProviderAttempt(BaseModel):
-    """一次被重试掉的失败尝试。重试事实随结果回到回合循环，由循环写进日志。"""
+    """一次被重试掉的失败尝试。重试事实随结果回到步循环，由循环写进日志。"""
 
     attempt: int
     status: int

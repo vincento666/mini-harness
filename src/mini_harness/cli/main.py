@@ -449,10 +449,10 @@ _CHAT_PROMPT = "> "
 
 @dataclass
 class _ChatSignals:
-    """Ctrl-C 的落点：段在跑就取消那个段，没有段在跑就结束会话（design D7）。"""
+    """Ctrl-C 的落点：轮在跑就取消那一轮，没有轮在跑就结束会话（design D7）。"""
 
     active: asyncio.Event | None = None
-    # 段跑起来之后才有的循环句柄：取消必须经它叫醒循环（见 handler 的注释）。
+    # 轮跑起来之后才有的循环句柄：取消必须经它叫醒循环（见 handler 的注释）。
     loop: asyncio.AbstractEventLoop | None = None
 
 
@@ -460,20 +460,20 @@ def _chat_sigint_handler(signals: _ChatSignals) -> Callable[[int, FrameType | No
     def handle(signum: int, frame: FrameType | None) -> None:
         loop = signals.loop
         if signals.active is not None and loop is not None:
-            # 段在跑：取消当前段，会话继续。
+            # 轮在跑：取消当前轮，会话继续。
             # MUST 走 `call_soon_threadsafe`：它顺带写循环的自管道，能把睡在 selector 里的
             # 循环叫醒。直接 `Event.set()` 只排队一个回调，循环要等到下一次 I/O 或超时才处理——
             # 真实端点 UAT 里表现为「Ctrl-C 之后 bash 还跑满 30 s」。
             loop.call_soon_threadsafe(signals.active.set)
             return
-        # 提示符上：没有段在跑，Ctrl-C 与 EOF 同一条路。
+        # 提示符上：没有轮在跑，Ctrl-C 与 EOF 同一条路。
         raise KeyboardInterrupt
 
     return handle
 
 
 def _suppress_sigint(signum: int, frame: FrameType | None) -> None:
-    """会话收尾这一段的 Ctrl-C 处理器：什么都不做（design D7）。
+    """会话收尾这一轮的 Ctrl-C 处理器：什么都不做（design D7）。
 
     收尾已经开始就走完——取消落进「`end_session` 还在跑」那道缝隙里不该留下未捕获异常，
     也不该把 `session/end` 写成半条。不置 `SIG_IGN`：Windows 上被忽略的 Ctrl-C 会在解释器里
@@ -527,7 +527,7 @@ def _print_new_replies(log: EventLog, printed: int) -> int | LogReadFailure:
         seen += 1
         if seen <= printed:
             continue
-        # 只带工具调用的回合 `content` 是空串：打出去就是一条空行（design D2）。
+        # 只带工具调用的步 `content` 是空串：打出去就是一条空行（design D2）。
         content = str(event.payload.get("content", ""))
         if content.strip():
             print(content)
@@ -535,12 +535,12 @@ def _print_new_replies(log: EventLog, printed: int) -> int | LogReadFailure:
 
 
 # 只有这一种收尾不打那一行，其余收尾理由一律打（design D4 与 D5；2026-10-23 人裁决：写反面集合）。
-# `ABORTED` 从「不打」搬进「打」这一半：取消也是人不打命令、会话却少了一个段，屏幕上要看得见。
+# `ABORTED` 从「不打」搬进「打」这一半：取消也是人不打命令、会话却少了一轮，屏幕上要看得见。
 _SEGMENT_NOTE_SUPPRESSED = frozenset({STOP_MODEL_COMPLETED})
 
 
 def _print_segment_note(segment: TurnOutcome) -> None:
-    """段级收尾给人一行（design D5）：走 stderr，不是日志的投影，也不写进日志。
+    """轮级收尾给人一行（design D5）：走 stderr，不是日志的投影，也不写进日志。
 
     组装规则是 design D3：停止理由 → 与它**不同**的 `code` → 非空 `detail`，一律不截断。
     此前 `CONTEXT_WINDOW_EXCEEDED` 那一行把同一个词打两遍、把日志里那句有用的 detail 丢掉。
@@ -561,7 +561,7 @@ def _print_shadow_feedback(log: EventLog, through: int) -> tuple[int, LogReadFai
     """把新写出的 `compaction/summary` 说给人听（design D6）：走 stderr，不进 stdout、不写日志。
 
     内容全部取自那条记录已有的四个键——不新增事件类型，也不改 payload。
-    `through` 是上次扫到的 `seq`：一个段只报它自己那一段里发生的压缩。
+    `through` 是上次扫到的 `seq`：一轮只报它自己那一轮里发生的压缩。
     """
     events = read_events(log.path)
     if isinstance(events, LogReadFailure):
@@ -583,7 +583,7 @@ def _print_shadow_feedback(log: EventLog, through: int) -> tuple[int, LogReadFai
 
 
 def _run_chat_command(prepared: Prepared, text: str, env: SessionEnv | None = None) -> str | None:
-    """一条斜杠命令；返回非 None 表示它展开成了一条要开段的用户消息。"""
+    """一条斜杠命令；返回非 None 表示它展开成了一条要开轮的用户消息。"""
     skills = skills_view(prepared.skills_registry, prepared.settings.skills)
     name, _, arguments = text[1:].partition(" ")
     if name == "help":
@@ -648,7 +648,7 @@ def _resume_round(env: SessionEnv, text: str, *, was_armed: bool) -> GoalRound |
 
 
 async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
-    """读一行、开一个段、回到提示符；EOF 或提示符上的 Ctrl-C 收尾整个会话。
+    """读一行、开一轮、回到提示符；EOF 或提示符上的 Ctrl-C 收尾整个会话。
 
     SIGINT 处理器由 `_chat` 装（design D7）：会话收尾也在它的覆盖范围里，
     取消落进「循环已经退出、`end_session` 还没开始」那道缝隙里也有人接。
@@ -686,7 +686,7 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
         turn_index = len(steps) + 1
         printed = sum(1 for event in events if event.type == "model/response")
         scanned = events[-1].seq if events else 0
-    # 连续溢出的说明靠这两个局部变量（design 的 Risks）：记住上一个段的收尾理由、这一句说过没有。
+    # 连续溢出的说明靠这两个局部变量（design 的 Risks）：记住上一轮的收尾理由、这一句说过没有。
     # 不进日志、不新增状态机。
     previous_stop_reason: str | None = None
     said_cannot_come_down = False
@@ -714,10 +714,10 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
                     break
                 text = line.strip()
                 if not text:
-                    # 空白输入不写记录，也不开段。
+                    # 空白输入不写记录，也不开轮。
                     continue
                 if text.startswith("/"):
-                    # 命令本身不写 user/message；`/<技能名> 指令` 会展开成一条消息再开段。
+                    # 命令本身不写 user/message；`/<技能名> 指令` 会展开成一条消息再开轮。
                     was_armed = env.goal_runtime.armed
                     expanded = _run_chat_command(prepared, text, env)
                     if expanded is None:
@@ -767,7 +767,7 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
                         and previous_stop_reason == STOP_CONTEXT_WINDOW_EXCEEDED
                         and not said_cannot_come_down
                     ):
-                        # 连续两段溢出：这一句每个会话只说一次，措辞留给实现。
+                        # 连续两轮溢出：这一句每个会话只说一次，措辞留给实现。
                         # 不进日志、不结束会话、不改退出码。
                         print(
                             "[降不下去] 连续两轮溢出：这份会话已经降不下去，"
@@ -785,7 +785,7 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
                     if isinstance(replies, LogReadFailure):
                         return _report_failure(replies.code, replies.detail, EXIT_INTERNAL_ERROR)
                     printed = replies
-                    # 段后驱动（design D3/D13）：目标 active 且已武装时不打印提示符，直接判下一轮。
+                    # 轮后驱动（design D3/D13）：目标 active 且已武装时不打印提示符，直接判下一轮。
                     # 收尾只有一份实现（`settle_segment`），host 与本入口共用。
                     settlement = settle_segment(
                         env=env,
@@ -872,7 +872,7 @@ def _replay(args: argparse.Namespace) -> int:
 
     points = assembly_points(records)
     if not points:
-        # 溢出与取消都能在第一次装配之前就把回合收掉，那份日志是合法的：
+        # 溢出与取消都能在第一次装配之前就把步收掉，那份日志是合法的：
         # 没有可重算的点不等于重算不一致，但要说明它，不能冒充「一条都验过」。
         print("no_context_assembled: 这份日志没有装配点")
 

@@ -105,7 +105,7 @@ def estimate_tokens(messages: Sequence[Message]) -> int:
 
 
 def budget_reading(events: Sequence[EventRecord], messages: Sequence[Message]) -> int:
-    """预算读数 = max(本次折叠上下文的估算, 前缀里回合级回复回报的 `input_tokens` 最大值)。
+    """预算读数 = max(本次折叠上下文的估算, 前缀里步级回复回报的 `input_tokens` 最大值)。
 
     两条排除是同一条判据：校准量的是**当前表层**。`purpose` 为 `compaction` 的那次回复量的是被遮蔽的
     那一大段；落在遮蔽范围里的回复描述的那份上下文已经不存在了。留着它们，压缩永远救不回来——

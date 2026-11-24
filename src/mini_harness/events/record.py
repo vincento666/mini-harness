@@ -10,8 +10,8 @@ from mini_harness.events.vocabulary import CONCRETE_EVENT_TYPES, LEGACY_EVENT_TY
 
 SCHEMA_VERSION = 2
 
-# v1 → v2 的名字映射。`turn` 在两版里意思相反（v1=回合，v2=段），所以必须整表查一次，
-# 不能做两遍字符串替换：`segment→turn` 的产物会被 `turn→step` 再改一次。
+# v1 → v2 的名字映射。`turn` 在两版里意思相反（v1 的 `turn` 是步，v2 的 `turn` 是轮），
+# 所以必须整表查一次，不能做两遍字符串替换：`segment→turn` 的产物会被 `turn→step` 再改一次。
 _V1_TYPE_MAP: dict[str, str] = {
     "segment/start": "turn/start",
     "segment/end": "turn/end",
@@ -19,7 +19,7 @@ _V1_TYPE_MAP: dict[str, str] = {
     "turn/end": "step/end",
 }
 
-# 载荷键同样整表换：`turn_id` 是段 id，`step_id` 是回合 id。
+# 载荷键同样整表换：`turn_id` 是轮的 id，`step_id` 是步的 id。
 _V1_KEY_MAP: dict[str, str] = {
     "segment_id": "turn_id",
     "turn_id": "step_id",

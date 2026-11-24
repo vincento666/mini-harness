@@ -65,7 +65,7 @@ class DispatchContext:
 
     `session` 是委派要的那一层（子会话需要父的日志、设置、注册表与 provider）；
     `tool_call_id` 是这一次调用的身份，子会话的 `session/start` 靠它跟父结果对上。
-    父段取消不经过这里：它到达工具的方式是 `CancelledError`（ADR-0007）。
+    父轮取消不经过这里：它到达工具的方式是 `CancelledError`（ADR-0007）。
     """
 
     workspace: Path
@@ -74,7 +74,7 @@ class DispatchContext:
     reads: Mapping[str, PriorRead] = field(default_factory=dict)
     session: SessionEnv | None = None
     tool_call_id: str | None = None
-    # 计划模式（M14c）：派发前拦写类工具；由回合循环按日志算好传进来。
+    # 计划模式（M14c）：派发前拦写类工具；由步循环按日志算好传进来。
     plan_active: bool = False
     question_gate: QuestionGate = UNAVAILABLE_QUESTION_GATE
     # 目标轮次策略（M13）：`todo` 的并行纪律读它；缺省即部署默认。
@@ -84,7 +84,7 @@ class DispatchContext:
     # 待办表的当前值（`todos` 投影）：`get_todos` 读它；同一批共用一个前缀，
     # 所以同批里前一条 `todo` 的整表在这条里还看不到。
     todos: Sequence[Mapping[str, Any]] = ()
-    # 本段是否由人类来源开启；goal 轮次里不能创建/改写目标（M13 权威）。
+    # 本轮是否由人类来源开启；goal 轮次里不能创建/改写目标（M13 权威）。
     human_driven: bool = True
     # 会话入口：子会话没有目标权威。取值与 `SessionEntry` 一致。
     entry: str = "chat"
@@ -121,7 +121,7 @@ class DispatchContext:
 
 @dataclass(frozen=True)
 class FenceDecision:
-    """围栏段的结论。被拒也是结果，不是异常。
+    """围栏环节的结论。被拒也是结果，不是异常。
 
     `path` 是判定实际使用的解析后键（档位轴先拒、或调用没有目标路径时是 `None`）；
     `raw_path` 是调用里写的原始写法。两者进 `error/fence` 的 payload。
@@ -306,7 +306,7 @@ def reads_from_records(records: Iterable[EventRecord], workspace: Path) -> dict[
 
 
 def judge_fence(context: DispatchContext, *, raw_path: str | None, mutates: bool) -> FenceDecision:
-    """三段判定里的围栏段：档位 → 工作区边界 → 要不要问人。
+    """三层判定里的围栏环节：档位 → 工作区边界 → 要不要问人。
 
     边界只约束会改动的操作；`danger-full-access` 解除边界，但写前必读与 CAS 不在这里判。
     没有目标路径的会改动工具（`bash`）不受边界轴判定，只受档位轴判定（ADR-0008）。

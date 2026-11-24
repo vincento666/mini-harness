@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-# v2 名字：只放当前形状，新写入的唯一合法集。`turn` 是段，`step` 是回合（C 方案）。
+# v2 名字：只放当前形状，新写入的唯一合法集。`turn` 是轮，`step` 是步（C 方案）。
 CONCRETE_EVENT_TYPES: frozenset[str] = frozenset(
     {
         "session/start",
@@ -34,7 +34,8 @@ CONCRETE_EVENT_TYPES: frozenset[str] = frozenset(
 )
 
 # v1 名字：只允许读，交给 `migrate_schema` 上迁；MUST NOT 出现在新写入里。
-# 注意 `turn/start` 在两版里意思相反（v1=回合，v2=段），所以不能当同义词长期保留。
+# 注意 `turn/start` 在两版里意思相反（v1 的 `turn` 是步，v2 的 `turn` 是轮），
+# 所以不能当同义词长期保留。
 LEGACY_EVENT_TYPES: frozenset[str] = frozenset(
     {
         "segment/start",

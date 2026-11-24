@@ -44,7 +44,7 @@ def _names_joined(names: Sequence[str]) -> str:
 def _presets(
     value: Mapping[str, Any], known_tools: frozenset[str], skills: Sequence[Skill]
 ) -> SubagentPresets | ConfigFailure:
-    """`[subagent]` 段 → 已编译的 preset 表；任何形状/引用错误都是配置失败。"""
+    """`[subagent]` 节 → 已编译的 preset 表；任何形状/引用错误都是配置失败。"""
     unknown = sorted(set(value) - _SUBAGENT_KEYS)
     if unknown:
         return _invalid(f"[subagent] 里有未知的键：{_names_joined(unknown)}", "CONFIG_UNKNOWN_KEY")
@@ -150,7 +150,7 @@ def _presets(
 
 
 def build_goal_policy(raw: Mapping[str, Any] | None) -> GoalPolicy | ConfigFailure:
-    """`[goal]` 段 → `GoalPolicy`；未知键、非正数、非布尔、门槛大于上限都是配置失败。
+    """`[goal]` 节 → `GoalPolicy`；未知键、非正数、非布尔、门槛大于上限都是配置失败。
 
     门槛大于上限会让「合法阻塞」那条路径永远走不到（只能等 `round-limit`），
     这里直接拒，不留给部署者一个静默自废的配置。
@@ -202,7 +202,7 @@ def build_registry(
     """内置六定义（五个文件工具加 `bash`）；`None` 是全开，给了白名单就按内置顺序筛。
 
     白名单里的未知名是一条配置失败：工具表不会悄悄少一个，也不会悄悄多一个。
-    `subagent` 是 `[subagent]` 段：给了就编译成 preset 表并挂到 `subagent` 工具上。
+    `subagent` 是 `[subagent]` 节：给了就编译成 preset 表并挂到 `subagent` 工具上。
     """
     known_tools = frozenset(tool.name for tool in subagent_tool_definitions())
     known_tools = known_tools | frozenset(tool.name for tool in file_tool_definitions())
