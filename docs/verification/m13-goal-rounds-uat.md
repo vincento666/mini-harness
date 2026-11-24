@@ -58,7 +58,7 @@ uv run minihns chat --provider deepseek --workspace .tmp/uat/m13 --session-dir .
 
 - 期望：`Ctrl-C` 之后不再自动起新段；`/goal resume` 之后武装位变 true（`get_goal` 的工具结果里 `armed: true`）；「继续」这一段结束后自动续跑，轮次从 2 起。
 - 观察：取消的反馈是否明确；续跑是否要人确认；有没有「取消后自己又跑了」。
-- 结果：**未通过（agent 代跑未复现）**。两次尝试都没取消当前轮：①往 pty 写 `^C`；②直接对 chat 进程 `SIGINT`。两次的 `/goal` 都落在 4/4 跑完之后（`相位 blocked · 轮次 4/4`），`/goal resume` 回「轮次已用尽（4/4）：先调大 max_rounds 再 resume」。**未定位**这是 chat 的 Ctrl-C 在同步模型调用期间没生效，还是 pty 驱动器的局限。按 ADR-0025，这条 tty 判据需人在真终端复核。
+- 结果：**未通过（agent 代跑未复现）**。两次尝试都没取消当前轮：①往 pty 写 `^C`——目标一路跑到 4/4，`/goal` 显示 `相位 blocked · 轮次 4/4`，`/goal resume` 回「轮次已用尽（4/4）：先调大 max_rounds 再 resume」；②直接给 chat 进程 `SIGINT`——日志停在 `rounds_started=3`、第 4 轮的 `step/start`（seq 96），无 `turn/end`、无 `session/end`，是驱动器超时把进程截断，不是取消生效。两次都没有出现 `paused` 相位，判据「Ctrl-C 取消当前轮 → `/goal` 显示 paused → `resume` 续跑」一条也没达成。**未定位**是 chat 的 Ctrl-C 在同步模型调用期间没生效，还是 pty 驱动器的局限。按 ADR-0025，这条 tty 判据需人在真终端复核。
 
 ## 场次 3：任务表的两面（段内并行 / 段首清空）
 
