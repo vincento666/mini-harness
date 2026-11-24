@@ -1,0 +1,62 @@
+# 功能验证与调优用哪个端点
+
+**定位**：ADR-0024 说的「真实那一半」到底接哪家端点。这份文只回答一件事——跑验收、跑调优、量真实形状时用哪个模型、密钥从哪来、命令长什么样。规格在 ADR-0024 / ADR-0027，验收场次在各 change 的 `docs/verification/*.md`。
+
+**一句话**：2026-11-24 起统一用 OpenRouter 的 `qwen/qwen3.8-27b`，密钥读环境变量 `OPENROUTER_API_KEY`；`deepseek` 预设留在代码里，但不再当验收端点。
+
+---
+
+## 1. 端点与模型
+
+| 项 | 值 |
+|---|---|
+| Base URL | `https://openrouter.ai/api/v1` |
+| 模型 | `qwen/qwen3.8-27b` |
+| 密钥变量 | `OPENROUTER_API_KEY` |
+| 协议 | OpenAI 兼容（`POST /chat/completions`，SSE 流式） |
+
+模型元数据（2026-11-24 查 `GET https://openrouter.ai/api/v1/models`）：上下文 1,024,000、最大输出 131,072、`supported_parameters` 含 `tools` / `tool_choice` / `stream`；价格 $0.035/M 输入、$1.5/M 输出。**支持工具调用**，所以工具循环、围栏、审批这些判据都能在这上面跑，不需要退化成纯问答。
+
+## 2. 在 mini-harness 里怎么调
+
+provider 名是**端点预设**（ADR-0027），OpenRouter 没有自己的预设名，用 `openai` 预设 + 三个覆盖参数：
+
+```bash
+uv run minihns run -p "读 README.md 第一段并总结一句" \
+  --provider openai \
+  --base-url https://openrouter.ai/api/v1 \
+  --model qwen/qwen3.8-27b \
+  --api-key-env OPENROUTER_API_KEY \
+  --max-steps 3 --yes \
+  --workspace .tmp/verify/<change> \
+  --session-dir .tmp/verify/<change>/sessions
+```
+
+三个覆盖缺一不可：`openai` 预设默认读 `MINIHNS_API_KEY`、默认 base URL 是 `api.openai.com`、且**不给默认模型**（缺 `--model` 当场失败）。
+
+## 3. 密钥从哪来
+
+`minihns` 只从**进程环境**读，不读 `.env`、不读配置文件。所以跑之前那个变量必须已经在 shell 里：
+
+```bash
+export OPENROUTER_API_KEY=...        # 或用你自己的 secrets 注入方式
+```
+
+本机现状（2026-11-24 实测）：`OPENROUTER_API_KEY` **不在**交互式 zsh 的导出列表里，也不在 `launchctl` 环境里，`~/.config/` 与项目里没有 `.env`。也就是说它得由人来注入，agent 的进程继承不到。
+
+## 4. 裸 curl 冒烟（不经 harness，先确认端点通）
+
+```bash
+curl -N https://openrouter.ai/api/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+  -d '{"model":"qwen/qwen3.8-27b","stream":true,"messages":[{"role":"user","content":"Hello"}]}'
+```
+
+401 且 message 里写着 `No API key in the Authorization header` 就是变量没进这个进程，不是模型名或端点的问题。
+
+## 5. 不做什么
+
+- **不把密钥写进仓库**：不出现在 `.env`、不出现在 `mini.config.toml`、不写进日志。
+- **不把这条端点加进 CI**：ADR-0024 明写真实那一半不进 CI，理由是密钥与抖动。
+- **不因为换端点就改判据**：判据钉的是值与形状（`stop_reason`、事件名、`turns` 计数），不是某个模型的措辞。
