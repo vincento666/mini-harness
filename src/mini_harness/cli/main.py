@@ -977,7 +977,8 @@ def _usage(args: argparse.Namespace) -> int:
             if pricing is not None:
                 cost = round(pricing.cost(total), 6)
     payload = {
-        "turns": [{"turn_id": turn.step_id, **turn.usage.as_dict()} for turn in steps],
+        # 用量按**步**聚合（一次模型往返一份 usage）；`turn` 是轮的层级，不是这里的单位。
+        "steps": [{"step_id": step.step_id, **step.usage.as_dict()} for step in steps],
         "total": total.as_dict(),
         "cost": cost,
     }

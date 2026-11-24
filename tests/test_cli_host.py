@@ -550,6 +550,9 @@ def test_the_event_stream_mixes_durable_and_delta_frames(tmp_path: Path) -> None
             next(frame["data"] for frame in frames if frame["event"] == "model/response")
         )
         assert response_payload["payload"]["content"] == "".join(delta["text"] for delta in deltas)
+        # 增量属于步：键名是 `step_id`，且与同一步的 `model/response` 对得上（不是轮的 id）。
+        assert all(set(delta) == {"step_id", "index", "text"} for delta in deltas)
+        assert {delta["step_id"] for delta in deltas} == {response_payload["payload"]["step_id"]}
         log = session_dir / f"{session_id}.jsonl"
         assert "model/delta" not in log.read_text(encoding="utf-8")
     finally:

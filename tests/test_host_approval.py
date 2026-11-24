@@ -48,8 +48,8 @@ async def test_host_session_broadcasts_deltas_to_subscribers(tmp_path: Path) -> 
     await handle.publish_delta("t1", "你")
     await handle.publish_delta("t1", "好")
 
-    assert queue.get_nowait() == {"turn_id": "t1", "index": 0, "text": "你"}
-    assert queue.get_nowait() == {"turn_id": "t1", "index": 1, "text": "好"}
+    assert queue.get_nowait() == {"step_id": "t1", "index": 0, "text": "你"}
+    assert queue.get_nowait() == {"step_id": "t1", "index": 1, "text": "好"}
     assert queue.empty()
 
     handle.unsubscribe_deltas(queue)

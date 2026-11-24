@@ -33,9 +33,9 @@ mini 的三层时间词与 DSH 官方词是**错位**的：
 - `event-stream`：帧里的 `event` 名随词表变化；游标语义不变。
 - `cli`：`--max-steps` 是唯一名字；`/goal` 文本里的「轮」不变。
 - `config-layering`：`max_steps` 与旧键别名。
-- `chat-repl` / `host-api` / `session-resume`：段→轮的可见文案与字段名；行为不变。
+- `chat-repl` / `host-api` / `session-resume`：段→轮的可见文案与字段名；`model/delta` 帧的键 `turn_id → step_id`（增量属于步）；行为不变。
 - `subagent-delegation`：子会话的 `max_turns` 参数改名。
-- `usage-metering`：报告列里的 step 计数改名。
+- `usage-metering`：`minihns usage` 的 JSON 键 `turns[] / turn_id → steps[] / step_id`——用量按步聚合，旧键把步的用量记在轮的层级下。
 
 ## Impact
 

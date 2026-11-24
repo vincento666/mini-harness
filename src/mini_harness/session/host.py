@@ -250,7 +250,8 @@ class HostSession:
         """把一个正文增量广播给当前所有订阅者；慢读者丢最旧，不反压 provider。"""
         index = self.delta_indexes.get(step_id, 0)
         self.delta_indexes[step_id] = index + 1
-        frame: dict[str, object] = {"turn_id": step_id, "index": index, "text": text}
+        # 增量属于**步**（一次模型往返），不是轮：键用 `step_id`，与 `model/response` 同口径。
+        frame: dict[str, object] = {"step_id": step_id, "index": index, "text": text}
         for queue in list(self.subscribers):
             if queue.full():
                 with contextlib.suppress(asyncio.QueueEmpty):

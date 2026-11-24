@@ -11,7 +11,7 @@ from mini_harness.metering import Usage, collect_usage, pricing_from
 
 def _rec(seq: int, event_type: str, payload: dict[str, object]) -> EventRecord:
     return EventRecord(
-        schema_version=1,
+        schema_version=2,
         session_id="s-usage",
         seq=seq,
         ts=f"2026-11-14T00:00:{seq:02d}+00:00",
@@ -86,7 +86,7 @@ def test_the_last_response_of_a_turn_wins() -> None:
     assert total.input_uncached == 20
 
 
-def test_the_usage_command_prints_turns_and_total(tmp_path: Path) -> None:
+def test_the_usage_command_prints_steps_and_total(tmp_path: Path) -> None:
     from cli_blackbox import _cli
 
     records = [
@@ -117,7 +117,8 @@ def test_the_usage_command_prints_turns_and_total(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     data = json.loads(result.stdout)
-    assert data["turns"][0]["turn_id"] == "t1"
+    assert set(data) == {"steps", "total", "cost"}
+    assert data["steps"][0]["step_id"] == "t1"
     assert data["total"]["input_uncached"] == 10
     assert data["total"]["output"] == 5
     assert data["cost"] is None
