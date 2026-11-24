@@ -45,8 +45,8 @@
 - [x] 5.3 **删除兼容层**（design D4）：`LEGACY_EVENT_TYPES`、`_V1_TYPE_MAP`、`_V1_KEY_MAP`、`_V1_VALUE_MAP`、`_upcast_v1`、`migrate_schema`、`SchemaUnsupported`、`is_current_type`（与 `is_known_type` 合流）、`tests/test_v1_fixture.py`、v1 fixture、`--max-turns`、`[session] max_turns` 键映射、`subagent` 旧参数名
 - [x] 5.4 版本门前置：`_records_from_lines` 先看 `schema_version` 再 `model_validate`，v1 行读到 `SCHEMA_UNSUPPORTED` 而非 `LOG_UNREADABLE`（`test_a_v1_line_is_rejected_with_schema_unsupported`、`test_other_schema_versions_are_rejected`）
 - [x] 5.5 删除后复跑：**877 passed / 7 skipped**、ruff / mypy / `validate` 绿；`minihns replay 112b5ce8… --session-dir sessions` 返回 `SCHEMA_UNSUPPORTED`（exit 1）
-- [ ] 5.6 `CURRENT.md` 记账：schema 版本 2、`sessions/` 14 份 v1 样本作废、兼容层已删与删除提交号
+- [x] 5.6 `CURRENT.md` 记账：schema 版本 2、`sessions/` 14 份 v1 样本作废、兼容层已删（提交 `e9c43a2`）
 - [ ] 5.7 真实端点验收：`deepseek-chat` 跑一场，确认改名后工具序列、收尾理由与 `session/end` 正常（ADR-0024 的「真实那一半」）
 - [ ] 5.8 UAT 验收（人跑）：场次手册 `docs/verification/align-turn-step-naming-uat.md`，tty 场次 agent 不得代跑
-- [ ] 5.9 变异测试一轮：至少覆盖版本门、词表判据、host 视图 `turns` 的取值来源（数 `turn/start` 而非 `step/start`），记录进 `docs/verification/align-turn-step-naming-mutation.md`
-- [ ] 5.10 Learning Gate：L-097 已进收件箱；补齐其余可复用信号或写 `NO-PROMOTION`
+- [x] 5.9 变异测试一轮：三条变异，版本门与词表判据各杀死；host 重启扫描那条**存活**，补 `test_a_restarted_list_rebuilds_turns_from_turn_starts` 后杀死。记录在 `docs/verification/align-turn-step-naming-mutation.md`
+- [x] 5.10 Learning Gate：L-097（模型可见文本不在改名范围，金样本 `replay` 当场抓出）、L-098（同一语义的两条实现路径要各有一条判据）进收件箱；`basetemp` 残留那条是工具事实，记在 `CURRENT.md` 的环境条目而不是 lessons。未晋升进 AGENTS.md（Seen 1，未达阈值）

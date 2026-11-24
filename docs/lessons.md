@@ -240,6 +240,15 @@
 - Next use: 任何改名或改措辞的 change，先给每条文本标去向（日志 / 上下文 / 终端 / HTTP）；进上下文的文本不在改名范围，要动就单独立项并重跑真实端点
 - Status: inbox
 
+### L-098
+- Seen: 1（2026-11-24）
+- Date: 2026-11-24
+- Context: `align-turn-step-naming` 的变异测试里，把 host 重启扫描的 `turn/start` 改成 `step/start`，全量 45 条 host 测试全绿
+- Observation: 同一个语义有两份实现时（活句柄自增 vs 从日志重建），只给其中一份写判据，另一份的错会静默通过。变异测试是发现这种「影子实现」最便宜的手段——它不看你写了多少测试，只看你改坏的那一处有没有人管
+- Evidence: `_begin_turn` 的自增有 `test_the_session_view_counts_turns_not_steps`；`_scan_session_index` 的重建当时没有任何判据；补 `test_a_restarted_list_rebuilds_turns_from_turn_starts` 后变异被杀死（`docs/verification/align-turn-step-naming-mutation.md` 第 3 条）
+- Next use: 写「从持久事实重建视图」的功能时，给「运行中」与「重启后」两条路径各写一条判据；收尾变异优先挑第二条路径改
+- Status: inbox
+
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 - 每个里程碑收尾扫一次，**允许输出 `NO-PROMOTION`**（没有可复用信号就不写条目）。
 - 收件箱条目超过 **15 条**必须先消化再收新的：合并同类、把已被代码或规格自证的条目删掉。

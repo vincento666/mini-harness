@@ -20,6 +20,7 @@ import httpx
 import pytest
 
 from cli_blackbox import _cli, _cli_process
+from mini_harness.events import EventLog
 
 HOST_TOKEN = "h1-test-token-" + "x" * 32
 
@@ -812,6 +813,35 @@ def test_the_session_view_counts_turns_not_steps(tmp_path: Path) -> None:
         assert types.count("turn/start") == 1
         assert types.count("step/start") == 2
         assert state["turns"] == 1
+    finally:
+        _stop(process)
+
+
+def test_a_restarted_list_rebuilds_turns_from_turn_starts(tmp_path: Path) -> None:
+    """重启后列表从日志重建 `turns`：数 `turn/start`（轮），不是 `step/start`（步）。"""
+    session_dir = tmp_path / "sessions"
+    log = EventLog.create(session_dir=session_dir, session_id="s-restart")
+    log.append("session/start", {"workspace": str(tmp_path), "prompt": "任务", "provider": "mock"})
+    log.append("turn/start", {"turn_id": "s1"})
+    log.append("step/start", {"step_id": "t1"})
+    log.append("step/end", {"step_id": "t1", "stop_reason": "MODEL_COMPLETED"})
+    log.append("step/start", {"step_id": "t2"})
+    log.append("step/end", {"step_id": "t2", "stop_reason": "MODEL_COMPLETED"})
+    log.append("turn/end", {"turn_id": "s1", "stop_reason": "MODEL_COMPLETED", "steps": 2})
+    log.append("session/end", {"stop_reason": "MODEL_COMPLETED", "steps": 2})
+
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            listed = client.get("/sessions", headers=_headers())
+
+        assert listed.status_code == 200
+        items = listed.json()["sessions"]
+        assert [(item["session_id"], item["turns"]) for item in items] == [("s-restart", 1)]
     finally:
         _stop(process)
 
