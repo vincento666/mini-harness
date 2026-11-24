@@ -1,9 +1,9 @@
-# 四层、段与回合、控制面
+# 四层、轮与步、控制面
 
 **用途**：把 H1 之后反复出现的一组概念讲成一条线——日志、表层、状态层，以及 Shell / Host / Kernel / Log 四层的职责。读完之后应该能回答：
 
 - 一帧到底是什么，和「一步」是不是一回事；
-- 段和回合怎么起、怎么停，`max_turns` 数的是什么；
+- 轮和步怎么起、怎么停，`max_steps` 数的是什么；
 - 审批从壳到内核再回到日志，中间谁决定、谁执行、谁记录；
 - snapshot 为什么是「前缀折叠」，`last_seq` 之后又是什么；
 - `dispatch` 到底做几件事，并发发生在哪一层。
@@ -26,7 +26,7 @@
 │ 会话生命周期 / 装配 / 队列 / 取消 / approval future / SSE / 鉴权       │
 │ 它是适配层与生命周期层，不是决策层                                     │
 └───────────────────────────────▲──────────────────┬───────────────────┘
-                                │ 事件 / 状态       │ 段、工具、审批
+                                │ 事件 / 状态       │ 轮、工具、审批
 ┌───────────────────────────────┴──────────────────▼───────────────────┐
 │ Kernel（K）                                                            │
 │ turn_loop / dispatch / fences / tools                                 │
@@ -56,17 +56,17 @@
 ```text
 日志（按 seq 线性）
 seq 0   session/start          ← 入口、workspace、工具表、平台事实
-seq 1   segment/start          ┐
-seq 2   user/message           │ 一个段 s1
-seq 3   turn/start             ┐
-seq 4   context/assembled      │ 一个回合 t1
+seq 1   turn/start             ┐
+seq 2   user/message           │ 一个轮 s1
+seq 3   step/start             ┐
+seq 4   context/assembled      │ 一步 t1
 seq 5   model/request          │
 seq 6   model/response         │ 正文 + tool_calls=[c1]
 seq 7   tool/call c1           │
 seq 8   tool/result c1         │
-seq 9   turn/end               ┘
-seq 10  segment/end            ┘
-seq 11  segment/start          ← 下一段
+seq 9   step/end               ┘
+seq 10  turn/end               ┘
+seq 11  turn/start             ← 下一轮
 ...
 seq 20  compaction/summary     ← 声明遮蔽范围
 ...
@@ -75,8 +75,8 @@ seq 20  compaction/summary     ← 声明遮蔽范围
 要点：
 
 - **一帧 = 一条 durable 记录**。SSE 上就是 `id=seq`、`event=type`、`data=整行 JSON`。唯一的例外是 `snapshot=1` 时先发的合成 `snapshot` 帧：它没有 `id`，不是日志记录（见第 8 节）。
-- 一个 **回合**由多帧组成：`turn/start`、`context/assembled`、`model/request`、`model/response`、工具调用/结果、`turn/end`。
-- 一个 **段**由多个回合组成：`segment/start` → 若干回合 → `segment/end`。
+- 一个 **步**由多帧组成：`step/start`、`context/assembled`、`model/request`、`model/response`、工具调用/结果、`step/end`。
+- 一个 **轮**由多个步组成：`turn/start` → 若干步 → `turn/end`。
 - 所以「一帧是一次工具调用或一次思考」不成立。工具调用至少跨 `model/response`（声明 `tool_calls`）、`tool/call`、`tool/result` 三条记录。
 
 ### 1.1 哪些记录会变成消息
@@ -84,8 +84,8 @@ seq 20  compaction/summary     ← 声明遮蔽范围
 | 日志记录 | 进表层吗 | 说明 |
 |---|---|---|
 | `session/start` | 特殊 | 派生受保护头部；`run` 的 prompt 另变一条 user |
-| `segment/start` / `segment/end` | 否 | 段边界，结构事实 |
-| `turn/start` / `turn/end` | 否 | 回合边界，结构事实 |
+| `turn/start` / `turn/end` | 否 | 轮边界，结构事实 |
+| `step/start` / `step/end` | 否 | 步边界，结构事实 |
 | `context/assembled` | 否 | 这次装配的审计快照，不是输入 |
 | `model/request` | 否 | 请求记账 |
 | `model/response` | 是 | assistant 消息（正文 + `tool_calls`） |
@@ -181,7 +181,7 @@ fold：
 ```
 
 - 状态层不是新的持久化真源：H1 的 `HostState` 是内存会话表，进程重启就没了（M11 的 session index 再补）。
-- SSE 的 durable 帧是**日志逐行镜像**，包含 UI 通常不显示的 `turn/*`、`segment/*`、`tool/call`、`context/assembled`；UI 自己决定显示哪些。
+- SSE 的 durable 帧是**日志逐行镜像**，包含 UI 通常不显示的 `step/*`、`turn/*`、`tool/call`、`context/assembled`；UI 自己决定显示哪些。
 - 用户看到的「对话」是状态层的一个子集；模型看到的「上下文」是表层。两者不是同一份东西。
 
 ---
@@ -195,7 +195,7 @@ fold：
 | **Shell / UI** | 人的选择（`approve` / `deny`）、审批提示、事件显示、会话操作 | 解释枚举、执行工具、写日志、fence 判定 |
 | **Host** | 会话注册表/生命周期、装配、队列、取消、approval future 桥、SSE、鉴权/来源/上限、退出收尾 | fence 判定、工具执行、`approval/response`/`tool/result` 落账、枚举语义 |
 | **Kernel** | `judge_fence`、`dispatch`、枚举解释、工具执行/拒绝、`turn_loop` 落账、停止理由 | UI、HTTP、人工选择 |
-| **Log** | 所有 durable 事实：消息、工具、审批、错误、段/回合边界 | 产生决策 |
+| **Log** | 所有 durable 事实：消息、工具、审批、错误、轮/步边界 | 产生决策 |
 
 一句话：
 
@@ -203,29 +203,29 @@ fold：
 
 ---
 
-## 5. 段与回合：两个时间单位
+## 5. 轮与步：两个时间单位
 
-### 5.1 段：一条输入展开的那串回合
+### 5.1 轮：一条输入展开的那串步
 
 ```text
 host / chat 入口
   POST /messages 或读一行
         │
         ▼
-segment/start  (s1)
+turn/start     (s1)
 user/message
   turn t1 ──► model + tools
   turn t2 ──► model + tools
   ...
-segment/end    (stop_reason)
+turn/end       (stop_reason)
 ```
 
-- `chat` / `host` 的段由一条 `user/message` 开启；`run` / `serve` 的 prompt 在 `session/start` 里，也照样是一个段。
-- **host 的 `POST /messages` 只返回 202**（已接收或已排队），不返回最终结果；最终结果在 `segment/end`、`tool/result`、`model/response` 与会话状态里，客户端通过 SSE/状态观察。
-- 队列里每条消息各自开一个新段；同一会话同一时刻只有一个段在跑。
-- 段可能提前结束：`MODEL_COMPLETED`、`ABORTED`、`FENCE_DENIED`、`CONTEXT_WINDOW_EXCEEDED`、`MAX_TURNS`、`PROVIDER_ERROR`。
+- `chat` / `host` 的轮由一条 `user/message` 开启；`run` / `serve` 的 prompt 在 `session/start` 里，也照样是一轮。
+- **host 的 `POST /messages` 只返回 202**（已接收或已排队），不返回最终结果；最终结果在 `turn/end`、`tool/result`、`model/response` 与会话状态里，客户端通过 SSE/状态观察。
+- 队列里每条消息各自开一个新轮；同一会话同一时刻只有一个轮在跑。
+- 轮可能提前结束：`MODEL_COMPLETED`、`ABORTED`、`FENCE_DENIED`、`CONTEXT_WINDOW_EXCEEDED`、`MAX_STEPS`、`PROVIDER_ERROR`。
 
-### 5.2 回合：一次 model 往返 + 这批工具
+### 5.2 步：一次 model 往返 + 这批工具
 
 ```text
 一个 turn
@@ -238,14 +238,14 @@ segment/end    (stop_reason)
 下一个 turn 的 model/request 会看到上一批 tool/result
 ```
 
-- **一个回合 = 一次模型请求/响应 + 响应里声明的工具批次**。
-- 同一回合多个工具：只读/网络类最多 8 个并行；会改动/独占类串行（M10 会把 `parallel` / `exclusive` + barrier 立成正式策略）。
-- **段有多少回合**由模型是否继续调工具决定，并由 `max_turns` 封顶；`max_turns` 数的是模型往返次数，不是工具调用数。
-- 一个回合可以有很多工具调用，但仍只算一个回合。
+- **一步 = 一次模型请求/响应 + 响应里声明的工具批次**。
+- 同一步多个工具：只读/网络类最多 8 个并行；会改动/独占类串行（M10 会把 `parallel` / `exclusive` + barrier 立成正式策略）。
+- **一轮有多少步**由模型是否继续调工具决定，并由 `max_steps` 封顶；`max_steps` 数的是模型往返次数，不是工具调用数。
+- 一步可以有很多工具调用，但仍只算一步。
 
-### 5.3 轮：goal 来源的段（M13 起）
+### 5.3 目标轮：goal 来源的轮（M13 起）
 
-同一套「段」上多了一种来源：驱动在段收尾后注入 goal 消息，开的仍是段，只是它**恰好是一轮**。所以时间单位没有增加一层——轮是段的子集，`rounds_started` 数的是这种段，人类段不计数。目标状态、判定顺序、队列与提问交给谁，见 [`goal-rounds.md`](goal-rounds.md)。
+同一套「轮」上多了一种来源：驱动在轮收尾后注入 goal 消息，开的仍是轮，只是它**恰好是一次目标轮**。所以时间单位没有增加一层——目标轮是轮的子集，`rounds_started` 数的是这种轮，人类轮不计数。目标状态、判定顺序、队列与提问交给谁，见 [`goal-rounds.md`](goal-rounds.md)。
 
 ---
 
@@ -281,7 +281,7 @@ approval_gate.request(c1) 返回：
                 error/fence.code = APPROVAL_DENIED
   UNAVAILABLE → 不执行 → tool/result = DENIED_BY_APPROVAL
                 error/fence.code = APPROVAL_UNAVAILABLE
-三者都让段以 FENCE_DENIED 收尾（只停段，不结束会话）
+三者都让轮以 FENCE_DENIED 收尾（只停轮，不结束会话）
 ```
 
 - **Kernel 拥有运行时解释权**：它决定是否需要审批、每个枚举值对应执行还是拒绝；
@@ -308,9 +308,9 @@ future.set_result(None)                # 超时/取消/关停 → UNAVAILABLE
 
 ### 6.3 取消与退出
 
-- `POST /cancel` 只结束当前段：`error/abort`、`turn/end(ABORTED)`、`segment/end(ABORTED)`，会话仍 `idle`；
-- 队列不被清空；下一句照常开新段；
-- 服务退出：取消所有段，等它们写完收尾记录，再为每个会话写 `session/end`，退出码 0。
+- `POST /cancel` 只结束当前轮：`error/abort`、`step/end(ABORTED)`、`turn/end(ABORTED)`，会话仍 `idle`；
+- 队列不被清空；下一句照常开新轮；
+- 服务退出：取消所有轮，等它们写完收尾记录，再为每个会话写 `session/end`，退出码 0。
 
 ---
 
@@ -361,16 +361,16 @@ SSE ?snapshot=1：
 
 | 误解 | 实际 |
 |---|---|
-| 一帧 = 一步/一个工具调用 | 一帧 = 一条日志记录；一个回合由多帧组成 |
+| 一帧 = 一步/一个工具调用 | 一帧 = 一条日志记录；一步由多帧组成 |
 | 折叠 = 遮蔽 | 折叠是投影；遮蔽是折叠的一条排除规则 |
 | 没进 messages 就是被遮蔽 | 结构记录、内部调用本来就不产消息 |
 | Host 决定批准/拒绝 | Host 只翻译与同步；Kernel 解释枚举并执行/拒绝 |
 | Shell 能直接执行工具或写日志 | Shell 只给选项；执行与落账在 Kernel |
 | future = 未来可扩展 | `asyncio.Future` 是一次性异步结果占位 |
-| snapshot = 最后一回合的结果 | snapshot 是当前前缀的折叠上下文 |
+| snapshot = 最后一步的结果 | snapshot 是当前前缀的折叠上下文 |
 | snapshot 后可以任意跳号 | snapshot 吸收历史；之后 durable 必须从 `last_seq+1` 连续 |
 | `write` = `edit` | `write` 整文件覆盖；`edit` 基于读到内容的 CAS，可能 `STALE_EDIT` |
-| 段结束 = 一定拿到模型答案 | 段也可能以 `ABORTED` / `FENCE_DENIED` / `CONTEXT_WINDOW_EXCEEDED` 等结束 |
+| 轮结束 = 一定拿到模型答案 | 轮也可能以 `ABORTED` / `FENCE_DENIED` / `CONTEXT_WINDOW_EXCEEDED` 等结束 |
 
 ---
 
@@ -381,7 +381,7 @@ SSE ?snapshot=1：
 | `src/mini_harness/events/writer.py` | `EventLog`：只追加、`seq` 单点分配 |
 | `src/mini_harness/events/fold.py` | `fold` / `shadowed_seqs` / 受保护头部 / closer |
 | `src/mini_harness/events/reader.py` | `LogTail`：按 `seq` 增量读 |
-| `src/mini_harness/loop/turn_loop.py` | 段/回合主循环、停止理由、`approval/*` 落账 |
+| `src/mini_harness/loop/turn_loop.py` | 轮/步主循环、停止理由、`approval/*` 落账 |
 | `src/mini_harness/tools/dispatch.py` | 每次工具调用：校验 → 围栏 → 审批 → 执行 |
 | `src/mini_harness/tools/fences.py` | 两轴围栏、`ApprovalGate`、`ApprovalDecision` |
 | `src/mini_harness/session/assembly.py` | 装配：配置/密钥/工具/设置 → `Prepared` |

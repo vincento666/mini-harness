@@ -18,7 +18,7 @@
 | **durable** | 已提交进 append-only 日志、带单调 `seq`、可重放/可重建的事实 | 已经写进账本，翻回去还能查到 | 不是“内存里收到过” |
 | **ephemeral** | 发出即算的 live 帧，如 `model/delta` / `reasoning/delta`；不落日志、无 `id` | 现场直播的一句话，错过就没了 | 不是历史，不保证送达 |
 | **seq** | 日志记录的单调序号；durable 帧的 `id=seq` | 账本的流水号/页码 | 不是 delta 的 index |
-| **high-water** | 日志当前最后的 seq；snapshot/cursor 的起点 | 账本现在写到第几页 | 不是“最后一回合” |
+| **high-water** | 日志当前最后的 seq；snapshot/cursor 的起点 | 账本现在写到第几页 | 不是“最后一步” |
 | **snapshot** | 某一前缀的折叠结果；`last_seq` + 模型消息基线 | 某一刻拍的照片，不是整本账 | 不是完整 UI transcript，不是日志下载 |
 | **cursor** | 已读到的 seq；`?from=N` / `Last-Event-ID: N` 只发 `seq > N` | 夹在账本里的书签，记着读到哪 | 不是 delta 的播放位置 |
 | **sink** | provider 把正文/思考片段交给上层的回调；`DeltaSink` / `ReasoningSink` | 水管出口：水从模型流到宿主 | 不是总线，不是日志 |
@@ -54,16 +54,16 @@
                                 │ durable + delta   │
 ┌───────────────────────────────┴──────────────────▼────────────────────┐
 │ Host（宿主服务层）                                                     │
-│ 鉴权 / 来源 / 会话表 / 段队列 / 取消 / approval future / 退出收尾       │
+│ 鉴权 / 来源 / 会话表 / 轮队列 / 取消 / approval future / 退出收尾       │
 │ SSE 合流：LogTail（durable）+ 每连接 delta 队列（ephemeral）            │
 │ 不解释围栏枚举、不执行工具、不写日志                                     │
 └───────────────────────────────▲──────────────────┬────────────────────┘
-                                │ TurnDeltaSink     │ 段 / 回合 / 工具
+                                │ StepDeltaSink     │ 轮 / 步 / 工具
                                 │                   │ append
 ┌───────────────────────────────┴──────────────────▼────────────────────┐
 │ Kernel（内核层）                                                       │
 │ turn_loop：装配 → provider.generate(..., on_delta) → tool batch → 停止  │
-│ 把最终 model/request / model/response / tool/* / turn/* 写成 durable    │
+│ 把最终 model/request / model/response / tool/* / step/* 写成 durable    │
 └───────────────────────────────▲──────────────────┬────────────────────┘
                                 │ final turn        │ chunks
                                 │                   │
@@ -79,7 +79,7 @@
                      └─────────────────────┘
 
            ┌──────────────────────── Log（durable 层）──────────────────────┐
-           │ JSONL，append-only，seq 单点分配；会话/回合/工具/审批/错误事实  │
+           │ JSONL，append-only，seq 单点分配；会话/步/工具/审批/错误事实   │
            │ 不是 SSE 的第二份拷贝；SSE 的 durable 帧是它的逐行镜像          │
            └───────────────▲──────────────────────────────┬───────────────┘
                            │ append（Kernel）              │ LogTail（Host）
@@ -113,26 +113,26 @@ Client/Web 与 Host 之间的 `model/delta` 是 ephemeral；Host 与 Log 之间�
 
 ---
 
-## 1. 三个时间尺度：请求、回合、段
+## 1. 三个时间尺度：请求、步、轮
 
 ```text
-段（segment）
-├─ segment/start
-├─ 回合 t1
+轮（turn）
+├─ turn/start
+├─ 步 t1
 │  ├─ context/assembled
 │  ├─ model/request
 │  ├─ model/response
 │  ├─ tool/call ×N
 │  ├─ tool/result ×N
-│  └─ turn/end
-├─ 回合 t2 ...
-└─ segment/end
+│  └─ step/end
+├─ 步 t2 ...
+└─ turn/end
 ```
 
-- **回合** = 一次模型请求/响应 + 响应里声明的工具批次；
-- **段** = 一条输入展开的一串回合；
-- `model/delta` 只属于某一个回合，`turn_id` 就是它的归属；
-- 一帧不等于一步：一个回合有多条 durable 记录，delta 只是其中一次调用的过程。
+- **步** = 一次模型请求/响应 + 响应里声明的工具批次；
+- **轮** = 一条输入展开的一串步；
+- `model/delta` 只属于某一个步，`step_id` 就是它的归属；
+- 一帧不等于一次模型往返：一个步有多条 durable 记录，delta 只是其中一次调用的过程。
 
 ---
 
@@ -154,7 +154,7 @@ data: <日志整行 JSON>
 
 ```text
 event: model/delta
-data: {"turn_id":"t1","index":0,"text":"你"}
+data: {"step_id":"t1","index":0,"text":"你"}
 ```
 
 - 无 `id`；不参与游标；
@@ -176,7 +176,7 @@ data: {"turn_id":"t1","index":0,"text":"你"}
   delta   只发连接之后产生的，不补
 ```
 
-snapshot 是**前缀折叠**，`last_seq` 是前缀终点，不是起点；它不是“最后一回合的结果”。
+snapshot 是**前缀折叠**，`last_seq` 是前缀终点，不是起点；它不是“最后一步的结果”。
 
 ---
 
@@ -214,11 +214,11 @@ data: [DONE]
 # provider 只认正文
 DeltaSink = Callable[[str], Awaitable[None]]
 
-# kernel 给片段加回合归属
-TurnDeltaSink = Callable[[str, str], Awaitable[None]]  # turn_id, text
+# kernel 给片段加步归属
+StepDeltaSink = Callable[[str, str], Awaitable[None]]  # step_id, text
 
 async def forward(text: str) -> None:
-    await env.on_delta(turn_id, text)
+    await env.on_delta(step_id, text)
 ```
 
 ```text
@@ -229,7 +229,7 @@ env.on_delta(t1, "你")
         │
         ▼
 HostSession.publish_delta(t1, "你")
-        │ put_nowait({turn_id, index, text})
+        │ put_nowait({step_id, index, text})
         ▼
 每个 SSE 连接的 asyncio.Queue
         │
@@ -271,7 +271,7 @@ loop:
 
 两个要点：
 
-1. **不能先把所有 delta 写完再写 durable backlog**：backlog 里可能有 `session/start`、`segment/start`，delta 会排到它们前面。
+1. **不能先把所有 delta 写完再写 durable backlog**：backlog 里可能有 `session/start`、`turn/start`，delta 会排到它们前面。
 2. **不能只在 `model/response` 时排空**：没有 response 前 delta 会被憋到整段结束，首帧延迟变成“整段生成时间”。
 
 ### 4.2 一次调用的帧顺序
@@ -361,7 +361,7 @@ finish_reason
 ```text
 实时：
   event: reasoning/delta
-  data: {"turn_id":"t1","index":0,"text":"..."}
+  data: {"step_id":"t1","index":0,"text":"..."}
 
 durable：
   model/response {
@@ -466,7 +466,7 @@ mini 的 chat shell 是同一原理的终端版：`reasoning/delta` → stderr `
   provider 把历史 reasoning 按协议回传（DSH：原样传回）
         │
         ▼
-  模型在第 2 个回合看到自己上一轮的思考，再决定下一步
+  模型在第 2 步看到上一轮的思考，再决定下一步
 ```
 
 要点：
@@ -481,20 +481,20 @@ mini 的 chat shell 是同一原理的终端版：`reasoning/delta` → stderr `
 | 说法 | 是否成立 | 依赖 |
 |---|---|---|
 | 单次模型调用内先生成 reasoning、再生成 content/tool-call | **模型行为**，不是 harness 强制 | provider 的 reasoner 能力 |
-| 工具结果之后的下一回合仍看到上一轮 reasoning | **成立**（数据路径） | reasoning 进 assistant message blocks + fold + provider 回传 |
+| 工具结果之后的下一步仍看到上一轮 reasoning | **成立**（数据路径） | reasoning 进 assistant message blocks + fold + provider 回传 |
 | 思考与工具调用在 assistant message 里交错、顺序可重放 | **数据模型成立** | 有序 blocks；单字符串不够 |
 | 思考与工具执行“同时进行” | **不成立** | 工具在模型响应结束后执行；不是并行协程 |
 | harness 强制“必须先计划再行动” | **不成立** | 需要计划工具/计划状态，不是 reasoning |
 
 ```text
-第 1 个回合：
+第 1 步：
   model/request
     → reasoning block
     → tool-call block
   tool/result
   turn/end
 
-第 2 个回合：
+第 2 步：
   model/request
     历史 assistant message = [reasoning, tool-call, ...]
     + 上一轮 tool/result
@@ -504,7 +504,7 @@ mini 的 chat shell 是同一原理的终端版：`reasoning/delta` → stderr `
 
 所以准确的表述是：
 
-- **跨回合的思考连续性**：reasoning 进 blocks + 回传后成立；
+- **跨步的思考连续性**：reasoning 进 blocks + 回传后成立；
 - **单次调用内的先想后答**：是模型自身行为；
 - **思考和工具执行同时发生**：不是这个机制；
 - **强制先计划**：是另一层能力，不能用 reasoning 块替代。
@@ -540,7 +540,7 @@ mini：
 
 | 文件 | 责任 |
 |---|---|
-| `src/mini_harness/provider/contract.py` | `DeltaSink` / `TurnDeltaSink` / `generate` 契约 |
+| `src/mini_harness/provider/contract.py` | `DeltaSink` / `StepDeltaSink` / `generate` 契约 |
 | `src/mini_harness/provider/openai_compat.py` | 外部 API SSE、tool_calls 拼装、重试边界 |
 | `src/mini_harness/loop/turn_loop.py` | `_forward_delta`；最终 `model/response` 落账 |
 | `src/mini_harness/session/host.py` | `subscribe_deltas` / `publish_delta`；有界队列 |
@@ -568,4 +568,4 @@ DSH（`re/verified/dsh/node_modules/@deepseek-ai/...`）：
 
 **思考要真正进入模型行动前的上下文，必须多走一步：reasoning 进入 assistant message 的内容块，`fold` 重建，provider 在下一请求回传。只加日志或只加 UI 都不算。**
 
-**DSH 已经把这一步做成 typed 的 `reasoning` 内容块 + 实时 `assistant-stream` + durable `assistant/message`；mini 目前只有正文流，思考帧与历史回传还没有。即便补上，它提供的是跨回合的思考连续性，不是“强制先计划”或“思考与工具同时执行”。**
+**DSH 已经把这一步做成 typed 的 `reasoning` 内容块 + 实时 `assistant-stream` + durable `assistant/message`；mini 目前只有正文流，思考帧与历史回传还没有。即便补上，它提供的是跨步的思考连续性，不是“强制先计划”或“思考与工具同时执行”。**

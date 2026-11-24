@@ -17,6 +17,8 @@ H1 / H2 是新增的宿主轨，不占用 M10–M15 的决策编号；M 编号�
 
 ## 已完成（M1–M9）
 
+**表态**：这张表是历史记录，`落地` 列保留当时的词（「回合」= 今天的步，「段」= 今天的轮）；新写的内容一律用现名，见 `GLOSSARY.md`。
+
 | ID | change | 落地 | 证据 |
 |---|---|---|---|
 | M1 ✅ | `m1-event-log-and-turn-loop` | JSONL 只追加 + 折叠 + 回合循环 + mock Provider + `run` / `replay` | tag `m1`；[proposal](openspec/changes/archive/2026-10-16-m1-event-log-and-turn-loop/proposal.md) |
@@ -134,7 +136,7 @@ M14 之后技能面的两个已记账缺口，排期如下（2026-11-11 裁）�
 三小步各自一个 change；**M14a 先做**（`ContextPolicy` 的契约/头部要它），M14b / M14c 可按壳的需求调序。它们都不是接壳硬前置，但缺了个人助理会明显“不像”。
 
 - **M14a 工作区契约（`m14a-workspace-contract`）**：项目 `AGENTS.md` + 用户 `USER.md`（可选 persona/SOUL）按字节预算注入受保护头部；记录 scope / hash / 截断，不写绝对路径与密钥；**只读加载，不自动写**。判据：两份契约都在头部可见、超预算有 marker、`replay` 逐点相等；与 MEM1 的 `MEMORY.md` 分开（契约 vs 记忆）。
-- **M14b 上下文经济与计量（`m14b-context-economy-and-metering`）**：单条结果剪枝（头/尾 + 阈值）、spill 的读回与回收、每会话/每回合 token 计量与成本估算、E1 报告里的上下文/成本列；M10 的“输出预算 + spill”是底座，M14b 是收尾。判据：超大结果被剪短且 spill 可读回、token 计量与 provider usage 对得上、E1 能出报告。
+- **M14b 上下文经济与计量（`m14b-context-economy-and-metering`）**：单条结果剪枝（头/尾 + 阈值）、spill 的读回与回收、每会话/每步 token 计量与成本估算、E1 报告里的上下文/成本列；M10 的“输出预算 + spill”是底座，M14b 是收尾。判据：超大结果被剪短且 spill 可读回、token 计量与 provider usage 对得上、E1 能出报告。
 - **M14c 个人助理 UX 工具（`m14c-personal-assistant-tools`）**：`todo` / `plan`、`ask_user`（普通提问，不只是审批）、`present`（把产物交给壳）；CLI 的 `/todo` / `/plan` 与 host 的同一命令面。判据：多步任务会用 todo、`ask_user` 的答案作为结果进日志、`present` 产出一个可打开的产物、`replay` 相等。
 - **明确不做**：自动写 workspace 契约、向量库记忆、完整 plan-mode 状态机、HMR/插件市场。
 
@@ -143,14 +145,14 @@ M14 之后技能面的两个已记账缺口，排期如下（2026-11-11 裁）�
 - **顺序**：**排在 M14c（plan）之后**（2026-11-10 人裁决：goal 后置到 plan 之后；M14 与 plan 提前）。
 - **change**：`m13-goal-rounds`
 - **层**：委派
-- **内容**：持久 goal 对象 + 轮次续跑 + 轮次上限 + `blocked` 需同一阻碍持续三轮；**单目标**（对齐 DSH 的 `current goal`，ADR-0042）；**任务并行即状态并行**——一次 `todo` 调用可标多个 `in_progress`（`todos` 仍每轮清空，对齐 DSH）；**todo 并行纪律**（等价 `allowParallelInProgress`，默认 `true`，关闭时拒绝第二个；2026-11-17 人裁决纳入本 change）；**段后收尾是公共件**——`run` / `chat` / `host` 共用，host 队列人话优先（2026-11-20 人裁）；**未决问题交回人类**、**停滞闸门（默认 2 轮）**、`/goal edit` / `complete`（会话内无 flag；上限编辑在 CLI `minihns goal`）。
+- **内容**：持久 goal 对象 + 轮次续跑 + 轮次上限 + `blocked` 需同一阻碍持续三轮；**单目标**（对齐 DSH 的 `current goal`，ADR-0042）；**任务并行即状态并行**——一次 `todo` 调用可标多个 `in_progress`（`todos` 仍每轮清空，对齐 DSH）；**todo 并行纪律**（等价 `allowParallelInProgress`，默认 `true`，关闭时拒绝第二个；2026-11-17 人裁决纳入本 change）；**轮后收尾是公共件**——`run` / `chat` / `host` 共用，host 队列人话优先（2026-11-20 人裁）；**未决问题交回人类**、**停滞闸门（默认 2 轮）**、`/goal edit` / `complete`（会话内无 flag；上限编辑在 CLI `minihns goal`）。
 - **完成判据**：**seam ⑦**——小上限下自动续跑 N 轮、轮号连续且落在 goal 来源的 `user/message` 上；同一阻碍持续三轮落 `blocked`、两轮不落；**多任务互不覆盖**——两个任务同时 `in_progress`、完成其一后另一仍在；todo 允许同时标记多个 `in_progress`，策略关闭时拒绝第二个。
 - **依赖**：M12；**排在 M14c（plan）之后**（2026-11-10 裁决）。
 
 ### 并行目标调度（`parallel-goal-scheduler`，M13 的后续，不占 M 编号）
 
 - **状态**：**deferred**；M13 完成并稳定后再 propose（2026-11-17 人裁决：先做状态并行，再做调度）。
-- **内容**：**多目标状态**（多个 goal 同时 active、`GoalRef` 与投影从「一个」扩成集合）→ 轮次调度、按 todo 任务项调度、依赖排序、每项隔离执行；同一回合推进多个目标。
+- **内容**：**多目标状态**（多个 goal 同时 active、`GoalRef` 与投影从「一个」扩成集合）→ 轮次调度、按 todo 任务项调度、依赖排序、每项隔离执行；同一步推进多个目标。
 - **为什么拆**：它引入调度器、依赖图、隔离机制与新的失败语义，不再是「状态并行」；与 M13 的判据不同，混在一起会让 M13 的验收失焦。
 - **进入条件**：M13 的并行状态稳定；至少有一个真实的多目标场景；隔离方案（子会话或工作区）先有 ADR。
 - **明确不做**：在 M13 里顺手塞调度器。
@@ -187,7 +189,7 @@ M14 之后技能面的两个已记账缺口，排期如下（2026-11-11 裁）�
 壳要跑无人值守任务时，**不能只靠 `approval: ask`**；入口条件写死：
 
 - **必需**：H1（宿主）、H2（流式）、M11（resume）、M14（技能/命令）、MEM1（记忆）、**M15a（进程收容）** 全部完成。
-- **策略**：`approval: auto` 必须服务器启动时显式给 `--allow-auto-approval`；sandbox 只允许 `read-only` / `workspace-write`；**无人值守 MUST NOT 使用 `danger-full-access`**；每个任务给 `max_turns` / 窗口 / 时间的上限；host 退出时取消并收干净所有段与子进程。
+- **策略**：`approval: auto` 必须服务器启动时显式给 `--allow-auto-approval`；sandbox 只允许 `read-only` / `workspace-write`；**无人值守 MUST NOT 使用 `danger-full-access`**；每个任务给 `max_steps` / 窗口 / 时间的上限；host 退出时取消并收干净所有轮与子进程。
 - **审计**：所有 `tool/call` / `tool/result` / 审批 / `session/end` 都在日志里；无人值守会话要能事后 replay。
 - **建议**：引入不可信 skills / MCP / 外部工具，或 host 绑非 loopback 时，把 **M15b（文件写拒绝）** 也提前到壳前。
 
@@ -197,7 +199,7 @@ M14 之后技能面的两个已记账缺口，排期如下（2026-11-11 裁）�
 
 - **落点**：`scripts/eval/`（runner + 任务集 + 报告），不新增测试缝；判据仍住在七个 seam。
 - **任务集（最小三件）**：① 单文件 TODO 修完并跑测试；② 读多文件后回答一个跨文件问题；③ 一次小重构（多文件 edit + 一次 `bash` 测试）。
-- **指标**：任务成功率、回合数、工具调用数、输入/输出 token、峰值上下文、压缩次数、剪枝/截断省下的字节、wall-clock、最大并发数、审批次数、首 token 延迟（H2 之后）、`replay` 是否逐点相等。
+- **指标**：任务成功率、步数、工具调用数、输入/输出 token、峰值上下文、压缩次数、剪枝/截断省下的字节、wall-clock、最大并发数、审批次数、首 token 延迟（H2 之后）、`replay` 是否逐点相等。
 - **两种模式**：mock（确定性、进日常）；真实端点（按需，人跑，不进 CI）。
 - **产物**：`docs/verification/eval/<date>/report.md` + `report.json`；模板在 `scripts/eval/README.md`。
 - **明确不做**：公开榜单、CI 门禁、按模型排名、自动调参。
@@ -211,7 +213,7 @@ M14 之后技能面的两个已记账缺口，排期如下（2026-11-11 裁）�
 - **审批**：写操作默认 `ask`；`auto` 只能在服务器启动时显式配置；审批超时（默认 300 s）塌成 `APPROVAL_UNAVAILABLE`；子代理不继承放行。
 - **密钥**：只从环境变量读；日志只记变量名；错误 detail 不回显 key；`session/start` 不写密钥值。
 - **围栏**：工作区边界 + 写前必读 CAS 继续生效；`danger-full-access` 需要服务器启动时显式允许；OS 级强制在 M15。
-- **资源**：同时在跑的会话上限（默认 4）；单会话同时在跑的工具 ≤ 8；慢 SSE 读者不阻塞内核；服务退出时取消所有段并写 `session/end`。
+- **资源**：同时在跑的会话上限（默认 4）；单会话同时在跑的工具 ≤ 8；慢 SSE 读者不阻塞内核；服务退出时取消所有轮并写 `session/end`。
 
 ## E2 组件接缝（Component Seams）
 
