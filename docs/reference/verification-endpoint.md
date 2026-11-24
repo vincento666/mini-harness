@@ -45,7 +45,16 @@ uv run minihns run -p "读 README.md 第一段并总结一句" \
 set -a && . ~/.config/minihns/openrouter.env && set +a
 ```
 
-写成文件而不是写进 `~/.zshrc` 的理由：这台机器的 shell 启动文件不导出它，`launchctl` 里也没有，所以「你以为设了」和「子进程真的继承了」会分叉；文件源一次是显式的，跑之前 `echo ${#OPENROUTER_API_KEY}` 就能确认（长度非 0 即可，别把值打到终端）。
+2026-11-24 起这台机器同时做了自动载入，两处都是「文件存在才 source」：
+
+| 文件 | 覆盖谁 | 备注 |
+|---|---|---|
+| `~/.zshrc` | 交互式终端 | 只在交互 shell 读 |
+| `~/.zshenv` | 所有 zsh 进程（登录、非登录、脚本） | 非交互场景靠它 |
+
+**仍然会读不到的一种情况**：用 `zsh -f`（不读任何 rc）起的进程。WorkBuddy 的 Bash 工具就是这种形态——实测 `vendor zsh -c` 能拿到 73 字符，`vendor zsh -fc` 是 0。所以 agent 跑命令时照旧在命令里 source 一次，或者把长命令包在 `zsh -c '...'` 里。
+
+写成 600 权限的独立文件而不是直接 `export` 的原因：改 key 只动一个文件、不会进 shell 历史，也不会被 `git status` 看见；跑之前 `echo ${#OPENROUTER_API_KEY}` 就能确认（长度非 0 即可，别把值打到终端）。
 
 ## 4. 裸 curl 冒烟（不经 harness，先确认端点通）
 
