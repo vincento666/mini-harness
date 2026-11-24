@@ -19,20 +19,21 @@
 
 ## 2. 在 mini-harness 里怎么调
 
-provider 名是**端点预设**（ADR-0027），OpenRouter 没有自己的预设名，用 `openai` 预设 + 三个覆盖参数：
+provider 名是**端点预设**（ADR-0027）。2026-11-24 起有 `openrouter` 预设，三项默认都在表里，所以一个 flag 就够：
 
 ```bash
 uv run minihns run -p "读 README.md 第一段并总结一句" \
-  --provider openai \
-  --base-url https://openrouter.ai/api/v1 \
-  --model qwen/qwen3.8-27b \
-  --api-key-env OPENROUTER_API_KEY \
+  --provider openrouter \
   --max-steps 3 --yes \
   --workspace .tmp/verify/<change> \
   --session-dir .tmp/verify/<change>/sessions
 ```
 
-三个覆盖缺一不可：`openai` 预设默认读 `MINIHNS_API_KEY`、默认 base URL 是 `api.openai.com`、且**不给默认模型**（缺 `--model` 当场失败）。
+预设只填**没被给**的那几项：显式写 `--model` 就用你的，`base_url` 与 `api_key_env` 仍是 OpenRouter 的。
+
+**在仓库根跑、连 provider 都不想写**：仓库根有一份 `mini.config.toml`（被 `.gitignore` 忽略），内容只有 `provider = "openrouter"` 一行。它的生效范围等于 `discover_config` 的规则——只在 workspace 是仓库根时读到；`--workspace .tmp/xxx` 这类调用读不到，那种场合仍要写 `--provider openrouter`。
+
+改造前的写法（`--provider openai` + 三个覆盖参数）现在仍能跑，但三缺一就失败：`openai` 预设默认读 `MINIHNS_API_KEY`、base URL 是 `api.openai.com`、且**不给默认模型**。留作兜底，不再当默认路径。
 
 ## 3. 密钥从哪来
 

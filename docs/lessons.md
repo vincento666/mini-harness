@@ -258,6 +258,15 @@
 - Next use: 任何「改名 / 迁移」收尾，先跑一次真实端点把每个输出**当外部数据读**，再检查每个 JSON 的键与值的层级是否一致；这比通读一遍代码便宜
 - Status: inbox
 
+### L-100
+- Seen: 1（2026-11-24）
+- Date: 2026-11-24
+- Context: 用户说「不传 model 相关 flag 默认用 qwen」。这一句有两种读法：①少打三项覆盖（加预设就够）；②连 provider 都不打就是 qwen（要改默认选择规则，或放一份本地配置）
+- Observation: **「有预设」与「是默认」是两件事**。预设只在你点名 provider 时生效；默认选择是 `_provider_of` 的另一条逻辑（看 `MINIHNS_API_KEY`）。把两者混为一谈，做出来的东西会「看起来对了，实际还得打 flag」。拆开之后代价也看清了：改默认会影响所有入口与黑盒用例的默认路径，加预设不会
+- Evidence: `add-openrouter-preset` 的 1.x（预设）与 2.x（仓库根 `mini.config.toml`）是两组不同动作；`config-layer` 的发现规则决定了 config 只在 workspace 是仓库根时生效，`--workspace` 指别处时仍要 `--provider`
+- Next use: 听到「默认用 X」先问一句「是少打参数，还是连名字都不打」；两件事的实现面与回归面差一个数量级
+- Status: inbox
+
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 - 每个里程碑收尾扫一次，**允许输出 `NO-PROMOTION`**（没有可复用信号就不写条目）。
 - 收件箱条目超过 **15 条**必须先消化再收新的：合并同类、把已被代码或规格自证的条目删掉。
