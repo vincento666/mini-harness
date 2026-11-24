@@ -47,7 +47,7 @@ def test_every_stop_reason_maps_to_an_exit_code() -> None:
     assert "FENCE_DENIED" in STOP_REASONS
     assert STOP_REASONS_TO_EXIT_CODES["TOOL_CALLS"] == 0
     assert STOP_REASONS_TO_EXIT_CODES["MODEL_COMPLETED"] == 0
-    assert STOP_REASONS_TO_EXIT_CODES["MAX_TURNS"] == 0
+    assert STOP_REASONS_TO_EXIT_CODES["MAX_STEPS"] == 0
     assert STOP_REASONS_TO_EXIT_CODES["PROVIDER_ERROR"] == 1
     assert STOP_REASONS_TO_EXIT_CODES["FENCE_DENIED"] == 3
     assert STOP_REASONS_TO_EXIT_CODES["ABORTED"] == 5
@@ -55,7 +55,7 @@ def test_every_stop_reason_maps_to_an_exit_code() -> None:
     assert STOP_REASONS_TO_EXIT_CODES["CONTEXT_WINDOW_EXCEEDED"] == 4
     for stop_reason, exit_code in STOP_REASONS_TO_EXIT_CODES.items():
         assert (
-            exit_code_for(RunOutcome(session_id="s", stop_reason=stop_reason, turns=1)) == exit_code
+            exit_code_for(RunOutcome(session_id="s", stop_reason=stop_reason, steps=1)) == exit_code
         )
 
 
@@ -63,7 +63,7 @@ def test_a_log_layer_failure_outcome_maps_to_exit_code_one() -> None:
     outcome = RunOutcome(
         session_id="s",
         stop_reason="LOG_WRITE_FAILED",
-        turns=1,
+        steps=1,
         failure_code="LOG_WRITE_FAILED",
         detail="sessions/s.jsonl: 拒绝访问",
     )
@@ -468,7 +468,7 @@ def test_the_run_argument_table_holds_no_switch_for_a_bounded_number(tmp_path: P
 
     判据是整张表：列出来的就是全部（`-h` / `--help` 是 argparse 自带的）。哪天加一个
     `--bash-timeout` 或 `--max-parallel-tools`，这条立刻红——那正是要的信号。
-    `--max-turns` 的默认值也是 8，那是回合上限，与并发上限无关。
+    `--max-steps` 的默认值也是 8，那是回合上限，与并发上限无关。
     `--window` / `--reserve` 在这一栏：它们是规格里的窗口预算参数，不是实现常量的开关
     （触发线公式里那个 65536 才是实现常量，没有开关）。
     `--config` 是 M9 进表的：它是配置层的入口，规格里就有，不是给实现常量开的开关。

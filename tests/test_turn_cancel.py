@@ -454,7 +454,7 @@ async def test_a_cancel_closes_the_segment_and_the_entry_closes_the_session(tmp_
         "tool_calls": 0,
     }
 
-    assert end_session(env=env, stop_reason=segment.stop_reason, turns=segment.turns) is None
+    assert end_session(env=env, stop_reason=segment.stop_reason, steps=segment.steps) is None
     assert [record.type for record in read_events(log.path)][-1:] == ["session/end"]
 
 

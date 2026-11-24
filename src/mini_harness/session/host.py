@@ -69,7 +69,7 @@ def _session_entry(
     workspace: str,
     created_at: str,
     last_seq: int,
-    turns: int,
+    steps: int,
     parent_session_id: str | None,
     depth: int,
 ) -> dict[str, object]:
@@ -80,7 +80,7 @@ def _session_entry(
         "workspace": workspace,
         "created_at": created_at,
         "last_seq": last_seq,
-        "turns": turns,
+        "turns": steps,
         "parent_session_id": parent_session_id,
         "depth": depth,
     }
@@ -101,14 +101,14 @@ def _scan_session_index(defaults: AssemblyRequest) -> dict[str, dict[str, object
         if start is None or not ended:
             continue
         session_id = path.stem
-        turns = sum(1 for record in records if record.type == "step/start")
+        steps = sum(1 for record in records if record.type == "step/start")
         index[session_id] = _session_entry(
             session_id=session_id,
             status=SESSION_ENDED,
             workspace=str(start.payload.get("workspace", "")),
             created_at=start.ts,
             last_seq=records[-1].seq,
-            turns=turns,
+            steps=steps,
             parent_session_id=start.payload.get("parent_session_id"),
             depth=int(start.payload.get("depth", 0)),
         )
@@ -130,7 +130,7 @@ def register_child_session(state: HostState, env: SessionEnv) -> None:
         workspace=str(env.settings.workspace.resolve()),
         created_at=records[0].ts,
         last_seq=env.log.last_seq,
-        turns=sum(1 for record in records if record.type == "step/start"),
+        steps=sum(1 for record in records if record.type == "step/start"),
         parent_session_id=env.settings.parent_session_id,
         depth=env.settings.depth,
     )
@@ -216,7 +216,7 @@ class HostSession:
     stopping: bool = False
     ended_by_failure: bool = False
     segments: int = 0
-    turns: int = 0
+    steps: int = 0
 
     @property
     def last_seq(self) -> int:
@@ -268,7 +268,7 @@ class HostSession:
             workspace=str(self.settings.workspace.resolve()),
             created_at=self.created_at,
             last_seq=self.last_seq,
-            turns=self.turns,
+            steps=self.steps,
             parent_session_id=self.settings.parent_session_id,
             depth=self.settings.depth,
         )
@@ -494,12 +494,12 @@ async def _run_segment(
         segment = await run_turn(
             env=handle.env,
             turn_id=turn_id,
-            first_step_index=handle.turns + 1,
+            first_step_index=handle.steps + 1,
             cancel=cancel,
             user_message=None if goal_round is not None else content,
             goal_round=goal_round,
         )
-        handle.turns += segment.turns
+        handle.steps += segment.steps
         # 词表外才是内核失败；FENCE_DENIED / CONTEXT_WINDOW_EXCEEDED 也带 failure_code，
         # 但它们只停段、会话仍可用（ADR-0019 / design D6）。
         failed = segment.stop_reason not in STOP_REASONS
@@ -508,7 +508,7 @@ async def _run_segment(
             settlement = settle_segment(
                 env=handle.env,
                 segment=segment,
-                turns=handle.turns,
+                steps=handle.steps,
                 goal_round=goal_round is not None,
             )
             if settlement.failure is not None:
@@ -564,7 +564,7 @@ def close_session(handle: HostSession) -> Failure | None:
     ended = end_session(
         env=handle.env,
         stop_reason=STOP_MODEL_COMPLETED,
-        turns=handle.turns,
+        steps=handle.steps,
     )
     if ended is not None:
         return Failure(
@@ -615,7 +615,7 @@ async def shutdown(state: HostState) -> None:
             end_session(
                 env=handle.env,
                 stop_reason=STOP_MODEL_COMPLETED,
-                turns=handle.turns,
+                steps=handle.steps,
             )
             handle.ended_by_failure = False
         elif handle.status == SESSION_IDLE:

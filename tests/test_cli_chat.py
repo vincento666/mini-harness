@@ -141,7 +141,7 @@ def test_two_inputs_make_one_log_two_segments_and_two_user_messages(tmp_path: Pa
     assert [message["turn_id"] for message in messages] == ["s1", "s2"]
     assert records[-1]["type"] == "session/end"
     assert records[-1]["payload"]["stop_reason"] == "MODEL_COMPLETED"
-    # `session/end.turns` 是会话跑掉的回合数，不是回合编号。
+    # `session/end.steps` 是会话跑掉的回合数，不是回合编号。
     assert records[-1]["payload"]["steps"] == 2
 
 
@@ -213,7 +213,7 @@ def test_a_segment_that_uses_up_max_turns_returns_to_the_prompt(tmp_path: Path) 
     records = _records(tmp_path)
     segments = [record["payload"] for record in records if record["type"] == "turn/end"]
     assert [segment["turn_id"] for segment in segments] == ["s1", "s2"]
-    assert [segment["stop_reason"] for segment in segments] == ["MAX_TURNS", "MAX_TURNS"]
+    assert [segment["stop_reason"] for segment in segments] == ["MAX_STEPS", "MAX_STEPS"]
     assert [segment["steps"] for segment in segments] == [2, 2]
     # 回合编号在整个会话里连续：第二个段从 t3 起，不重置。
     step_ids = [
@@ -240,7 +240,7 @@ def test_a_max_turns_segment_says_so_on_stderr(tmp_path: Path) -> None:
     )
 
     assert result.returncode == 0
-    notes = [line for line in result.stderr.splitlines() if "MAX_TURNS" in line]
+    notes = [line for line in result.stderr.splitlines() if "MAX_STEPS" in line]
     assert len(notes) == 2, "两个段各用完一次"
     assert all("PROVIDER" not in line for line in notes), "没有失败结果时只有停止理由"
     assert notes[0] not in result.stdout

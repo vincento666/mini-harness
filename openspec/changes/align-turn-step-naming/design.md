@@ -49,7 +49,8 @@
 2. v1 行在 `migrate_schema` 里做整体上迁：
    - 类型：`segment/start|end → turn/start|end`；`turn/start|end → step/start|end`。
    - 键：`segment_id → turn_id`；`turn_id → step_id`；`turns → steps`。
-   - 值不变，`seq` / `ts` / `session_id` 不变。
+   - 封闭词表里的值：`stop_reason` 的 `MAX_TURNS → MAX_STEPS`。只对点名过的键做值映射，载荷里的自由文本不动。
+   - `seq` / `ts` / `session_id` 与其余值不变。
 3. 词表拆成两套：`CONCRETE_EVENT_TYPES` 只放 v2 名字（新写入的唯一合法集）；`LEGACY_EVENT_TYPES` 只放 v1 名字，**读取时**允许通过校验，交给上迁。`EventRecord._type_is_in_the_vocabulary` 读 `is_known_type`，后者对两套都返回真；写侧另用 `is_current_type` 拒绝旧名。**两套词表只在改造期成立**：删除点见 D4，合并前回到一套。
 4. `read_events` 逐行 parse → `migrate_schema` → 交给调用方。投影、折叠、replay、SSE 都只看见 v2。
 5. 旧日志文件 MUST NOT 被重写：上迁是纯函数，磁盘上的 v1 行保持原样；下一次追加才写 v2。混合文件不可能出现——一个会话一个文件，schema 在 `session/start` 时固定。

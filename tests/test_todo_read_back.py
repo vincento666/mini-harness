@@ -52,7 +52,7 @@ async def test_read_back_returns_the_last_table_without_writing_an_event(tmp_pat
     )
     assert start_session(prompt="两条待办", entry=ENTRY_RUN, env=env) is None
     outcome = await run_turn(env=env, turn_id="s1", first_step_index=1, cancel=asyncio.Event())
-    assert end_session(env=env, stop_reason=outcome.stop_reason, turns=outcome.turns) is None
+    assert end_session(env=env, stop_reason=outcome.stop_reason, steps=outcome.steps) is None
 
     records = read_events(log.path)
     assert isinstance(records, list)
@@ -79,9 +79,9 @@ async def test_read_back_is_empty_after_a_new_segment_starts(tmp_path: Path) -> 
     assert start_session(prompt="第一段提交表", entry=ENTRY_RUN, env=env) is None
     first = await run_turn(env=env, turn_id="s1", first_step_index=1, cancel=asyncio.Event())
     second = await run_turn(
-        env=env, turn_id="s2", first_step_index=first.turns + 1, cancel=asyncio.Event()
+        env=env, turn_id="s2", first_step_index=first.steps + 1, cancel=asyncio.Event()
     )
-    assert end_session(env=env, stop_reason=second.stop_reason, turns=second.turns) is None
+    assert end_session(env=env, stop_reason=second.stop_reason, steps=second.steps) is None
 
     records = read_events(log.path)
     assert isinstance(records, list)

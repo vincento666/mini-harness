@@ -379,7 +379,7 @@ def test_the_round_decision_only_looks_at_the_snapshot_the_arm_and_the_stop_reas
         "FENCE_DENIED",
         "PROVIDER_ERROR",
         "CONTEXT_WINDOW_EXCEEDED",
-        "MAX_TURNS",
+        "MAX_STEPS",
     ):
         assert next_round(goal=active, armed=True, stop_reason=stop_reason).kind == "stop"
     paused = active.model_copy(update={"phase": "paused"})
@@ -491,7 +491,7 @@ def test_a_failed_round_limit_write_is_reported(tmp_path: Path, monkeypatch: Any
         env.log, "append", lambda *args, **kwargs: LogWriteFailure(log.path, "只读")
     )
 
-    failed = exhaust_goal_rounds(env=env, decision=RoundDecision("exhausted", goal, 2), turns=2)
+    failed = exhaust_goal_rounds(env=env, decision=RoundDecision("exhausted", goal, 2), steps=2)
 
     assert failed is not None
     assert failed.failure_code == "LOG_WRITE_FAILED"

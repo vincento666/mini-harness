@@ -30,7 +30,7 @@ async def test_default_source_is_human(tmp_path: Path) -> None:
     outcome = await run_turn(
         env=env, turn_id="s1", first_step_index=1, cancel=asyncio.Event(), user_message="开始"
     )
-    assert end_session(env=env, stop_reason=outcome.stop_reason, turns=outcome.turns) is None
+    assert end_session(env=env, stop_reason=outcome.stop_reason, steps=outcome.steps) is None
 
     messages = [r for r in read_events(log.path) if r.type == "user/message"]
     assert [m.payload["source"] for m in messages] == [{"kind": "user"}]
@@ -48,7 +48,7 @@ async def test_goal_source_is_recorded_verbatim(tmp_path: Path) -> None:
         user_message="<goal_round>",
         message_source=source,
     )
-    assert end_session(env=env, stop_reason=outcome.stop_reason, turns=outcome.turns) is None
+    assert end_session(env=env, stop_reason=outcome.stop_reason, steps=outcome.steps) is None
 
     records = read_events(log.path)
     messages = [r for r in records if r.type == "user/message"]

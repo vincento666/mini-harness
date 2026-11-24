@@ -19,7 +19,7 @@ NO_CONTINUE_REASONS: frozenset[str] = frozenset(
         "FENCE_DENIED",
         "PROVIDER_ERROR",
         "CONTEXT_WINDOW_EXCEEDED",
-        "MAX_TURNS",
+        "MAX_STEPS",
     }
 )
 

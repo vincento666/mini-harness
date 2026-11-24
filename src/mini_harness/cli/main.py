@@ -45,7 +45,7 @@ from mini_harness.loop import (
     STOP_ABORTED,
     STOP_CONTEXT_WINDOW_EXCEEDED,
     STOP_FENCE_DENIED,
-    STOP_MAX_TURNS,
+    STOP_MAX_STEPS,
     STOP_MODEL_COMPLETED,
     STOP_PROVIDER_ERROR,
     STOP_REASONS,
@@ -92,7 +92,7 @@ EXIT_ABORTED = 5
 STOP_REASONS_TO_EXIT_CODES: dict[str, int] = {
     STOP_MODEL_COMPLETED: EXIT_OK,
     STOP_TOOL_CALLS: EXIT_OK,
-    STOP_MAX_TURNS: EXIT_OK,
+    STOP_MAX_STEPS: EXIT_OK,
     STOP_PROVIDER_ERROR: EXIT_INTERNAL_ERROR,
     STOP_FENCE_DENIED: EXIT_FENCE_DENIED,
     STOP_CONTEXT_WINDOW_EXCEEDED: EXIT_CONTEXT_WINDOW_EXCEEDED,
@@ -674,8 +674,8 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
         if isinstance(events, LogReadFailure):
             return _report_failure(events.code, events.detail, EXIT_INTERNAL_ERROR)
         segments = sum(1 for event in events if event.type == "turn/start")
-        turns = [event for event in events if event.type == "step/start"]
-        turn_index = len(turns) + 1
+        steps = [event for event in events if event.type == "step/start"]
+        turn_index = len(steps) + 1
         printed = sum(1 for event in events if event.type == "model/response")
         scanned = events[-1].seq if events else 0
     # 连续溢出的说明靠这两个局部变量（design 的 Risks）：记住上一个段的收尾理由、这一句说过没有。
@@ -691,7 +691,7 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
         `OSError: Signal 2 ignored due to race condition`。
         """
         signal.signal(signal.SIGINT, _suppress_sigint)
-        return end_session(env=env, stop_reason=STOP_MODEL_COMPLETED, turns=turn_index - 1)
+        return end_session(env=env, stop_reason=STOP_MODEL_COMPLETED, steps=turn_index - 1)
 
     try:
         try:
@@ -752,7 +752,7 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
                             segment.detail,
                             EXIT_INTERNAL_ERROR,
                         )
-                    turn_index += segment.turns
+                    turn_index += segment.steps
                     _print_segment_note(segment)
                     if (
                         segment.stop_reason == STOP_CONTEXT_WINDOW_EXCEEDED
@@ -782,7 +782,7 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
                     settlement = settle_segment(
                         env=env,
                         segment=segment,
-                        turns=turn_index - 1,
+                        steps=turn_index - 1,
                         goal_round=goal_round is not None,
                     )
                     if settlement.failure is not None:
@@ -958,7 +958,7 @@ def _usage(args: argparse.Namespace) -> int:
     records = read_events(path)
     if isinstance(records, LogReadFailure):
         return _report_failure(records.code, records.detail, EXIT_INTERNAL_ERROR)
-    turns, total = collect_usage(records)
+    steps, total = collect_usage(records)
     cost: float | None = None
     config_path = discover_config(Path.cwd(), args.config)
     if config_path is not None:
@@ -977,7 +977,7 @@ def _usage(args: argparse.Namespace) -> int:
             if pricing is not None:
                 cost = round(pricing.cost(total), 6)
     payload = {
-        "turns": [{"turn_id": turn.step_id, **turn.usage.as_dict()} for turn in turns],
+        "turns": [{"turn_id": turn.step_id, **turn.usage.as_dict()} for turn in steps],
         "total": total.as_dict(),
         "cost": cost,
     }

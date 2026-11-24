@@ -60,7 +60,7 @@ async def test_single_turn_writes_the_expected_event_sequence(tmp_path: Path) ->
         "session/end",
     ]
     assert outcome.stop_reason == "MODEL_COMPLETED"
-    assert outcome.turns == 1
+    assert outcome.steps == 1
 
 
 def _tool_call_entries(count: int) -> list[dict[str, object]]:
@@ -92,12 +92,12 @@ async def test_two_segments_number_segments_and_turns_continuously(tmp_path: Pat
     assert start_session(prompt="第一条输入", entry=ENTRY_RUN, env=env) is None
     first = await run_turn(env=env, turn_id="s1", first_step_index=1, cancel=asyncio.Event())
     second = await run_turn(
-        env=env, turn_id="s2", first_step_index=first.turns + 1, cancel=asyncio.Event()
+        env=env, turn_id="s2", first_step_index=first.steps + 1, cancel=asyncio.Event()
     )
-    assert end_session(env=env, stop_reason=second.stop_reason, turns=second.turns) is None
+    assert end_session(env=env, stop_reason=second.stop_reason, steps=second.steps) is None
 
     records = read_events(log.path)
-    assert first.stop_reason == "MAX_TURNS"
+    assert first.stop_reason == "MAX_STEPS"
     assert second.stop_reason == "MODEL_COMPLETED"
     assert [record.type for record in records if record.type.startswith("turn/")] == [
         "turn/start",
@@ -106,7 +106,7 @@ async def test_two_segments_number_segments_and_turns_continuously(tmp_path: Pat
         "turn/end",
     ]
     assert [r.payload for r in records if r.type == "turn/end"] == [
-        {"turn_id": "s1", "stop_reason": "MAX_TURNS", "steps": 3, "tool_calls": 3},
+        {"turn_id": "s1", "stop_reason": "MAX_STEPS", "steps": 3, "tool_calls": 3},
         {"turn_id": "s2", "stop_reason": "MODEL_COMPLETED", "steps": 2, "tool_calls": 1},
     ]
     assert [r.payload["step_id"] for r in records if r.type == "step/start"] == [
@@ -130,7 +130,7 @@ async def test_a_serve_entry_session_is_one_segment_closed_on_disk(tmp_path: Pat
 
     assert start_session(prompt="第一条输入", entry=ENTRY_SERVE, env=env) is None
     segment = await run_turn(env=env, turn_id="seg-1", first_step_index=1, cancel=asyncio.Event())
-    assert end_session(env=env, stop_reason=segment.stop_reason, turns=segment.turns) is None
+    assert end_session(env=env, stop_reason=segment.stop_reason, steps=segment.steps) is None
 
     records = read_events(log.path)
     assert records[0].type == "session/start"
@@ -298,10 +298,10 @@ async def test_reaching_max_turns_stops_with_max_turns_and_no_failure(tmp_path: 
 
     records = read_events(log.path)
     last_turn_end = [record for record in records if record.type == "step/end"][-1]
-    assert last_turn_end.payload["stop_reason"] == "MAX_TURNS"
-    assert outcome.stop_reason == "MAX_TURNS"
+    assert last_turn_end.payload["stop_reason"] == "MAX_STEPS"
+    assert outcome.stop_reason == "MAX_STEPS"
     assert outcome.failure_code is None
-    assert outcome.turns == 2
+    assert outcome.steps == 2
 
 
 async def test_turn_that_requests_tool_calls_closes_with_tool_calls(tmp_path: Path) -> None:
@@ -749,7 +749,7 @@ async def test_one_turn_with_two_tool_calls_dispatches_both(tmp_path: Path) -> N
     assert [record.payload["tool_call_id"] for record in results] == ["c1", "c2"]
     assert [record.payload["outcome"] for record in results] == ["OK", "OK"]
     assert first_turn_end.payload["stop_reason"] == "TOOL_CALLS"
-    assert outcome.turns == 2
+    assert outcome.steps == 2
     assert outcome.stop_reason == "MODEL_COMPLETED"
 
 
@@ -998,7 +998,7 @@ async def test_the_same_scene_through_both_providers_writes_the_same_log(
     assert mine_start["provider"] == "mock"
     assert theirs_start["provider"] == "openai"
     assert mock_outcome.stop_reason == openai_outcome.stop_reason == "MODEL_COMPLETED"
-    assert mock_outcome.turns == openai_outcome.turns == 2
+    assert mock_outcome.steps == openai_outcome.steps == 2
 
 
 async def test_a_fixture_cannot_invent_a_model_retry(tmp_path: Path) -> None:

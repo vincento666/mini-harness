@@ -415,7 +415,7 @@ async def test_a_child_without_final_text_still_returns_a_result(tmp_path: Path)
     assert outcome.stop_reason == "MODEL_COMPLETED"
     result = next(record for record in read_events(log.path) if record.type == "tool/result")
     assert "没有最终文本" in result.payload["content"]
-    assert "MAX_TURNS" in result.payload["content"]
+    assert "MAX_STEPS" in result.payload["content"]
 
 
 async def test_the_tool_needs_a_session_runtime(tmp_path: Path) -> None:

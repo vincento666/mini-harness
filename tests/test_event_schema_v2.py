@@ -83,7 +83,8 @@ def test_a_v1_turn_end_becomes_a_v2_step_end() -> None:
     upcast = migrate_schema(_v1("turn/end", {"turn_id": "t1", "stop_reason": "MAX_TURNS"}))
 
     assert upcast.type == "step/end"
-    assert upcast.payload == {"step_id": "t1", "stop_reason": "MAX_TURNS"}
+    # 值也不是原样保留：`MAX_TURNS` 是封闭词表里的一项，它的新名是 `MAX_STEPS`。
+    assert upcast.payload == {"step_id": "t1", "stop_reason": "MAX_STEPS"}
 
 
 def test_upcast_keeps_identity_and_unrelated_values() -> None:

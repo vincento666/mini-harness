@@ -311,7 +311,7 @@ def test_the_cli_flag_overrides_the_config_file(tmp_path: Path) -> None:
 
 
 def test_a_flag_equal_to_the_builtin_default_is_still_explicit(tmp_path: Path) -> None:
-    """`--max-turns 8` 与「没给 flag 而内置默认也是 8」是两层不同的事实：显式给的那层赢。"""
+    """`--max-steps 8` 与「没给 flag 而内置默认也是 8」是两层不同的事实：显式给的那层赢。"""
     (tmp_path / "mini.config.toml").write_text("max_turns = 3\n", encoding="utf-8")
 
     result = _cli(

@@ -26,6 +26,12 @@ _V1_KEY_MAP: dict[str, str] = {
     "turns": "steps",
 }
 
+# 封闭词表里的**值**也要换名：`stop_reason` 的 `MAX_TURNS` 在 v2 叫 `MAX_STEPS`。
+# 只对点名过的键做值映射——载荷里还有模型输出的自然语言，不能全文替换。
+_V1_VALUE_MAP: dict[str, dict[str, str]] = {
+    "stop_reason": {"MAX_TURNS": "MAX_STEPS"},
+}
+
 
 class SchemaUnsupported(ValueError):
     """日志 schema_version 不是当前或相邻旧版：拒绝，不猜迁移。"""
@@ -59,11 +65,17 @@ class EventRecord(BaseModel):
 
 
 def _upcast_v1(record: EventRecord) -> EventRecord:
-    """把一条 v1 记录整体翻译成 v2：换类型、换载荷键，其余字段原样保留。
+    """把一条 v1 记录整体翻译成 v2：换类型、换载荷键与封闭词表里的值，其余字段原样保留。
 
-    纯函数，不写文件；`seq` / `ts` / `session_id` 与载荷里的值都不动（design D2）。
+    纯函数，不写文件；`seq` / `ts` / `session_id` 与载荷里的自由文本都不动（design D2）。
     """
-    payload = {_V1_KEY_MAP.get(key, key): value for key, value in record.payload.items()}
+    payload: dict[str, Any] = {}
+    for key, value in record.payload.items():
+        new_key = _V1_KEY_MAP.get(key, key)
+        values = _V1_VALUE_MAP.get(new_key)
+        if values is not None and isinstance(value, str):
+            value = values.get(value, value)
+        payload[new_key] = value
     return record.model_copy(
         update={
             "schema_version": SCHEMA_VERSION,

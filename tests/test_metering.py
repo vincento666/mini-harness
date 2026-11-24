@@ -38,9 +38,9 @@ def test_four_buckets_are_summed() -> None:
         ),
     ]
 
-    turns, total = collect_usage(records)
+    steps, total = collect_usage(records)
 
-    assert [turn.step_id for turn in turns] == ["t1", "t2"]
+    assert [turn.step_id for turn in steps] == ["t1", "t2"]
     # 适配器的 input_tokens 已是未缓存部分；命中单列在 cache_read。
     assert total.input_uncached == 150
     assert total.cache_read == 20
@@ -68,9 +68,9 @@ def test_a_turn_without_usage_is_skipped() -> None:
         _rec(1, "model/response", {"step_id": "t2", "usage": {"input_tokens": 5}}),
     ]
 
-    turns, total = collect_usage(records)
+    steps, total = collect_usage(records)
 
-    assert [turn.step_id for turn in turns] == ["t2"]
+    assert [turn.step_id for turn in steps] == ["t2"]
     assert total.input_uncached == 5
 
 
@@ -80,9 +80,9 @@ def test_the_last_response_of_a_turn_wins() -> None:
         _rec(1, "model/response", {"step_id": "t1", "usage": {"input_tokens": 20}}),
     ]
 
-    turns, total = collect_usage(records)
+    steps, total = collect_usage(records)
 
-    assert len(turns) == 1
+    assert len(steps) == 1
     assert total.input_uncached == 20
 
 
