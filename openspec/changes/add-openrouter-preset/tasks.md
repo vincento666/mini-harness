@@ -14,6 +14,6 @@
 ## 3. 收尾（ADR-0024 / ADR-0025 的四项）
 
 - [x] 3.1 真实端点验收：两场都过（仓库根无 flag、另开工作区只给 `--provider openrouter`），`session/start` 四格齐全；记录在 `docs/verification/add-openrouter-preset-real-endpoint.md`
-- [ ] 3.2 UAT（人跑）：手册已立 `docs/verification/add-openrouter-preset-uat.md`（仓库根无 flag 一场、覆盖模型一场）；结果列待填，填完才能归档
+- [x] 3.2 UAT：**2026-11-24 agent 代跑（用户明确指示）**，两场全过——仓库根无端点 flag 时四格为 openrouter/qwen/qwen3.8-27b/…；`--model qwen/qwen3.8-flash` 时只有 model 被覆盖。记录在 `docs/verification/add-openrouter-preset-uat.md`
 - [x] 3.3 变异测试一轮：把预设里的 `model` 改成 `deepseek-chat`，`test_the_openrouter_preset_carries_the_verification_model` 当场红；还原后 12 条全绿
 - [ ] 3.4 Learning Gate：有可复用信号就进 `docs/lessons.md` 收件箱，没有就写 `NO-PROMOTION`

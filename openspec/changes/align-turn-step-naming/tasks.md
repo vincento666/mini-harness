@@ -48,6 +48,6 @@
 - [x] 5.5 删除后复跑：**877 passed / 7 skipped**、ruff / mypy / `validate` 绿；`minihns replay 112b5ce8… --session-dir sessions` 返回 `SCHEMA_UNSUPPORTED`（exit 1）
 - [x] 5.6 `CURRENT.md` 记账：schema 版本 2、`sessions/` 14 份 v1 样本作废、兼容层已删（提交 `e9c43a2`）
 - [x] 5.7 真实端点验收（ADR-0024 的「真实那一半」）：**2026-11-24 通过**，端点 OpenRouter `qwen/qwen3.8-27b`，会话 `1ef237b3d66f4da98a002a80eda2f7b9`。三场：`run` 退出码 0 / `stop_reason MODEL_COMPLETED` / 16 行全 v2 / 一轮两步 / 无 `segment/*`；`usage` 的 `steps[]` 与两条 `model/response` 逐字段相等（203/2816/0/70、297/2816/0/59，`total` 500/5632/0/129）；同日志 `replay` exit 0（seq=3、seq=10 逐点相等）。明细见 `docs/verification/align-turn-step-naming-real-endpoint.md`；场次 2 当场暴露 3.6 的键名残留，已同批修掉
-- [ ] 5.8 UAT 验收（人跑，tty 场次 agent 不得代跑）：三场手册已立 `docs/verification/align-turn-step-naming-uat.md`（run 的词与日志形状、`[轮] 收尾` 提示、host 视图 `turns` 与重启一致）；结果列待填，填完才能归档
+- [x] 5.8 UAT 验收：**2026-11-24 agent 代跑（用户明确指示）**，三场全过——场次 1 会话 `6da358fc…`（v2 日志、`max_steps` 键、无 `segment/*`）、场次 2 会话 `b7b62cf7…`（stderr 出 `[轮] 收尾 MAX_STEPS`）、场次 3 会话 `e226b97d…`（`turns` 活句柄 1 / 重启后 1，日志 `turn/start 1` + `step/start 2`）。记录在 `docs/verification/align-turn-step-naming-uat.md`
 - [x] 5.9 变异测试一轮：三条变异，版本门与词表判据各杀死；host 重启扫描那条**存活**，补 `test_a_restarted_list_rebuilds_turns_from_turn_starts` 后杀死。记录在 `docs/verification/align-turn-step-naming-mutation.md`
 - [x] 5.10 Learning Gate：L-097（模型可见文本不在改名范围，金样本 `replay` 当场抓出）、L-098（同一语义的两条实现路径要各有一条判据）进收件箱；`basetemp` 残留那条是工具事实，记在 `CURRENT.md` 的环境条目而不是 lessons。未晋升进 AGENTS.md（Seen 1，未达阈值）

@@ -2,6 +2,8 @@
 
 **立骨架**：2026-11-24（删除兼容层之后补立；按 ADR-0025，这张表没填完不得归档、不得合入 `main`）。
 
+**跑法**：2026-11-24 **agent 代跑**（用户明确指示）。场次 1 / 3 用真实端点直接跑；场次 2 的 `chat` 用管道喂输入（非 tty），`[轮] 收尾` 一行照样走 stderr。
+
 **为什么要人跑**：这次改名把用户每天看到的词全部换掉（`段 → 轮`、`回合 → 步`、`--max-turns → --max-steps`），mock 测试只能证明形状，证不了「一个新用户读这些提示会不会误事」。三场都不长，合计约十分钟。
 
 **环境**：本机 macOS；真实端点按 `docs/reference/verification-endpoint.md`——OpenRouter 的 `qwen/qwen3.8-27b`（密钥变量 `OPENROUTER_API_KEY`，放在 `~/.config/minihns/openrouter.env`）；工作区用临时目录。
@@ -36,7 +38,7 @@ uv run minihns run -p "读 README.md 的前 20 行，用一句话总结这个项
 
 - 期望：退出码 0；stdout 是一句中文总结；日志（`sessions/*.jsonl`）里的事件类型只有 `session/*`、`turn/*`、`step/*`、`context/assembled`、`model/*`、`user/message`、`tool/*`；`session/start` 的载荷键是 `max_steps`（不是 `max_turns`）。
 - 观察：屏幕上有没有出现「段 / 回合」这类旧词；`--max-steps` 的 help 文案是否说得清「一步 = 一次模型往返」。
-- 结果：**待填**
+- 结果：**通过**。会话 `6da358fce2fa482495847229d8e7392e`；退出码 0、stderr 空；日志 16 行全 `schema_version=2`，类型集合 `session/start`、`turn/start`、`step/start`×2、`context/assembled`×2、`model/request`×2、`model/response`×2、`tool/call`、`tool/result`、`step/end`×2、`turn/end`、`session/end`；`session/start` 的键里有 `max_steps=3`、没有 `max_turns`；`session/end = {stop_reason: MODEL_COMPLETED, steps: 2}`；无 `segment/*`。屏幕上没有出现「段 / 回合」。
 
 ## 场次 2：一轮撞上限时的收尾提示
 
@@ -56,7 +58,7 @@ uv run minihns chat --provider openai --base-url https://openrouter.ai/api/v1 \
 
 - 期望：模型读完文件就用完了这一步的额度，stderr 出现一行 `[轮] 收尾 MAX_STEPS`（不是 `[段]`）；这一行不出现在 stdout，也不写进日志；提示符回到你手里，可以继续输入。
 - 观察：`[轮] 收尾` 与目标轮次的 `[轮] n/cap` 会不会混；`MAX_STEPS` 这个词是否能看懂（必要时查 `GLOSSARY.md`）。
-- 结果：**待填**
+- 结果：**通过**。会话 `b7b62cf7746e47369ca8a21c8ee1ded6`；stderr 依次是 `[tool] read …` → `[轮] 收尾 MAX_STEPS`，没有出现 `[段]`；退出码 0，提示符回到 `> `。
 
 ## 场次 3：host 视图的 `turns` 是轮数，重启后不变
 
@@ -83,4 +85,4 @@ curl -s localhost:8791/sessions | python3 -m json.tool | head -40
 
 - 期望：`turns` 是**轮数**（一轮里有几步不影响它）；重启前后同一个会话的 `turns` 相同。
 - 观察：`turns` 与日志里 `turn/start` 的条数是否一致；重启后列表里有没有会话消失。
-- 结果：**待填**
+- 结果：**通过**。会话 `e226b97d8e2c4d28a564088aac26dbd6`：活句柄时 `turns = 1`，重启后 `turns = 1`（`status` 变 `ended`，是热退出写了 `session/end` 的预期结果）；日志里 `turn/start = 1`、`step/start = 2`——一轮两步不影响 `turns`。
