@@ -129,7 +129,7 @@ async def _run(
     return read_events(log.path), fold_goal(read_events(log.path)), outcome, env
 
 
-def _segments(records: list[EventRecord]) -> dict[str, list[EventRecord]]:
+def _turns(records: list[EventRecord]) -> dict[str, list[EventRecord]]:
     """按 `turn/start` 切段：段外的记录（`session/*`）不算进任何段。"""
     out: dict[str, list[EventRecord]] = {}
     current: str | None = None
@@ -151,8 +151,8 @@ def _goal_updates(records: list[EventRecord]) -> list[dict[str, Any]]:
 async def test_three_rounds_run_in_order_and_stop_at_the_cap(tmp_path: Path) -> None:
     records, goal, outcome, env = await _run(tmp_path, max_rounds=3)
 
-    segments = _segments(records)
-    assert list(segments) == ["s1", "s2", "s3", "s4"]
+    turns = _turns(records)
+    assert list(turns) == ["s1", "s2", "s3", "s4"]
     assert [record.type for record in records].count("turn/end") == 4
 
     goal_messages = [
@@ -166,8 +166,8 @@ async def test_three_rounds_run_in_order_and_stop_at_the_cap(tmp_path: Path) -> 
     assert goal is not None
 
     for round_number in (1, 2, 3):
-        segment = segments[f"s{round_number + 1}"]
-        types = [record.type for record in segment]
+        turn = turns[f"s{round_number + 1}"]
+        types = [record.type for record in turn]
         assert types[:6] == [
             "turn/start",
             "user/message",
@@ -176,19 +176,17 @@ async def test_three_rounds_run_in_order_and_stop_at_the_cap(tmp_path: Path) -> 
             "goal/updated",
             "model/request",
         ]
-        snapshot = segment[4].payload["goal"]
+        snapshot = turn[4].payload["goal"]
         assert snapshot["rounds_started"] == round_number
         assert snapshot["revision"] == 1
         assert snapshot["phase"] == "active"
 
-    second = segments["s3"][1].payload
+    second = turns["s3"][1].payload
     assert f'Objective: "{OBJECTIVE}"' in second["content"]
     assert "Round: 2/3" in second["content"]
 
     # 正文真的进了模型：该轮第一个装配点里的最后一条 user 消息就是它。
-    assembled = next(
-        record for record in segments["s3"] if record.type == "context/assembled"
-    ).payload
+    assembled = next(record for record in turns["s3"] if record.type == "context/assembled").payload
     user_messages = [item for item in assembled["messages"] if item["role"] == "user"]
     assert user_messages[-1]["content"] == second["content"]
 
@@ -256,7 +254,7 @@ async def test_an_unanswered_question_hands_control_back_without_burning_the_nex
     )
     records = read_events(log.path)
 
-    assert list(_segments(records)) == ["s1", "s2"]
+    assert list(_turns(records)) == ["s1", "s2"]
     assert env.goal_runtime.armed is True
     goal = fold_goal(records)
     assert goal is not None
@@ -278,11 +276,11 @@ async def test_an_unanswered_question_hands_control_back_without_burning_the_nex
     ] == [1]
 
 
-async def test_a_completed_goal_no_longer_opens_segments(tmp_path: Path) -> None:
+async def test_a_completed_goal_no_longer_opens_turns(tmp_path: Path) -> None:
     records, goal, outcome, _ = await _run(tmp_path, max_rounds=3, complete_at=2)
 
-    segments = _segments(records)
-    assert list(segments) == ["s1", "s2", "s3"]
+    turns = _turns(records)
+    assert list(turns) == ["s1", "s2", "s3"]
     assert goal is not None
     assert goal.phase == "complete"
     assert goal.rounds_started == 2
@@ -343,12 +341,12 @@ async def test_a_round_with_two_turns_deducts_only_once(tmp_path: Path) -> None:
         prompt="把这件活干完", entry=ENTRY_RUN, env=env, cancel=asyncio.Event()
     )
     records = read_events(log.path)
-    segments = _segments(records)
-    assert list(segments) == ["s1", "s2", "s3"]
+    turns = _turns(records)
+    assert list(turns) == ["s1", "s2", "s3"]
 
     for name, round_number in (("s2", 1), ("s3", 2)):
         inside: list[EventRecord] = []
-        for record in segments[name]:
+        for record in turns[name]:
             inside.append(record)
             if record.type == "turn/end":
                 break
@@ -446,7 +444,7 @@ async def test_a_cancelled_round_pauses_the_goal_and_disarms_it(tmp_path: Path) 
     """取消即按停：ABORTED 之后目标落 paused、武装位归假，人才能决定下一步。"""
     records, goal, outcome, env = await _run(tmp_path, max_rounds=3, abort_at=1)
 
-    assert list(_segments(records)) == ["s1", "s2"]
+    assert list(_turns(records)) == ["s1", "s2"]
     assert goal is not None
     assert goal.phase == "paused"
     assert goal.rounds_started == 1
@@ -459,7 +457,7 @@ async def test_a_provider_error_keeps_the_goal_active_but_disarmed(tmp_path: Pat
     """上游坏了不是目标的错：`phase` 留在 active，解除武装等人 resume。"""
     records, goal, outcome, env = await _run(tmp_path, max_rounds=3, fail_at=1)
 
-    assert list(_segments(records)) == ["s1", "s2"]
+    assert list(_turns(records)) == ["s1", "s2"]
     assert goal is not None
     assert goal.phase == "active"
     assert goal.rounds_started == 1
@@ -526,7 +524,7 @@ async def test_two_idle_goal_rounds_in_a_row_trip_the_stall_gate_by_default(
     records = read_events(log.path)
 
     # 人类段 s1 + 两轮空转（s2/s3）；第二轮之后停，不再开 s4。
-    assert list(_segments(records)) == ["s1", "s2", "s3"]
+    assert list(_turns(records)) == ["s1", "s2", "s3"]
     assert env.goal_runtime.armed is False
     assert env.goal_runtime.idle_rounds == 0  # 停时清零，resume 后重新给满阈值
     goal = fold_goal(records)
@@ -569,7 +567,7 @@ async def test_stall_rounds_zero_disables_the_gate_entirely(tmp_path: Path) -> N
     outcome = await run_session_env(prompt="开始", entry=ENTRY_RUN, env=env, cancel=asyncio.Event())
     records = read_events(log.path)
 
-    assert list(_segments(records)) == ["s1", "s2", "s3", "s4"]
+    assert list(_turns(records)) == ["s1", "s2", "s3", "s4"]
     goal = fold_goal(records)
     assert goal is not None
     assert goal.phase == "blocked"

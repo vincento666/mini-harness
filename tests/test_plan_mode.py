@@ -162,7 +162,7 @@ async def test_exit_plan_mode_unavailable_keeps_plan(tmp_path) -> None:
     assert outcome.fence_code == "APPROVAL_UNAVAILABLE"
 
 
-def test_todo_projection_clears_on_segment_start() -> None:
+def test_todo_projection_clears_on_turn_start() -> None:
     from mini_harness.events.projection import project
 
     records = [

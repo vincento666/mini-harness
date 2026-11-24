@@ -30,10 +30,10 @@ def _start_payload(cwd: Path) -> dict[str, object]:
 
 def test_an_explicit_config_file_sets_the_settings(tmp_path: Path) -> None:
     root_config = tmp_path / "mini.config.toml"
-    root_config.write_text("max_turns = 9\n", encoding="utf-8")
+    root_config.write_text("max_steps = 9\n", encoding="utf-8")
     explicit = tmp_path / "elsewhere" / "other.toml"
     explicit.parent.mkdir(parents=True)
-    explicit.write_text("max_turns = 3\n", encoding="utf-8")
+    explicit.write_text("max_steps = 3\n", encoding="utf-8")
 
     result = _cli(
         "run",
@@ -100,7 +100,7 @@ def test_no_config_file_means_builtin_defaults(tmp_path: Path) -> None:
 
 
 def test_the_workspace_root_config_file_is_picked_up(tmp_path: Path) -> None:
-    (tmp_path / "mini.config.toml").write_text("max_turns = 3\n", encoding="utf-8")
+    (tmp_path / "mini.config.toml").write_text("max_steps = 3\n", encoding="utf-8")
 
     result = _cli(
         "run",
@@ -116,29 +116,6 @@ def test_the_workspace_root_config_file_is_picked_up(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     assert _start_payload(tmp_path)["max_steps"] == 3
-    # 旧键仍被接受，但要说清它改了什么名。
-    assert "已改名为 max_steps" in result.stderr
-
-
-def test_two_conflicting_step_limits_are_an_argument_error(tmp_path: Path) -> None:
-    (tmp_path / "mini.config.toml").write_text("max_steps = 3\nmax_turns = 5\n", encoding="utf-8")
-
-    result = _cli(
-        "run",
-        "-p",
-        "任务",
-        "--provider",
-        "mock",
-        "--fixture",
-        str(HELLO_SCENARIO),
-        "--yes",
-        cwd=tmp_path,
-    )
-
-    assert result.returncode == 2
-    assert "INVALID_ARGUMENT" in result.stderr
-    assert "同时出现且值不同" in result.stderr
-    assert list((tmp_path / "sessions").glob("*.jsonl")) == []
 
 
 def test_a_missing_explicit_config_file_is_an_argument_error(tmp_path: Path) -> None:
@@ -166,7 +143,7 @@ def test_a_missing_explicit_config_file_is_an_argument_error(tmp_path: Path) -> 
 
 def test_a_malformed_config_file_is_an_argument_error(tmp_path: Path) -> None:
     config = tmp_path / "mini.config.toml"
-    config.write_text("max_turns = = 3\n", encoding="utf-8")
+    config.write_text("max_steps = = 3\n", encoding="utf-8")
 
     result = _cli(
         "run",
@@ -294,7 +271,7 @@ def test_an_empty_config_file_equals_no_config_file(tmp_path: Path) -> None:
 
 
 def test_the_config_file_overrides_builtin_defaults(tmp_path: Path) -> None:
-    (tmp_path / "mini.config.toml").write_text("max_turns = 3\n", encoding="utf-8")
+    (tmp_path / "mini.config.toml").write_text("max_steps = 3\n", encoding="utf-8")
 
     result = _cli(
         "run",
@@ -313,7 +290,7 @@ def test_the_config_file_overrides_builtin_defaults(tmp_path: Path) -> None:
 
 
 def test_the_cli_flag_overrides_the_config_file(tmp_path: Path) -> None:
-    (tmp_path / "mini.config.toml").write_text("max_turns = 3\n", encoding="utf-8")
+    (tmp_path / "mini.config.toml").write_text("max_steps = 3\n", encoding="utf-8")
 
     result = _cli(
         "run",
@@ -323,7 +300,7 @@ def test_the_cli_flag_overrides_the_config_file(tmp_path: Path) -> None:
         "mock",
         "--fixture",
         str(HELLO_SCENARIO),
-        "--max-turns",
+        "--max-steps",
         "5",
         "--yes",
         cwd=tmp_path,
@@ -335,7 +312,7 @@ def test_the_cli_flag_overrides_the_config_file(tmp_path: Path) -> None:
 
 def test_a_flag_equal_to_the_builtin_default_is_still_explicit(tmp_path: Path) -> None:
     """`--max-steps 8` 与「没给 flag 而内置默认也是 8」是两层不同的事实：显式给的那层赢。"""
-    (tmp_path / "mini.config.toml").write_text("max_turns = 3\n", encoding="utf-8")
+    (tmp_path / "mini.config.toml").write_text("max_steps = 3\n", encoding="utf-8")
 
     result = _cli(
         "run",
@@ -345,7 +322,7 @@ def test_a_flag_equal_to_the_builtin_default_is_still_explicit(tmp_path: Path) -
         "mock",
         "--fixture",
         str(HELLO_SCENARIO),
-        "--max-turns",
+        "--max-steps",
         "8",
         "--yes",
         cwd=tmp_path,
@@ -445,7 +422,7 @@ def test_an_unknown_tool_name_in_the_config_is_an_argument_error(tmp_path: Path)
 
 def test_a_boolean_where_a_number_is_expected_is_an_argument_error(tmp_path: Path) -> None:
     config = tmp_path / "mini.config.toml"
-    config.write_text("max_turns = true\n", encoding="utf-8")
+    config.write_text("max_steps = true\n", encoding="utf-8")
 
     result = _cli(
         "run",
@@ -522,7 +499,7 @@ def test_a_missing_required_item_leaves_no_log_file(tmp_path: Path) -> None:
         (directory / "sessions" / "existing.jsonl").write_text(
             '{"type":"session/start"}\n', encoding="utf-8"
         )
-    (toml_case / "mini.config.toml").write_text("max_turns = [1, 2", encoding="utf-8")
+    (toml_case / "mini.config.toml").write_text("max_steps = [1, 2", encoding="utf-8")
 
     before = sorted(path.relative_to(tmp_path).as_posix() for path in tmp_path.rglob("*"))
 

@@ -34,7 +34,7 @@ from mini_harness.loop import (
     end_session,
     next_goal_round,
     run_turn,
-    settle_segment,
+    settle_turn,
     start_session,
 )
 from mini_harness.session.assembly import (
@@ -192,7 +192,7 @@ def run_command(handle: HostSession, name: str, arguments: str) -> CommandRespon
         # 与 chat 的 D12 对齐：命令把武装位放开之后立刻开下一轮，不等客户端再 POST 一条。
         goal_round = next_goal_round(handle.env)
         if goal_round is not None:
-            _begin_segment(handle, None, goal_round)
+            _begin_turn(handle, None, goal_round)
     return CommandResponse(ok=outcome.ok, text=outcome.text, cursor=handle.last_seq)
 
 
@@ -464,11 +464,11 @@ def submit_message(handle: HostSession, content: str) -> MessageAccepted | Failu
             return Failure("SESSION_BUSY", "会话的待跑队列已满", EXIT_INVALID_ARGUMENT)
         handle.queue.append(content)
         return MessageAccepted(turn_id=None, queued=True)
-    turn_id = _begin_segment(handle, content)
+    turn_id = _begin_turn(handle, content)
     return MessageAccepted(turn_id=turn_id, queued=False)
 
 
-def _begin_segment(
+def _begin_turn(
     handle: HostSession,
     content: str | None,
     goal_round: GoalRound | None = None,
@@ -478,11 +478,11 @@ def _begin_segment(
     handle.status = SESSION_RUNNING
     cancel = asyncio.Event()
     handle.cancel = cancel
-    handle.task = asyncio.create_task(_run_segment(handle, turn_id, content, cancel, goal_round))
+    handle.task = asyncio.create_task(_run_turn(handle, turn_id, content, cancel, goal_round))
     return turn_id
 
 
-async def _run_segment(
+async def _run_turn(
     handle: HostSession,
     turn_id: str,
     content: str | None,
@@ -492,7 +492,7 @@ async def _run_segment(
     failed = False
     decision = None
     try:
-        segment = await run_turn(
+        turn = await run_turn(
             env=handle.env,
             turn_id=turn_id,
             first_step_index=handle.steps + 1,
@@ -500,15 +500,15 @@ async def _run_segment(
             user_message=None if goal_round is not None else content,
             goal_round=goal_round,
         )
-        handle.steps += segment.steps
+        handle.steps += turn.steps
         # 词表外才是内核失败；FENCE_DENIED / CONTEXT_WINDOW_EXCEEDED 也带 failure_code，
         # 但它们只停轮、会话仍可用（ADR-0019 / design D6）。
-        failed = segment.stop_reason not in STOP_REASONS
+        failed = turn.stop_reason not in STOP_REASONS
         if not failed:
             # 轮后收尾与 chat / run 同一份实现：host 不再只有命令面而没有驱动（2026-11-20）。
-            settlement = settle_segment(
+            settlement = settle_turn(
                 env=handle.env,
-                segment=segment,
+                turn=turn,
                 steps=handle.steps,
                 goal_round=goal_round is not None,
             )
@@ -529,10 +529,10 @@ async def _run_segment(
                 handle.queue.clear()
             elif handle.queue:
                 # 人话优先：DSH 的 `competingQueued` 让自动轮次让位（design D13）。
-                _begin_segment(handle, handle.queue.popleft())
+                _begin_turn(handle, handle.queue.popleft())
             elif decision is not None and decision.kind == "continue":
                 assert decision.goal is not None
-                _begin_segment(
+                _begin_turn(
                     handle,
                     None,
                     GoalRound(goal=decision.goal, round=decision.round),

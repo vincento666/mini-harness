@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
-import sys
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, get_args
 
 CONFIG_FILE_NAME = "mini.config.toml"
-
-# 旧键只活一个改造窗口（`align-turn-step-naming` design D3/D4）：装载时映射到新键并提示一次。
-LEGACY_KEYS: dict[str, str] = {"max_turns": "max_steps"}
 
 # 可配的是设置类字段全表。数字位上不接受 `bool`——它是 `int` 的子类，`max_steps = true` 是类型不对。
 SETTINGS_FIELDS: dict[str, tuple[type[Any], ...]] = {
@@ -63,25 +59,6 @@ class ConfigFailure:
     detail: str
 
 
-def _fold_legacy_keys(values: dict[str, Any]) -> ConfigFailure | None:
-    """旧键映射到新键。两个键同时出现且值不同就拒——不猜哪个是用户的意图。"""
-    for old, new in LEGACY_KEYS.items():
-        if old not in values:
-            continue
-        if new in values:
-            if values[new] != values[old]:
-                return ConfigFailure(
-                    "CONFIG_INVALID_VALUE",
-                    f"配置文件里 {new} 与旧键 {old} 同时出现且值不同："
-                    f"{values[new]} / {values[old]}",
-                )
-            values.pop(old)
-            continue
-        values[new] = values.pop(old)
-        sys.stderr.write(f"配置键 {old} 已改名为 {new}；旧键只保留到本 change 合并前。\n")
-    return None
-
-
 def validate_config(values: dict[str, Any]) -> ConfigFailure | None:
     """按字段表校验一份配置：不合法是一条结果，合法返回 `None`。"""
     for key, value in values.items():
@@ -111,9 +88,6 @@ def load_config(path: Path) -> dict[str, Any] | ConfigFailure:
         return ConfigFailure("CONFIG_NOT_FOUND", f"读不到配置文件：{path}（{error}）")
     except tomllib.TOMLDecodeError as error:
         return ConfigFailure("CONFIG_INVALID_TOML", f"{path}: {error}")
-    folded = _fold_legacy_keys(values)
-    if folded is not None:
-        return folded
     failure = validate_config(values)
     if failure is not None:
         return failure

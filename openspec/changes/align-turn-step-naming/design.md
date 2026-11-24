@@ -59,15 +59,14 @@
 
 **为什么不用 `session/start.payload.schema`**：信封已经有逐行的 `schema_version`，再加一个会话级字段会出现两个真源。逐行版本足够判定这一行怎么读。
 
-## D3 CLI / 配置的兼容窗口
+## D3 CLI / 配置的兼容窗口（已废除，2026-11-24）
 
-改名是破坏性的，但用户手里的脚本与 `mini.config.toml` 不该在同一天断：
+3.1–3.3 曾按「用户手里的脚本不该在同一天断」给旧 flag、旧配置键与 `subagent` 的旧参数名各留一个改造窗口。按 D4 的裁定，这些别名与日志上迁在 5.3 一次删净——项目未上线，没有需要保护的用户：
 
-- `--max-steps` 是主名；`--max-turns` 保留为**隐藏别名**（help 里不列），解析后写同一个字段，stderr 打一次弃用提示。
-- `[session] max_steps` 是主键；旧键 `max_turns` 仍被接受，装载时映射并打一次弃用提示；两个键同时出现且值不同 → 拒，不猜。配置层内部用 `CONFIG_INVALID_VALUE` 承载这次拒绝，出口统一是 `INVALID_ARGUMENT`（`assemble` 只把 `ConfigFailure.detail` 搬过去）。
-- `subagent` 工具的参数 `max_steps` 是主名；旧 `max_turns` 仍接受（模型可能从旧提示词里学到它），映射到同一字段。
-- 事件名与日志 schema **不提供双写**：新日志只写 v2，旧日志只读。
-- 兼容窗口到本 change 合并前为止：旧 flag / 旧配置键 / 旧参数名与日志上迁共用同一个删除点（D4）。
+- `--max-steps` 是唯一名字；`--max-turns` 是 argparse 的未知参数，退出码 2。
+- `[session] max_steps` 是唯一键；`max_turns` 是 `CONFIG_UNKNOWN_KEY`。
+- `subagent` 的参数只有 `max_steps`；旧名会撞 `extra="forbid"`。
+- 事件名与日志 schema 不提供双写，也不提供旧读：v1 记录 `SCHEMA_UNSUPPORTED`。
 
 ## D4 兼容层的删除点：本 change 合并前
 
@@ -111,7 +110,7 @@
 
 - **v1 金样本（一次性证书，不是永久资产）**：`tests/fixtures/logs/v1-goal-tools.jsonl` 在动代码之前冻结；改名的每一步都跑它，`replay` 必须退出 0 且逐点相等。它的有效期到 5.3 删除兼容层为止——验完与兼容层一起删（D4）。
 - **v2 形状**：新会话的事件类型集合与 v2 词表完全相等；不出现 `segment/*` 或旧 `turn/*` 语义。
-- **别名**：`--max-steps` 与 `--max-turns` 跑同一 fixture，日志除 `session/start` 的配置快照外逐字段相等；旧配置键可用。
+- **旧名被拒**：`--max-turns` 退出码 2 且不建日志；配置里的 `max_turns` 是 `CONFIG_UNKNOWN_KEY`；v1 日志读到 `SCHEMA_UNSUPPORTED`。
 - **机械替换的漏网**：`rg '\bsegment|segment_id|max_turns|first_turn_index' src tests` 必须只剩兼容层与历史 fixture；`rg '"turn/start"'` 在 src 里必须只指向 step 的新名（即 `step/start`）。
 - **全量门禁**：ruff / mypy / pytest / coverage / `openspec validate --all --strict`。
 

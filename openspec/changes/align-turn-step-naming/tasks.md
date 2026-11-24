@@ -40,10 +40,13 @@
 
 ## 5. 收尾
 
-- [ ] 5.1 机械替换漏网扫描：`rg '\bsegment|segment_id|max_turns|first_turn_index' src tests` 只剩兼容层与 v1 fixture
-- [ ] 5.2 删除前基线门禁：全量测试 + 覆盖率 + `openspec validate --all --strict`；金样本 `replay` exit 0。**这是改造期的一次性等价性证据，与归档后的规格不冲突**——`event-log` delta 写的是最终态（v1 记录 `SCHEMA_UNSUPPORTED`），这里要的是「删除兼容层之前，旧输入在新代码下逐点相等」
-- [ ] 5.3 **删除兼容层**（design D4；合并前必做，未勾不得归档、不得合入 `main`）：`LEGACY_EVENT_TYPES`、`_V1_TYPE_MAP`、`_V1_KEY_MAP`、`_upcast_v1`、`migrate_schema` 的 N-1 分支、`is_known_type`（与 `is_current_type` 合流）、`tests/test_v1_fixture.py`、v1 fixture、`--max-turns` 隐藏别名、`[session] max_turns` 键映射、`subagent` 旧参数名
-- [ ] 5.4 版本门前置：`_records_from_lines` 先看 `schema_version` 再 `model_validate`，v1 行读到 `SCHEMA_UNSUPPORTED` 而非 `LOG_UNREADABLE`（`test_event_schema_v2`）
-- [ ] 5.5 删除后复跑四道门禁与 `validate`；任取一份 `sessions/*.jsonl` 跑 `replay`，确认报 `SCHEMA_UNSUPPORTED`——不是崩溃，也不是 `LOG_UNREADABLE`
+- [x] 5.1 机械替换漏网扫描：`rg '\bsegment|segment_id|max_turns|first_turn_index' src tests` 只剩两份「旧名被拒」用例里的 `segment/*`（`test_event_schema_v2.py`、`test_event_vocabulary.py`——判据要钉的就是它被拒）。`src` 里 `segment` / `segments` 标识符全部改 `turn` / `turns`（含 `_segment_failure`、`settle_segment`、`_begin_segment`、`_run_segment`、`_print_segment_note`、`_SEGMENT_NOTE_SUPPRESSED`、SSE 帧的 `segment_id` 键）
+- [x] 5.2 删除前基线门禁：**887 passed / 7 skipped**、ruff / mypy / `validate` 绿；金样本 `replay` exit 0（一次性证书，2026-11-24 02:00）。**这是改造期的一次性等价性证据，与归档后的规格不冲突**——`event-log` delta 写的是最终态（v1 记录 `SCHEMA_UNSUPPORTED`），这里要的是「删除兼容层之前，旧输入在新代码下逐点相等」
+- [x] 5.3 **删除兼容层**（design D4）：`LEGACY_EVENT_TYPES`、`_V1_TYPE_MAP`、`_V1_KEY_MAP`、`_V1_VALUE_MAP`、`_upcast_v1`、`migrate_schema`、`SchemaUnsupported`、`is_current_type`（与 `is_known_type` 合流）、`tests/test_v1_fixture.py`、v1 fixture、`--max-turns`、`[session] max_turns` 键映射、`subagent` 旧参数名
+- [x] 5.4 版本门前置：`_records_from_lines` 先看 `schema_version` 再 `model_validate`，v1 行读到 `SCHEMA_UNSUPPORTED` 而非 `LOG_UNREADABLE`（`test_a_v1_line_is_rejected_with_schema_unsupported`、`test_other_schema_versions_are_rejected`）
+- [x] 5.5 删除后复跑：**877 passed / 7 skipped**、ruff / mypy / `validate` 绿；`minihns replay 112b5ce8… --session-dir sessions` 返回 `SCHEMA_UNSUPPORTED`（exit 1）
 - [ ] 5.6 `CURRENT.md` 记账：schema 版本 2、`sessions/` 14 份 v1 样本作废、兼容层已删与删除提交号
-- [ ] 5.7 Learning Gate：把「交换型改名必须用占位符」「金样本是一次性证书不是常驻资产」「删兼容层不需要升 schema 版本」记进 `docs/lessons.md`（若可复用）
+- [ ] 5.7 真实端点验收：`deepseek-chat` 跑一场，确认改名后工具序列、收尾理由与 `session/end` 正常（ADR-0024 的「真实那一半」）
+- [ ] 5.8 UAT 验收（人跑）：场次手册 `docs/verification/align-turn-step-naming-uat.md`，tty 场次 agent 不得代跑
+- [ ] 5.9 变异测试一轮：至少覆盖版本门、词表判据、host 视图 `turns` 的取值来源（数 `turn/start` 而非 `step/start`），记录进 `docs/verification/align-turn-step-naming-mutation.md`
+- [ ] 5.10 Learning Gate：L-097 已进收件箱；补齐其余可复用信号或写 `NO-PROMOTION`

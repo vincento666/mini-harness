@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-# v2 名字：只放当前形状，新写入的唯一合法集。`turn` 是轮，`step` 是步（C 方案）。
+# 唯一合法集：写与读都只认这些名字。`turn` 是轮，`step` 是步（C 方案）。
 CONCRETE_EVENT_TYPES: frozenset[str] = frozenset(
     {
         "session/start",
@@ -33,18 +33,6 @@ CONCRETE_EVENT_TYPES: frozenset[str] = frozenset(
     }
 )
 
-# v1 名字：只允许读，交给 `migrate_schema` 上迁；MUST NOT 出现在新写入里。
-# 注意 `turn/start` 在两版里意思相反（v1 的 `turn` 是步，v2 的 `turn` 是轮），
-# 所以不能当同义词长期保留。
-LEGACY_EVENT_TYPES: frozenset[str] = frozenset(
-    {
-        "segment/start",
-        "segment/end",
-        "turn/start",
-        "turn/end",
-    }
-)
-
 ERROR_NAMESPACE = "error/"
 
 # `error/*` 作为命名空间是开放的（无法归类的内部故障照走它），但本词表声明的具体错误类型只有这五个。
@@ -60,14 +48,5 @@ ERROR_EVENT_TYPES: frozenset[str] = frozenset(
 
 
 def is_known_type(event_type: str) -> bool:
-    """读侧：当前名与 v1 旧名都放行（旧名由 `migrate_schema` 翻译）。"""
-    return (
-        event_type in CONCRETE_EVENT_TYPES
-        or event_type in LEGACY_EVENT_TYPES
-        or event_type.startswith(ERROR_NAMESPACE)
-    )
-
-
-def is_current_type(event_type: str) -> bool:
-    """写侧：只认 v2 名字；旧名写出去会被记成 `error/internal`。"""
+    """读与写共用同一个判据：只认当前名与 `error/*` 命名空间。"""
     return event_type in CONCRETE_EVENT_TYPES or event_type.startswith(ERROR_NAMESPACE)

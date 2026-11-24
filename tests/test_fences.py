@@ -35,7 +35,7 @@ def test_the_same_file_written_two_ways_gets_one_path_key(tmp_path: Path) -> Non
         assert upper != lower, "大小写敏感的平台上它们本来就是两个文件"
 
 
-def test_dot_dot_segments_collapse_into_one_key(tmp_path: Path) -> None:
+def test_dot_dot_path_parts_collapse_into_one_key(tmp_path: Path) -> None:
     assert path_key(tmp_path, "a/../b.md") == path_key(tmp_path, "b.md")
 
 

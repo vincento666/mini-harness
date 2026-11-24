@@ -71,7 +71,7 @@ class _Run:
 
 
 def test_yes_approves_every_edit_in_the_fixture_repo(tmp_path: Path) -> None:
-    run = _Run("yes", EDIT_FIVE_MD_SCENARIO, tmp_path, "--yes", "--max-turns", "12")
+    run = _Run("yes", EDIT_FIVE_MD_SCENARIO, tmp_path, "--yes", "--max-steps", "12")
 
     assert run.code == 0
     assert all(_REVIEWED in (run.workspace / name).read_text(encoding="utf-8") for name in _FIVE_MD)
@@ -136,7 +136,7 @@ def test_yes_does_not_relax_the_read_only_level(tmp_path: Path) -> None:
 def test_no_run_exits_with_the_reserved_four(tmp_path: Path) -> None:
     cases = [
         _Run("ok", HELLO_SCENARIO, tmp_path),
-        _Run("edited", EDIT_FIVE_MD_SCENARIO, tmp_path, "--yes", "--max-turns", "12"),
+        _Run("edited", EDIT_FIVE_MD_SCENARIO, tmp_path, "--yes", "--max-steps", "12"),
         _Run("asked", READ_THEN_WRITE_SCENARIO, tmp_path),
         _Run("outside", WRITE_OUTSIDE_SCENARIO, tmp_path, "--yes"),
         _Run("readonly", READ_THEN_WRITE_SCENARIO, tmp_path, "--sandbox", "read-only", "--yes"),

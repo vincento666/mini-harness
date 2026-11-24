@@ -118,49 +118,7 @@ def test_run_with_empty_prompt_is_an_invalid_argument(tmp_path: Path) -> None:
     assert _log_files(tmp_path) == []
 
 
-def test_max_turns_zero_is_an_invalid_argument(tmp_path: Path) -> None:
-    result = _cli(
-        "run",
-        "-p",
-        "任务",
-        "--provider",
-        "mock",
-        "--fixture",
-        str(HELLO_SCENARIO),
-        "--max-turns",
-        "0",
-        cwd=tmp_path,
-    )
-
-    assert result.returncode == 2
-    assert "INVALID_ARGUMENT" in result.stderr
-
-
-def test_the_old_step_flag_is_accepted_with_a_deprecation_note(tmp_path: Path) -> None:
-    result = _cli(
-        "run",
-        "-p",
-        "任务",
-        "--provider",
-        "mock",
-        "--fixture",
-        str(HELLO_SCENARIO),
-        "--max-turns",
-        "2",
-        "--yes",
-        cwd=tmp_path,
-    )
-
-    assert result.returncode == 0, result.stderr
-    assert "--max-turns 已改名为 --max-steps" in result.stderr
-    log = next((tmp_path / "sessions").glob("*.jsonl"))
-    records = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
-    payload = next(record["payload"] for record in records if record["type"] == "session/start")
-    # 旧名写进同一个字段：配置快照用的是新键。
-    assert payload["max_steps"] == 2
-
-
-def test_two_conflicting_step_flags_are_an_argument_error(tmp_path: Path) -> None:
+def test_max_steps_zero_is_an_invalid_argument(tmp_path: Path) -> None:
     result = _cli(
         "run",
         "-p",
@@ -170,17 +128,12 @@ def test_two_conflicting_step_flags_are_an_argument_error(tmp_path: Path) -> Non
         "--fixture",
         str(HELLO_SCENARIO),
         "--max-steps",
-        "3",
-        "--max-turns",
-        "5",
-        "--yes",
+        "0",
         cwd=tmp_path,
     )
 
     assert result.returncode == 2
     assert "INVALID_ARGUMENT" in result.stderr
-    assert "同时出现且值不同" in result.stderr
-    assert list((tmp_path / "sessions").glob("*.jsonl")) == []
 
 
 def test_unknown_provider_is_rejected(tmp_path: Path) -> None:
@@ -283,7 +236,7 @@ def test_happy_path_prints_session_id_and_writes_the_log(tmp_path: Path) -> None
     assert (tmp_path / "sessions" / f"{session_id}.jsonl").is_file()
 
 
-def test_a_one_shot_run_writes_exactly_one_segment(tmp_path: Path) -> None:
+def test_a_one_shot_run_writes_exactly_one_turn(tmp_path: Path) -> None:
     """一次性 run 恰一个段：段的边界在盘上，其余逐行与 M5 之前相同。"""
     result = _cli(
         "run", "-p", "任务", "--provider", "mock", "--fixture", str(HELLO_SCENARIO), cwd=tmp_path
@@ -293,7 +246,7 @@ def test_a_one_shot_run_writes_exactly_one_segment(tmp_path: Path) -> None:
         json.loads(line)
         for line in _log_files(tmp_path)[0].read_text(encoding="utf-8").splitlines()
     ]
-    segments = [record for record in records if record["type"].startswith("turn/")]
+    turns = [record for record in records if record["type"].startswith("turn/")]
 
     assert result.returncode == 0
     assert [record["type"] for record in records] == [
@@ -307,8 +260,8 @@ def test_a_one_shot_run_writes_exactly_one_segment(tmp_path: Path) -> None:
         "turn/end",
         "session/end",
     ]
-    assert segments[0]["payload"] == {"turn_id": "s1"}
-    assert segments[1]["payload"] == {
+    assert turns[0]["payload"] == {"turn_id": "s1"}
+    assert turns[1]["payload"] == {
         "turn_id": "s1",
         "stop_reason": "MODEL_COMPLETED",
         "steps": 1,

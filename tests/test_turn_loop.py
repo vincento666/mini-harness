@@ -74,11 +74,11 @@ def _tool_call_entries(count: int) -> list[dict[str, object]]:
     ]
 
 
-async def test_two_segments_number_segments_and_turns_continuously(tmp_path: Path) -> None:
+async def test_two_turns_number_turns_and_turns_continuously(tmp_path: Path) -> None:
     """一条输入一个段：段用完上限会话照继续，编号在会话内连续（design D3）。"""
     log, env = build_session_env(
         tmp_path,
-        "s-segments",
+        "s-turns",
         FixtureProvider(
             entries=[
                 *_tool_call_entries(4),
@@ -119,7 +119,7 @@ async def test_two_segments_number_segments_and_turns_continuously(tmp_path: Pat
     assert [record.type for record in records][-1:] == ["session/end"]
 
 
-async def test_a_serve_entry_session_is_one_segment_closed_on_disk(tmp_path: Path) -> None:
+async def test_a_serve_entry_session_is_one_turn_closed_on_disk(tmp_path: Path) -> None:
     """内核不知道入口存在：`entry: "serve"` 的会话与 run 同形——恰一个段、`session/end` 在盘上。"""
     log, env = build_session_env(
         tmp_path,
@@ -129,8 +129,8 @@ async def test_a_serve_entry_session_is_one_segment_closed_on_disk(tmp_path: Pat
     )
 
     assert start_session(prompt="第一条输入", entry=ENTRY_SERVE, env=env) is None
-    segment = await run_turn(env=env, turn_id="seg-1", first_step_index=1, cancel=asyncio.Event())
-    assert end_session(env=env, stop_reason=segment.stop_reason, steps=segment.steps) is None
+    turn = await run_turn(env=env, turn_id="seg-1", first_step_index=1, cancel=asyncio.Event())
+    assert end_session(env=env, stop_reason=turn.stop_reason, steps=turn.steps) is None
 
     records = read_events(log.path)
     assert records[0].type == "session/start"
@@ -287,7 +287,7 @@ async def test_empty_tool_calls_ends_the_loop_with_model_completed(tmp_path: Pat
     assert outcome.stop_reason == "MODEL_COMPLETED"
 
 
-async def test_reaching_max_turns_stops_with_max_turns_and_no_failure(tmp_path: Path) -> None:
+async def test_reaching_max_steps_stops_with_max_steps_and_no_failure(tmp_path: Path) -> None:
     log, outcome = await run_session_fixture(
         tmp_path,
         "s-max",

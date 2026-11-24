@@ -36,7 +36,7 @@ from mini_harness.loop.turn_loop import (
     run_session,
     run_session_env,
     run_turn,
-    settle_segment,
+    settle_turn,
     start_session,
 )
 
@@ -74,6 +74,6 @@ __all__ = [
     "run_session",
     "run_session_env",
     "run_turn",
-    "settle_segment",
+    "settle_turn",
     "start_session",
 ]

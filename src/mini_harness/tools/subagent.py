@@ -13,7 +13,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path as FilePath
 from typing import Any, Literal
 
-from pydantic import ConfigDict, Field, create_model, field_validator, model_validator
+from pydantic import ConfigDict, Field, create_model, field_validator
 
 from mini_harness.events import EventLog, LogReadFailure, LogWriteFailure, read_events
 from mini_harness.loop.settings import SandboxLevel, SessionSettings
@@ -79,19 +79,6 @@ class SubagentArgs(ToolArgs):
     sandbox: SandboxLevel | None = Field(
         default=None, description="子会话的围栏档位：只能比父会话更窄"
     )
-
-    @model_validator(mode="before")
-    @classmethod
-    def _accept_legacy_max_turns(cls, data: Any) -> Any:
-        """旧参数名 `max_turns` 只活一个改造窗口：模型可能从旧提示词里学到它。"""
-        if not isinstance(data, dict) or "max_turns" not in data:
-            return data
-        legacy = data["max_turns"]
-        if "max_steps" in data and data["max_steps"] != legacy:
-            raise ValueError("max_steps 与旧参数 max_turns 同时出现且值不同")
-        rest = {key: value for key, value in data.items() if key != "max_turns"}
-        rest["max_steps"] = legacy
-        return rest
 
     @field_validator("task")
     @classmethod

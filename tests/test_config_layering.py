@@ -94,7 +94,7 @@ def test_every_config_failure_code_is_reachable(tmp_path: Path) -> None:
         return result.code
 
     broken = tmp_path / "broken.toml"
-    broken.write_text("max_turns = [1, 2", encoding="utf-8")
+    broken.write_text("max_steps = [1, 2", encoding="utf-8")
 
     reached = {
         code_of(load_config(tmp_path / "nope.toml")),

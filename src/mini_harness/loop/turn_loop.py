@@ -206,7 +206,7 @@ class InternalFailure:
     tool_call_id: str | None = None
 
 
-def _segment_failure(
+def _turn_failure(
     failure: LogWriteFailure | LogReadFailure | InternalFailure, steps: int
 ) -> TurnOutcome:
     """内核失败作为轮的结果。`stop_reason` 取失败码，它不是 `step/end` 的词表值：
@@ -614,7 +614,7 @@ def _abort_turn(log: EventLog, step_id: str, steps: int) -> TurnOutcome:
         ],
     )
     if failure is not None:
-        return _segment_failure(failure, steps)
+        return _turn_failure(failure, steps)
     return TurnOutcome(stop_reason=STOP_ABORTED, steps=steps)
 
 
@@ -638,7 +638,7 @@ async def _provider_error(
         ],
     )
     if written is not None:
-        return _segment_failure(written, steps)
+        return _turn_failure(written, steps)
     return TurnOutcome(
         stop_reason=STOP_PROVIDER_ERROR,
         steps=steps,
@@ -670,7 +670,7 @@ async def _context_overflow(
         ],
     )
     if written is not None:
-        return _segment_failure(written, steps)
+        return _turn_failure(written, steps)
     return TurnOutcome(
         stop_reason=STOP_CONTEXT_WINDOW_EXCEEDED,
         steps=steps,
@@ -754,13 +754,13 @@ async def _recover_overflowed_request(
         context=context,
     )
     if isinstance(compacted, (LogWriteFailure, LogReadFailure)):
-        return _segment_failure(compacted, steps)
+        return _turn_failure(compacted, steps)
     if isinstance(compacted, ProviderFailure):
         return await _provider_error(log, step_id, compacted, steps, [])
 
     reread = read_events(log.path)
     if isinstance(reread, LogReadFailure):
-        return _segment_failure(reread, steps)
+        return _turn_failure(reread, steps)
     # `_compact_if_over_line` 的 `None` 只说「没失败」：真压没压要看日志里这一步的摘要记录。
     compacted_here = any(
         event.type == "compaction/summary" and event.payload.get("step_id") == step_id
@@ -789,7 +789,7 @@ async def _recover_overflowed_request(
         ],
     )
     if written is not None:
-        return _segment_failure(written, steps)
+        return _turn_failure(written, steps)
 
     generated = await provider.generate(
         folded.messages, registry.specs(), cancel, on_delta=on_delta
@@ -978,7 +978,7 @@ def start_session(*, prompt: str, entry: SessionEntry, env: SessionEnv) -> TurnO
         ],
     )
     if failure is not None:
-        return _segment_failure(failure, 0)
+        return _turn_failure(failure, 0)
     return None
 
 
@@ -1027,7 +1027,7 @@ async def run_turn(
         )
     failure = _append_all(env.log, opening)
     if failure is not None:
-        return _segment_failure(failure, 0)
+        return _turn_failure(failure, 0)
 
     outcome = await _run_steps(
         env=env,
@@ -1054,7 +1054,7 @@ async def run_turn(
         ],
     )
     if written is not None:
-        return _segment_failure(written, outcome.steps)
+        return _turn_failure(written, outcome.steps)
     return outcome
 
 
@@ -1213,19 +1213,19 @@ async def _run_steps(
 
         failure = _append_all(log, [("step/start", {"step_id": step_id})])
         if failure is not None:
-            return _segment_failure(failure, steps)
+            return _turn_failure(failure, steps)
 
         failure = _maybe_emit_contracts(env, turn_id)
         if failure is not None:
-            return _segment_failure(failure, steps)
+            return _turn_failure(failure, steps)
 
         failure = _maybe_emit_catalog(env, turn_id)
         if failure is not None:
-            return _segment_failure(failure, steps)
+            return _turn_failure(failure, steps)
 
         events = read_events(log.path)
         if isinstance(events, LogReadFailure):
-            return _segment_failure(events, steps)
+            return _turn_failure(events, steps)
         context = fold(events)
         # 装配之内的一次压缩（design D5）：越线才压缩，一次装配最多一次，取消在场时不压缩。
         line = _trigger_line(settings)
@@ -1240,12 +1240,12 @@ async def _run_steps(
                 context=context,
             )
             if isinstance(compacted, (LogWriteFailure, LogReadFailure)):
-                return _segment_failure(compacted, steps)
+                return _turn_failure(compacted, steps)
             if isinstance(compacted, ProviderFailure):
                 return await _provider_error(log, step_id, compacted, steps, [])
             events = read_events(log.path)
             if isinstance(events, LogReadFailure):
-                return _segment_failure(events, steps)
+                return _turn_failure(events, steps)
             context = fold(events)
             reading = budget_reading(events, context.messages)
             # 溢出判据是压力预算 `W - O`：触发线只决定这次装配要不要尝试压缩。
@@ -1277,7 +1277,7 @@ async def _run_steps(
         opening.append(("model/request", {"step_id": step_id, "tools": tool_names}))
         failure = _append_all(log, opening)
         if failure is not None:
-            return _segment_failure(failure, steps)
+            return _turn_failure(failure, steps)
 
         generated = await provider.generate(
             context.messages, registry.specs(), cancel, on_delta=text_sink
@@ -1337,7 +1337,7 @@ async def _run_steps(
             ],
         )
         if failure is not None:
-            return _segment_failure(failure, steps)
+            return _turn_failure(failure, steps)
 
         fence_denied = False
         batch = await _dispatch_batch(
@@ -1351,7 +1351,7 @@ async def _run_steps(
             session=env,
         )
         if batch.failure is not None:
-            return _segment_failure(batch.failure, steps)
+            return _turn_failure(batch.failure, steps)
         tool_calls += batch.tool_calls
         if batch.denial_code is not None:
             fence_denied = True
@@ -1381,7 +1381,7 @@ async def _run_steps(
 
         failure = _append_all(log, closing_events)
         if failure is not None:
-            return _segment_failure(failure, steps)
+            return _turn_failure(failure, steps)
 
         if (
             cancel.is_set()
@@ -1404,7 +1404,7 @@ def end_session(*, env: SessionEnv, stop_reason: str, steps: int) -> TurnOutcome
     """写 `session/end`。成功返回 None，日志层坏了就返回失败结果。"""
     failure = _append_all(env.log, [("session/end", {"stop_reason": stop_reason, "steps": steps})])
     if failure is not None:
-        return _segment_failure(failure, steps)
+        return _turn_failure(failure, steps)
     return None
 
 
@@ -1469,7 +1469,7 @@ def exhaust_goal_rounds(
     blocked = exhaust_goal(decision.goal)
     written = env.log.append("goal/updated", {"goal": blocked.model_dump(exclude_none=True)})
     if isinstance(written, LogWriteFailure):
-        return _segment_failure(written, steps)
+        return _turn_failure(written, steps)
     env.goal_runtime.armed = False
     return None
 
@@ -1482,8 +1482,8 @@ class RoundSettlement:
     failure: TurnOutcome | None = None
 
 
-def settle_segment(
-    *, env: SessionEnv, segment: TurnOutcome, steps: int, goal_round: bool
+def settle_turn(
+    *, env: SessionEnv, turn: TurnOutcome, steps: int, goal_round: bool
 ) -> RoundSettlement:
     """轮后收尾的唯一实现：读目标、判下一轮、把该落的副作用落掉。
 
@@ -1492,19 +1492,19 @@ def settle_segment(
     """
     goal = goal_after(env.log)
     if isinstance(goal, LogReadFailure):
-        return RoundSettlement(RoundDecision("stop"), _segment_failure(goal, steps))
+        return RoundSettlement(RoundDecision("stop"), _turn_failure(goal, steps))
     # 连续空转轮数：goal 轮次零工具调用加一，有动作清零；人类轮一律清零
     # （人参与了，空转链断了）。只有 `stall_rounds > 0` 时这个数才参与判定。
     if goal_round:
         env.goal_runtime.idle_rounds = (
-            env.goal_runtime.idle_rounds + 1 if segment.tool_calls == 0 else 0
+            env.goal_runtime.idle_rounds + 1 if turn.tool_calls == 0 else 0
         )
     else:
         env.goal_runtime.idle_rounds = 0
     decision = next_round(
         goal=goal,
         armed=env.goal_runtime.armed,
-        stop_reason=segment.stop_reason,
+        stop_reason=turn.stop_reason,
         question_pending=env.questions.pending is not None,
         idle_rounds=env.goal_runtime.idle_rounds,
         stall_rounds=env.settings.goal.stall_rounds,
@@ -1520,29 +1520,29 @@ def settle_segment(
         env.goal_runtime.armed = False
         env.goal_runtime.idle_rounds = 0
         return RoundSettlement(decision)
-    if decision.kind == "stop" and segment.stop_reason in NO_CONTINUE_REASONS:
-        return RoundSettlement(decision, close_failed_round(env=env, segment=segment))
+    if decision.kind == "stop" and turn.stop_reason in NO_CONTINUE_REASONS:
+        return RoundSettlement(decision, close_failed_round(env=env, turn=turn))
     return RoundSettlement(decision)
 
 
-def close_failed_round(*, env: SessionEnv, segment: TurnOutcome) -> TurnOutcome | None:
+def close_failed_round(*, env: SessionEnv, turn: TurnOutcome) -> TurnOutcome | None:
     """失败收尾：一律解除武装；`ABORTED`（人取消）另把 `active` 目标置 `paused`。
 
     其余失败 `phase` 留在 `active`——上游抖动不该替人决定目标作废，人 `/goal resume` 即可。
     """
     env.goal_runtime.armed = False
-    if segment.stop_reason != STOP_ABORTED:
+    if turn.stop_reason != STOP_ABORTED:
         return None
     goal = goal_after(env.log)
     if isinstance(goal, LogReadFailure):
-        return _segment_failure(goal, segment.steps)
+        return _turn_failure(goal, turn.steps)
     if goal is None or goal.phase != "active":
         return None
     written = env.log.append(
         "goal/updated", {"goal": abort_goal(goal).model_dump(exclude_none=True)}
     )
     if isinstance(written, LogWriteFailure):
-        return _segment_failure(written, segment.steps)
+        return _turn_failure(written, turn.steps)
     return None
 
 
@@ -1563,20 +1563,18 @@ async def run_session_env(
     if started is not None:
         return _run_outcome(log, started)
 
-    segments = 0
+    turns = 0
     steps = 0
     goal_round: GoalRound | None = None
-    segment = await run_turn(env=env, turn_id="s1", first_step_index=1, cancel=cancel)
+    turn = await run_turn(env=env, turn_id="s1", first_step_index=1, cancel=cancel)
     while True:
-        if segment.stop_reason not in STOP_REASONS:
+        if turn.stop_reason not in STOP_REASONS:
             # 内核坏了：不再开轮，也不写 session/end。
-            return _run_outcome(log, segment)
-        segments += 1
-        steps += segment.steps
+            return _run_outcome(log, turn)
+        turns += 1
+        steps += turn.steps
 
-        settlement = settle_segment(
-            env=env, segment=segment, steps=steps, goal_round=goal_round is not None
-        )
+        settlement = settle_turn(env=env, turn=turn, steps=steps, goal_round=goal_round is not None)
         if settlement.failure is not None:
             return _run_outcome(log, settlement.failure)
         decision = settlement.decision
@@ -1586,22 +1584,22 @@ async def run_session_env(
             break
         assert decision.goal is not None
         goal_round = GoalRound(goal=decision.goal, round=decision.round)
-        segment = await run_turn(
+        turn = await run_turn(
             env=env,
-            turn_id=f"s{segments + 1}",
+            turn_id=f"s{turns + 1}",
             first_step_index=steps + 1,
             cancel=cancel,
             goal_round=goal_round,
         )
 
-    ended = end_session(env=env, stop_reason=segment.stop_reason, steps=steps)
+    ended = end_session(env=env, stop_reason=turn.stop_reason, steps=steps)
     if ended is not None:
         return _run_outcome(log, ended)
     # 轮数可能大于一，`steps` 是这次会话的累计；失败码仍取最后一轮。
     return RunOutcome(
         session_id=log.session_id,
-        stop_reason=segment.stop_reason,
+        stop_reason=turn.stop_reason,
         steps=steps,
-        failure_code=segment.failure_code,
-        detail=segment.detail,
+        failure_code=turn.failure_code,
+        detail=turn.detail,
     )

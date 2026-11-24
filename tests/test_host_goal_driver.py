@@ -69,7 +69,7 @@ def _messages(handle: HostSession) -> list[dict[str, Any]]:
     return [record.payload for record in records if record.type == "user/message"]
 
 
-def _segments(handle: HostSession) -> list[str]:
+def _turns(handle: HostSession) -> list[str]:
     records = read_events(handle.log.path)
     assert isinstance(records, list)
     return [str(record.payload["turn_id"]) for record in records if record.type == "turn/start"]
@@ -117,7 +117,7 @@ async def test_host_runs_goal_rounds_to_the_cap(tmp_path: Path) -> None:
     await _drain(handle)
 
     assert handle.status == "idle"
-    assert _segments(handle) == ["s1", "s2", "s3"]
+    assert _turns(handle) == ["s1", "s2", "s3"]
     messages = _messages(handle)
     assert [message["source"]["kind"] for message in messages] == ["user", "goal", "goal"]
     assert [message["source"]["round"] for message in messages[1:]] == [1, 2]
@@ -186,7 +186,7 @@ async def test_a_queued_human_message_runs_before_the_next_goal_round(tmp_path: 
     assert [
         message["source"]["round"] for message in messages if message["source"]["kind"] == "goal"
     ] == [1, 2]
-    assert _segments(handle) == ["s1", "s2", "s3", "s4"]
+    assert _turns(handle) == ["s1", "s2", "s3", "s4"]
 
 
 async def test_a_question_answer_is_a_human_turn_then_the_goal_continues(
@@ -227,7 +227,7 @@ async def test_a_question_answer_is_a_human_turn_then_the_goal_continues(
     assert goal is not None
     assert goal.phase == "active"
     assert goal.rounds_started == 1
-    assert _segments(handle) == ["s1", "s2"]
+    assert _turns(handle) == ["s1", "s2"]
 
     answered = submit_message(handle, "用 A")
     assert answered is not None and answered.queued is False
@@ -278,7 +278,7 @@ async def test_goal_resume_command_starts_the_next_round_immediately(tmp_path: P
     assert handle.status == "running"
     await _drain(handle)
 
-    assert _segments(handle) == ["s1"]
+    assert _turns(handle) == ["s1"]
     messages = _messages(handle)
     assert [message["source"]["kind"] for message in messages] == ["goal"]
     assert messages[0]["source"]["round"] == 2

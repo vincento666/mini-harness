@@ -261,7 +261,7 @@ def _chat_log(workspace: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
 
 
-def test_chat_lists_skills_without_a_segment(tmp_path: Path) -> None:
+def test_chat_lists_skills_without_a_turn(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     _skill(workspace / ".minihns" / "skills", "tdd", description="先写判据")
 
@@ -284,7 +284,7 @@ def test_chat_lists_skills_without_a_segment(tmp_path: Path) -> None:
     assert "turn/start" not in types
 
 
-def test_chat_loads_a_skill_without_a_segment(tmp_path: Path) -> None:
+def test_chat_loads_a_skill_without_a_turn(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     _skill(workspace / ".minihns" / "skills", "tdd", body="第一步：写红判据")
 
@@ -477,7 +477,7 @@ def test_skill_content_renders_the_instruction(tmp_path: Path) -> None:
     assert rendered.endswith("帮我改个函数")
 
 
-def test_chat_skill_command_with_an_instruction_opens_a_segment(tmp_path: Path) -> None:
+def test_chat_skill_command_with_an_instruction_opens_a_turn(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     _skill(workspace / ".minihns" / "skills", "tdd", body="第一步：写红判据")
 

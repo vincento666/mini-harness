@@ -78,7 +78,7 @@ _SESSION_STRING_FIELDS = frozenset(
         "approval",
     }
 )
-_SESSION_INT_FIELDS = frozenset({"max_steps", "max_turns", "window", "reserve"})
+_SESSION_INT_FIELDS = frozenset({"max_steps", "window", "reserve"})
 _SESSION_FIELDS = _SESSION_STRING_FIELDS | _SESSION_INT_FIELDS
 
 _RequestHandler = Callable[[web.Request], Awaitable[web.StreamResponse]]
@@ -285,7 +285,7 @@ class HostServer:
             return web.json_response(
                 {
                     "queued": accepted.queued,
-                    "segment_id": accepted.turn_id,
+                    "turn_id": accepted.turn_id,
                     "cursor": handle.last_seq,
                 },
                 status=202,
@@ -317,7 +317,7 @@ class HostServer:
             return _error(404, "SESSION_NOT_FOUND", accepted.detail)
         return web.json_response(
             {
-                "segment_id": accepted.turn_id,
+                "turn_id": accepted.turn_id,
                 "cursor": handle.last_seq,
                 "queued": accepted.queued,
             },
@@ -538,13 +538,6 @@ def _session_request(defaults: AssemblyRequest, body: object) -> AssemblyRequest
             return bad(f"设置 {key} 必须是字符串")
         if key in _SESSION_INT_FIELDS and (not isinstance(value, int) or isinstance(value, bool)):
             return bad(f"设置 {key} 必须是整数")
-    # 旧请求体键 `max_turns` 只活一个改造窗口：搬到 `max_steps`；两个都给且值不同就拒。
-    body = dict(body)
-    legacy = body.pop("max_turns", None)
-    if legacy is not None:
-        if "max_steps" in body and body["max_steps"] != legacy:
-            return bad("设置 max_steps 与旧键 max_turns 同时出现且值不同")
-        body["max_steps"] = legacy
     return replace(defaults, **body)
 
 

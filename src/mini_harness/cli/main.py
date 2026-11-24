@@ -59,7 +59,7 @@ from mini_harness.loop import (
     next_goal_round,
     run_session,
     run_turn,
-    settle_segment,
+    settle_turn,
     start_session,
 )
 from mini_harness.loop.settings import (
@@ -171,22 +171,12 @@ def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--max-steps",
-        dest="max_steps",
         type=int,
-        action=_StepLimitAction,
         default=None,
         help=(
             f"一轮最多跑几步（一步 = 一次模型往返）。默认 {DEFAULT_MAX_STEPS}。"
             "多轮目标会把它乘以轮次；它不限制轮次。"
         ),
-    )
-    # 旧名保留一个改造窗口：dest 相同，help 里不列。用到了就在 `main()` 里打一次弃用提示。
-    parser.add_argument(
-        "--max-turns",
-        dest="max_steps",
-        type=int,
-        action=_StepLimitAction,
-        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--window",
@@ -212,22 +202,6 @@ def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
         help=f"围栏档位。默认 {DEFAULT_SANDBOX}。",
     )
     parser.add_argument("--yes", action="store_true")
-
-
-class _StepLimitAction(argparse.Action):
-    """`--max-steps` 与 `--max-turns` 写同一个 dest，但各留一份值：同时给且不同要拒。"""
-
-    def __call__(
-        self,
-        parser: argparse.ArgumentParser,
-        namespace: argparse.Namespace,
-        values: str | Sequence[object] | None,
-        option_string: str | None = None,
-    ) -> None:
-        seen = dict(getattr(namespace, "_step_limit_seen", {}))
-        seen[option_string or ""] = values
-        namespace._step_limit_seen = seen
-        setattr(namespace, self.dest, values)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -554,23 +528,23 @@ def _print_new_replies(log: EventLog, printed: int) -> int | LogReadFailure:
 
 # 只有这一种收尾不打那一行，其余收尾理由一律打（design D4 与 D5；2026-10-23 人裁决：写反面集合）。
 # `ABORTED` 从「不打」搬进「打」这一半：取消也是人不打命令、会话却少了一轮，屏幕上要看得见。
-_SEGMENT_NOTE_SUPPRESSED = frozenset({STOP_MODEL_COMPLETED})
+_TURN_NOTE_SUPPRESSED = frozenset({STOP_MODEL_COMPLETED})
 
 
-def _print_segment_note(segment: TurnOutcome) -> None:
+def _print_turn_note(turn: TurnOutcome) -> None:
     """轮级收尾给人一行（design D5）：走 stderr，不是日志的投影，也不写进日志。
 
     组装规则是 design D3：停止理由 → 与它**不同**的 `code` → 非空 `detail`，一律不截断。
     此前 `CONTEXT_WINDOW_EXCEEDED` 那一行把同一个词打两遍、把日志里那句有用的 detail 丢掉。
     这一行不是新事实，是 `turn/end` 与 `error/*` 已有的事实说给人听。
     """
-    if segment.stop_reason in _SEGMENT_NOTE_SUPPRESSED:
+    if turn.stop_reason in _TURN_NOTE_SUPPRESSED:
         return
-    parts: list[str] = [segment.stop_reason]
-    if segment.failure_code is not None and segment.failure_code != segment.stop_reason:
-        parts.append(segment.failure_code)
-    if segment.detail:
-        parts.append(segment.detail)
+    parts: list[str] = [turn.stop_reason]
+    if turn.failure_code is not None and turn.failure_code != turn.stop_reason:
+        parts.append(turn.failure_code)
+    if turn.detail:
+        parts.append(turn.detail)
     note = parts[0] if len(parts) == 1 else f"{parts[0]}：{' '.join(parts[1:])}"
     print(f"[轮] 收尾 {note}", file=sys.stderr)
 
@@ -691,7 +665,7 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
     print(f"会话 {prepared.log.session_id}", file=sys.stderr)
     prepared.log.subscribe(_tool_observer())
 
-    segments = 0
+    turns = 0
     turn_index = 1
     printed = 0
     scanned = 0
@@ -699,7 +673,7 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
         events = read_events(prepared.log.path)
         if isinstance(events, LogReadFailure):
             return _report_failure(events.code, events.detail, EXIT_INTERNAL_ERROR)
-        segments = sum(1 for event in events if event.type == "turn/start")
+        turns = sum(1 for event in events if event.type == "turn/start")
         steps = [event for event in events if event.type == "step/start"]
         turn_index = len(steps) + 1
         printed = sum(1 for event in events if event.type == "model/response")
@@ -750,7 +724,7 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
                 else:
                     goal_round = None
                 while True:
-                    segments += 1
+                    turns += 1
                     if goal_round is not None:
                         # 自动轮次由驱动开：人手里没有提示符，得有一行说明这是第几轮
                         # （不是日志事实，只是把 goal 消息里的 `Round: n/cap` 说给人听）。
@@ -761,9 +735,9 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
                     cancel = asyncio.Event()
                     signals.active = cancel
                     try:
-                        segment = await run_turn(
+                        turn = await run_turn(
                             env=env,
-                            turn_id=f"s{segments}",
+                            turn_id=f"s{turns}",
                             first_step_index=turn_index,
                             cancel=cancel,
                             user_message=None if goal_round is not None else text,
@@ -771,17 +745,17 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
                         )
                     finally:
                         signals.active = None
-                    if segment.stop_reason not in STOP_REASONS:
+                    if turn.stop_reason not in STOP_REASONS:
                         # 内核坏了：不再回到提示符，按内部错误收尾。
                         return _report_failure(
-                            segment.failure_code or segment.stop_reason,
-                            segment.detail,
+                            turn.failure_code or turn.stop_reason,
+                            turn.detail,
                             EXIT_INTERNAL_ERROR,
                         )
-                    turn_index += segment.steps
-                    _print_segment_note(segment)
+                    turn_index += turn.steps
+                    _print_turn_note(turn)
                     if (
-                        segment.stop_reason == STOP_CONTEXT_WINDOW_EXCEEDED
+                        turn.stop_reason == STOP_CONTEXT_WINDOW_EXCEEDED
                         and previous_stop_reason == STOP_CONTEXT_WINDOW_EXCEEDED
                         and not said_cannot_come_down
                     ):
@@ -793,7 +767,7 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
                             file=sys.stderr,
                         )
                         said_cannot_come_down = True
-                    previous_stop_reason = segment.stop_reason
+                    previous_stop_reason = turn.stop_reason
                     scanned, shadow_failure = _print_shadow_feedback(prepared.log, scanned)
                     if shadow_failure is not None:
                         return _report_failure(
@@ -804,10 +778,10 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
                         return _report_failure(replies.code, replies.detail, EXIT_INTERNAL_ERROR)
                     printed = replies
                     # 轮后驱动（design D3/D13）：目标 active 且已武装时不打印提示符，直接判下一轮。
-                    # 收尾只有一份实现（`settle_segment`），host 与本入口共用。
-                    settlement = settle_segment(
+                    # 收尾只有一份实现（`settle_turn`），host 与本入口共用。
+                    settlement = settle_turn(
                         env=env,
-                        segment=segment,
+                        turn=turn,
                         steps=turn_index - 1,
                         goal_round=goal_round is not None,
                     )
@@ -1021,17 +995,8 @@ def _reconfigure_streams() -> None:
 def main(argv: Sequence[str] | None = None) -> int:
     """解析参数并返回退出码。"""
     _reconfigure_streams()
-    raw = list(sys.argv[1:] if argv is None else argv)
-    # 旧 flag 只做一次提示，不进日志：它是入口的形状，不是会话事实。
-    if any(arg == "--max-turns" or arg.startswith("--max-turns=") for arg in raw):
-        sys.stderr.write("--max-turns 已改名为 --max-steps；旧名只保留到本 change 合并前。\n")
     parser = build_parser()
-    args = parser.parse_args(raw)
-    # 两个同义 flag 同时给且值不同：不猜用户要哪个。
-    seen = getattr(args, "_step_limit_seen", {})
-    if len({str(value) for value in seen.values()}) > 1:
-        sys.stderr.write("INVALID_ARGUMENT: --max-steps 与 --max-turns 同时出现且值不同\n")
-        return EXIT_INVALID_ARGUMENT
+    args = parser.parse_args(argv)
     if args.command == "run":
         return _run(args)
     if args.command == "serve":

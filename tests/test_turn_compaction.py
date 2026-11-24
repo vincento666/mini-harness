@@ -261,7 +261,7 @@ async def test_a_shadowed_range_too_big_to_trim_sends_no_summary_request(
     assert outcome.stop_reason == "CONTEXT_WINDOW_EXCEEDED"
 
 
-async def test_an_overflow_closes_the_segment_not_the_session(tmp_path: Path) -> None:
+async def test_an_overflow_closes_the_turn_not_the_session(tmp_path: Path) -> None:
     """溢出是**回合**终止结果：段自己只写到 `turn/end`，会话是否结束归入口（ADR-0011）。
 
     一次性 run 的入口接着写 `session/end` 并映射退出码 4，那条判据在 `tests/test_cli_run.py`。
@@ -270,7 +270,7 @@ async def test_an_overflow_closes_the_segment_not_the_session(tmp_path: Path) ->
     """
     log, env = build_session_env(
         tmp_path,
-        "s-overflow-segment",
+        "s-overflow-turn",
         FixtureProvider(entries=[DONE_ENTRY]),
         window=4000,
         reserve=500,
@@ -278,10 +278,10 @@ async def test_an_overflow_closes_the_segment_not_the_session(tmp_path: Path) ->
     )
 
     assert start_session(prompt="x" * 20000, entry=ENTRY_RUN, env=env) is None
-    segment = await run_turn(env=env, turn_id="s1", first_step_index=1, cancel=asyncio.Event())
+    turn = await run_turn(env=env, turn_id="s1", first_step_index=1, cancel=asyncio.Event())
 
     records = read_events(log.path)
-    assert segment.stop_reason == "CONTEXT_WINDOW_EXCEEDED"
+    assert turn.stop_reason == "CONTEXT_WINDOW_EXCEEDED"
     assert [record.type for record in records] == [
         "session/start",
         "turn/start",

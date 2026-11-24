@@ -36,7 +36,7 @@ def _base() -> list[EventRecord]:
     ]
 
 
-def test_segment_start_clears_even_for_a_goal_round() -> None:
+def test_turn_start_clears_even_for_a_goal_round() -> None:
     records = [
         *_base(),
         _rec(3, "turn/end", {"turn_id": "s1", "stop_reason": "MODEL_COMPLETED", "steps": 1}),
@@ -55,13 +55,13 @@ def test_segment_start_clears_even_for_a_goal_round() -> None:
     assert project(records, "todos")["value"] == []
 
 
-def test_segment_end_keeps_the_last_table() -> None:
+def test_turn_end_keeps_the_last_table() -> None:
     records = [*_base(), _rec(3, "turn/end", {"turn_id": "s1"})]
 
     assert project(records, "todos")["value"] == _table()
 
 
-def test_segment_start_alone_clears() -> None:
+def test_turn_start_alone_clears() -> None:
     records = [*_base(), _rec(3, "turn/start", {"turn_id": "s2"})]
 
     assert project(records, "todos")["value"] == []

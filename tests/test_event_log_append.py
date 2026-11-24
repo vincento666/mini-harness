@@ -148,7 +148,7 @@ def test_the_tail_consumes_nothing_of_a_half_written_line(tmp_path: Path) -> Non
     log.append("session/start", {})
     torn = json.dumps(
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "type": "step/start",
             "session_id": "sess-tail",
             "seq": 1,
@@ -216,16 +216,6 @@ def _write_schema_record(path: Path, schema_version: int) -> None:
         + "\n",
         encoding="utf-8",
     )
-
-
-def test_adjacent_schema_migration(tmp_path: Path) -> None:
-    path = tmp_path / "old.jsonl"
-    _write_schema_record(path, 1)
-
-    records = read_events(path)
-
-    assert isinstance(records, list)
-    assert records[0].schema_version == 2
 
 
 def test_schema_skip_is_rejected_without_writing(tmp_path: Path) -> None:

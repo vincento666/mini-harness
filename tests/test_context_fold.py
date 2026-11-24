@@ -222,8 +222,8 @@ def test_a_user_message_folds_into_the_conversation_in_seq_order() -> None:
     ]
 
 
-def _one_turn_with_segments() -> list[EventRecord]:
-    """同一个回合，外面套一段：段的边界是记账记录。"""
+def _one_step_inside_a_turn() -> list[EventRecord]:
+    """同一步，外面套一轮：轮的边界是记账记录。"""
     return [
         _rec(0, "session/start", {"append_system_prompt": "", "tools": []}),
         _rec(1, "turn/start", {"turn_id": "s1"}),
@@ -238,16 +238,16 @@ def _one_turn_with_segments() -> list[EventRecord]:
     ]
 
 
-def test_segment_records_produce_no_messages() -> None:
+def test_turn_records_produce_no_messages() -> None:
     """`turn/start` 与 `turn/end` 与 `step/*` 一样不产出消息：加与不加，折叠结果相同。"""
     without = fold(_one_turn_events())
-    with_segments = fold(_one_turn_with_segments())
+    with_turn_bounds = fold(_one_step_inside_a_turn())
 
-    assert [message.role for message in with_segments.messages] == [
+    assert [message.role for message in with_turn_bounds.messages] == [
         message.role for message in without.messages
     ]
-    assert with_segments.messages == without.messages
-    assert with_segments.header_fingerprint == without.header_fingerprint
+    assert with_turn_bounds.messages == without.messages
+    assert with_turn_bounds.header_fingerprint == without.header_fingerprint
 
 
 def test_a_shadowed_user_message_does_not_enter_the_conversation() -> None:

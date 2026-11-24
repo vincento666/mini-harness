@@ -649,7 +649,7 @@ def test_reconnect_does_not_replay_lost_deltas(tmp_path: Path) -> None:
         _stop(process)
 
 
-def test_a_disconnected_delta_reader_does_not_stop_the_segment(tmp_path: Path) -> None:
+def test_a_disconnected_delta_reader_does_not_stop_the_turn(tmp_path: Path) -> None:
     session_dir = tmp_path / "sessions"
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -819,7 +819,7 @@ def test_the_session_view_counts_turns_not_steps(tmp_path: Path) -> None:
 @pytest.mark.skipif(
     sys.platform == "win32", reason="SIGINT 子进程判据在 Linux runner 上跑（与 M7 一致）"
 )
-def test_sigint_cancels_all_segments_and_writes_session_end(tmp_path: Path) -> None:
+def test_sigint_cancels_all_turns_and_writes_session_end(tmp_path: Path) -> None:
     session_dir = tmp_path / "sessions"
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -1375,7 +1375,7 @@ def test_host_denies_a_write_over_http(tmp_path: Path) -> None:
         _stop(process)
 
 
-def test_cancel_ends_only_the_segment(tmp_path: Path) -> None:
+def test_cancel_ends_only_the_turn(tmp_path: Path) -> None:
     session_dir = tmp_path / "sessions"
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -1599,7 +1599,7 @@ def test_a_second_message_queues_and_runs_after_the_first(tmp_path: Path) -> Non
         _stop(process)
 
 
-def test_a_message_starts_a_segment(tmp_path: Path) -> None:
+def test_a_message_starts_a_turn(tmp_path: Path) -> None:
     session_dir = tmp_path / "sessions"
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -1657,7 +1657,7 @@ def test_create_session_writes_the_host_entry(tmp_path: Path) -> None:
                     "workspace": str(workspace),
                     "provider": "mock",
                     "fixture": str(fixture),
-                    "max_turns": 3,
+                    "max_steps": 3,
                 },
             )
         assert response.status_code == 201
@@ -1758,7 +1758,7 @@ def test_a_bad_session_request_leaves_no_log(tmp_path: Path) -> None:
             },
             {"workspace": str(unknown_tool_workspace), "provider": "mock", "fixture": str(fixture)},
             {"auto_approve": True},
-            {"max_turns": "three"},
+            {"max_steps": "three"},
         ]
         with httpx.Client(
             trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=5.0
@@ -2049,7 +2049,7 @@ def test_bad_json_and_bad_field_types_are_400(tmp_path: Path) -> None:
                 assert response.status_code == 400, (path, response.text)
                 assert response.json()["error"]["code"] == "INVALID_ARGUMENT"
 
-            for body in ([1, 2], {"max_turns": "many"}):
+            for body in ([1, 2], {"max_steps": "many"}):
                 response = client.post("/sessions", headers=_headers(), json=body)
                 assert response.status_code == 400, response.text
                 assert response.json()["error"]["code"] == "INVALID_ARGUMENT"

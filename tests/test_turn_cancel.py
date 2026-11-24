@@ -422,7 +422,7 @@ async def test_a_cancel_arrives_while_the_human_is_being_asked(tmp_path: Path) -
     assert not (tmp_path / "a.md").exists()
 
 
-async def test_a_cancel_closes_the_segment_and_the_entry_closes_the_session(tmp_path: Path) -> None:
+async def test_a_cancel_closes_the_turn_and_the_entry_closes_the_session(tmp_path: Path) -> None:
     """取消终止当前段：段写 `turn/end(ABORTED)` 就停，会话怎么收尾归入口（ADR-0011）。
 
     一次性 run 的入口补写 `session/end` 并映射退出码 5，那条判据在 `tests/test_cli_run.py`。
@@ -430,7 +430,7 @@ async def test_a_cancel_closes_the_segment_and_the_entry_closes_the_session(tmp_
     cancel = asyncio.Event()
     log, env = build_session_env(
         tmp_path,
-        "s-cancel-segment",
+        "s-cancel-turn",
         FixtureProvider(
             entries=[turn_entry(tool_call("write", "c1", file_path="a.md", content="A\n")), DONE]
         ),
@@ -441,10 +441,10 @@ async def test_a_cancel_closes_the_segment_and_the_entry_closes_the_session(tmp_
     )
 
     assert start_session(prompt="任务", entry=ENTRY_RUN, env=env) is None
-    segment = await run_turn(env=env, turn_id="s1", first_step_index=1, cancel=cancel)
+    turn = await run_turn(env=env, turn_id="s1", first_step_index=1, cancel=cancel)
 
     records = read_events(log.path)
-    assert segment.stop_reason == "ABORTED"
+    assert turn.stop_reason == "ABORTED"
     assert [record.type for record in records][-3:] == ["error/abort", "step/end", "turn/end"]
     assert "session/end" not in [record.type for record in records]
     assert records[-1].payload == {
@@ -454,7 +454,7 @@ async def test_a_cancel_closes_the_segment_and_the_entry_closes_the_session(tmp_
         "tool_calls": 0,
     }
 
-    assert end_session(env=env, stop_reason=segment.stop_reason, steps=segment.steps) is None
+    assert end_session(env=env, stop_reason=turn.stop_reason, steps=turn.steps) is None
     assert [record.type for record in read_events(log.path)][-1:] == ["session/end"]
 
 

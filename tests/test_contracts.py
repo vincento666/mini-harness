@@ -35,7 +35,7 @@ def test_two_contracts_render_global_then_project(tmp_path: Path) -> None:
     assert [scope.scope for scope in render.scopes] == ["user-global", "project"]
 
 
-def test_only_the_project_contract_renders_one_segment(tmp_path: Path) -> None:
+def test_only_the_project_contract_renders_one_turn(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     workspace.mkdir()
     _write(workspace / "AGENTS.md", "项目约定")
@@ -91,7 +91,7 @@ def test_absolute_paths_never_reach_the_text(tmp_path: Path) -> None:
     assert str(tmp_path) not in render.text
 
 
-def test_over_budget_drops_the_global_segment_before_truncating(tmp_path: Path) -> None:
+def test_over_budget_drops_the_global_turn_before_truncating(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     workspace.mkdir()
     _write(_home(tmp_path) / "AGENTS.md", "全局约定 " * 50)
@@ -107,7 +107,7 @@ def test_over_budget_drops_the_global_segment_before_truncating(tmp_path: Path) 
     assert render.scopes[0].truncated is True
 
 
-def test_a_small_global_segment_is_kept_when_everything_fits(tmp_path: Path) -> None:
+def test_a_small_global_turn_is_kept_when_everything_fits(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     workspace.mkdir()
     _write(_home(tmp_path) / "AGENTS.md", "全局")

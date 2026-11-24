@@ -162,7 +162,7 @@ def test_a_question_asked_in_a_round_returns_to_the_prompt_without_burning_the_n
     assert "无需 resume" in result.stdout
 
 
-def test_an_answer_is_a_human_segment_and_the_goal_resumes_after_it(
+def test_an_answer_is_a_human_turn_and_the_goal_resumes_after_it(
     tmp_path: Path,
 ) -> None:
     """回答不是 goal 轮：它开人类段，段结束后驱动再开下一 goal 轮（D13）。"""

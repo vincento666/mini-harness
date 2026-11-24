@@ -329,7 +329,7 @@ async def test_every_tool_outcome_is_reachable(tmp_path: Path) -> None:
     assert observed == vocabulary, f"missing={vocabulary - observed} extra={observed - vocabulary}"
 
 
-async def test_a_timeout_in_the_execution_segment_is_a_result(tmp_path: Path) -> None:
+async def test_a_timeout_in_the_execution_turn_is_a_result(tmp_path: Path) -> None:
     """不变量 B：执行段超时塌成 `TOOL_TIMEOUT`，不抛异常打断回合。"""
     outcome = await dispatch_call(
         tmp_path, "stub", {}, registry=_raising_registry("stub", _raise_timeout)
@@ -337,7 +337,7 @@ async def test_a_timeout_in_the_execution_segment_is_a_result(tmp_path: Path) ->
     assert outcome.result.outcome == "TOOL_TIMEOUT"
 
 
-async def test_an_interrupted_execution_segment_is_a_result(tmp_path: Path) -> None:
+async def test_an_interrupted_execution_turn_is_a_result(tmp_path: Path) -> None:
     """不变量 B：执行段被打断塌成 `TOOL_CANCELLED`，不抛异常打断回合。"""
     outcome = await dispatch_call(
         tmp_path, "stub", {}, registry=_raising_registry("stub", _raise_cancelled)

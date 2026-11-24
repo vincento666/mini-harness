@@ -31,7 +31,7 @@ def _write_skill(workspace: Path) -> None:
     )
 
 
-def test_host_commands_match_the_cli_and_open_a_segment_for_skills(tmp_path: Path) -> None:
+def test_host_commands_match_the_cli_and_open_a_turn_for_skills(tmp_path: Path) -> None:
     session_dir = tmp_path / "sessions"
     workspace = tmp_path / "workspace"
     _write_skill(workspace)

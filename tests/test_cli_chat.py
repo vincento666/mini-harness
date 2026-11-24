@@ -114,7 +114,7 @@ def test_chat_shares_the_flag_table_and_the_layering(tmp_path: Path) -> None:
     assert payload["prompt"] == ""
 
 
-def test_two_inputs_make_one_log_two_segments_and_two_user_messages(tmp_path: Path) -> None:
+def test_two_inputs_make_one_log_two_turns_and_two_user_messages(tmp_path: Path) -> None:
     """seam ⑥：两条输入一份日志；每条输入是一条 `user/message`，位置在段边界之内。"""
     fixture = _fixture(
         tmp_path,
@@ -156,7 +156,7 @@ def test_an_empty_stdin_is_a_legal_session(tmp_path: Path) -> None:
     assert _records(tmp_path)[-1]["payload"]["steps"] == 0
 
 
-def test_blank_input_writes_no_record_and_opens_no_segment(tmp_path: Path) -> None:
+def test_blank_input_writes_no_record_and_opens_no_turn(tmp_path: Path) -> None:
     """seam ⑥：空白输入既不写 `user/message`，也不开段。"""
     fixture = _fixture(
         tmp_path,
@@ -176,7 +176,7 @@ def test_blank_input_writes_no_record_and_opens_no_segment(tmp_path: Path) -> No
     assert [message["content"] for message in messages] == ["第一条", "第二条"]
 
 
-def test_a_provider_failed_segment_says_so_on_stderr(tmp_path: Path) -> None:
+def test_a_provider_failed_turn_says_so_on_stderr(tmp_path: Path) -> None:
     """seam ⑥：段级收尾不是无声的——那一行在 stderr，不在 stdout，也不在日志里。"""
     with _FakeEndpoint(
         status=400, body={"error": {"type": "invalid_request_error", "message": "bad tools"}}
@@ -193,7 +193,7 @@ def test_a_provider_failed_segment_says_so_on_stderr(tmp_path: Path) -> None:
     assert notes[0] not in _log_text(tmp_path)
 
 
-def test_a_segment_that_uses_up_max_turns_returns_to_the_prompt(tmp_path: Path) -> None:
+def test_a_turn_that_uses_up_max_steps_returns_to_the_prompt(tmp_path: Path) -> None:
     """seam ⑥：`max_steps` 是段内上限；用完回到提示符，下一条输入额度完整、编号不重置。"""
     entries = [
         {
@@ -206,15 +206,15 @@ def test_a_segment_that_uses_up_max_turns_returns_to_the_prompt(tmp_path: Path) 
     fixture = _fixture(tmp_path, "exhaust.json", entries)
 
     result = _chat(
-        "--fixture", fixture, "--max-turns", "2", cwd=tmp_path, stdin_text="第一条\n第二条\n"
+        "--fixture", fixture, "--max-steps", "2", cwd=tmp_path, stdin_text="第一条\n第二条\n"
     )
 
     assert result.returncode == 0
     records = _records(tmp_path)
-    segments = [record["payload"] for record in records if record["type"] == "turn/end"]
-    assert [segment["turn_id"] for segment in segments] == ["s1", "s2"]
-    assert [segment["stop_reason"] for segment in segments] == ["MAX_STEPS", "MAX_STEPS"]
-    assert [segment["steps"] for segment in segments] == [2, 2]
+    turns = [record["payload"] for record in records if record["type"] == "turn/end"]
+    assert [turn["turn_id"] for turn in turns] == ["s1", "s2"]
+    assert [turn["stop_reason"] for turn in turns] == ["MAX_STEPS", "MAX_STEPS"]
+    assert [turn["steps"] for turn in turns] == [2, 2]
     # 回合编号在整个会话里连续：第二个段从 t3 起，不重置。
     step_ids = [
         record["payload"]["step_id"] for record in records if record["type"] == "step/start"
@@ -223,7 +223,7 @@ def test_a_segment_that_uses_up_max_turns_returns_to_the_prompt(tmp_path: Path) 
     assert records[-1]["type"] == "session/end"
 
 
-def test_a_max_turns_segment_says_so_on_stderr(tmp_path: Path) -> None:
+def test_a_max_steps_turn_says_so_on_stderr(tmp_path: Path) -> None:
     """seam ⑥：用完回合数也是不以正常回复收尾——屏幕上有一行，会话继续。"""
     entries = [
         {
@@ -236,7 +236,7 @@ def test_a_max_turns_segment_says_so_on_stderr(tmp_path: Path) -> None:
     fixture = _fixture(tmp_path, "exhaust.json", entries)
 
     result = _chat(
-        "--fixture", fixture, "--max-turns", "2", cwd=tmp_path, stdin_text="第一条\n第二条\n"
+        "--fixture", fixture, "--max-steps", "2", cwd=tmp_path, stdin_text="第一条\n第二条\n"
     )
 
     assert result.returncode == 0
@@ -247,7 +247,7 @@ def test_a_max_turns_segment_says_so_on_stderr(tmp_path: Path) -> None:
     assert notes[0] not in _log_text(tmp_path)
 
 
-def test_a_fence_denied_segment_says_so_on_stderr(tmp_path: Path) -> None:
+def test_a_fence_denied_turn_says_so_on_stderr(tmp_path: Path) -> None:
     """seam ⑥：围栏拒绝收尾的段也不能无声——真实端点那一跑撞到它什么都不打。"""
     result = _chat("--fixture", str(WRITE_OUTSIDE_SCENARIO), cwd=tmp_path, stdin_text="越界写\n")
 
@@ -266,7 +266,7 @@ def test_a_fence_denied_segment_says_so_on_stderr(tmp_path: Path) -> None:
     assert notes[0] not in _log_text(tmp_path)
 
 
-def test_a_segment_failure_does_not_end_the_session(tmp_path: Path) -> None:
+def test_a_turn_failure_does_not_end_the_session(tmp_path: Path) -> None:
     """seam ⑥：围栏拒绝落在盘上，会话继续；EOF 收尾是退出码 0。"""
     result = _chat("--fixture", str(WRITE_OUTSIDE_SCENARIO), cwd=tmp_path, stdin_text="越界写\n")
 
@@ -279,7 +279,7 @@ def test_a_segment_failure_does_not_end_the_session(tmp_path: Path) -> None:
     assert records[-1]["payload"]["stop_reason"] == "MODEL_COMPLETED"
 
 
-def test_a_provider_failure_inside_a_segment_leaves_the_session_running(tmp_path: Path) -> None:
+def test_a_provider_failure_inside_a_turn_leaves_the_session_running(tmp_path: Path) -> None:
     """seam ⑥：provider 失败是段级收尾——`error/model` 在盘上，会话继续，编号不重置。"""
     entries = [
         {
@@ -292,7 +292,7 @@ def test_a_provider_failure_inside_a_segment_leaves_the_session_running(tmp_path
     fixture = _fixture(tmp_path, "two_then_none.json", entries)
 
     result = _chat(
-        "--fixture", fixture, "--max-turns", "4", cwd=tmp_path, stdin_text="第一条\n第二条\n"
+        "--fixture", fixture, "--max-steps", "4", cwd=tmp_path, stdin_text="第一条\n第二条\n"
     )
 
     assert result.returncode == 0
@@ -300,8 +300,8 @@ def test_a_provider_failure_inside_a_segment_leaves_the_session_running(tmp_path
     failures = [record for record in records if record["type"] == "error/model"]
     assert len(failures) == 2, "两个段各撞上一次 fixture 耗尽"
     assert {str(record["payload"]["code"]) for record in failures} == {"PROVIDER_EXHAUSTED"}
-    segments = [record["payload"] for record in records if record["type"] == "turn/end"]
-    assert [(segment["turn_id"], segment["stop_reason"]) for segment in segments] == [
+    turns = [record["payload"] for record in records if record["type"] == "turn/end"]
+    assert [(turn["turn_id"], turn["stop_reason"]) for turn in turns] == [
         ("s1", "PROVIDER_ERROR"),
         ("s2", "PROVIDER_ERROR"),
     ]
@@ -330,7 +330,7 @@ def _wait_until_log_contains(tmp_path: Path, process: Any, marker: str, what: st
     pytest.fail(f"子进程没有{what}")
 
 
-async def test_the_chat_handler_cancels_the_running_segment() -> None:
+async def test_the_chat_handler_cancels_the_running_turn() -> None:
     """seam ⑥：段在跑时 Ctrl-C 只取消当前段——这条不看平台脸色。"""
     cancel = asyncio.Event()
     signals = _ChatSignals(active=cancel, loop=asyncio.get_running_loop())
@@ -341,7 +341,7 @@ async def test_the_chat_handler_cancels_the_running_segment() -> None:
     assert cancel.is_set()
 
 
-async def test_the_chat_handler_ends_the_session_when_no_segment_is_running() -> None:
+async def test_the_chat_handler_ends_the_session_when_no_turn_is_running() -> None:
     """seam ⑥：提示符上 Ctrl-C 是「结束会话」，不是取消——这条也不看平台脸色。"""
     signals = _ChatSignals(active=None)
 
@@ -350,7 +350,7 @@ async def test_the_chat_handler_ends_the_session_when_no_segment_is_running() ->
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason=_WINDOWS_CTRL_C_REASON)
-def test_sigint_mid_segment_cancels_the_segment_not_the_session(tmp_path: Path) -> None:
+def test_sigint_mid_turn_cancels_the_turn_not_the_session(tmp_path: Path) -> None:
     """seam ⑥：段进行中的 SIGINT 只终止当前段，进程不退出，会话回到提示符。"""
     fixture = _fixture(
         tmp_path,
@@ -405,8 +405,8 @@ def test_sigint_mid_segment_cancels_the_segment_not_the_session(tmp_path: Path) 
     records = _records(tmp_path)
     types = [str(record["type"]) for record in records]
     assert "error/abort" in types
-    segments = [record["payload"] for record in records if record["type"] == "turn/end"]
-    assert segments[0] == {
+    turns = [record["payload"] for record in records if record["type"] == "turn/end"]
+    assert turns[0] == {
         "turn_id": "s1",
         "stop_reason": "ABORTED",
         "steps": 1,
@@ -461,7 +461,7 @@ def test_stdout_carries_only_model_reply_text_and_the_prompt(tmp_path: Path) -> 
     assert "context/assembled" not in result.stdout
 
 
-def test_an_overflowed_segment_returns_to_the_prompt(tmp_path: Path) -> None:
+def test_an_overflowed_turn_returns_to_the_prompt(tmp_path: Path) -> None:
     """seam ⑥：溢出塌成回合级收尾，会话继续，下一条输入开新段（ADR-0019）。"""
     fixture = _fixture(
         tmp_path,
@@ -491,9 +491,9 @@ def test_an_overflowed_segment_returns_to_the_prompt(tmp_path: Path) -> None:
     assert types.count("error/context") == 2
     # 溢出走自己那条路，不冒充 provider 失败。
     assert "error/model" not in types
-    segments = [record["payload"] for record in records if record["type"] == "turn/end"]
-    assert [segment["turn_id"] for segment in segments] == ["s1", "s2"]
-    assert [segment["stop_reason"] for segment in segments] == [
+    turns = [record["payload"] for record in records if record["type"] == "turn/end"]
+    assert [turn["turn_id"] for turn in turns] == ["s1", "s2"]
+    assert [turn["stop_reason"] for turn in turns] == [
         "CONTEXT_WINDOW_EXCEEDED",
         "CONTEXT_WINDOW_EXCEEDED",
     ]
@@ -501,7 +501,7 @@ def test_an_overflowed_segment_returns_to_the_prompt(tmp_path: Path) -> None:
     assert records[-1]["payload"]["stop_reason"] == "MODEL_COMPLETED"
 
 
-def test_an_overflowed_segment_says_so_on_stderr(tmp_path: Path) -> None:
+def test_an_overflowed_turn_says_so_on_stderr(tmp_path: Path) -> None:
     """seam ⑥：溢出塌成回合级收尾，屏幕上看得见那一行，会话继续接受下一条输入。"""
     fixture = _fixture(
         tmp_path,
@@ -530,14 +530,14 @@ def test_an_overflowed_segment_says_so_on_stderr(tmp_path: Path) -> None:
     assert len(notes) == 2
     assert notes[0] not in result.stdout
     assert notes[0] not in _log_text(tmp_path)
-    segments = [record["payload"] for record in _records(tmp_path) if record["type"] == "turn/end"]
-    assert [segment["stop_reason"] for segment in segments] == [
+    turns = [record["payload"] for record in _records(tmp_path) if record["type"] == "turn/end"]
+    assert [turn["stop_reason"] for turn in turns] == [
         "CONTEXT_WINDOW_EXCEEDED",
         "CONTEXT_WINDOW_EXCEEDED",
     ]
 
 
-def test_a_chat_that_ends_cleanly_prints_no_segment_note(tmp_path: Path) -> None:
+def test_a_chat_that_ends_cleanly_prints_no_turn_note(tmp_path: Path) -> None:
     """seam ⑥：正常收尾不打扰——段以 `MODEL_COMPLETED` 结束时 stderr 里没有那一行。"""
     fixture = _fixture(
         tmp_path,
@@ -559,7 +559,7 @@ def test_a_chat_that_ends_cleanly_prints_no_segment_note(tmp_path: Path) -> None
     ] == ["MODEL_COMPLETED", "MODEL_COMPLETED"]
 
 
-def test_a_segments_summary_never_appears_on_stdout(tmp_path: Path) -> None:
+def test_a_turns_summary_never_appears_on_stdout(tmp_path: Path) -> None:
     """seam ⑥：段里真发生一次压缩时，那条摘要回复不打到 stdout。"""
     (tmp_path / "a.md").write_text(("x" * 100 + "\n") * 1000, encoding="utf-8")
     fixture = _fixture(
@@ -775,11 +775,11 @@ def test_tool_only_turns_leave_no_blank_lines(tmp_path: Path) -> None:
     assert "\n\n" not in result.stdout
 
 
-def test_the_overflow_segment_note_carries_the_detail_once(tmp_path: Path) -> None:
+def test_the_overflow_turn_note_carries_the_detail_once(tmp_path: Path) -> None:
     """退休（2026-10-26）：这一条守的「第二段开局压缩、压完仍超线」在压力预算规则下不可达。
 
     它的断言（那一行带非空 detail、不把停止理由重复两遍）已并入
-    `test_an_overflowed_segment_says_so_on_stderr`；场景不可达的理由记在 ADR-0026 与
+    `test_an_overflowed_turn_says_so_on_stderr`；场景不可达的理由记在 ADR-0026 与
     `docs/adr/0002` 的判据欠账里。判据本体保留成 skip，等 M11 重新设计小窗口形状时再判。
     """
     pytest.skip("第二段溢出这个形状在压力预算规则下不可达：压缩总会把对话体压到保留尾部之内")
@@ -817,7 +817,7 @@ def _hang_fixture(tmp_path: Path) -> str:
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason=_NOT_WINDOWS_REASON)
-def test_ctrl_c_mid_segment_prints_the_aborted_note(tmp_path: Path) -> None:
+def test_ctrl_c_mid_turn_prints_the_aborted_note(tmp_path: Path) -> None:
     """seam ⑥ 1.5：真 Ctrl-C 落在段进行中 → stderr 有 `[轮] 收尾 ABORTED`，stdout 与日志里没有。
 
     同步点是 stdout 上先出现 `> `：提示符不带换行、且已经 flush 到管道里，黑盒才跟得上会话。
@@ -855,8 +855,8 @@ def test_ctrl_c_mid_segment_prints_the_aborted_note(tmp_path: Path) -> None:
     records = _records(tmp_path)
     types = [str(record["type"]) for record in records]
     assert "error/abort" in types
-    segments = [record["payload"] for record in records if record["type"] == "turn/end"]
-    assert segments[0]["stop_reason"] == "ABORTED"
+    turns = [record["payload"] for record in records if record["type"] == "turn/end"]
+    assert turns[0]["stop_reason"] == "ABORTED"
     assert types.count("session/end") == 1, "会话还在：`session/end` 只在 stdin 关闭之后出现一次"
     assert types[-2:] == ["turn/end", "session/end"]
     assert records[-1]["payload"]["stop_reason"] == "MODEL_COMPLETED"
@@ -959,8 +959,8 @@ def test_consecutive_overflows_say_the_session_cannot_come_down(tmp_path: Path) 
     )
 
     assert result.returncode == 0
-    segments = [record["payload"] for record in _records(tmp_path) if record["type"] == "turn/end"]
-    assert [segment["stop_reason"] for segment in segments] == [
+    turns = [record["payload"] for record in _records(tmp_path) if record["type"] == "turn/end"]
+    assert [turn["stop_reason"] for turn in turns] == [
         "CONTEXT_WINDOW_EXCEEDED",
         "CONTEXT_WINDOW_EXCEEDED",
         "CONTEXT_WINDOW_EXCEEDED",

@@ -68,11 +68,11 @@ async def test_read_back_returns_the_last_table_without_writing_an_event(tmp_pat
     assert project(records, "todos")["value"] == TABLE
 
 
-async def test_read_back_is_empty_after_a_new_segment_starts(tmp_path: Path) -> None:
+async def test_read_back_is_empty_after_a_new_turn_starts(tmp_path: Path) -> None:
     """投影的生命周期是段：新段的读回是空表，不把上一段的表当成本段的。"""
     log, env = build_session_env(
         tmp_path,
-        "s-read-next-segment",
+        "s-read-next-turn",
         FixtureProvider(entries=[_TODO_CALL, _STOP, _READ_CALL, _STOP]),
         registry=build_registry(None),
     )

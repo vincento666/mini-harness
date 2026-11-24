@@ -91,7 +91,7 @@ def test_the_usage_command_prints_turns_and_total(tmp_path: Path) -> None:
 
     records = [
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "type": "session/start",
             "session_id": "s-usage",
             "seq": 0,
@@ -99,7 +99,7 @@ def test_the_usage_command_prints_turns_and_total(tmp_path: Path) -> None:
             "payload": {"prompt": "任务"},
         },
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "type": "model/response",
             "session_id": "s-usage",
             "seq": 1,
@@ -136,7 +136,7 @@ def test_the_usage_command_computes_cost_from_config(tmp_path: Path) -> None:
     )
     records = [
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "type": "session/start",
             "session_id": "s-cost",
             "seq": 0,
@@ -144,7 +144,7 @@ def test_the_usage_command_computes_cost_from_config(tmp_path: Path) -> None:
             "payload": {"prompt": "任务", "model": "test-model"},
         },
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "type": "model/response",
             "session_id": "s-cost",
             "seq": 1,

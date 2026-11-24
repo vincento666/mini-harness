@@ -87,10 +87,10 @@ def test_no_m1_scenario_exits_with_the_reserved_codes(tmp_path: Path) -> None:
     cases = [
         _run_scenario(tmp_path, session_dir / "happy", HELLO_SCENARIO),
         _run_scenario(tmp_path, session_dir / "tool", TOOL_THEN_DONE_SCENARIO),
-        _run_scenario(tmp_path, session_dir / "max", TOOL_THEN_DONE_SCENARIO, "--max-turns", "1"),
+        _run_scenario(tmp_path, session_dir / "max", TOOL_THEN_DONE_SCENARIO, "--max-steps", "1"),
         _run_scenario(tmp_path, session_dir / "exhaust", TOOL_THEN_EXHAUST_SCENARIO),
         _cli("run", cwd=tmp_path).returncode,
-        _cli("run", "-p", "任务", "--max-turns", "0", cwd=tmp_path).returncode,
+        _cli("run", "-p", "任务", "--max-steps", "0", cwd=tmp_path).returncode,
         _cli("run", "-p", "任务", "--provider", "claude", cwd=tmp_path).returncode,
         _run_scenario(tmp_path, session_dir / "broken", broken),
     ]

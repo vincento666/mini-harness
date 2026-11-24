@@ -107,7 +107,7 @@ class GoalRuntime:
 
     armed: bool = False
     # 连续多少个 goal 轮次零工具调用；有任何动作或人类轮插入都清零，
-    # 由 `settle_segment` 维护。只有 `stall_rounds > 0` 时才有意义。
+    # 由 `settle_turn` 维护。只有 `stall_rounds > 0` 时才有意义。
     idle_rounds: int = 0
 
 

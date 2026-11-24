@@ -1,7 +1,7 @@
 """会话投影（M14c）：从日志派生 UI 需要的当前值。
 
 投影是**可丢弃的派生结果**：事实在日志里，重新 fold 一次就能得到同样的值。
-首个单元是 `todos`；生命周期按 mini 的 segment（一个用户请求），不是 turn（一次模型调用）。
+首个单元是 `todos`；生命周期按 mini 的 turn（一个用户请求），不是 turn（一次模型调用）。
 """
 
 from __future__ import annotations

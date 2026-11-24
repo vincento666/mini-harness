@@ -7,7 +7,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from mini_harness.events.record import EventRecord, SchemaUnsupported, migrate_schema
+from mini_harness.events.record import SCHEMA_VERSION, EventRecord
 
 
 class LogReadFailure:
@@ -26,10 +26,24 @@ def _records_from_lines(path: Path, lines: list[str]) -> list[EventRecord] | Log
         if not line.strip():
             continue
         try:
-            records.append(migrate_schema(EventRecord.model_validate(json.loads(line))))
-        except SchemaUnsupported as exc:
-            return LogReadFailure(path=path, detail=f"{path}: {exc}", code="SCHEMA_UNSUPPORTED")
-        except (json.JSONDecodeError, ValidationError) as exc:
+            payload = json.loads(line)
+        except json.JSONDecodeError as exc:
+            return LogReadFailure(path=path, detail=f"{path}: {exc}")
+        if not isinstance(payload, dict):
+            return LogReadFailure(path=path, detail=f"{path}: 记录不是 JSON 对象")
+        # 版本门在读形状之前：不认识的版本是一条明确的拒绝，不是「坏行」。
+        if payload.get("schema_version") != SCHEMA_VERSION:
+            return LogReadFailure(
+                path=path,
+                detail=(
+                    f"{path}: 不支持的 schema_version {payload.get('schema_version')}"
+                    f"（当前 {SCHEMA_VERSION}）"
+                ),
+                code="SCHEMA_UNSUPPORTED",
+            )
+        try:
+            records.append(EventRecord.model_validate(payload))
+        except ValidationError as exc:
             return LogReadFailure(path=path, detail=f"{path}: {exc}")
     return records
 

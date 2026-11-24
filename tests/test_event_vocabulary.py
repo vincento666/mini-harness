@@ -10,7 +10,6 @@ from mini_harness.events import EventLog
 from mini_harness.events.reader import LogReadFailure, read_events
 from mini_harness.events.vocabulary import (
     ERROR_EVENT_TYPES,
-    is_current_type,
     is_known_type,
 )
 from mini_harness.loop import STOP_REASONS
@@ -80,14 +79,13 @@ def test_compaction_summary_and_error_context_are_in_the_vocabulary(tmp_path: Pa
     assert "unrecognized_type" not in written["payload"]
 
 
-def test_turn_and_user_message_types_are_current_while_segment_is_read_only(
+def test_turn_and_step_types_are_current_while_segment_is_outside(
     tmp_path: Path,
 ) -> None:
-    """v2：`turn/*` 是段、`step/*` 是步；v1 的 `segment/*` 只允许读。"""
-    assert is_current_type("turn/start")
-    assert is_current_type("step/start")
-    assert is_known_type("segment/start")
-    assert not is_current_type("segment/start")
+    """`turn/*` 是轮、`step/*` 是步；v1 的 `segment/*` 不在词表里。"""
+    assert is_known_type("turn/start")
+    assert is_known_type("step/start")
+    assert not is_known_type("segment/start")
 
     log = EventLog.create(session_dir=tmp_path, session_id="sess-v5")
     log.append("turn/start", {"turn_id": "s1"})
@@ -116,7 +114,7 @@ def test_a_record_type_outside_the_vocabulary_is_a_read_failure(tmp_path: Path) 
     path.write_text(
         json.dumps(
             {
-                "schema_version": 1,
+                "schema_version": 2,
                 "type": "widget/frobnicate",
                 "session_id": "sess-v3",
                 "seq": 0,
