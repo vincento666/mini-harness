@@ -267,6 +267,15 @@
 - Next use: 听到「默认用 X」先问一句「是少打参数，还是连名字都不打」；两件事的实现面与回归面差一个数量级
 - Status: inbox
 
+### L-101
+- Seen: 1（2026-11-24）
+- Date: 2026-11-24
+- Context: m13 UAT 场次 2 要人按 Ctrl-C。agent 代跑时两次「取消」都没生效：pty 里写 `^C`、对进程发 `SIGINT`，目标照样跑到 4/4。当时的结论是「未定位：代码还是驱动器的锅」
+- Observation: 用 pty 模拟终端有**三层**，缺一层 `0x03` 就只是字节，不是信号：①中间不能再有一层进程（`uv run` 会替你收信号，python 收不到）；②子进程要是 session leader（`start_new_session`）；③从设备要成为它的**控制终端**（`stdin=slave` 不够，得 `TIOCSCTTY`／`pty.fork()`）。判据可以现场读：`os.tcgetpgrp(master)` 返回 0 就是没有前台进程组，Ctrl-C 必然无效。换成 `pty.fork()` + exec 之后一次就通
+- Evidence: 三次尝试的读数——v1 `uv run` 无反应；v2 `tcgetpgrp=0`，终端只回显 `^C`；v3 `tcgetpgrp=87888`（等于子进程 pid），日志出现 `error/abort` + `turn/end ABORTED` + `goal/updated phase=paused`。修好后的驱动器 `.tmp/uat/drive_chat_v3.py` 另修两个相邻坑：清空读缓冲会把「命令自己的输出与结尾提示符」一起丢掉（改游标），以及要跳过自己那行的回显而保留其后的输出
+- Next use: 任何「必须 tty 才能验」的判据，代跑前先打印 `tcgetpgrp`；为 0 就别下结论说功能坏了。**反过来：拿不到控制终端的 pty 也不能用来证明功能正常**
+- Status: inbox
+
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 - 每个里程碑收尾扫一次，**允许输出 `NO-PROMOTION`**（没有可复用信号就不写条目）。
 - 收件箱条目超过 **15 条**必须先消化再收新的：合并同类、把已被代码或规格自证的条目删掉。

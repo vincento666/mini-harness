@@ -45,6 +45,6 @@
 ## 6. 收尾
 
 - [x] 6.1 真实端点验收（小上限两轮续跑，记录 `docs/verification/m13-goal-rounds-real-endpoint.md`；A/B 两场，complete 与 round-limit 各一）
-- [ ] 6.2 UAT 验收：场次手册 `docs/verification/m13-goal-rounds-uat.md`，**2026-11-24 agent 代跑（用户指示）**。场次 1、3、4 **通过**（两轮续跑撞上限、todo 两面、`--resume` 不自跑）；**场次 2 未通过**——agent 用 pty 写 `^C` 与直接 `SIGINT` 两次都没取消当前轮，`/goal` 落在 4/4 之后、`resume` 回「轮次已用尽」。这条 tty 判据需人在真终端复核，**复核前本 change 不得归档**
+- [x] 6.2 UAT 验收：场次手册 `docs/verification/m13-goal-rounds-uat.md`，**2026-11-24 agent 代跑（用户指示）**，四场全过。场次 2 前两次失败是驱动器没把 Ctrl-C 变成信号（`uv run` 中间层 + pty 无控制终端，`tcgetpgrp=0`），换 `pty.fork()` 后一次通过：`paused 2/4` → `resume` → `[轮] 3/4` → `ABORTED` → `paused 4/4` → `resume` 被额度拒绝（会话 `b624450a…`）；根因记 L-101
 - [x] 6.3 变异测试一轮（记录 `docs/verification/m13-goal-rounds-mutation.md`；六条全杀，M5 单点覆盖已记为薄弱处）
 - [x] 6.4 Learning Gate（`docs/lessons.md` 新增 L-086–L-089，均 `inbox`；无晋升，AGENTS.md 未动）
