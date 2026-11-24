@@ -17,18 +17,18 @@ H1 / H2 是新增的宿主轨，不占用 M10–M15 的决策编号；M 编号�
 
 ## 已完成（M1–M9）
 
-**表态**：这张表是历史记录，`落地` 列保留当时的词（「回合」= 今天的步，「段」= 今天的轮）；新写的内容一律用现名，见 `GLOSSARY.md`。
+**表态**：2026-11-24 改名后，本表已按现名回写（「回合」→ 步、「段」→ 轮），便于与新文档对照；被链接的归档 change 保持原词，读归档时按 `GLOSSARY.md` 的 `_历史_` 一行换算。
 
 | ID | change | 落地 | 证据 |
 |---|---|---|---|
-| M1 ✅ | `m1-event-log-and-turn-loop` | JSONL 只追加 + 折叠 + 回合循环 + mock Provider + `run` / `replay` | tag `m1`；[proposal](openspec/changes/archive/2026-10-16-m1-event-log-and-turn-loop/proposal.md) |
+| M1 ✅ | `m1-event-log-and-turn-loop` | JSONL 只追加 + 折叠 + 步循环 + mock Provider + `run` / `replay` | tag `m1`；[proposal](openspec/changes/archive/2026-10-16-m1-event-log-and-turn-loop/proposal.md) |
 | M2 ✅ | `m2-file-tools-and-fences` | 五个文件工具 + 工作区边界 + 写前必读 CAS + 两轴围栏 | tag `m2`；[proposal](openspec/changes/archive/2026-10-18-m2-file-tools-and-fences/proposal.md) |
 | M4 ✅ | `m4-real-provider` | OpenAI 兼容适配器 + `parallel_tool_calls` + 429/5xx 重试一次 | tag `m4`；[proposal](openspec/changes/archive/2026-10-18-m4-real-provider/proposal.md) |
 | M3 ✅ | `m3-bash-concurrency-timeout` | `bash` + 只读并发 + 超时/取消 + 平台适配层 + CI 矩阵 | tag `m3`；[proposal](openspec/changes/archive/2026-10-19-m3-bash-concurrency-timeout/proposal.md) |
-| M8 ✅ | `m8-runtime-semantics-alignment` | 回合级取消 + 结果在产生时落盘 + 读方闭合 | tag `m8`；[proposal](openspec/changes/archive/2026-10-20-m8-runtime-semantics-alignment/proposal.md) |
+| M8 ✅ | `m8-runtime-semantics-alignment` | 步级取消 + 结果在产生时落盘 + 读方闭合 | tag `m8`；[proposal](openspec/changes/archive/2026-10-20-m8-runtime-semantics-alignment/proposal.md) |
 | M5 ✅ | `m5-context-budget-compaction` | 窗口预算 + 触发线 + 摘要 + 遮蔽 + 溢出结果 | tag `m5`；[proposal](openspec/changes/archive/2026-10-21-m5-context-budget-compaction/proposal.md) |
 | M9 ✅ | `m9-assembly-and-config-layering` | `mini.config.toml` + 三层层叠 + 工具表从装配来 + `ProviderEndpoint` | tag `m9`；[proposal](openspec/changes/archive/2026-10-21-m9-assembly-and-config-layering/proposal.md) |
-| M6 ✅ | `m6-chat-repl` | `minihns chat` + 段边界 + 两级取消 | tag `m6`；[proposal](openspec/changes/archive/2026-10-22-m6-chat-repl/proposal.md) |
+| M6 ✅ | `m6-chat-repl` | `minihns chat` + 轮边界 + 两级取消 | tag `m6`；[proposal](openspec/changes/archive/2026-10-22-m6-chat-repl/proposal.md) |
 | M7 ✅ | `m7-serve-http-sse` | `minihns serve --http` + SSE + `seq` 断线续读 | tag `m7`；[proposal](openspec/changes/archive/2026-10-22-m7-serve-http-sse/proposal.md) |
 
 ### 2026-10-23 至 2026-10-26 的修复轮
@@ -99,7 +99,7 @@ H1 / H2 是新增的宿主轨，不占用 M10–M15 的决策编号；M 编号�
 - **状态**：✅ **2026-11-09 已合入 `main`**（合并 `4ff7226`）并归档在 `openspec/changes/archive/2026-11-09-m12-subagent-delegation`：18/18 task；真实端点 S1–S4、人跑 UAT S1–S5、变异 3 条全杀 + 1 条存活定位到冗余实现、DSH parity review 全过。UAT 期间修掉 chat 的 SIGINT 唤醒缺陷（`2cb1234`）。后续：子代理 preset（见「子代理 preset 与工具来源」）。
 - **层**：委派
 - **内容**：`subagent` 工具（spawn 形状，fork 暂不做，ADR-0035）；独立子 session、独立日志；父日志只有 `tool/call` + `tool/result`；子 session 继承档位与边界、**不继承 approval 放行**（子会话问人一律 `UNAVAILABLE`）；`maxDepth` 默认 1（深度 = 父 + 1，写进子 `session/start`）；**每个父会话 `maxActiveSubagents` 默认 8**；容量耗尽与深度超限都是结果词（`ACTIVATION_LIMIT_REACHED` / `DEPTH_EXCEEDED`），不是异常。底稿在 `docs/reference/subagents.md`。
-- **并发（强调）**：`subagent` 工具是 `parallel` 类别——同一批声明多个 `subagent` 时并发跑，结果按完成顺序落盘；父上下文只装子任务的最终结果，不装子会话的过程；子会话内部仍受每会话 8 个工具并发与自己的 `max_turns` 约束；host 的 `GET /sessions` 要能看出父子关系（M12 加字段）。
+- **并发（强调）**：`subagent` 工具是 `parallel` 类别——同一批声明多个 `subagent` 时并发跑，结果按完成顺序落盘；父上下文只装子任务的最终结果，不装子会话的过程；子会话内部仍受每会话 8 个工具并发与自己的 `max_steps` 约束；host 的 `GET /sessions` 要能看出父子关系（M12 加字段）。
 - **完成判据**：**seam ⑦**——子代理写自己的日志；子代理问人得到 `APPROVAL_UNAVAILABLE`；深度超限与容量耗尽都是结果词；同一批两个 `subagent` 真并发（wall-clock 小于串行）；父日志里只有两条 `tool/result`，没有子会话的 `model/*`。
 - **依赖**：M10；H1 可选（子代理在 CLI 里也能跑）。M12 已在 M11 之后、M14 之前；流式已定优先，不再压过 H2。
 
