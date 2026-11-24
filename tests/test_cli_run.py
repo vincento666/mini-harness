@@ -160,6 +160,29 @@ def test_the_old_step_flag_is_accepted_with_a_deprecation_note(tmp_path: Path) -
     assert payload["max_steps"] == 2
 
 
+def test_two_conflicting_step_flags_are_an_argument_error(tmp_path: Path) -> None:
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--max-steps",
+        "3",
+        "--max-turns",
+        "5",
+        "--yes",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert "同时出现且值不同" in result.stderr
+    assert list((tmp_path / "sessions").glob("*.jsonl")) == []
+
+
 def test_unknown_provider_is_rejected(tmp_path: Path) -> None:
     result = _cli("run", "-p", "任务", "--provider", "claude", cwd=tmp_path)
 

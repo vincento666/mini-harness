@@ -173,6 +173,7 @@ def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
         "--max-steps",
         dest="max_steps",
         type=int,
+        action=_StepLimitAction,
         default=None,
         help=(
             f"一轮最多跑几步（一步 = 一次模型往返）。默认 {DEFAULT_MAX_STEPS}。"
@@ -184,6 +185,7 @@ def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
         "--max-turns",
         dest="max_steps",
         type=int,
+        action=_StepLimitAction,
         help=argparse.SUPPRESS,
     )
     parser.add_argument(
@@ -210,6 +212,22 @@ def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
         help=f"围栏档位。默认 {DEFAULT_SANDBOX}。",
     )
     parser.add_argument("--yes", action="store_true")
+
+
+class _StepLimitAction(argparse.Action):
+    """`--max-steps` 与 `--max-turns` 写同一个 dest，但各留一份值：同时给且不同要拒。"""
+
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: str | Sequence[object] | None,
+        option_string: str | None = None,
+    ) -> None:
+        seen = dict(getattr(namespace, "_step_limit_seen", {}))
+        seen[option_string or ""] = values
+        namespace._step_limit_seen = seen
+        setattr(namespace, self.dest, values)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1009,6 +1027,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         sys.stderr.write("--max-turns 已改名为 --max-steps；旧名只保留到本 change 合并前。\n")
     parser = build_parser()
     args = parser.parse_args(raw)
+    # 两个同义 flag 同时给且值不同：不猜用户要哪个。
+    seen = getattr(args, "_step_limit_seen", {})
+    if len({str(value) for value in seen.values()}) > 1:
+        sys.stderr.write("INVALID_ARGUMENT: --max-steps 与 --max-turns 同时出现且值不同\n")
+        return EXIT_INVALID_ARGUMENT
     if args.command == "run":
         return _run(args)
     if args.command == "serve":
