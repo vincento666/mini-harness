@@ -136,8 +136,8 @@ def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
         "--provider",
         default=None,
         help=(
-            "端点预设名 mock / openai / deepseek。没给时这一层看环境变量 MINIHNS_API_KEY："
-            "已设且非空就是 openai，否则是 mock。"
+            "端点预设名 mock / openai / deepseek / openrouter。"
+            "没给时这一层看环境变量 MINIHNS_API_KEY：已设且非空就是 openai，否则是 mock。"
         ),
     )
     parser.add_argument(

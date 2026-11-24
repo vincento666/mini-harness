@@ -35,6 +35,25 @@ def test_the_deepseek_preset_is_the_deepseek_triple() -> None:
     assert layered.api_key_env == "DEEPSEEK_API_KEY"
 
 
+def test_the_openrouter_preset_carries_the_verification_model() -> None:
+    """功能验证与调优的默认端点：一个 flag 就够，三项都由预设补齐。"""
+    layered = _layered("openrouter")
+
+    assert layered.base_url == "https://openrouter.ai/api/v1"
+    assert layered.model == "qwen/qwen3.8-27b"
+    assert layered.api_key_env == "OPENROUTER_API_KEY"
+
+
+def test_a_given_model_beats_the_openrouter_default() -> None:
+    """预设只填没给的：显式 `--model` 时不能被 qwen 顶掉。"""
+    args = argparse.Namespace(provider="openrouter", model="别的模型")
+    layered = layer_settings(args, {})
+
+    assert layered.model == "别的模型"
+    assert layered.base_url == "https://openrouter.ai/api/v1"
+    assert layered.api_key_env == "OPENROUTER_API_KEY"
+
+
 def test_the_mock_preset_has_no_endpoint() -> None:
     layered = _layered("mock")
 

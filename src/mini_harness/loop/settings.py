@@ -40,7 +40,7 @@ DEFAULT_APPEND_SYSTEM_PROMPT = ""
 # provider 名字是「端点预设名」，不是适配器名（ADR-0027）：`openai` 与 `deepseek` 都由
 # openai 兼容适配器执行，差别只在这三项默认。表里只有环境变量的名字，没有任何密钥的值；
 # `None` 就是「这一项没有默认」，缺它要在 session 开始之前当场失败。
-PROVIDER_NAMES: tuple[str, ...] = ("mock", "openai", "deepseek")
+PROVIDER_NAMES: tuple[str, ...] = ("mock", "openai", "deepseek", "openrouter")
 
 
 @dataclass(frozen=True)
@@ -56,6 +56,10 @@ PROVIDER_PRESETS: dict[str, ProviderPreset] = {
     "mock": ProviderPreset(None, None, None),
     "openai": ProviderPreset("https://api.openai.com/v1", None, DEFAULT_PROVIDER_KEY_ENV),
     "deepseek": ProviderPreset("https://api.deepseek.com", "deepseek-chat", "DEEPSEEK_API_KEY"),
+    # 功能验证与调优的默认端点（docs/reference/verification-endpoint.md）。
+    "openrouter": ProviderPreset(
+        "https://openrouter.ai/api/v1", "qwen/qwen3.8-27b", "OPENROUTER_API_KEY"
+    ),
 }
 
 
