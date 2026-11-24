@@ -30,6 +30,7 @@
 - [x] 3.3 `subagent` 的 `max_steps` + 旧参数名 `max_turns` 仍接受（`model_validator(mode="before")` 搬到同一字段；两个都给且不同 → 校验失败）
 - [x] 3.4 host 的会话视图 `turns` 字段语义改成「轮数」（数 `turn/start`），内部 `segments` 计数改名 `turns`；`steps` 仍数 `step/start`（判据：一轮两步时视图 `turns == 1`，`test_the_session_view_counts_turns_not_steps`）
 - [x] 3.5 **人可见**文案按「轮/步」改口：`[段]` → `[轮] 收尾`（与目标轮的 `[轮] n/cap` 区分），`usage` 的 help 改「按步汇总」、`SESSION_BUSY` 的 detail 改「会话正在跑一轮」。`[轮] n/cap` 仍专指目标轮。**模型可见文本不改**（`SYSTEM_PROMPT`、工具 `description`、工具结果）：2026-11-24 实测改 `SYSTEM_PROMPT` 会让金样本 `replay` 在 seq=3 报 `REPLAY_MISMATCH`，已回退；那属于行为面，另立 change
+- [x] 3.6 **API JSON 键**（2.2 说「留到 3.4」，3.4 只做了 host 视图，漏在这里）：`minihns usage` 输出 `steps[]` / `step_id`（原 `turns[]` / `turn_id`）；SSE `model/delta` 帧 `{step_id, index, text}`（原 `turn_id`）。两处都是「把步的 id 记在轮的键下」，一轮两步时会自相矛盾——真实端点场次 2 第一次跑就露出来了。delta 规格：`usage-metering`、`host-api`；判据：`test_the_usage_command_prints_steps_and_total`、`test_the_event_stream_mixes_durable_and_delta_frames`（后者加了键集合与「与同一步 `model/response` 对齐」两条断言，变异改回 `turn_id` 会被杀）
 
 ## 4. 规格与文档
 
@@ -46,7 +47,7 @@
 - [x] 5.4 版本门前置：`_records_from_lines` 先看 `schema_version` 再 `model_validate`，v1 行读到 `SCHEMA_UNSUPPORTED` 而非 `LOG_UNREADABLE`（`test_a_v1_line_is_rejected_with_schema_unsupported`、`test_other_schema_versions_are_rejected`）
 - [x] 5.5 删除后复跑：**877 passed / 7 skipped**、ruff / mypy / `validate` 绿；`minihns replay 112b5ce8… --session-dir sessions` 返回 `SCHEMA_UNSUPPORTED`（exit 1）
 - [x] 5.6 `CURRENT.md` 记账：schema 版本 2、`sessions/` 14 份 v1 样本作废、兼容层已删（提交 `e9c43a2`）
-- [ ] 5.7 真实端点验收（ADR-0024 的「真实那一半」）：清单已立 `docs/verification/align-turn-step-naming-real-endpoint.md`，端点按 `docs/reference/verification-endpoint.md` 换成 OpenRouter 的 `qwen/qwen3.8-27b`（`--provider openai --base-url https://openrouter.ai/api/v1 --model qwen/qwen3.8-27b --api-key-env OPENROUTER_API_KEY`）。三场：`run` 一场、`usage` 对账、同日志 `replay` 逐点相等。**阻塞**：`OPENROUTER_API_KEY` 不在 agent 进程环境里，需人先注入
+- [x] 5.7 真实端点验收（ADR-0024 的「真实那一半」）：**2026-11-24 通过**，端点 OpenRouter `qwen/qwen3.8-27b`，会话 `1ef237b3d66f4da98a002a80eda2f7b9`。三场：`run` 退出码 0 / `stop_reason MODEL_COMPLETED` / 16 行全 v2 / 一轮两步 / 无 `segment/*`；`usage` 的 `steps[]` 与两条 `model/response` 逐字段相等（203/2816/0/70、297/2816/0/59，`total` 500/5632/0/129）；同日志 `replay` exit 0（seq=3、seq=10 逐点相等）。明细见 `docs/verification/align-turn-step-naming-real-endpoint.md`；场次 2 当场暴露 3.6 的键名残留，已同批修掉
 - [ ] 5.8 UAT 验收（人跑，tty 场次 agent 不得代跑）：三场手册已立 `docs/verification/align-turn-step-naming-uat.md`（run 的词与日志形状、`[轮] 收尾` 提示、host 视图 `turns` 与重启一致）；结果列待填，填完才能归档
 - [x] 5.9 变异测试一轮：三条变异，版本门与词表判据各杀死；host 重启扫描那条**存活**，补 `test_a_restarted_list_rebuilds_turns_from_turn_starts` 后杀死。记录在 `docs/verification/align-turn-step-naming-mutation.md`
 - [x] 5.10 Learning Gate：L-097（模型可见文本不在改名范围，金样本 `replay` 当场抓出）、L-098（同一语义的两条实现路径要各有一条判据）进收件箱；`basetemp` 残留那条是工具事实，记在 `CURRENT.md` 的环境条目而不是 lessons。未晋升进 AGENTS.md（Seen 1，未达阈值）

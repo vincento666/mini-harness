@@ -36,13 +36,15 @@ uv run minihns run -p "读 README.md 第一段并总结一句" \
 
 ## 3. 密钥从哪来
 
-`minihns` 只从**进程环境**读，不读 `.env`、不读配置文件。所以跑之前那个变量必须已经在 shell 里：
+`minihns` 只从**进程环境**读，不读 `.env`、不读配置文件。所以跑之前那个变量必须已经在 shell 里。
+
+本机做法（2026-11-24 起）：key 放在 `~/.config/minihns/openrouter.env`，目录 700、文件 600，仓库外，不进版本控制。用之前 source 一次：
 
 ```bash
-export OPENROUTER_API_KEY=...        # 或用你自己的 secrets 注入方式
+set -a && . ~/.config/minihns/openrouter.env && set +a
 ```
 
-本机现状（2026-11-24 实测）：`OPENROUTER_API_KEY` **不在**交互式 zsh 的导出列表里，也不在 `launchctl` 环境里，`~/.config/` 与项目里没有 `.env`。也就是说它得由人来注入，agent 的进程继承不到。
+写成文件而不是写进 `~/.zshrc` 的理由：这台机器的 shell 启动文件不导出它，`launchctl` 里也没有，所以「你以为设了」和「子进程真的继承了」会分叉；文件源一次是显式的，跑之前 `echo ${#OPENROUTER_API_KEY}` 就能确认（长度非 0 即可，别把值打到终端）。
 
 ## 4. 裸 curl 冒烟（不经 harness，先确认端点通）
 

@@ -249,6 +249,15 @@
 - Next use: 写「从持久事实重建视图」的功能时，给「运行中」与「重启后」两条路径各写一条判据；收尾变异优先挑第二条路径改
 - Status: inbox
 
+### L-099
+- Seen: 1（2026-11-24）
+- Date: 2026-11-24
+- Context: `align-turn-step-naming` 的真实端点场次 2，`minihns usage` 输出 `{"turns": [{turn_id t1}, {turn_id t2}]}`，而这份会话只跑了**一轮**两步
+- Observation: 改名的漏网不是「旧字符串没换干净」那种显眼错，而是**单位错位**：数据是步的，键还是轮的，于是输出自相矛盾。mock 全绿抓不到它，因为判据只断言数值、没断言「键与数据是同一层」；只有把真实产物当数据读一遍才会撞上。凡输出里同时出现「层级名 + 列表」，就该有一条形状判据钉住两者的层数（一轮两步 → 列表两项且键叫 `step_id`）
+- Evidence: `cli/main.py` 的 usage payload 原为 `turns[]` + `turn_id`；`host.py` 的 `model/delta` 帧原把步 id 装进 `turn_id`。修后判据 `test_the_usage_command_prints_steps_and_total`（顶层键集合）、`test_the_event_stream_mixes_durable_and_delta_frames`（帧键集合 + 与同一步 `model/response` 对齐）；把帧键改回 `turn_id` 变异即红
+- Next use: 任何「改名 / 迁移」收尾，先跑一次真实端点把每个输出**当外部数据读**，再检查每个 JSON 的键与值的层级是否一致；这比通读一遍代码便宜
+- Status: inbox
+
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 - 每个里程碑收尾扫一次，**允许输出 `NO-PROMOTION`**（没有可复用信号就不写条目）。
 - 收件箱条目超过 **15 条**必须先消化再收新的：合并同类、把已被代码或规格自证的条目删掉。
