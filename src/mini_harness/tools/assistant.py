@@ -123,7 +123,7 @@ async def _get_todos(args: GetTodosArgs, context: DispatchContext) -> ToolResult
     if not items:
         return ToolResult(
             "OK",
-            "当前待办为空：本段还没有提交过待办表（`todo` 提交整表后才会出现）",
+            "当前待办为空：本轮还没有提交过待办表（`todo` 提交整表后才会出现）",
             meta={"todo_read": True, "todo_count": 0},
         )
     counts = {"pending": 0, "in_progress": 0, "completed": 0}
@@ -179,7 +179,7 @@ def assistant_tool_definitions() -> list[ToolDefinition]:
         ),
         ToolDefinition(
             name="get_todos",
-            description="读回本段当前的待办表；上下文里看不见表（例如被压缩遮住）时用它。",
+            description="读回本轮当前的待办表；上下文里看不见表（例如被压缩遮住）时用它。",
             args_model=GetTodosArgs,
             mutates=False,
             concurrency="parallel",

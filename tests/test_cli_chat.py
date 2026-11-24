@@ -252,7 +252,7 @@ def test_a_fence_denied_segment_says_so_on_stderr(tmp_path: Path) -> None:
     result = _chat("--fixture", str(WRITE_OUTSIDE_SCENARIO), cwd=tmp_path, stdin_text="越界写\n")
 
     assert result.returncode == 0
-    notes = [line for line in result.stderr.splitlines() if "[段]" in line]
+    notes = [line for line in result.stderr.splitlines() if "[轮] 收尾" in line]
     assert len(notes) == 1, "段以 FENCE_DENIED 收尾时 stderr 该有一行"
     assert "FENCE_DENIED" in notes[0]
     codes = [
@@ -397,10 +397,10 @@ def test_sigint_mid_segment_cancels_the_segment_not_the_session(tmp_path: Path) 
 
     assert process.returncode == 0
     # 被取消的段（`ABORTED`）打那一行；正常收尾的那一段不打。
-    notes = [line for line in chat_stderr.splitlines() if "[段]" in line]
+    notes = [line for line in chat_stderr.splitlines() if "[轮] 收尾" in line]
     assert len(notes) == 1, "只有被取消的那一段在 stderr 上留一行"
     assert "ABORTED" in notes[0]
-    assert "[段]" not in chat_stdout
+    assert "[轮] 收尾" not in chat_stdout
     assert notes[0] not in _log_text(tmp_path)
     records = _records(tmp_path)
     types = [str(record["type"]) for record in records]
@@ -551,7 +551,7 @@ def test_a_chat_that_ends_cleanly_prints_no_segment_note(tmp_path: Path) -> None
     result = _chat("--fixture", fixture, cwd=tmp_path, stdin_text="第一条\n第二条\n")
 
     assert result.returncode == 0
-    assert "[段]" not in result.stderr
+    assert "[轮] 收尾" not in result.stderr
     assert [
         record["payload"]["stop_reason"]
         for record in _records(tmp_path)
@@ -818,7 +818,7 @@ def _hang_fixture(tmp_path: Path) -> str:
 
 @pytest.mark.skipif(sys.platform != "win32", reason=_NOT_WINDOWS_REASON)
 def test_ctrl_c_mid_segment_prints_the_aborted_note(tmp_path: Path) -> None:
-    """seam ⑥ 1.5：真 Ctrl-C 落在段进行中 → stderr 有 `[段] ABORTED`，stdout 与日志里没有。
+    """seam ⑥ 1.5：真 Ctrl-C 落在段进行中 → stderr 有 `[轮] 收尾 ABORTED`，stdout 与日志里没有。
 
     同步点是 stdout 上先出现 `> `：提示符不带换行、且已经 flush 到管道里，黑盒才跟得上会话。
     """
@@ -847,10 +847,10 @@ def test_ctrl_c_mid_segment_prints_the_aborted_note(tmp_path: Path) -> None:
     returncode, chat_stdout, chat_stderr = streams.finish()
 
     assert returncode == 0
-    notes = [line for line in chat_stderr.splitlines() if "[段]" in line]
+    notes = [line for line in chat_stderr.splitlines() if "[轮] 收尾" in line]
     assert len(notes) == 1, "被取消的段在 stderr 上该有一行"
     assert "ABORTED" in notes[0]
-    assert "[段]" not in chat_stdout
+    assert "[轮] 收尾" not in chat_stdout
     assert notes[0] not in _log_text(tmp_path)
     records = _records(tmp_path)
     types = [str(record["type"]) for record in records]

@@ -29,7 +29,7 @@
 - [x] 3.2 `[session] max_steps` 主键 + 旧键 `max_turns` 映射（`config/load.py::_fold_legacy_keys`）；`BUILTIN_DEFAULTS` 键、`SETTINGS_FIELDS`、`cli/host.py` 的 `_SESSION_INT_FIELDS` 一并改；两键冲突 → `CONFIG_INVALID_VALUE` 承载、出口 `INVALID_ARGUMENT`
 - [x] 3.3 `subagent` 的 `max_steps` + 旧参数名 `max_turns` 仍接受（`model_validator(mode="before")` 搬到同一字段；两个都给且不同 → 校验失败）
 - [x] 3.4 host 的会话视图 `turns` 字段语义改成「轮数」（数 `turn/start`），内部 `segments` 计数改名 `turns`；`steps` 仍数 `step/start`（判据：一轮两步时视图 `turns == 1`，`test_the_session_view_counts_turns_not_steps`）
-- [ ] 3.5 `chat` / `host` 的可见文案按「轮/步」改口；`[轮] n/cap` 仍专指目标轮
+- [x] 3.5 `chat` / `host` 的可见文案按「轮/步」改口：`[段]` → `[轮] 收尾`（与目标轮的 `[轮] n/cap` 区分），`usage` 的 help 改「按步汇总」；工具结果与系统提示里的「本段/回合」改「本轮/每一步」。`[轮] n/cap` 仍专指目标轮
 
 ## 4. 规格与文档
 

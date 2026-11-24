@@ -559,7 +559,7 @@ def cancel_session(handle: HostSession) -> bool:
 def close_session(handle: HostSession) -> Failure | None:
     """空闲时写 `session/end`；段在跑与已关闭都交给调用方映射成 409 / 404。"""
     if handle.status == SESSION_RUNNING:
-        return Failure("SESSION_BUSY", "会话正在跑一个段", EXIT_INVALID_ARGUMENT)
+        return Failure("SESSION_BUSY", "会话正在跑一轮", EXIT_INVALID_ARGUMENT)
     if handle.status == SESSION_ENDED:
         return Failure("SESSION_NOT_FOUND", "会话已经结束", EXIT_INVALID_ARGUMENT)
     ended = end_session(

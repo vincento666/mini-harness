@@ -252,7 +252,7 @@ def build_parser() -> argparse.ArgumentParser:
     replay.add_argument("session_id")
     replay.add_argument("--session-dir", default=None)
 
-    usage = subcommands.add_parser("usage", help="按回合汇总 token 用量（JSON）")
+    usage = subcommands.add_parser("usage", help="按步汇总 token 用量（JSON）")
     usage.add_argument("session_id")
     usage.add_argument("--session-dir", default=None)
     usage.add_argument("--config", default=None)
@@ -554,7 +554,7 @@ def _print_segment_note(segment: TurnOutcome) -> None:
     if segment.detail:
         parts.append(segment.detail)
     note = parts[0] if len(parts) == 1 else f"{parts[0]}：{' '.join(parts[1:])}"
-    print(f"[段] {note}", file=sys.stderr)
+    print(f"[轮] 收尾 {note}", file=sys.stderr)
 
 
 def _print_shadow_feedback(log: EventLog, through: int) -> tuple[int, LogReadFailure | None]:
@@ -770,7 +770,7 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
                         # 连续两段溢出：这一句每个会话只说一次，措辞留给实现。
                         # 不进日志、不结束会话、不改退出码。
                         print(
-                            "[降不下去] 连续两段溢出：这份会话已经降不下去，"
+                            "[降不下去] 连续两轮溢出：这份会话已经降不下去，"
                             "退出并新开一个会话是可选动作。",
                             file=sys.stderr,
                         )
