@@ -4,14 +4,23 @@
 
 **为什么要人跑**：这次改名把用户每天看到的词全部换掉（`段 → 轮`、`回合 → 步`、`--max-turns → --max-steps`），mock 测试只能证明形状，证不了「一个新用户读这些提示会不会误事」。三场都不长，合计约十分钟。
 
-**环境**：本机 macOS；真实端点（`DEEPSEEK_API_KEY`）；工作区用临时目录。
+**环境**：本机 macOS；真实端点按 `docs/reference/verification-endpoint.md`——OpenRouter 的 `qwen/qwen3.8-27b`（密钥变量 `OPENROUTER_API_KEY`，放在 `~/.config/minihns/openrouter.env`）；工作区用临时目录。
 
 ## 准备（每场开始前）
 
 ```bash
 cd /Users/vincento/work/develop/mini-harness
-export DEEPSEEK_API_KEY=$(python3 -c 'import pathlib,re;t=(pathlib.Path.home()/".dsh/.credentials.yaml").read_text();print(re.search(r"^\s*DEEPSEEK_API_KEY:\s*(\S+)\s*$",t,re.M).group(1))')
+set -a && . ~/.config/minihns/openrouter.env && set +a
+echo "key len=${#OPENROUTER_API_KEY}"   # 只确认长度非 0，别把值打到终端
 rm -rf .tmp/uat/naming && mkdir -p .tmp/uat/naming
+printf '# Demo\n\n这是一个用于 UAT 的小工作区，第一段只有这一句。\n\n第二段是别的内容。\n' > .tmp/uat/naming/README.md
+```
+
+**三场命令里都要带这三个覆盖**（`openai` 预设默认读 `MINIHNS_API_KEY`、base URL 是 `api.openai.com`、且不给默认模型）：
+
+```text
+--provider openai --base-url https://openrouter.ai/api/v1 \
+  --model qwen/qwen3.8-27b --api-key-env OPENROUTER_API_KEY
 ```
 
 ## 场次 1：一次性 run 的词与日志形状
@@ -20,7 +29,8 @@ rm -rf .tmp/uat/naming && mkdir -p .tmp/uat/naming
 
 ```bash
 uv run minihns run -p "读 README.md 的前 20 行，用一句话总结这个项目是做什么的" \
-  --provider deepseek --model deepseek-chat --max-steps 3 \
+  --provider openai --base-url https://openrouter.ai/api/v1 \
+  --model qwen/qwen3.8-27b --api-key-env OPENROUTER_API_KEY --max-steps 3 \
   --workspace .tmp/uat/naming --session-dir .tmp/uat/naming/sessions --yes
 ```
 
@@ -33,7 +43,8 @@ uv run minihns run -p "读 README.md 的前 20 行，用一句话总结这个项
 - 步骤：用同一个工作区、换 `chat`，把步数上限压到 1，让它写一个需要两步才能完成的任务：
 
 ```bash
-uv run minihns chat --provider deepseek --model deepseek-chat --max-steps 1 \
+uv run minihns chat --provider openai --base-url https://openrouter.ai/api/v1 \
+  --model qwen/qwen3.8-27b --api-key-env OPENROUTER_API_KEY --max-steps 1 \
   --workspace .tmp/uat/naming --session-dir .tmp/uat/naming/sessions --yes
 ```
 
@@ -59,7 +70,7 @@ uv run minihns host --http --port 8791 --session-dir .tmp/uat/naming/sessions &
 
 ```bash
 curl -s -X POST localhost:8791/sessions -H "Content-Type: application/json" \
-  -d '{"workspace":".tmp/uat/naming","provider":"deepseek","model":"deepseek-chat","max_steps":2}' | head -c 400
+  -d '{"workspace":".tmp/uat/naming","provider":"openai","base_url":"https://openrouter.ai/api/v1","model":"qwen/qwen3.8-27b","api_key_env":"OPENROUTER_API_KEY","max_steps":2}' | head -c 400
 ```
 
 拿返回的 `session_id`，发一条消息，等它回到 idle，再查列表：

@@ -36,7 +36,7 @@
 
 - [ ] 4.1 `openspec/specs/` 全量改词：`turn-loop`、`event-log`、`event-stream`、`cli`、`config-layering`、`chat-repl`、`host-api`、`session-resume`、`subagent-delegation`、`usage-metering`。**延后到 m13 归档之后**：m13 的 delta 会在归档时把旧词写进主规格，现在改会被覆盖
 - [x] 4.2 `GLOSSARY.md`：三条时间词重写为「轮（turn）／步（step）／目标轮（goal round）」，加 `_历史_` 一行说明 2026-11 之前写作「段／回合」；`_Avoid_` 行同步换词
-- [ ] 4.3 `docs/reference/`、`docs/roadmap.md`、`docs/CURRENT.md` 改词；历史文档与归档 change 不动
+- [ ] 4.3 `docs/reference/`、`docs/roadmap.md`、`docs/CURRENT.md` 改词；历史文档与归档 change 不动。**第一片已落（2026-11-24）**：`docs/reference/goal-rounds.md` 整篇改口并把 `run_turn_segment`/`SegmentOutcome`/`settle_segment`/`MAX_TURNS`/`segment/*` 这些已改名的标识符与事件名对齐代码；`GLOSSARY.md` 修掉一处机械替换留下的病句（「每轮一轮」→「每个目标轮恰是一轮」）。**还剩约 198 处**，按命中数排：`runtime-layers-and-control-plane` 36、`h2-streaming-and-reasoning` 35、`docs/roadmap.md` 25、`plan-and-todo` 13、`dsh-subagent-design` 11，其余 15 份各 ≤9。注意 `字段`/`阶段`/`手段` 与「2026-11 之前写作段」这类历史句不动
 - [x] 4.4 本 change 的 delta 规格：`event-log`（schema v2、只接受 2、v1 被拒）、`turn-loop`（三层词与事件名）、`cli` / `config-layering`（`max_steps` 主名与旧名窗口）。**delta 写归档后的最终态**，改造期的上迁只作一次性验证（见 5.2）
 
 ## 5. 收尾
