@@ -6,7 +6,7 @@
 
 系统 SHALL 只发出当前词表（v2）中的事件类型：`session/start`、`session/end`、`turn/start`、`turn/end`、`step/start`、`step/end`、`context/assembled`、`model/request`、`model/retry`、`model/response`、`user/message`、`tool/call`、`tool/result`、`tool/cancelled`、`approval/request`、`approval/response`、`compaction/summary`、`command/run`、`command/done`、`plan/mode`、`goal/updated`、`todo/updated`、`question/asked`、`question/answered`、`present/artifact`、`error/*`。`error/*` 用到的具体类型是 `error/model`、`error/internal`、`error/abort`、`error/fence`、`error/context`。词表外的事实 MUST NOT 通过临时新造类型表达。
 
-读取 v1 日志时，`segment/start`、`segment/end`、`turn/start`、`turn/end` SHALL 被上迁为 v2 名字（`segment/* → turn/*`、`turn/* → step/*`），对应载荷键 `segment_id → turn_id`、`turn_id → step_id`、`turns → steps`。旧名 MUST NOT 被新写入使用。
+旧名 MUST NOT 被新写入使用。`schema_version == 1` 的记录 MUST 以 `SchemaUnsupported` 拒绝：v1 上迁只在改造期充当验证工具，合入前随兼容层一起删除（design D4，tasks 5.3）。
 
 #### Scenario: 一次带审批的写的事件序列
 
@@ -18,10 +18,10 @@
 - **WHEN** 会话写入一条 `goal/updated`
 - **THEN** 该行通过事件校验，重放时不被记为词表外类型
 
-#### Scenario: 旧日志按 v1 上迁
+#### Scenario: v1 日志被拒
 
 - **WHEN** 读取一条 `schema_version == 1`、类型为 `segment/start` 的记录
-- **THEN** 调用方看到的类型是 `turn/start`，载荷里的 `segment_id` 变成 `turn_id`
+- **THEN** 读取以 `SCHEMA_UNSUPPORTED` 失败，不尝试猜它的新名字
 
 #### Scenario: 新日志不写旧名
 
@@ -30,16 +30,11 @@
 
 ## ADDED Requirements
 
-### Requirement: 日志 schema 版本与 v1 上迁
+### Requirement: 日志 schema 版本
 
-每条记录的信封 SHALL 携带 `schema_version`；当前版本是 `2`。写入 MUST 用当前版本。读取 SHALL 接受 `2` 与相邻旧版 `1`；v1 记录 SHALL 在进入折叠、投影、replay 与 SSE 之前完成上迁，上迁 MUST NOT 改写磁盘上的原始行。其它版本 MUST 以 `SchemaUnsupported` 拒绝。
+每条记录的信封 SHALL 携带 `schema_version`；当前版本是 `2`。写入 MUST 用当前版本。读取 MUST 只接受 `2`；其它版本 MUST 以 `SchemaUnsupported` 拒绝，MUST NOT 尝试迁移或猜测。上迁 MUST NOT 改写磁盘上的原始行（这条对任何将来版本同样成立）。
 
-#### Scenario: v1 日志可回放
+#### Scenario: 不认识的版本被拒
 
-- **WHEN** 对一份 v1 日志执行 `minihns replay`
-- **THEN** 退出码为 0，且每个装配点的重算结果与该点记录相等
-
-#### Scenario: 上迁不碰磁盘
-
-- **WHEN** 读取一份 v1 日志后检查文件字节
-- **THEN** 文件内容与读取前完全相同
+- **WHEN** 读取一份 `schema_version == 1` 的日志
+- **THEN** 以 `SCHEMA_UNSUPPORTED` 失败，且文件字节与读取前完全相同

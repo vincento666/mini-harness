@@ -33,15 +33,15 @@
 
 ## 4. 规格与文档
 
-- [ ] 4.1 `openspec/specs/` 全量改词：`turn-loop`、`event-log`、`event-stream`、`cli`、`config-layering`、`chat-repl`、`host-api`、`session-resume`、`subagent-delegation`、`usage-metering`
-- [ ] 4.2 `GLOSSARY.md`：三层词、`Avoid` 行、2026-11 之前的旧写法说明
+- [ ] 4.1 `openspec/specs/` 全量改词：`turn-loop`、`event-log`、`event-stream`、`cli`、`config-layering`、`chat-repl`、`host-api`、`session-resume`、`subagent-delegation`、`usage-metering`。**延后到 m13 归档之后**：m13 的 delta 会在归档时把旧词写进主规格，现在改会被覆盖
+- [x] 4.2 `GLOSSARY.md`：三条时间词重写为「轮（turn）／步（step）／目标轮（goal round）」，加 `_历史_` 一行说明 2026-11 之前写作「段／回合」；`_Avoid_` 行同步换词
 - [ ] 4.3 `docs/reference/`、`docs/roadmap.md`、`docs/CURRENT.md` 改词；历史文档与归档 change 不动
-- [ ] 4.4 本 change 的 delta 规格：`event-log`（schema v2 + 上迁）、`turn-loop`（词与事件名）
+- [x] 4.4 本 change 的 delta 规格：`event-log`（schema v2、只接受 2、v1 被拒）、`turn-loop`（三层词与事件名）、`cli` / `config-layering`（`max_steps` 主名与旧名窗口）。**delta 写归档后的最终态**，改造期的上迁只作一次性验证（见 5.2）
 
 ## 5. 收尾
 
 - [ ] 5.1 机械替换漏网扫描：`rg '\bsegment|segment_id|max_turns|first_turn_index' src tests` 只剩兼容层与 v1 fixture
-- [ ] 5.2 删除前基线门禁：全量测试 + 覆盖率 + `openspec validate --all --strict`；金样本 `replay` exit 0（一次性证书拿到）
+- [ ] 5.2 删除前基线门禁：全量测试 + 覆盖率 + `openspec validate --all --strict`；金样本 `replay` exit 0。**这是改造期的一次性等价性证据，与归档后的规格不冲突**——`event-log` delta 写的是最终态（v1 记录 `SCHEMA_UNSUPPORTED`），这里要的是「删除兼容层之前，旧输入在新代码下逐点相等」
 - [ ] 5.3 **删除兼容层**（design D4；合并前必做，未勾不得归档、不得合入 `main`）：`LEGACY_EVENT_TYPES`、`_V1_TYPE_MAP`、`_V1_KEY_MAP`、`_upcast_v1`、`migrate_schema` 的 N-1 分支、`is_known_type`（与 `is_current_type` 合流）、`tests/test_v1_fixture.py`、v1 fixture、`--max-turns` 隐藏别名、`[session] max_turns` 键映射、`subagent` 旧参数名
 - [ ] 5.4 版本门前置：`_records_from_lines` 先看 `schema_version` 再 `model_validate`，v1 行读到 `SCHEMA_UNSUPPORTED` 而非 `LOG_UNREADABLE`（`test_event_schema_v2`）
 - [ ] 5.5 删除后复跑四道门禁与 `validate`；任取一份 `sessions/*.jsonl` 跑 `replay`，确认报 `SCHEMA_UNSUPPORTED`——不是崩溃，也不是 `LOG_UNREADABLE`
