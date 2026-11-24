@@ -24,6 +24,8 @@ _V1_KEY_MAP: dict[str, str] = {
     "segment_id": "turn_id",
     "turn_id": "step_id",
     "turns": "steps",
+    # `session/start` 的配置快照：键跟着设置字段一起改名。
+    "max_turns": "max_steps",
 }
 
 # 封闭词表里的**值**也要换名：`stop_reason` 的 `MAX_TURNS` 在 v2 叫 `MAX_STEPS`。

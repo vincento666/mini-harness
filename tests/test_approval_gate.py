@@ -99,7 +99,7 @@ async def _run(
         session_id,
         entries,
         approval=approval,
-        max_turns=4,
+        max_steps=4,
         registry=registry,
         approval_gate=gate,
     )
@@ -404,7 +404,7 @@ async def test_a_cancel_interrupts_a_question_the_human_has_not_answered(tmp_pat
         "s-ask-cancelled",
         entries,
         approval="ask",
-        max_turns=4,
+        max_steps=4,
         registry=registry,
         approval_gate=gate,
         cancel=cancel,

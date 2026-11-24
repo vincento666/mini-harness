@@ -82,7 +82,7 @@ async def test_exclusive_is_a_barrier(tmp_path: Path) -> None:
             ]
         ),
         registry=timed_registry(observed),
-        max_turns=4,
+        max_steps=4,
     )
 
     a_intervals = [span for span in observed if span[0] == "a.md"]
@@ -113,7 +113,7 @@ async def test_two_reads_in_one_turn_overlap_in_time(tmp_path: Path) -> None:
             ]
         ),
         registry=timed_registry(observed),
-        max_turns=4,
+        max_steps=4,
     )
 
     spans = _spans(observed)
@@ -155,7 +155,7 @@ async def test_two_edits_in_one_turn_run_one_after_the_other(tmp_path: Path) -> 
             ]
         ),
         registry=timed_registry(observed),
-        max_turns=4,
+        max_steps=4,
     )
 
     spans = _spans(observed)
@@ -180,7 +180,7 @@ async def test_ten_reads_in_one_turn_never_exceed_the_limit(tmp_path: Path) -> N
         "s-limit",
         FixtureProvider(entries=[batch, DONE]),
         registry=timed_registry(observed),
-        max_turns=4,
+        max_steps=4,
     )
 
     assert len(observed) == 10
@@ -212,7 +212,7 @@ async def test_a_read_in_the_same_batch_does_not_unlock_a_write(tmp_path: Path) 
             ]
         ),
         registry=timed_registry(observed),
-        max_turns=4,
+        max_steps=4,
     )
 
     records = read_events(log.path)
@@ -247,7 +247,7 @@ async def test_results_land_in_completion_order_when_the_second_finishes_first(
             ]
         ),
         registry=timed_registry(observed, delays={"a.md": 0.2, "b.md": 0.02}),
-        max_turns=4,
+        max_steps=4,
     )
 
     records = read_events(log.path)
@@ -287,7 +287,7 @@ async def test_the_faster_result_is_on_disk_before_the_slower_one_finishes(
                 ]
             ),
             registry=timed_registry(observed, delays={"a.md": 0.3, "b.md": 0.02}),
-            max_turns=4,
+            max_steps=4,
         )
     )
 
@@ -339,7 +339,7 @@ async def test_a_fence_denial_does_not_swallow_the_calls_dispatched_before_it(
         ),
         registry=timed_registry(observed),
         sandbox="read-only",
-        max_turns=4,
+        max_steps=4,
     )
 
     records = read_events(log.path)
@@ -391,7 +391,7 @@ async def test_calls_declared_after_a_denied_one_are_all_skipped(tmp_path: Path)
             ),
             registry=timed_registry(observed),
             sandbox="read-only",
-            max_turns=4,
+            max_steps=4,
         ),
         timeout=10,
     )
@@ -432,7 +432,7 @@ async def test_the_same_batch_gives_the_same_outcomes_concurrently_and_serially(
         FixtureProvider(entries=entries),
         workspace=workspace_a,
         registry=timed_registry(concurrent),
-        max_turns=4,
+        max_steps=4,
     )
     serial: Intervals = []
     log_b, _ = await run_session_fixture(
@@ -441,7 +441,7 @@ async def test_the_same_batch_gives_the_same_outcomes_concurrently_and_serially(
         FixtureProvider(entries=entries),
         workspace=workspace_b,
         registry=serialized_registry(serial),
-        max_turns=4,
+        max_steps=4,
     )
 
     records_a = read_events(log_a.path)

@@ -9,7 +9,7 @@ from typing import Any
 
 from cli_blackbox import _cli, _FakeEndpoint
 from mini_harness.loop.settings import (
-    DEFAULT_MAX_TURNS,
+    DEFAULT_MAX_STEPS,
     DEFAULT_RESERVE,
     DEFAULT_SANDBOX,
     DEFAULT_WINDOW,
@@ -494,7 +494,7 @@ def test_the_help_names_the_builtin_default_of_each_setting_flag(tmp_path: Path)
 
     text = result.stdout
     for expected in (
-        f"默认 {DEFAULT_MAX_TURNS}",
+        f"默认 {DEFAULT_MAX_STEPS}",
         f"默认 {DEFAULT_WINDOW}",
         f"默认 {DEFAULT_RESERVE}",
         f"默认 {DEFAULT_SANDBOX}",

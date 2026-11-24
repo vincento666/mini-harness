@@ -918,7 +918,7 @@ def start_session(*, prompt: str, entry: SessionEntry, env: SessionEnv) -> TurnO
         "entry": entry,
         "workspace": str(Path(settings.workspace).resolve()),
         "provider": settings.provider_name,
-        "max_turns": settings.max_turns,
+        "max_steps": settings.max_steps,
         "append_system_prompt": settings.append_system_prompt,
         "prompt": prompt,
         "sandbox": settings.sandbox,
@@ -992,7 +992,7 @@ async def run_turn(
     message_source: Mapping[str, Any] | None = None,
     goal_round: GoalRound | None = None,
 ) -> TurnOutcome:
-    """跑一个回合段：一条输入展开的那串往返。段内上限是 `max_turns`，会话级没有上限。
+    """跑一个回合段：一条输入展开的那串往返。段内上限是 `max_steps`，会话级没有上限。
 
     段的边界在这里落盘——`turn/start` 在第一个 `step/start` 之前、`turn/end` 在最后一个
     `step/end` 之后（design D3）。这里不写 `session/end`：会话是否结束由入口决定（ADR-0011）。
@@ -1204,7 +1204,7 @@ async def _run_steps(
     denial_detail = ""
     steps = 0
     tool_calls = 0
-    for offset in range(settings.max_turns):
+    for offset in range(settings.max_steps):
         turn_index = first_step_index + offset
         steps = offset + 1
         step_id = f"t{turn_index}"
@@ -1364,7 +1364,7 @@ async def _run_steps(
             stop_reason = STOP_FENCE_DENIED
         elif not generated.tool_calls:
             stop_reason = STOP_MODEL_COMPLETED
-        elif steps == settings.max_turns:
+        elif steps == settings.max_steps:
             stop_reason = STOP_MAX_STEPS
         else:
             stop_reason = STOP_TOOL_CALLS
@@ -1387,7 +1387,7 @@ async def _run_steps(
             cancel.is_set()
             or fence_denied
             or not generated.tool_calls
-            or steps == settings.max_turns
+            or steps == settings.max_steps
         ):
             break
 

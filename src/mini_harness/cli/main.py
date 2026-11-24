@@ -63,7 +63,7 @@ from mini_harness.loop import (
     start_session,
 )
 from mini_harness.loop.settings import (
-    DEFAULT_MAX_TURNS,
+    DEFAULT_MAX_STEPS,
     DEFAULT_RESERVE,
     DEFAULT_SANDBOX,
     DEFAULT_WINDOW,
@@ -170,13 +170,21 @@ def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
         ),
     )
     parser.add_argument(
-        "--max-turns",
+        "--max-steps",
+        dest="max_steps",
         type=int,
         default=None,
         help=(
-            f"一轮最多跑几个回合（一个回合 = 一次模型往返）。默认 {DEFAULT_MAX_TURNS}。"
+            f"一轮最多跑几步（一步 = 一次模型往返）。默认 {DEFAULT_MAX_STEPS}。"
             "多轮目标会把它乘以轮次；它不限制轮次。"
         ),
+    )
+    # 旧名保留一个改造窗口：dest 相同，help 里不列。用到了就在 `main()` 里打一次弃用提示。
+    parser.add_argument(
+        "--max-turns",
+        dest="max_steps",
+        type=int,
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--window",
@@ -995,8 +1003,12 @@ def _reconfigure_streams() -> None:
 def main(argv: Sequence[str] | None = None) -> int:
     """解析参数并返回退出码。"""
     _reconfigure_streams()
+    raw = list(sys.argv[1:] if argv is None else argv)
+    # 旧 flag 只做一次提示，不进日志：它是入口的形状，不是会话事实。
+    if any(arg == "--max-turns" or arg.startswith("--max-turns=") for arg in raw):
+        sys.stderr.write("--max-turns 已改名为 --max-steps；旧名只保留到本 change 合并前。\n")
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(raw)
     if args.command == "run":
         return _run(args)
     if args.command == "serve":

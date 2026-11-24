@@ -411,7 +411,7 @@ async def test_every_stop_reason_is_reachable(tmp_path: Path) -> None:
     cancelled.mkdir()
     cancel = asyncio.Event()
     log, _ = await run_session_fixture(
-        cancelled, "s-cancel", _CancelDuringGenerate(cancel), cancel=cancel, max_turns=8
+        cancelled, "s-cancel", _CancelDuringGenerate(cancel), cancel=cancel, max_steps=8
     )
     observed |= _stop_reasons(log)
 
@@ -423,7 +423,7 @@ async def test_every_stop_reason_is_reachable(tmp_path: Path) -> None:
         [tool_call_entry("write", "c1", file_path="x.md", content="x\n")],
         approval="ask",
         approval_gate=_Gate("DENIED"),
-        max_turns=8,
+        max_steps=8,
     )
     observed |= _stop_reasons(log)
 
@@ -437,7 +437,7 @@ async def test_every_stop_reason_is_reachable(tmp_path: Path) -> None:
         registry=ToolRegistry(),
         window=70000,
         reserve=100,
-        max_turns=1,
+        max_steps=1,
     )
     observed |= _stop_reasons(log)
 
@@ -460,7 +460,7 @@ async def test_the_new_event_types_are_reached_by_a_real_run(tmp_path: Path) -> 
         registry=file_registry(),
         window=70000,
         reserve=100,
-        max_turns=4,
+        max_steps=4,
     )
 
     overflow = tmp_path / "overflow"
@@ -473,7 +473,7 @@ async def test_the_new_event_types_are_reached_by_a_real_run(tmp_path: Path) -> 
         registry=file_registry(),
         window=4000,
         reserve=500,
-        max_turns=4,
+        max_steps=4,
     )
 
     assert "compaction/summary" in {r.type for r in read_events(compacted_log.path)}

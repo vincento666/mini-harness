@@ -19,7 +19,7 @@ from mini_harness.loop.settings import (
     DEFAULT_COMPACTION_RETAIN_RATIO,
     DEFAULT_COMPACTION_RETAIN_TOKENS,
     DEFAULT_COMPACTION_THRESHOLD_RATIO,
-    DEFAULT_MAX_TURNS,
+    DEFAULT_MAX_STEPS,
     DEFAULT_PROVIDER,
     DEFAULT_PROVIDER_KEY_ENV,
     DEFAULT_RESERVE,
@@ -34,7 +34,7 @@ from mini_harness.loop.settings import (
 # `provider` 与端点三项不在这张表里：它们的内置默认取决于 provider 名字（预设表）与
 # `MINIHNS_API_KEY` 是否在场，见下面 `_provider_of` 与 `_endpoint_of`。
 BUILTIN_DEFAULTS: dict[str, Any] = {
-    "max_turns": DEFAULT_MAX_TURNS,
+    "max_steps": DEFAULT_MAX_STEPS,
     "window": DEFAULT_WINDOW,
     "reserve": DEFAULT_RESERVE,
     "compaction_threshold_ratio": DEFAULT_COMPACTION_THRESHOLD_RATIO,
@@ -70,7 +70,7 @@ class EffectiveSettings:
     base_url: str | None
     model: str | None
     api_key_env: str | None
-    max_turns: int
+    max_steps: int
     window: int
     reserve: int
     compaction_threshold_ratio: float

@@ -484,7 +484,7 @@ async def test_dispatch_batch_reads_plan_state_from_log(tmp_path) -> None:
     settings = SessionSettings(
         workspace=tmp_path,
         provider_name="mock",
-        max_turns=8,
+        max_steps=8,
         sandbox="workspace-write",
         approval="auto",
     )

@@ -36,7 +36,7 @@ def _rec(seq: int, event_type: str, payload: dict[str, Any]) -> EventRecord:
 
 
 def _start() -> EventRecord:
-    return _rec(0, "session/start", {"prompt": "任务", "provider": "mock", "max_turns": 8})
+    return _rec(0, "session/start", {"prompt": "任务", "provider": "mock", "max_steps": 8})
 
 
 def _response(seq: int, *, usage: dict[str, int], purpose: str | None = None) -> EventRecord:

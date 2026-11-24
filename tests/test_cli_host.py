@@ -1624,7 +1624,7 @@ def test_create_session_writes_the_host_entry(tmp_path: Path) -> None:
         assert started["prompt"] == ""
         assert started["workspace"] == str(workspace.resolve())
         assert started["provider"] == "mock"
-        assert started["max_turns"] == 3
+        assert started["max_steps"] == 3
     finally:
         _stop(process)
 
@@ -1682,7 +1682,7 @@ def test_a_bad_session_request_leaves_no_log(tmp_path: Path) -> None:
     invalid_config_workspace = tmp_path / "invalid-config"
     invalid_config_workspace.mkdir()
     (invalid_config_workspace / "mini.config.toml").write_text(
-        'max_turns = "three"\n', encoding="utf-8"
+        'max_steps = "three"\n', encoding="utf-8"
     )
     unknown_tool_workspace = tmp_path / "unknown-tool"
     unknown_tool_workspace.mkdir()

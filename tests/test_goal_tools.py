@@ -27,7 +27,7 @@ def _env(tmp_path: Path) -> SessionEnv:
     settings = SessionSettings(
         workspace=tmp_path,
         provider_name="mock",
-        max_turns=4,
+        max_steps=4,
         sandbox="workspace-write",
         approval="auto",
     )

@@ -57,7 +57,7 @@ async def test_a_timed_out_call_does_not_stop_the_rest_of_the_batch(tmp_path: Pa
             ]
         ),
         registry=full_registry(),
-        max_turns=4,
+        max_steps=4,
     )
 
     records = read_events(log.path)
@@ -97,7 +97,7 @@ async def test_a_cancel_interrupts_the_call_that_is_running(tmp_path: Path) -> N
             ]
         ),
         registry=full_registry(),
-        max_turns=4,
+        max_steps=4,
         cancel=cancel,
     )
     await watcher
@@ -143,7 +143,7 @@ async def test_no_call_has_a_tool_call_without_a_result_after_a_cancel(tmp_path:
             ]
         ),
         registry=timed_registry(observed, delays={"new.md": 2.0}),
-        max_turns=4,
+        max_steps=4,
         cancel=cancel,
     )
     await watcher
@@ -185,7 +185,7 @@ async def test_the_undispatched_call_gets_no_tool_cancelled(tmp_path: Path) -> N
             ]
         ),
         registry=timed_registry(observed, delays={"new.md": 2.0}),
-        max_turns=4,
+        max_steps=4,
         cancel=cancel,
     )
     await watcher
@@ -236,7 +236,7 @@ async def test_a_read_queued_on_the_concurrency_limit_is_not_interrupted(tmp_pat
             ]
         ),
         registry=timed_registry(observed, delays=delays),
-        max_turns=4,
+        max_steps=4,
         cancel=cancel,
     )
     await watcher
@@ -288,7 +288,7 @@ async def test_cancel_wins_over_a_fence_denial_for_the_undispatched_call(tmp_pat
         approval="ask",
         approval_gate=gate,
         cancel=cancel,
-        max_turns=4,
+        max_steps=4,
     )
 
     records = read_events(log.path)
@@ -333,7 +333,7 @@ async def test_an_aborted_run_folds_into_balanced_tool_messages(tmp_path: Path) 
             ]
         ),
         registry=timed_registry(observed, delays={"one.md": 2.0}),
-        max_turns=4,
+        max_steps=4,
         cancel=cancel,
     )
     await watcher
@@ -360,7 +360,7 @@ async def test_a_run_without_interruption_writes_no_tool_cancelled(tmp_path: Pat
         "s-no-cancelled",
         FixtureProvider(entries=[turn_entry(tool_call("read", "c1", file_path="a.md")), DONE]),
         registry=full_registry(),
-        max_turns=4,
+        max_steps=4,
     )
 
     records = read_events(log.path)
@@ -401,7 +401,7 @@ async def test_a_cancel_arrives_while_the_human_is_being_asked(tmp_path: Path) -
         approval="ask",
         approval_gate=gate,
         cancel=cancel,
-        max_turns=4,
+        max_steps=4,
     )
 
     records = read_events(log.path)
@@ -437,7 +437,7 @@ async def test_a_cancel_closes_the_segment_and_the_entry_closes_the_session(tmp_
         registry=full_registry(),
         approval="ask",
         approval_gate=_CancelWhileAskingGate(cancel),
-        max_turns=4,
+        max_steps=4,
     )
 
     assert start_session(prompt="任务", entry=ENTRY_RUN, env=env) is None
@@ -480,7 +480,7 @@ async def test_a_cancel_at_the_serve_entry_closes_the_session_the_same_way(
             ]
         ),
         registry=full_registry(),
-        max_turns=4,
+        max_steps=4,
         cancel=cancel,
         entry=ENTRY_SERVE,
     )

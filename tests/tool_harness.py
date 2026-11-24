@@ -134,7 +134,7 @@ def dispatch_context(
     settings = SessionSettings(
         workspace=workspace,
         provider_name="mock",
-        max_turns=8,
+        max_steps=8,
         sandbox=sandbox,
         approval=approval,
         goal=GoalPolicy() if goal is None else goal,
@@ -248,7 +248,7 @@ def build_session_env(
     session_dir: Path | None = None,
     sandbox: SandboxLevel = "workspace-write",
     approval: ApprovalMode = "auto",
-    max_turns: int = 8,
+    max_steps: int = 8,
     provider_name: str = "mock",
     window: int = 128000,
     reserve: int = 8192,
@@ -266,7 +266,7 @@ def build_session_env(
     settings = SessionSettings(
         workspace=tmp_path if workspace is None else workspace,
         provider_name=provider_name,
-        max_turns=max_turns,
+        max_steps=max_steps,
         sandbox=sandbox,
         approval=approval,
         window=window,
@@ -294,7 +294,7 @@ async def run_session_fixture(
     session_dir: Path | None = None,
     sandbox: SandboxLevel = "workspace-write",
     approval: ApprovalMode = "auto",
-    max_turns: int = 8,
+    max_steps: int = 8,
     prompt: str = "任务",
     provider_name: str = "mock",
     window: int = 128000,
@@ -318,7 +318,7 @@ async def run_session_fixture(
         session_dir=session_dir,
         sandbox=sandbox,
         approval=approval,
-        max_turns=max_turns,
+        max_steps=max_steps,
         provider_name=provider_name,
         window=window,
         reserve=reserve,
@@ -346,7 +346,7 @@ async def run_fixture_session(
     session_id: str,
     entries: list[dict[str, object]],
     *,
-    max_turns: int = 4,
+    max_steps: int = 4,
     **options: Any,
 ) -> tuple[EventLog, RunOutcome]:
     """fixture provider 的常用形状：`entries` 造桩，其余透传给 `run_session_fixture`。"""
@@ -354,7 +354,7 @@ async def run_fixture_session(
         tmp_path,
         session_id,
         FixtureProvider(entries=entries),
-        max_turns=max_turns,
+        max_steps=max_steps,
         **options,
     )
 

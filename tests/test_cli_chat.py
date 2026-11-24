@@ -98,7 +98,7 @@ def _flags(help_text: str) -> set[str]:
 def test_chat_shares_the_flag_table_and_the_layering(tmp_path: Path) -> None:
     """seam ⑥：chat 与 run 共用同一份参数表与同一套层叠；`entry` 是 `chat`、`prompt` 是空串。"""
     (tmp_path / "mini.config.toml").write_text(
-        'max_turns = 2\ntools = ["read"]\n', encoding="utf-8"
+        'max_steps = 2\ntools = ["read"]\n', encoding="utf-8"
     )
     fixture = _fixture(tmp_path, "one.json", [{"content": "回复", "finish_reason": "stop"}])
 
@@ -108,7 +108,7 @@ def test_chat_shares_the_flag_table_and_the_layering(tmp_path: Path) -> None:
     payload = next(
         record["payload"] for record in _records(tmp_path) if record["type"] == "session/start"
     )
-    assert payload["max_turns"] == 2
+    assert payload["max_steps"] == 2
     assert payload["tools"] == ["read"]
     assert payload["entry"] == "chat"
     assert payload["prompt"] == ""
@@ -194,7 +194,7 @@ def test_a_provider_failed_segment_says_so_on_stderr(tmp_path: Path) -> None:
 
 
 def test_a_segment_that_uses_up_max_turns_returns_to_the_prompt(tmp_path: Path) -> None:
-    """seam ⑥：`max_turns` 是段内上限；用完回到提示符，下一条输入额度完整、编号不重置。"""
+    """seam ⑥：`max_steps` 是段内上限；用完回到提示符，下一条输入额度完整、编号不重置。"""
     entries = [
         {
             "content": f"第 {index} 次读",

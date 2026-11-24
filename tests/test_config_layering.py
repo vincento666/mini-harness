@@ -62,14 +62,14 @@ def test_the_platform_facts_are_not_configurable() -> None:
 
 
 def test_a_wrong_typed_value_is_a_distinct_failure() -> None:
-    failure = validate_config({"max_turns": "three"})
+    failure = validate_config({"max_steps": "three"})
 
     assert isinstance(failure, ConfigFailure)
     assert failure.code == "CONFIG_INVALID_VALUE"
 
 
 def test_a_settings_shaped_config_validates() -> None:
-    assert validate_config({"max_turns": 3, "tools": ["read", "bash"]}) is None
+    assert validate_config({"max_steps": 3, "tools": ["read", "bash"]}) is None
 
 
 def test_an_integer_ratio_is_normalized_to_float() -> None:
@@ -100,7 +100,7 @@ def test_every_config_failure_code_is_reachable(tmp_path: Path) -> None:
         code_of(load_config(tmp_path / "nope.toml")),
         code_of(load_config(broken)),
         code_of(validate_config({"mode": "yolo"})),
-        code_of(validate_config({"max_turns": "three"})),
+        code_of(validate_config({"max_steps": "three"})),
         code_of(validate_config({"prompt": "任务"})),
         code_of(build_registry(["web_search"])),
     }

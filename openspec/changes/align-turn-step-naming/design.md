@@ -48,7 +48,7 @@
 1. `SCHEMA_VERSION = 2`；新写入一律 v2 名字。
 2. v1 行在 `migrate_schema` 里做整体上迁：
    - 类型：`segment/start|end → turn/start|end`；`turn/start|end → step/start|end`。
-   - 键：`segment_id → turn_id`；`turn_id → step_id`；`turns → steps`。
+   - 键：`segment_id → turn_id`；`turn_id → step_id`；`turns → steps`；`session/start` 的配置快照 `max_turns → max_steps`。
    - 封闭词表里的值：`stop_reason` 的 `MAX_TURNS → MAX_STEPS`。只对点名过的键做值映射，载荷里的自由文本不动。
    - `seq` / `ts` / `session_id` 与其余值不变。
 3. 词表拆成两套：`CONCRETE_EVENT_TYPES` 只放 v2 名字（新写入的唯一合法集）；`LEGACY_EVENT_TYPES` 只放 v1 名字，**读取时**允许通过校验，交给上迁。`EventRecord._type_is_in_the_vocabulary` 读 `is_known_type`，后者对两套都返回真；写侧另用 `is_current_type` 拒绝旧名。**两套词表只在改造期成立**：删除点见 D4，合并前回到一套。
@@ -64,7 +64,7 @@
 改名是破坏性的，但用户手里的脚本与 `mini.config.toml` 不该在同一天断：
 
 - `--max-steps` 是主名；`--max-turns` 保留为**隐藏别名**（help 里不列），解析后写同一个字段，stderr 打一次弃用提示。
-- `[session] max_steps` 是主键；旧键 `max_turns` 仍被接受，装载时映射并打一次弃用提示；两个键同时出现且值不同 → `INVALID_ARGUMENT`，不猜。
+- `[session] max_steps` 是主键；旧键 `max_turns` 仍被接受，装载时映射并打一次弃用提示；两个键同时出现且值不同 → 拒，不猜。配置层内部用 `CONFIG_INVALID_VALUE` 承载这次拒绝，出口统一是 `INVALID_ARGUMENT`（`assemble` 只把 `ConfigFailure.detail` 搬过去）。
 - `subagent` 工具的参数 `max_steps` 是主名；旧 `max_turns` 仍接受（模型可能从旧提示词里学到它），映射到同一字段。
 - 事件名与日志 schema **不提供双写**：新日志只写 v2，旧日志只读。
 - 兼容窗口到本 change 合并前为止：旧 flag / 旧配置键 / 旧参数名与日志上迁共用同一个删除点（D4）。

@@ -44,7 +44,7 @@ async def test_single_turn_writes_the_expected_event_sequence(tmp_path: Path) ->
         "s-loop",
         FixtureProvider(entries=[{"content": "done", "finish_reason": "stop"}]),
         registry=ToolRegistry(),
-        max_turns=8,
+        max_steps=8,
     )
 
     types = [record.type for record in read_events(log.path)]
@@ -86,7 +86,7 @@ async def test_two_segments_number_segments_and_turns_continuously(tmp_path: Pat
             ],
         ),
         registry=ToolRegistry(),
-        max_turns=3,
+        max_steps=3,
     )
 
     assert start_session(prompt="第一条输入", entry=ENTRY_RUN, env=env) is None
@@ -148,7 +148,7 @@ async def test_each_turn_is_closed_before_the_next_one_starts(tmp_path: Path) ->
         "s-multi",
         FixtureProvider(entries=_tool_call_entries(3)),
         registry=ToolRegistry(),
-        max_turns=3,
+        max_steps=3,
     )
 
     records = read_events(log.path)
@@ -173,7 +173,7 @@ async def test_a_log_that_becomes_unwritable_ends_the_run_as_a_failure_result(
             provider=FixtureProvider(entries=[{"content": "done", "finish_reason": "stop"}]),
             log=log,
             registry=ToolRegistry(),
-            settings=SessionSettings(workspace=tmp_path, provider_name="mock", max_turns=8),
+            settings=SessionSettings(workspace=tmp_path, provider_name="mock", max_steps=8),
             cancel=asyncio.Event(),
         )
     finally:
@@ -216,7 +216,7 @@ async def test_an_escaped_exception_is_not_renamed_to_a_cancellation(tmp_path: P
         "s-escaped-exception",
         FixtureProvider(entries=[turn_entry(tool_call("boom", "c1")), DONE]),
         registry=_BUGGY_REGISTRY,
-        max_turns=4,
+        max_steps=4,
     )
 
     records = read_events(log.path)
@@ -244,7 +244,7 @@ async def test_an_escaped_exception_leaves_the_call_unpaired_and_fold_closes_it(
         "s-escaped-unpaired",
         FixtureProvider(entries=[turn_entry(tool_call("boom", "c1")), DONE]),
         registry=_BUGGY_REGISTRY,
-        max_turns=4,
+        max_steps=4,
     )
 
     records = read_events(log.path)
@@ -263,7 +263,7 @@ async def test_context_assembled_carries_the_turn_id_it_belongs_to(tmp_path: Pat
         "s-turnid",
         FixtureProvider(entries=_tool_call_entries(2)),
         registry=ToolRegistry(),
-        max_turns=2,
+        max_steps=2,
     )
 
     assembled = [record for record in read_events(log.path) if record.type == "context/assembled"]
@@ -277,7 +277,7 @@ async def test_empty_tool_calls_ends_the_loop_with_model_completed(tmp_path: Pat
         "s-stop",
         FixtureProvider(entries=[{"content": "done", "finish_reason": "stop"}]),
         registry=ToolRegistry(),
-        max_turns=8,
+        max_steps=8,
     )
 
     records = read_events(log.path)
@@ -293,7 +293,7 @@ async def test_reaching_max_turns_stops_with_max_turns_and_no_failure(tmp_path: 
         "s-max",
         FixtureProvider(entries=_tool_call_entries(5)),
         registry=ToolRegistry(),
-        max_turns=2,
+        max_steps=2,
     )
 
     records = read_events(log.path)
@@ -312,7 +312,7 @@ async def test_turn_that_requests_tool_calls_closes_with_tool_calls(tmp_path: Pa
             entries=[*_tool_call_entries(1), {"content": "done", "finish_reason": "stop"}]
         ),
         registry=ToolRegistry(),
-        max_turns=8,
+        max_steps=8,
     )
 
     records = read_events(log.path)
@@ -352,7 +352,7 @@ async def test_the_turn_loop_passes_a_delta_sink_to_the_provider(tmp_path: Path)
         "s-delta",
         provider,
         on_delta=sink,
-        max_turns=8,
+        max_steps=8,
     )
 
     types = [record.type for record in read_events(log.path)]
@@ -394,7 +394,7 @@ async def test_a_provider_aborted_stream_turn_ends_aborted(tmp_path: Path) -> No
         registry=ToolRegistry(),
         cancel=cancel,
         on_delta=sink,
-        max_turns=8,
+        max_steps=8,
     )
 
     types = [record.type for record in read_events(log.path)]
@@ -432,7 +432,7 @@ async def test_cancel_signal_ends_the_turn_with_aborted(tmp_path: Path) -> None:
         _CancelDuringGenerate(cancel),
         registry=ToolRegistry(),
         cancel=cancel,
-        max_turns=8,
+        max_steps=8,
     )
 
     records = read_events(log.path)
@@ -451,7 +451,7 @@ async def test_a_cancelled_turn_writes_an_error_abort_event(tmp_path: Path) -> N
         _CancelDuringGenerate(cancel),
         registry=ToolRegistry(),
         cancel=cancel,
-        max_turns=8,
+        max_steps=8,
     )
 
     records = read_events(log.path)
@@ -482,7 +482,7 @@ async def test_a_cancel_during_stream_aborts_without_a_model_response(tmp_path: 
         registry=ToolRegistry(),
         cancel=cancel,
         on_delta=sink,
-        max_turns=8,
+        max_steps=8,
     )
 
     types = [record.type for record in read_events(log.path)]
@@ -500,7 +500,7 @@ async def test_provider_failure_is_recorded_as_error_model_and_provider_error(
         "s-fail",
         FixtureProvider(entries=[]),
         registry=ToolRegistry(),
-        max_turns=8,
+        max_steps=8,
     )
 
     records = read_events(log.path)
@@ -536,7 +536,7 @@ async def test_loop_only_calls_generate_with_three_positional_parameters(tmp_pat
         spy,
         registry=ToolRegistry(),
         cancel=cancel,
-        max_turns=8,
+        max_steps=8,
     )
 
     assert spy.calls == [("generate", 3, ("on_delta",))]
@@ -565,7 +565,7 @@ async def test_a_fence_denial_ends_the_run_without_dispatching_the_rest(
         "s-fence",
         FixtureProvider(entries=_two_write_entries()),
         sandbox="read-only",
-        max_turns=8,
+        max_steps=8,
     )
 
     records = read_events(log.path)
@@ -612,7 +612,7 @@ async def test_the_fence_denial_record_carries_both_path_fields(tmp_path: Path) 
         {"content": "算了", "finish_reason": "stop"},
     ]
     log, _ = await run_session_fixture(
-        tmp_path, "s-fence-paths", FixtureProvider(entries=entries), max_turns=8
+        tmp_path, "s-fence-paths", FixtureProvider(entries=entries), max_steps=8
     )
 
     records = read_events(log.path)
@@ -637,7 +637,7 @@ async def test_a_cancel_at_the_turn_boundary_writes_no_tool_cancelled(tmp_path: 
         _CancelDuringGenerate(cancel),
         registry=ToolRegistry(),
         cancel=cancel,
-        max_turns=8,
+        max_steps=8,
     )
 
     records = read_events(log.path)
@@ -656,7 +656,7 @@ async def test_a_fenced_fixture_run_writes_no_model_retry(tmp_path: Path) -> Non
         "s-no-retry",
         FixtureProvider(entries=_two_write_entries()),
         sandbox="read-only",
-        max_turns=8,
+        max_steps=8,
     )
 
     records = read_events(log.path)
@@ -737,7 +737,7 @@ async def test_one_turn_with_two_tool_calls_dispatches_both(tmp_path: Path) -> N
         "s-two-calls",
         _openai_provider(_ONE_TURN_TWO_CALLS),
         prompt="读两个文件",
-        max_turns=8,
+        max_steps=8,
     )
 
     records = read_events(log.path)
@@ -782,7 +782,7 @@ def _scripted_provider(responses: list[httpx.Response]) -> OpenAICompatProvider:
 
 
 async def _run_with_provider(tmp_path: Path, provider: OpenAICompatProvider):
-    log, outcome = await run_session_fixture(tmp_path, "s-retry", provider, max_turns=8)
+    log, outcome = await run_session_fixture(tmp_path, "s-retry", provider, max_steps=8)
     records = read_events(log.path)
     assert isinstance(records, list)
     return records, outcome
@@ -952,7 +952,7 @@ async def _run_through(
         workspace=workspace,
         session_dir=tmp_path / session_id,
         provider_name=provider_name,
-        max_turns=8,
+        max_steps=8,
     )
     records = read_events(log.path)
     assert isinstance(records, list)
@@ -1008,7 +1008,7 @@ async def test_a_fixture_cannot_invent_a_model_retry(tmp_path: Path) -> None:
         "s-forge",
         FixtureProvider(entries=[_FORGED_STOP]),
         registry=ToolRegistry(),
-        max_turns=8,
+        max_steps=8,
     )
 
     types = [record.type for record in read_events(log.path)]
@@ -1033,7 +1033,7 @@ async def test_a_tool_call_is_unknown_when_the_whitelist_is_empty(tmp_path: Path
             ]
         ),
         registry=build_registry([]),
-        max_turns=8,
+        max_steps=8,
     )
 
     records = read_events(log.path)
@@ -1091,7 +1091,7 @@ async def test_a_builtin_tool_filtered_out_by_the_whitelist_is_unknown(tmp_path:
             ]
         ),
         registry=build_registry(["read"]),
-        max_turns=8,
+        max_steps=8,
     )
 
     records = read_events(log.path)

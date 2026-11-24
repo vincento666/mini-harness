@@ -120,7 +120,7 @@ async def _run(
         max_rounds=max_rounds, complete_at=complete_at, abort_at=abort_at, fail_at=fail_at
     )
     log, env = build_session_env(
-        tmp_path, "s-goal-rounds", provider, registry=_registry(), max_turns=8
+        tmp_path, "s-goal-rounds", provider, registry=_registry(), max_steps=8
     )
     provider.log_path = log.path
     cancel = asyncio.Event()
@@ -249,7 +249,7 @@ async def test_an_unanswered_question_hands_control_back_without_burning_the_nex
     一次入口没有人可等，所以这里直接收会话；下一次人类段结束后，驱动会接着开轮次。
     """
     log, env = build_session_env(
-        tmp_path, "s-question", _AsksThenStops(), registry=_registry(), max_turns=8
+        tmp_path, "s-question", _AsksThenStops(), registry=_registry(), max_steps=8
     )
     outcome = await run_session_env(
         prompt="把这件活干完", entry=ENTRY_RUN, env=env, cancel=asyncio.Event()
@@ -337,7 +337,7 @@ class _TwoTurnRounds:
 async def test_a_round_with_two_turns_deducts_only_once(tmp_path: Path) -> None:
     """一轮两回合也只扣一次：额度跟段走，不跟回合走。"""
     log, env = build_session_env(
-        tmp_path, "s-two-turn-rounds", _TwoTurnRounds(), registry=_registry(), max_turns=8
+        tmp_path, "s-two-turn-rounds", _TwoTurnRounds(), registry=_registry(), max_steps=8
     )
     outcome = await run_session_env(
         prompt="把这件活干完", entry=ENTRY_RUN, env=env, cancel=asyncio.Event()

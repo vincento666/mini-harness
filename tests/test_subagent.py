@@ -399,7 +399,7 @@ async def test_a_child_without_final_text_still_returns_a_result(tmp_path: Path)
     """子会话用完了回合数、最后一条回复没有正文时，父拿到的是一句说明，不是空串。"""
     (tmp_path / "a.md").write_text("内容\n", encoding="utf-8")
     entries = [
-        tool_call_entry("subagent", "c1", task="一直读", max_turns=1),
+        tool_call_entry("subagent", "c1", task="一直读", max_steps=1),
         {
             "content": "",
             "finish_reason": "tool_calls",

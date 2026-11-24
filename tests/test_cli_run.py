@@ -136,6 +136,30 @@ def test_max_turns_zero_is_an_invalid_argument(tmp_path: Path) -> None:
     assert "INVALID_ARGUMENT" in result.stderr
 
 
+def test_the_old_step_flag_is_accepted_with_a_deprecation_note(tmp_path: Path) -> None:
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--max-turns",
+        "2",
+        "--yes",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "--max-turns 已改名为 --max-steps" in result.stderr
+    log = next((tmp_path / "sessions").glob("*.jsonl"))
+    records = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+    payload = next(record["payload"] for record in records if record["type"] == "session/start")
+    # 旧名写进同一个字段：配置快照用的是新键。
+    assert payload["max_steps"] == 2
+
+
 def test_unknown_provider_is_rejected(tmp_path: Path) -> None:
     result = _cli("run", "-p", "任务", "--provider", "claude", cwd=tmp_path)
 
@@ -421,7 +445,7 @@ async def test_the_cli_installs_and_restores_the_sigint_handler(tmp_path: Path) 
         prompt="任务",
         entry=ENTRY_RUN,
         provider=spy,
-        settings=SessionSettings(workspace=tmp_path, provider_name="mock", max_turns=8),
+        settings=SessionSettings(workspace=tmp_path, provider_name="mock", max_steps=8),
         log=log,
         registry=build_registry(None),
     )
@@ -453,7 +477,7 @@ _RUN_SWITCHES = {
     "--base-url",
     "--model",
     "--api-key-env",
-    "--max-turns",
+    "--max-steps",
     "--window",
     "--reserve",
     "--append-system-prompt",
@@ -911,7 +935,7 @@ def test_the_three_entries_still_write_the_same_payload(tmp_path: Path) -> None:
         "entry",
         "workspace",
         "provider",
-        "max_turns",
+        "max_steps",
         "append_system_prompt",
         "prompt",
         "sandbox",

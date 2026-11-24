@@ -173,7 +173,7 @@ def test_user_prompt_is_the_first_body_message_after_the_header() -> None:
         _rec(
             0,
             "session/start",
-            {"prompt": "写一份报告", "provider": "mock", "max_turns": 8, "workspace": "C:/ws"},
+            {"prompt": "写一份报告", "provider": "mock", "max_steps": 8, "workspace": "C:/ws"},
         ),
         *_one_turn_events()[1:],
     ]

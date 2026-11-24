@@ -60,7 +60,7 @@ async def test_replay_is_equal_with_and_without_streaming(tmp_path: Path) -> Non
         "s-plain",
         FixtureProvider(entries=entries),
         session_dir=tmp_path / "plain-sessions",
-        max_turns=8,
+        max_steps=8,
     )
     seen: list[str] = []
 
@@ -73,7 +73,7 @@ async def test_replay_is_equal_with_and_without_streaming(tmp_path: Path) -> Non
         FixtureProvider(entries=entries),
         session_dir=tmp_path / "stream-sessions",
         on_delta=sink,
-        max_turns=8,
+        max_steps=8,
     )
 
     def normalized(log_path: Path) -> list[tuple[str, dict[str, object]]]:
@@ -139,7 +139,7 @@ def test_replay_of_a_log_without_the_platform_facts_still_verifies(tmp_path: Pat
             "entry": "run",
             "workspace": str(tmp_path),
             "provider": "mock",
-            "max_turns": 1,
+            "max_steps": 1,
             "append_system_prompt": "",
             "prompt": "任务",
             "sandbox": "workspace-write",
@@ -408,7 +408,7 @@ async def test_a_log_that_ends_in_aborted_replays_without_a_derived_closer(tmp_p
         ),
         session_dir=session_dir,
         registry=timed_registry(observed, delays={"new.md": 2.0}),
-        max_turns=4,
+        max_steps=4,
         cancel=cancel,
     )
     await watcher
@@ -443,7 +443,7 @@ async def test_a_log_that_went_through_compaction_replays_pointwise(tmp_path: Pa
         load_fixture_provider(COMPACTION_SCENARIO),
         session_dir=session_dir,
         registry=file_registry(),
-        max_turns=4,
+        max_steps=4,
         window=70000,
         reserve=100,
     )
@@ -487,7 +487,7 @@ async def test_a_log_that_ended_in_overflow_replays_pointwise(tmp_path: Path) ->
         ),
         session_dir=session_dir,
         registry=file_registry(),
-        max_turns=3,
+        max_steps=3,
         window=70000,
         reserve=100,
     )

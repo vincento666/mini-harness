@@ -92,7 +92,7 @@ async def test_an_over_line_assembly_compacts_before_the_assembly_record(tmp_pat
         tmp_path,
         "s-compact",
         [_big_turn(), _summary_entry(), DONE_ENTRY],
-        max_turns=3,
+        max_steps=3,
         window=TIGHT_WINDOW,
         reserve=TIGHT_RESERVE,
     )
@@ -129,7 +129,7 @@ async def test_the_summary_call_is_marked_and_gets_no_tools(tmp_path: Path) -> N
         tmp_path,
         "s-summary-call",
         [_big_turn(), _summary_entry(), DONE_ENTRY],
-        max_turns=3,
+        max_steps=3,
         window=TIGHT_WINDOW,
         reserve=TIGHT_RESERVE,
     )
@@ -149,7 +149,7 @@ async def test_a_run_with_room_to_spare_never_compacts(tmp_path: Path) -> None:
         tmp_path,
         "s-roomy",
         [_big_turn(), DONE_ENTRY],
-        max_turns=2,
+        max_steps=2,
     )
 
     assert _records_of(log.path, "compaction/summary") == []
@@ -162,7 +162,7 @@ async def test_overflow_when_nothing_can_be_shadowed(tmp_path: Path) -> None:
         "s-giant-prompt",
         provider=FixtureProvider(entries=[DONE_ENTRY]),
         prompt=OVERFLOW_TEXT,
-        max_turns=1,
+        max_steps=1,
         registry=ToolRegistry(),
         window=TIGHT_WINDOW,
         reserve=TIGHT_RESERVE,
@@ -211,7 +211,7 @@ async def test_a_dead_zone_reading_that_fits_the_window_is_not_an_overflow(
         tmp_path,
         "s-dead-zone",
         [_read_big_file_turn(), DONE_ENTRY],
-        max_turns=2,
+        max_steps=2,
         window=TIGHT_WINDOW,
         reserve=TIGHT_RESERVE,
     )
@@ -244,7 +244,7 @@ async def test_a_shadowed_range_too_big_to_trim_sends_no_summary_request(
         tmp_path,
         "s-untrimmable",
         [_read_big_file_turn(), DONE_ENTRY],
-        max_turns=2,
+        max_steps=2,
         window=SMALL_WINDOW,
         reserve=SMALL_RESERVE,
     )
@@ -274,7 +274,7 @@ async def test_an_overflow_closes_the_segment_not_the_session(tmp_path: Path) ->
         FixtureProvider(entries=[DONE_ENTRY]),
         window=4000,
         reserve=500,
-        max_turns=4,
+        max_steps=4,
     )
 
     assert start_session(prompt="x" * 20000, entry=ENTRY_RUN, env=env) is None
@@ -306,7 +306,7 @@ async def test_one_compaction_then_overflow_when_the_context_still_does_not_fit(
         tmp_path,
         "s-big-summary",
         [_big_turn(), _summary_entry(OVERFLOW_TEXT)],
-        max_turns=3,
+        max_steps=3,
         window=TIGHT_WINDOW,
         reserve=TIGHT_RESERVE,
     )
@@ -344,7 +344,7 @@ async def test_a_cancelled_run_does_not_compact(tmp_path: Path) -> None:
         tmp_path,
         "s-cancel-no-compact",
         provider=FixtureProvider(entries=[DONE_ENTRY]),
-        max_turns=2,
+        max_steps=2,
         registry=ToolRegistry(),
         window=TIGHT_WINDOW,
         reserve=TIGHT_RESERVE,
@@ -362,7 +362,7 @@ async def test_a_failed_summary_call_is_a_provider_error(tmp_path: Path) -> None
         tmp_path,
         "s-summary-fails",
         [_big_turn()],
-        max_turns=3,
+        max_steps=3,
         window=TIGHT_WINDOW,
         reserve=TIGHT_RESERVE,
     )
@@ -386,7 +386,7 @@ async def test_a_provider_reported_overflow_collapses_into_the_same_result(tmp_p
         tmp_path,
         "s-provider-overflow",
         _OverflowProvider(),
-        max_turns=2,
+        max_steps=2,
         registry=ToolRegistry(),
     )
     records = read_events(log.path)
@@ -412,7 +412,7 @@ async def test_a_provider_reported_overflow_detail_carries_the_three_numbers(
         tmp_path,
         "s-provider-overflow-numbers",
         _OverflowProvider(),
-        max_turns=2,
+        max_steps=2,
         registry=ToolRegistry(),
         window=TIGHT_WINDOW,
         reserve=TIGHT_RESERVE,
@@ -465,7 +465,7 @@ async def test_a_provider_reported_overflow_is_compacted_once_and_retried(
         tmp_path,
         "s-request-compaction",
         _OverflowOnceProvider([_big_turn(), _summary_entry(), DONE_ENTRY], fail_plain_calls=(2,)),
-        max_turns=3,
+        max_steps=3,
     )
     records = read_events(log.path)
     turn_two = [record for record in records if record.payload.get("step_id") == "t2"]
@@ -502,7 +502,7 @@ async def test_the_request_level_retry_records_the_context_it_actually_sent(
         tmp_path,
         "s-request-retry-snapshot",
         _OverflowOnceProvider([_big_turn(), _summary_entry(), DONE_ENTRY], fail_plain_calls=(2,)),
-        max_turns=3,
+        max_steps=3,
     )
     records = read_events(log.path)
     points = [point for point in assembly_points(records) if point.step_id == "t2"]
@@ -532,7 +532,7 @@ async def test_a_provider_reported_overflow_that_survives_the_retry_collapses(
         tmp_path,
         "s-request-compaction-fails",
         _OverflowOnceProvider([_big_turn(), _summary_entry()], fail_plain_calls=(2, 3)),
-        max_turns=3,
+        max_steps=3,
     )
     records = read_events(log.path)
 
@@ -585,7 +585,7 @@ async def test_the_summary_request_carries_only_the_shadowed_range(tmp_path: Pat
         tmp_path,
         "s-summary-shape",
         provider,
-        max_turns=3,
+        max_steps=3,
         window=TIGHT_WINDOW,
         reserve=TIGHT_RESERVE,
     )
@@ -644,7 +644,7 @@ async def test_the_summary_trim_drops_whole_round_trips(tmp_path: Path) -> None:
         tmp_path,
         "s-trim-in-pairs",
         provider,
-        max_turns=4,
+        max_steps=4,
         window=TIGHT_WINDOW,
         reserve=TIGHT_RESERVE,
     )
@@ -686,7 +686,7 @@ async def test_a_summary_request_that_cannot_be_made_to_fit_is_never_sent(tmp_pa
         tmp_path,
         "s-summary-too-big",
         [_huge_turn(), _summary_entry(), DONE_ENTRY],
-        max_turns=3,
+        max_steps=3,
         window=TIGHT_WINDOW,
         reserve=TIGHT_RESERVE,
     )
@@ -719,7 +719,7 @@ async def test_the_compaction_record_has_the_keys_the_real_run_wrote(tmp_path: P
         tmp_path,
         "s-record-shape",
         [_big_turn(), _summary_entry(), DONE_ENTRY],
-        max_turns=3,
+        max_steps=3,
         window=TIGHT_WINDOW,
         reserve=TIGHT_RESERVE,
     )

@@ -25,9 +25,9 @@
 
 - [x] 3.0 会话内命令去 flag（2026-11-23 先落，先于全量改名）：`/goal edit` 只吃正文；`--max-rounds` 移到 `minihns goal <id> edit`；会话内动词不吃参数（`tests/test_goal_commands.py`、`tests/test_cli_goal.py`）
 
-- [ ] 3.1 `--max-steps` 主名 + `--max-turns` 隐藏别名（弃用提示一次）；同批改 argparse dest、`EffectiveSettings.max_turns`、`SessionSettings.max_turns → max_steps`——它们与 3.2 是同一根线，3.1 与 3.2 必须打包成一个提交
-- [ ] 3.2 `[session] max_steps` 主键 + 旧键 `max_turns` 映射；`BUILTIN_DEFAULTS` 键、`config/load.py` 的校验表、`cli/host.py` 的 `_SESSION_INT_FIELDS` 一并改；两者冲突 → `INVALID_ARGUMENT`
-- [ ] 3.3 `subagent` 的 `max_turns → max_steps`（旧参数名仍接受）
+- [x] 3.1 `--max-steps` 主名 + `--max-turns` 隐藏别名（`help=SUPPRESS`，用到时 stderr 提示一次）；同批改 argparse dest、`EffectiveSettings.max_steps`、`SessionSettings.max_steps`、`AssemblyRequest.max_steps`——与 3.2 同一根线，打包成一个提交
+- [x] 3.2 `[session] max_steps` 主键 + 旧键 `max_turns` 映射（`config/load.py::_fold_legacy_keys`）；`BUILTIN_DEFAULTS` 键、`SETTINGS_FIELDS`、`cli/host.py` 的 `_SESSION_INT_FIELDS` 一并改；两键冲突 → `CONFIG_INVALID_VALUE` 承载、出口 `INVALID_ARGUMENT`
+- [x] 3.3 `subagent` 的 `max_steps` + 旧参数名 `max_turns` 仍接受（`model_validator(mode="before")` 搬到同一字段；两个都给且不同 → 校验失败）
 - [ ] 3.4 host 的会话视图 `turns` 字段语义改成「轮数」，内部 `segments` 计数改名 `turns`
 - [ ] 3.5 `chat` / `host` 的可见文案按「轮/步」改口；`[轮] n/cap` 仍专指目标轮
 

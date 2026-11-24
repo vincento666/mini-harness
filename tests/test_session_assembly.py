@@ -99,7 +99,7 @@ def test_assemble_failure_happens_before_any_log(tmp_path: Path) -> None:
     invalid_config_workspace = tmp_path / "invalid-config"
     invalid_config_workspace.mkdir()
     (invalid_config_workspace / "mini.config.toml").write_text(
-        'max_turns = "three"\n', encoding="utf-8"
+        'max_steps = "three"\n', encoding="utf-8"
     )
     unknown_tool_workspace = tmp_path / "unknown-tool"
     unknown_tool_workspace.mkdir()

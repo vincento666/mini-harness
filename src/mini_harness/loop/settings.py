@@ -32,7 +32,7 @@ DEFAULT_RESERVE = 8192
 # 否则是 `mock`。
 DEFAULT_PROVIDER = "mock"
 DEFAULT_PROVIDER_KEY_ENV = "MINIHNS_API_KEY"
-DEFAULT_MAX_TURNS = 8
+DEFAULT_MAX_STEPS = 8
 DEFAULT_SANDBOX: SandboxLevel = "workspace-write"
 DEFAULT_APPROVAL: ApprovalMode = "ask"
 DEFAULT_APPEND_SYSTEM_PROMPT = ""
@@ -77,7 +77,7 @@ class SessionSettings:
 
     workspace: Path
     provider_name: str
-    max_turns: int
+    max_steps: int
     sandbox: SandboxLevel = "workspace-write"
     approval: ApprovalMode = "ask"
     append_system_prompt: str = ""

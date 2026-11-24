@@ -59,7 +59,7 @@ class AssemblyRequest:
     base_url: str | None = None
     model: str | None = None
     api_key_env: str | None = None
-    max_turns: int | None = None
+    max_steps: int | None = None
     window: int | None = None
     reserve: int | None = None
     append_system_prompt: str | None = None
@@ -83,7 +83,7 @@ def request_from_args(args: Namespace, *, auto_approve: bool = False) -> Assembl
         base_url=args.base_url,
         model=args.model,
         api_key_env=args.api_key_env,
-        max_turns=args.max_turns,
+        max_steps=args.max_steps,
         window=args.window,
         reserve=args.reserve,
         append_system_prompt=args.append_system_prompt,
@@ -150,11 +150,11 @@ def assemble(
     # 三层塌成一份有效设置：之后的校验与装配只认这一份。`layer_settings` 的入参是
     # 「一层可选字段的袋子」，请求体与 argparse 的 Namespace 同形。
     layered = layer_settings(Namespace(**asdict(request)), config, environ)
-    max_turns = layered.max_turns
+    max_steps = layered.max_steps
     provider_name = layered.provider
-    if max_turns < 1:
+    if max_steps < 1:
         return Failure(
-            "INVALID_ARGUMENT", f"--max-turns 至少为 1，收到 {max_turns}", EXIT_INVALID_ARGUMENT
+            "INVALID_ARGUMENT", f"--max-steps 至少为 1，收到 {max_steps}", EXIT_INVALID_ARGUMENT
         )
     # 压缩参数的取值域在 session 开始之前判掉（context-budget）。
     for name, value in (
@@ -306,7 +306,7 @@ def assemble(
     settings = SessionSettings(
         workspace=workspace,
         provider_name=provider_name,
-        max_turns=max_turns,
+        max_steps=max_steps,
         sandbox=layered.sandbox,
         approval=approval,
         append_system_prompt=layered.append_system_prompt,

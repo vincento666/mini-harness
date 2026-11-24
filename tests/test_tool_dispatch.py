@@ -21,7 +21,7 @@ async def test_unregistered_tool_call_is_a_paired_unknown_tool_result(tmp_path: 
         "s-tool",
         [_TOOL_ENTRY, {"content": "算了", "finish_reason": "stop"}],
         registry=ToolRegistry(),
-        max_turns=8,
+        max_steps=8,
     )
 
     records = read_events(log.path)
@@ -43,7 +43,7 @@ async def test_previous_tool_result_is_folded_into_the_next_context(tmp_path: Pa
         "s-fold-tool",
         [_TOOL_ENTRY, {"content": "算了", "finish_reason": "stop"}],
         registry=ToolRegistry(),
-        max_turns=8,
+        max_steps=8,
     )
 
     records = read_events(log.path)
@@ -62,13 +62,13 @@ async def test_session_start_records_the_run_settings(tmp_path: Path) -> None:
         "s-start",
         [{"content": "done", "finish_reason": "stop"}],
         registry=ToolRegistry(),
-        max_turns=8,
+        max_steps=8,
     )
 
     records = read_events(log.path)
     payload = records[0].payload
     assert payload["provider"] == "mock"
-    assert payload["max_turns"] == 8
+    assert payload["max_steps"] == 8
     assert payload["append_system_prompt"] == ""
     assert payload["prompt"] == "任务"
     assert "schema_version" not in payload

@@ -50,7 +50,7 @@ def test_an_explicit_config_file_sets_the_settings(tmp_path: Path) -> None:
     )
 
     assert result.returncode == 0, result.stderr
-    assert _start_payload(tmp_path)["max_turns"] == 3
+    assert _start_payload(tmp_path)["max_steps"] == 3
 
 
 def test_no_config_file_means_builtin_defaults(tmp_path: Path) -> None:
@@ -70,7 +70,7 @@ def test_no_config_file_means_builtin_defaults(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     payload = _start_payload(tmp_path)
     assert payload["provider"] == "mock"
-    assert payload["max_turns"] == 8
+    assert payload["max_steps"] == 8
     assert payload["window"] == 128000
     assert payload["reserve"] == 8192
     assert payload["sandbox"] == "workspace-write"
@@ -115,7 +115,30 @@ def test_the_workspace_root_config_file_is_picked_up(tmp_path: Path) -> None:
     )
 
     assert result.returncode == 0, result.stderr
-    assert _start_payload(tmp_path)["max_turns"] == 3
+    assert _start_payload(tmp_path)["max_steps"] == 3
+    # 旧键仍被接受，但要说清它改了什么名。
+    assert "已改名为 max_steps" in result.stderr
+
+
+def test_two_conflicting_step_limits_are_an_argument_error(tmp_path: Path) -> None:
+    (tmp_path / "mini.config.toml").write_text("max_steps = 3\nmax_turns = 5\n", encoding="utf-8")
+
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--yes",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert "同时出现且值不同" in result.stderr
+    assert list((tmp_path / "sessions").glob("*.jsonl")) == []
 
 
 def test_a_missing_explicit_config_file_is_an_argument_error(tmp_path: Path) -> None:
@@ -187,7 +210,7 @@ def test_an_unknown_key_is_an_argument_error(tmp_path: Path) -> None:
 
 def test_a_wrong_typed_value_is_an_argument_error(tmp_path: Path) -> None:
     config = tmp_path / "mini.config.toml"
-    config.write_text('max_turns = "three"\n', encoding="utf-8")
+    config.write_text('max_steps = "three"\n', encoding="utf-8")
 
     result = _cli(
         "run",
@@ -203,7 +226,7 @@ def test_a_wrong_typed_value_is_an_argument_error(tmp_path: Path) -> None:
 
     assert result.returncode == 2
     assert "INVALID_ARGUMENT" in result.stderr
-    assert "max_turns" in result.stderr
+    assert "max_steps" in result.stderr
     assert list((tmp_path / "sessions").glob("*.jsonl")) == []
 
 
@@ -267,7 +290,7 @@ def test_an_empty_config_file_equals_no_config_file(tmp_path: Path) -> None:
     )
 
     assert result.returncode == 0, result.stderr
-    assert _start_payload(tmp_path)["max_turns"] == 8
+    assert _start_payload(tmp_path)["max_steps"] == 8
 
 
 def test_the_config_file_overrides_builtin_defaults(tmp_path: Path) -> None:
@@ -286,7 +309,7 @@ def test_the_config_file_overrides_builtin_defaults(tmp_path: Path) -> None:
     )
 
     assert result.returncode == 0, result.stderr
-    assert _start_payload(tmp_path)["max_turns"] == 3
+    assert _start_payload(tmp_path)["max_steps"] == 3
 
 
 def test_the_cli_flag_overrides_the_config_file(tmp_path: Path) -> None:
@@ -307,7 +330,7 @@ def test_the_cli_flag_overrides_the_config_file(tmp_path: Path) -> None:
     )
 
     assert result.returncode == 0, result.stderr
-    assert _start_payload(tmp_path)["max_turns"] == 5
+    assert _start_payload(tmp_path)["max_steps"] == 5
 
 
 def test_a_flag_equal_to_the_builtin_default_is_still_explicit(tmp_path: Path) -> None:
@@ -329,7 +352,7 @@ def test_a_flag_equal_to_the_builtin_default_is_still_explicit(tmp_path: Path) -
     )
 
     assert result.returncode == 0, result.stderr
-    assert _start_payload(tmp_path)["max_turns"] == 8
+    assert _start_payload(tmp_path)["max_steps"] == 8
 
 
 def test_a_config_value_below_a_bound_is_an_argument_error(tmp_path: Path) -> None:
@@ -438,7 +461,7 @@ def test_a_boolean_where_a_number_is_expected_is_an_argument_error(tmp_path: Pat
 
     assert result.returncode == 2
     assert "INVALID_ARGUMENT" in result.stderr
-    assert "max_turns" in result.stderr
+    assert "max_steps" in result.stderr
     assert list((tmp_path / "sessions").glob("*.jsonl")) == []
 
 
@@ -449,7 +472,7 @@ def test_the_same_cli_under_two_config_files_yields_different_payloads(tmp_path:
     with_config.mkdir()
     without_config.mkdir()
     (with_config / "mini.config.toml").write_text(
-        'max_turns = 2\ntools = ["read"]\n', encoding="utf-8"
+        'max_steps = 2\ntools = ["read"]\n', encoding="utf-8"
     )
 
     argv = (
@@ -467,8 +490,8 @@ def test_the_same_cli_under_two_config_files_yields_different_payloads(tmp_path:
 
     assert configured.returncode == 0, configured.stderr
     assert plain.returncode == 0, plain.stderr
-    assert _start_payload(with_config)["max_turns"] == 2
-    assert _start_payload(without_config)["max_turns"] == 8
+    assert _start_payload(with_config)["max_steps"] == 2
+    assert _start_payload(without_config)["max_steps"] == 8
     assert _start_payload(with_config)["tools"] == ["read"]
     assert _start_payload(without_config)["tools"] == [
         "read",
