@@ -11,7 +11,8 @@ from pydantic import BaseModel, Field
 from mini_harness.events.fold import Message
 
 DeltaSink = Callable[[str], Awaitable[None]]
-TurnDeltaSink = Callable[[str, str], Awaitable[None]]
+# 带步 id 的增量回调：一个步的文字流。
+StepDeltaSink = Callable[[str, str], Awaitable[None]]
 
 
 class ToolCall(BaseModel):

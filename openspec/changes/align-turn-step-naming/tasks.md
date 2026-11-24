@@ -18,7 +18,8 @@
 - [x] 2.1 `SegmentOutcome → TurnOutcome`、`run_turn_segment → run_turn`、`_run_turns → _run_steps`
 - [x] 2.2 `segment_id → turn_id`、`turn_id → step_id`；`first_turn_index → first_step_index`（裸标识符；API JSON 键仍留旧名到 3.4）
 - [x] 2.3 `RunOutcome.turns → steps`（连带 `end_session` / `_segment_failure` / `_abort_turn` 等参数与局部变量）；`STOP_MAX_TURNS → STOP_MAX_STEPS`，值 `MAX_TURNS → MAX_STEPS`，`_upcast_v1` 同步迁这个值。**`SessionSettings.max_turns` 与配置键不在本任务**：它与 argparse dest、`BUILTIN_DEFAULTS` 的键是同一根线，单独改会断，随 3.1+3.2 一次做
-- [ ] 2.4 `TurnDeltaSink → StepDeltaSink`；注释与 docstring 里的「段/回合」改「轮/步」
+- [x] 2.4 `TurnDeltaSink → StepDeltaSink`（`provider/contract.py`、`loop/turn_loop.py`、`tests/tool_harness.py`）
+- [ ] 2.5 注释与 docstring 里的「段/回合」改「轮/步」。**排在 3.5 之后**：同一句注释里常同时出现 `max_turns` 字段名与 help 文案，提前改会出现「注释说步、help 说回合、字段叫 max_turns」的三重不一致；字符串字面量与 help 文案归 3.5。逐处判断，`字段`/`阶段`/`整段替换`/`一段摘要` 这类普通语义不动
 
 ## 3. 入口与配置（seam ⑥）
 

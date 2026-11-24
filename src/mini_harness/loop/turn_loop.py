@@ -49,8 +49,8 @@ from mini_harness.provider.contract import (
     DeltaSink,
     Provider,
     ProviderFailure,
+    StepDeltaSink,
     ToolCall,
-    TurnDeltaSink,
 )
 from mini_harness.session.delegation import DelegationState
 from mini_harness.skill_providers import SkillRegistry
@@ -152,7 +152,7 @@ class SessionEnv:
     settings: SessionSettings
     approval_gate: ApprovalGate = STDIN_APPROVAL_GATE
     question_gate: QuestionGate = UNAVAILABLE_QUESTION_GATE
-    on_delta: TurnDeltaSink | None = None
+    on_delta: StepDeltaSink | None = None
     # 委派账本：活跃子代理数与宿主登记回调（M12）；每个会话一份。
     delegation: DelegationState = field(default_factory=DelegationState)
     # 技能注册表（skill-providers）：目录与命令面都读它的快照；None 时回落到 settings。
@@ -593,7 +593,7 @@ def _retry_events(
     ]
 
 
-def _forward_delta(sink: TurnDeltaSink | None, step_id: str) -> DeltaSink | None:
+def _forward_delta(sink: StepDeltaSink | None, step_id: str) -> DeltaSink | None:
     """把宿主的 `(step_id, text)` sink 包成 provider 只认 `text` 的回调。"""
     if sink is None:
         return None
@@ -1418,7 +1418,7 @@ async def run_session(
     settings: SessionSettings,
     cancel: asyncio.Event,
     approval_gate: ApprovalGate = STDIN_APPROVAL_GATE,
-    on_delta: TurnDeltaSink | None = None,
+    on_delta: StepDeltaSink | None = None,
     skills_registry: SkillRegistry | None = None,
 ) -> RunOutcome:
     """一次性入口（`run` / `serve`）：开始会话、恰一个段、结束会话。
