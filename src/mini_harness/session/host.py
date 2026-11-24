@@ -69,7 +69,7 @@ def _session_entry(
     workspace: str,
     created_at: str,
     last_seq: int,
-    steps: int,
+    turns: int,
     parent_session_id: str | None,
     depth: int,
 ) -> dict[str, object]:
@@ -80,7 +80,7 @@ def _session_entry(
         "workspace": workspace,
         "created_at": created_at,
         "last_seq": last_seq,
-        "turns": steps,
+        "turns": turns,
         "parent_session_id": parent_session_id,
         "depth": depth,
     }
@@ -101,14 +101,14 @@ def _scan_session_index(defaults: AssemblyRequest) -> dict[str, dict[str, object
         if start is None or not ended:
             continue
         session_id = path.stem
-        steps = sum(1 for record in records if record.type == "step/start")
+        turns = sum(1 for record in records if record.type == "turn/start")
         index[session_id] = _session_entry(
             session_id=session_id,
             status=SESSION_ENDED,
             workspace=str(start.payload.get("workspace", "")),
             created_at=start.ts,
             last_seq=records[-1].seq,
-            steps=steps,
+            turns=turns,
             parent_session_id=start.payload.get("parent_session_id"),
             depth=int(start.payload.get("depth", 0)),
         )
@@ -130,7 +130,7 @@ def register_child_session(state: HostState, env: SessionEnv) -> None:
         workspace=str(env.settings.workspace.resolve()),
         created_at=records[0].ts,
         last_seq=env.log.last_seq,
-        steps=sum(1 for record in records if record.type == "step/start"),
+        turns=sum(1 for record in records if record.type == "turn/start"),
         parent_session_id=env.settings.parent_session_id,
         depth=env.settings.depth,
     )
@@ -215,7 +215,8 @@ class HostSession:
     task: asyncio.Task[None] | None = None
     stopping: bool = False
     ended_by_failure: bool = False
-    segments: int = 0
+    # 两个独立的里程表：`turns` 数段（`turn/start`），`steps` 数步（`step/start`）。
+    turns: int = 0
     steps: int = 0
 
     @property
@@ -268,7 +269,7 @@ class HostSession:
             workspace=str(self.settings.workspace.resolve()),
             created_at=self.created_at,
             last_seq=self.last_seq,
-            steps=self.steps,
+            turns=self.turns,
             parent_session_id=self.settings.parent_session_id,
             depth=self.settings.depth,
         )
@@ -472,8 +473,8 @@ def _begin_segment(
     content: str | None,
     goal_round: GoalRound | None = None,
 ) -> str:
-    handle.segments += 1
-    turn_id = f"s{handle.segments}"
+    handle.turns += 1
+    turn_id = f"s{handle.turns}"
     handle.status = SESSION_RUNNING
     cancel = asyncio.Event()
     handle.cancel = cancel

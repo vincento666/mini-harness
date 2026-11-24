@@ -767,6 +767,55 @@ def test_host_outlives_a_session(tmp_path: Path) -> None:
         _stop(process)
 
 
+def test_the_session_view_counts_turns_not_steps(tmp_path: Path) -> None:
+    """视图的 `turns` 数的是轮（`turn/start`），不是步（`step/start`）：一轮两步时它是 1。"""
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "a.md").write_text("内容", encoding="utf-8")
+    fixture = tmp_path / "two-steps.json"
+    fixture.write_text(
+        json.dumps(
+            [
+                {
+                    "content": "读一个文件",
+                    "finish_reason": "tool_calls",
+                    "tool_calls": [
+                        {"id": "c1", "name": "read", "arguments": {"file_path": "a.md"}}
+                    ],
+                },
+                {"content": "好", "finish_reason": "stop"},
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(client, workspace, fixture)
+            client.post(
+                f"/sessions/{session_id}/messages",
+                headers=_headers(),
+                json={"content": "任务"},
+            )
+            _wait_until_idle(client, session_id)
+            state = _session_state(client, session_id)
+
+        log = session_dir / f"{session_id}.jsonl"
+        records = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+        types = [record["type"] for record in records]
+        assert types.count("turn/start") == 1
+        assert types.count("step/start") == 2
+        assert state["turns"] == 1
+    finally:
+        _stop(process)
+
+
 @pytest.mark.skipif(
     sys.platform == "win32", reason="SIGINT 子进程判据在 Linux runner 上跑（与 M7 一致）"
 )
