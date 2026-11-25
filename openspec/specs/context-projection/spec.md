@@ -13,7 +13,7 @@
 
 ### Requirement: 折叠产出形状为受保护头部加保留尾部
 
-系统 SHALL 把受保护头部（内置系统提示 + 工具块 + 运行环境块 + 追加文本）放在折叠结果最前，其后按事件发生顺序保留对话体：`role` 为 `user` 的消息有**三个**来源——一次性 `run` 的 `session/start` payload 里的 prompt（对话体第一条）、REPL 的 `user/message` 记录，以及 goal 轮次注入的 `user/message`（`source.kind == "goal"`，与 REPL 同形，按 `seq` 顺序进对话体）。随后是 assistant 消息与工具结果消息。`user/message` 与其它正文记录一样可进遮蔽范围。`segment/start` 与 `segment/end` 与 `turn/*` 一样是记账记录，MUST NOT 产出上下文里的消息，遮蔽它们对折叠结果没有效果。`goal/updated` MUST NOT 产出上下文里的消息——模型看到的目标事实来自 goal 轮次正文与工具调用历史。被 `compaction/summary` 遮蔽的记录不进入对话体（见「遮蔽范围由 compaction/summary 记录定义」）。
+系统 SHALL 把受保护头部（内置系统提示 + 工具块 + 运行环境块 + 追加文本）放在折叠结果最前，其后按事件发生顺序保留对话体：`role` 为 `user` 的消息有**三个**来源——一次性 `run` 的 `session/start` payload 里的 prompt（对话体第一条）、REPL 的 `user/message` 记录，以及 goal 轮次注入的 `user/message`（`source.kind == "goal"`，与 REPL 同形，按 `seq` 顺序进对话体）。随后是 assistant 消息与工具结果消息。`user/message` 与其它正文记录一样可进遮蔽范围。`turn/start` 与 `turn/end` 与 `step/*` 一样是记账记录，MUST NOT 产出上下文里的消息，遮蔽它们对折叠结果没有效果。`goal/updated` MUST NOT 产出上下文里的消息——模型看到的目标事实来自 goal 轮次正文与工具调用历史。被 `compaction/summary` 遮蔽的记录不进入对话体（见「遮蔽范围由 compaction/summary 记录定义」）。
 
 #### Scenario: 用户 prompt 是对话体第一条
 
@@ -32,7 +32,7 @@
 
 #### Scenario: 工具结果按顺序进入对话体
 
-- **WHEN** 某回合产生一次 `tool/call` 与对应 `tool/result`
+- **WHEN** 某步产生一次 `tool/call` 与对应 `tool/result`
 - **THEN** 折叠结果按发生顺序包含该 assistant 工具请求消息与对应工具结果消息
 
 #### Scenario: REPL 的输入按 seq 顺序进对话体
@@ -46,18 +46,18 @@
 - **THEN** 折叠结果里没有它对应的 `user` 消息，该摘要的 `system` 消息在表层里
 
 ### Requirement: 每次模型调用前记录 context/assembled
-系统 SHALL 在每次给人跑的回合调用 Provider 之前写入一条 `context/assembled` 记录，payload 含本次进入模型的完整消息序列与头部指纹（内容哈希）。带 `purpose: compaction` 的摘要调用 MUST NOT 写这条记录：它的上下文是该回合装配点的表层再加一条固定的摘要指令。请求级压缩之后的那次重试 SHALL 在它之前再写一条 `context/assembled`，内容是遮蔽之后重新折叠的那份表层。照 DSH：一次 provider 尝试一条记录（`assistant/attempt`，`dsh-agent-loop/lib/index.js:1101-1134`），上下文记录只在表层变化之后补一条（`request/header` 只在头部变化时写，同文件 :1214-1225）。
+系统 SHALL 在每一次要调模型的步调用 Provider 之前写入一条 `context/assembled` 记录，payload 含本次进入模型的完整消息序列与头部指纹（内容哈希）。带 `purpose: compaction` 的摘要调用 MUST NOT 写这条记录：它的上下文是该步装配点的表层再加一条固定的摘要指令。请求级压缩之后的那次重试 SHALL 在它之前再写一条 `context/assembled`，内容是遮蔽之后重新折叠的那份表层。照 DSH：一次 provider 尝试一条记录（`assistant/attempt`，`dsh-agent-loop/lib/index.js:1101-1134`），上下文记录只在表层变化之后补一条（`request/header` 只在头部变化时写，同文件 :1214-1225）。
 
-#### Scenario: 每回合恰有一条
-- **WHEN** 一次 run 跑了 N 个回合，且没有回合走到请求级重试
+#### Scenario: 每步恰有一条
+- **WHEN** 一次 run 跑了 N 步，且没有步走到请求级重试
 - **THEN** 日志里恰有 N 条 `context/assembled`，且每条都紧接在其对应的 `model/request` 之前
 
 #### Scenario: 请求级重试之前还有一条
-- **WHEN** 某回合的模型调用得到 `PROVIDER_CONTEXT_OVERFLOW`，请求级压缩之后重试成功
-- **THEN** 该回合有两条 `context/assembled`，第二条紧接在重试那条 `model/request` 之前，它的消息序列含那条摘要、第一条不含
+- **WHEN** 某步的模型调用得到 `PROVIDER_CONTEXT_OVERFLOW`，请求级压缩之后重试成功
+- **THEN** 该步有两条 `context/assembled`，第二条紧接在重试那条 `model/request` 之前，它的消息序列含那条摘要、第一条不含
 
 #### Scenario: 摘要调用不写装配记录
-- **WHEN** 某回合完成了一次请求级压缩
+- **WHEN** 某步完成了一次请求级压缩
 - **THEN** 那条带 `purpose: compaction` 的 `model/request` 之前没有 `context/assembled`
 
 ### Requirement: 折叠是确定性纯函数
@@ -180,7 +180,7 @@
 - **THEN** 折叠结果里该文本只作为 `system` 摘要消息出现一次，没有任何 assistant 消息携带它
 
 #### Scenario: 没有标记的回复照常进入表层
-- **WHEN** 一次 run 既有普通回合回复又有压缩回复
+- **WHEN** 一次 run 既有普通步回复又有压缩回复
 - **THEN** 只有带 `purpose: compaction` 的那条不产出 assistant 消息
 
 ### Requirement: 头部的运行环境块由日志前缀派生

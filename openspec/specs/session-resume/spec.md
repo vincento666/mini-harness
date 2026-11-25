@@ -16,16 +16,16 @@
 
 ### Requirement: `--resume` 重新装配已有 session
 
-`minihns chat --resume <id>` / Host 的 resume 路径 SHALL 从已有日志装配 `SessionEnv`，后续段继续写同一份日志；MUST NOT 新建 session。若日志缺少闭合（硬杀），resume SHALL 按日志事实补 `session/end` 或明确报告缺口，MUST NOT 改写既有记录。
+`minihns chat --resume <id>` / Host 的 resume 路径 SHALL 从已有日志装配 `SessionEnv`，后续轮继续写同一份日志；MUST NOT 新建 session。若日志缺少闭合（硬杀），resume SHALL 按日志事实补 `session/end` 或明确报告缺口，MUST NOT 改写既有记录。
 
 #### Scenario: resume 后 replay 仍相等
 
-- **WHEN** 对一个已完成 session resume 并追加一段，再跑 `replay`
-- **THEN** 所有历史装配点逐点相等，新段也一致
+- **WHEN** 对一个已完成 session resume 并追加一轮，再跑 `replay`
+- **THEN** 所有历史装配点逐点相等，新轮也一致
 
 #### Scenario: 硬杀缺口被明确处理
 
-- **WHEN** 日志最后有 `segment/start`/`turn/start` 但没有对应闭合
+- **WHEN** 日志最后有 `turn/start`/`step/start` 但没有对应闭合
 - **THEN** resume 补一条可解释的 `session/end` 或报告缺口，既有记录不变
 
 ### Requirement: schema_version 只做相邻迁移

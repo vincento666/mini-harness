@@ -5,7 +5,7 @@
 定义 M1 的命令行外部行为：`minihns run` 与 `minihns replay` 接受什么参数、产出什么可观察输出、失败时返回哪个退出码。
 ## Requirements
 ### Requirement: minihns run 一次性完成一个 session
-`minihns run` SHALL 一次调用跑完一个 session；参数：`-p/--prompt`（必填、非空）、`--config`、`--workspace`（默认当前目录）、`--session-dir`、`--provider`（默认 `mock`）、`--fixture`、`--base-url`（默认 `https://api.deepseek.com`）、`--model`（默认 `deepseek-chat`）、`--api-key-env`（默认 `DEEPSEEK_API_KEY`）、`--max-turns`、`--window`（默认 128000）、`--reserve`（默认 8192）、`--append-system-prompt`、`--events jsonl`、`--sandbox`（默认 `workspace-write`）、`--yes`。`--provider mock` 时 `--fixture` MUST 同时给出，`openai` 时 MUST NOT 被使用。成功时 stdout 打印 session id。
+`minihns run` SHALL 一次调用跑完一个 session；参数：`-p/--prompt`（必填、非空）、`--config`、`--workspace`（默认当前目录）、`--session-dir`、`--provider`（默认 `mock`）、`--fixture`、`--base-url`（默认 `https://api.deepseek.com`）、`--model`（默认 `deepseek-chat`）、`--api-key-env`（默认 `DEEPSEEK_API_KEY`）、`--max-steps`、`--window`（默认 128000）、`--reserve`（默认 8192）、`--append-system-prompt`、`--events jsonl`、`--sandbox`（默认 `workspace-write`）、`--yes`。`--provider mock` 时 `--fixture` MUST 同时给出，`openai` 时 MUST NOT 被使用。成功时 stdout 打印 session id。
 
 #### Scenario: 缺少 prompt
 - **WHEN** 执行 `minihns run` 且不带 `-p`
@@ -63,7 +63,7 @@
 - **THEN** stdout 的行数与日志行数相同，且逐行解析后的对象相等
 
 ### Requirement: minihns replay 逐点重算折叠并断言相等
-系统 SHALL 提供 `minihns replay <session-id>`：定位该 session 的日志，对日志里每一条 `context/assembled` 用它之前的日志前缀重算折叠结果，并与该记录的 payload 逐字段比对；重算的入参 MUST NOT 取自该点之后的事件，且 MUST 全部可从该前缀派生（含当时的工具名列表）。replay SHALL 打印逐回合序列与最后一次装配的上下文；没有任何装配点时 SHALL 打印一行说明并以退出码 0 结束。replay MUST NOT 调用 Provider，MUST NOT 修改被重放的日志，也 MUST NOT 执行任何工具。重放不一致时 MUST NOT 往被重放的日志追加任何事件（含 `error/*`）：只往 stderr 写一行 `REPLAY_MISMATCH: <detail>` 并以退出码 1 结束。`error/replay` 不在事件词表里、从不进日志，是「每个非零退出都有 `error/*`」的例外之一（见 ADR-0001）。
+系统 SHALL 提供 `minihns replay <session-id>`：定位该 session 的日志，对日志里每一条 `context/assembled` 用它之前的日志前缀重算折叠结果，并与该记录的 payload 逐字段比对；重算的入参 MUST NOT 取自该点之后的事件，且 MUST 全部可从该前缀派生（含当时的工具名列表）。replay SHALL 打印逐步序列与最后一次装配的上下文；没有任何装配点时 SHALL 打印一行说明并以退出码 0 结束。replay MUST NOT 调用 Provider，MUST NOT 修改被重放的日志，也 MUST NOT 执行任何工具。重放不一致时 MUST NOT 往被重放的日志追加任何事件（含 `error/*`）：只往 stderr 写一行 `REPLAY_MISMATCH: <detail>` 并以退出码 1 结束。`error/replay` 不在事件词表里、从不进日志，是「每个非零退出都有 `error/*`」的例外之一（见 ADR-0001）。
 
 #### Scenario: 每个装配点都重算相等
 - **WHEN** 先跑一次带工具调用与审批记录的 run，再对同一 session id 执行 replay
@@ -79,7 +79,7 @@
 
 #### Scenario: 没有装配点的日志不是重放不一致
 - **WHEN** 被重放的日志里没有任何 `context/assembled`（第一次装配之前就溢出或取消收尾）
-- **THEN** replay 打印逐回合序列与一行「没有装配点」的说明、不打印最后一次装配的上下文，并以退出码 0 结束
+- **THEN** replay 打印逐步序列与一行「没有装配点」的说明、不打印最后一次装配的上下文，并以退出码 0 结束
 
 ### Requirement: 未知 session id 是参数错误
 当 `minihns replay` 的 session id 在 session 目录里没有对应日志文件时，系统 SHALL 以退出码 2 结束并在 stderr 输出 `SESSION_NOT_FOUND` 与所查找的路径。
@@ -89,7 +89,7 @@
 - **THEN** 退出码为 2，stderr 含 `SESSION_NOT_FOUND`
 
 ### Requirement: 退出码只取自固定表
-系统 SHALL 只用固定退出码：0 成功、1 模型或内部错误、2 参数错误、3 围栏拒绝或审批被拒、4 上下文预算溢出、5 用户取消。除参数错误（发生在 session 开始之前）、日志不可写、以及 replay 不一致这三种情况外，每个非零退出 SHALL 有对应的 `error/*` 事件。3 与 4 都是可达码：`stop_reason: FENCE_DENIED` 映射到 3，`stop_reason: CONTEXT_WINDOW_EXCEEDED` 映射到 4。一次性入口（`minihns run` 与 `minihns serve --http`）里会话收尾就是这次进程的退出码；`minihns chat` 里段级收尾（`ABORTED`、`FENCE_DENIED`、`MAX_TURNS`、`CONTEXT_WINDOW_EXCEEDED`、`PROVIDER_ERROR`）MUST NOT 结束进程，会话收尾（EOF 或提示符上取消）的退出码 SHALL 是 0。
+系统 SHALL 只用固定退出码：0 成功、1 模型或内部错误、2 参数错误、3 围栏拒绝或审批被拒、4 上下文预算溢出、5 用户取消。除参数错误（发生在 session 开始之前）、日志不可写、以及 replay 不一致这三种情况外，每个非零退出 SHALL 有对应的 `error/*` 事件。3 与 4 都是可达码：`stop_reason: FENCE_DENIED` 映射到 3，`stop_reason: CONTEXT_WINDOW_EXCEEDED` 映射到 4。一次性入口（`minihns run` 与 `minihns serve --http`）里会话收尾就是这次进程的退出码；`minihns chat` 里轮级收尾（`ABORTED`、`FENCE_DENIED`、`MAX_STEPS`、`CONTEXT_WINDOW_EXCEEDED`、`PROVIDER_ERROR`）MUST NOT 结束进程，会话收尾（EOF 或提示符上取消）的退出码 SHALL 是 0。
 
 #### Scenario: 每个失败都落在表内
 - **WHEN** M2 的任一失败场景发生
@@ -105,7 +105,7 @@
 
 #### Scenario: Ctrl-C 是取消结果
 - **WHEN** `minihns run` 运行期间收到 Ctrl-C（SIGINT）
-- **THEN** 取消信号被置位，日志以 `error/abort`、`turn/end`（`stop_reason: ABORTED`）与 `session/end` 收尾，进程以退出码 5 结束且没有未捕获异常
+- **THEN** 取消信号被置位，日志以 `error/abort`、`step/end`（`stop_reason: ABORTED`）与 `session/end` 收尾，进程以退出码 5 结束且没有未捕获异常
 
 #### Scenario: M1 不产生保留码
 - **WHEN** 跑通 M1 的既有 mock 场景（不含会改动的工具）与既有失败场景
@@ -120,7 +120,7 @@
 - **THEN** 退出码为 4，且日志里有 `error/context` 记录
 
 #### Scenario: chat 的正常收尾是 0
-- **WHEN** 一次 `minihns chat` 以 EOF 结束，且其中某个段以 `FENCE_DENIED` 收尾
+- **WHEN** 一次 `minihns chat` 以 EOF 结束，且其中某一轮以 `FENCE_DENIED` 收尾
 - **THEN** 进程退出码为 0，日志里 `error/fence` 在盘上而 `session/end` 的 `stop_reason` 是 `MODEL_COMPLETED`
 
 ### Requirement: provider 选择与密钥是装配的必需项
@@ -150,7 +150,7 @@
 - **THEN** 退出码为 2、stderr 含 `INVALID_ARGUMENT`，且 session 目录里没有任何新文件
 
 ### Requirement: 非零退出在 stderr 说清楚
-一次性入口（`minihns run` 与 `minihns serve --http`）以非 0 退出时，系统 SHALL 往 stderr 打印一行，含造成这次退出的失败码。当该失败结果带非空 `detail` 时那一行 SHALL 含那句 `detail`；当 `detail` 为空时那一行 MUST NOT 以冒号结尾、MUST NOT 带空说明（只有失败码本身）。这一行 MUST NOT 写进事件日志，也 MUST NOT 出现在 stdout。`minihns chat` 的段级收尾不适用这一条（会话收尾退出码是 0，见 `chat-repl`）。
+一次性入口（`minihns run` 与 `minihns serve --http`）以非 0 退出时，系统 SHALL 往 stderr 打印一行，含造成这次退出的失败码。当该失败结果带非空 `detail` 时那一行 SHALL 含那句 `detail`；当 `detail` 为空时那一行 MUST NOT 以冒号结尾、MUST NOT 带空说明（只有失败码本身）。这一行 MUST NOT 写进事件日志，也 MUST NOT 出现在 stdout。`minihns chat` 的轮级收尾不适用这一条（会话收尾退出码是 0，见 `chat-repl`）。
 
 #### Scenario: 取消收尾的 serve 那一行不是悬空冒号
 - **WHEN** `minihns serve --http` 的会话进行中收到取消信号，进程以退出码 5 结束
@@ -192,7 +192,7 @@
 
 #### Scenario: 数值与档位那几行写着内置默认
 - **WHEN** 执行 `minihns run --help`
-- **THEN** `max-turns`、`window`、`reserve`、`sandbox` 四行的说明里各写出该项的内置默认，且写出的值就是内置默认本身，不是 help 里另抄的一份数字
+- **THEN** `max-steps`、`window`、`reserve`、`sandbox` 四行的说明里各写出该项的内置默认，且写出的值就是内置默认本身，不是 help 里另抄的一份数字
 
 ### Requirement: `/goal` 命令查看目标并做五个动作
 
@@ -215,8 +215,8 @@
 
 #### Scenario: 暂停后再跑一轮不续跑
 
-- **WHEN** 用户输入 `/goal pause`，随后发一句话开启新段
-- **THEN** 段结束后没有新的 goal 来源 `user/message`
+- **WHEN** 用户输入 `/goal pause`，随后发一句话开启新轮
+- **THEN** 轮结束后没有新的 goal 来源 `user/message`
 
 #### Scenario: 人工续跑
 
@@ -271,4 +271,13 @@
 
 - **WHEN** 用户尝试 `minihns goal s1 pause`
 - **THEN** 参数解析失败（退出码 2），不写日志
+
+### Requirement: 步数上限用 --max-steps
+
+`run` / `chat` SHALL 用 `--max-steps` 限制**一轮**的步数，默认 8。旧 flag `--max-turns` MUST NOT 被接受：argparse 视它为未知参数，命令以退出码 2 结束、stderr 含 `unrecognized arguments`，不建日志。
+
+#### Scenario: 旧 flag 不再被接受
+
+- **WHEN** 用 `--max-turns 2` 跑一次 run
+- **THEN** 退出码 2，stderr 里是 `unrecognized arguments`，不建日志
 

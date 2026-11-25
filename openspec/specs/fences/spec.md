@@ -107,18 +107,18 @@ CLI 入口在 approval 为 ask、stdin 不是 tty 且未给出 `--yes` 时，系
 - **THEN** 5 次 `edit` 的结果都是 `OK`，且日志里没有任何 `approval/*` 记录
 
 ### Requirement: 围栏拒绝是终止结果
-围栏或审批拒绝时，系统 SHALL 先写与该 `tool/call` 配对的 `tool/result`（`outcome` 为 `DENIED_BY_FENCE` 或 `DENIED_BY_APPROVAL`），再写 `error/fence`（payload 字段表由 `event-log` 的「围栏拒绝写 error/fence」规定）与 `session/end`，并以退出码 3 结束。MUST NOT 抛出未捕获异常，也 MUST NOT 继续派发同一回合里尚未开始的工具调用。同一批次里已经开始执行的调用 SHALL 照常写出它自己的 `tool/result`，MUST NOT 因终止而被吞掉。
+围栏或审批拒绝时，系统 SHALL 先写与该 `tool/call` 配对的 `tool/result`（`outcome` 为 `DENIED_BY_FENCE` 或 `DENIED_BY_APPROVAL`），再写 `error/fence`（payload 字段表由 `event-log` 的「围栏拒绝写 error/fence」规定）与 `session/end`，并以退出码 3 结束。MUST NOT 抛出未捕获异常，也 MUST NOT 继续派发同一步里尚未开始的工具调用。同一批次里已经开始执行的调用 SHALL 照常写出它自己的 `tool/result`，MUST NOT 因终止而被吞掉。
 
 #### Scenario: 每个 tool/call 仍有配对结果
 - **WHEN** 一次 run 因越界写终止
 - **THEN** 该越界调用有一条配对的 `tool/result`，日志以 `error/fence` 与 `session/end` 收尾，退出码为 3
 
 #### Scenario: 终止后不再派发后续调用
-- **WHEN** 同一回合里模型先请求一次越界写、再请求一次合法读
+- **WHEN** 同一步里模型先请求一次越界写、再请求一次合法读
 - **THEN** 只有越界那一次有 `tool/call` 与 `tool/result`，合法读没有被派发
 
 #### Scenario: 终止不吞掉已经派发过的调用
-- **WHEN** 同一回合里一个 `read` 先被派发并跑完、同批的另一个 `write` 被围栏拒绝
+- **WHEN** 同一步里一个 `read` 先被派发并跑完、同批的另一个 `write` 被围栏拒绝
 - **THEN** 那个 `read` 仍有一条配对的 `tool/result`，它在 `error/fence` 之前落盘；日志以 `error/fence` 与 `session/end` 收尾，退出码为 3
 
 ### Requirement: error/fence 的 code 词表每个值可达

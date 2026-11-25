@@ -1,7 +1,7 @@
 # host-api Specification
 
 ## Purpose
-定义常驻宿主服务的外部契约：一个服务进程如何开会话、收发消息、取消一段、应答审批、列出与关闭会话，以及事件流、鉴权、错误信封与资源上限。它是 UI 壳与内核之间的运行时边界，不是 CLI 的另一个模式。
+定义常驻宿主服务的外部契约：一个服务进程如何开会话、收发消息、取消一轮、应答审批、列出与关闭会话，以及事件流、鉴权、错误信封与资源上限。它是 UI 壳与内核之间的运行时边界，不是 CLI 的另一个模式。
 ## Requirements
 ### Requirement: 宿主是常驻多会话服务
 
@@ -59,55 +59,55 @@
 - **WHEN** 服务器给了 `--allow-auto-approval`，同一请求创建会话并让它 `write`
 - **THEN** `write` 直接 `OK`，日志里没有任何 `approval/*` 记录
 
-### Requirement: 消息开一个段，段进行中排队
+### Requirement: 消息开一轮，轮进行中排队
 
-`POST /sessions/{id}/messages` SHALL 在会话空闲时开一个段、写 `user/message` 并返回 `202`；段进行中再发 SHALL 进入深度为 1 的队列并返回 `202` 与 `queued: true`；队列已满 SHALL 返回 `429`；空消息 SHALL 返回 `400`。同一会话同一时刻 MUST NOT 有两个段在跑。
+`POST /sessions/{id}/messages` SHALL 在会话空闲时开一轮、写 `user/message` 并返回 `202`；轮进行中再发 SHALL 进入深度为 1 的队列并返回 `202` 与 `queued: true`；队列已满 SHALL 返回 `429`；空消息 SHALL 返回 `400`。同一会话同一时刻 MUST NOT 有两轮在跑。
 
-段收尾后，只要队列非空，SHALL 先开会话队列里的下一条人类消息；队列为空且目标 `active`、已武装、还有轮次额度时，SHALL 自动开下一 goal 轮。也就是说 host 与 `chat` / `run` 共用同一套段后收尾（见 `turn-loop` 的「段后收尾只有一份实现」）；host MUST NOT 只执行 `/goal` 命令而不驱动轮次。
+轮收尾后，只要队列非空，SHALL 先开会话队列里的下一条人类消息；队列为空且目标 `active`、已武装、还有轮次额度时，SHALL 自动开下一 goal 轮。也就是说 host 与 `chat` / `run` 共用同一套轮后收尾（见 `turn-loop` 的「轮后收尾只有一份实现」）；host MUST NOT 只执行 `/goal` 命令而不驱动轮次。
 
-#### Scenario: 第二句在段进行中排队
+#### Scenario: 第二句在轮进行中排队
 
-- **WHEN** 第一句已经让段跑起来，立刻再 POST 一句
-- **THEN** 第二次返回 202 且 `queued` 为 true，第一段收尾后第二句自动开下一个段，日志里两条 `user/message` 的先后与请求一致
+- **WHEN** 第一句已经让轮跑起来，立刻再 POST 一句
+- **THEN** 第二次返回 202 且 `queued` 为 true，第一轮收尾后第二句自动开下一轮，日志里两条 `user/message` 的先后与请求一致
 
 #### Scenario: 队列已满
 
-- **WHEN** 已有一段在跑、队列里已有一句，再 POST 第三句
+- **WHEN** 已有一轮在跑、队列里已有一句，再 POST 第三句
 - **THEN** 第三次返回 429
 
 #### Scenario: host 自动续跑目标轮次
 
-- **WHEN** 人类段里的模型调用 `create_goal` 建了一个上限为 2 的目标，该人类段正常收尾
-- **THEN** 不需要再来一条 `POST /messages`：日志里出现 goal 来源的 `user/message` 与新的段，跑满两轮后落 `blocked{round-limit}`
+- **WHEN** 人类轮里的模型调用 `create_goal` 建了一个上限为 2 的目标，该人类轮正常收尾
+- **THEN** 不需要再来一条 `POST /messages`：日志里出现 goal 来源的 `user/message` 与新的轮，跑满两轮后落 `blocked{round-limit}`
 
 #### Scenario: 人话先于自动轮次
 
 - **WHEN** 一个 goal 轮次正在跑，客户端 POST 了一条人类消息；该轮次正常收尾
-- **THEN** 队列里的消息先开人类段；它收尾之后才出现下一 goal 轮
+- **THEN** 队列里的消息先开人类轮；它收尾之后才出现下一 goal 轮
 
 #### Scenario: 回答未决问题
 
 - **WHEN** 一个 goal 轮次因 `ask_user` 超时以未决问题收尾
-- **THEN** 会话回到 `idle`、目标仍 `active`；下一次 POST 的消息开一个人类段，收尾后自动接下一 goal 轮，`rounds_started` 不因人类段推进
+- **THEN** 会话回到 `idle`、目标仍 `active`；下一次 POST 的消息开一个人类轮，收尾后自动接下一 goal 轮，`rounds_started` 不因人类轮推进
 
 #### Scenario: 命令面 resume 立刻驱动
 
 - **WHEN** 会话空闲、目标 `paused`，客户端 POST `/commands` 执行 `/goal resume`
-- **THEN** 响应 `ok` 为真后立刻出现 `segment/start` 与 `source.round == rounds_started + 1` 的 goal 消息，不需要再 POST `/messages`
+- **THEN** 响应 `ok` 为真后立刻出现 `turn/start` 与 `source.round == rounds_started + 1` 的 goal 消息，不需要再 POST `/messages`
 
-### Requirement: 取消只结束当前段
+### Requirement: 取消只结束当前轮
 
-`POST /sessions/{id}/cancel` SHALL 只取消当前正在跑的段：日志写 `error/abort`、`turn/end(ABORTED)`、`segment/end(ABORTED)`，会话回到空闲并返回 `202`；没有段在跑时 SHALL 是 `200` 且不写任何记录；会话 MUST NOT 因此结束。取消 MUST NOT 清空队列：队列里的下一条在段收尾后照常开新段。
+`POST /sessions/{id}/cancel` SHALL 只取消当前正在跑的轮：日志写 `error/abort`、`step/end(ABORTED)`、`turn/end(ABORTED)`，会话回到空闲并返回 `202`；没有轮在跑时 SHALL 是 `200` 且不写任何记录；会话 MUST NOT 因此结束。取消 MUST NOT 清空队列：队列里的下一条在轮收尾后照常开新轮。
 
 #### Scenario: 取消后会话还能继续
 
-- **WHEN** 段进行中 POST cancel，等它收尾后再 POST 一条消息
-- **THEN** 取消段以 `ABORTED` 收尾，第二条消息正常开新段并跑完
+- **WHEN** 轮进行中 POST cancel，等它收尾后再 POST 一条消息
+- **THEN** 取消轮以 `ABORTED` 收尾，第二条消息正常开新轮并跑完
 
 #### Scenario: 取消不清空已排队的消息
 
-- **WHEN** 段进行中已经排了一条消息，然后 cancel
-- **THEN** 当前段以 `ABORTED` 收尾，排队的那条随后开新段，日志里两条 `user/message` 都在
+- **WHEN** 轮进行中已经排了一条消息，然后 cancel
+- **THEN** 当前轮以 `ABORTED` 收尾，排队的那条随后开新轮，日志里两条 `user/message` 都在
 
 ### Requirement: 审批应答是 HTTP 回程
 
@@ -115,13 +115,13 @@
 
 #### Scenario: 批准一次写
 
-- **WHEN** 段因 `write` 停在审批上，POST 该 `tool_call_id` 且 `decision` 为 `approve`
+- **WHEN** 轮因 `write` 停在审批上，POST 该 `tool_call_id` 且 `decision` 为 `approve`
 - **THEN** 返回 200，日志写 `approval/response(APPROVED)`，随后该 `tool/result` 为 `OK`
 
 #### Scenario: 拒绝一次写
 
 - **WHEN** 同一形状的请求 `decision` 为 `deny`
-- **THEN** 日志写 `approval/response(DENIED)`，该调用是 `DENIED_BY_APPROVAL`，段以 `FENCE_DENIED` 收尾
+- **THEN** 日志写 `approval/response(DENIED)`，该调用是 `DENIED_BY_APPROVAL`，轮以 `FENCE_DENIED` 收尾
 
 ### Requirement: 会话列表与状态
 
@@ -146,21 +146,23 @@
 
 ### Requirement: 关闭会话
 
-`DELETE /sessions/{id}` SHALL 在会话空闲时写 `session/end(MODEL_COMPLETED)`、停止该会话并返回 `200`；段进行中 SHALL 是 `409`；未知 id SHALL 是 `404`；已关闭的会话再次 DELETE SHALL 是 `404`。
+`DELETE /sessions/{id}` SHALL 在会话空闲时写 `session/end(MODEL_COMPLETED)`、停止该会话并返回 `200`；轮进行中 SHALL 是 `409`；未知 id SHALL 是 `404`；已关闭的会话再次 DELETE SHALL 是 `404`。
 
 #### Scenario: 空闲时关闭
 
 - **WHEN** 一个空闲会话收到 DELETE
 - **THEN** 返回 200，日志最后一条是 `session/end`，`status` 变为 `ended`
 
-#### Scenario: 段进行中拒绝关闭
+#### Scenario: 轮进行中拒绝关闭
 
-- **WHEN** 会话正在跑段时 DELETE
-- **THEN** 返回 409，段照常跑完，不写 `session/end`
+- **WHEN** 会话正在跑轮时 DELETE
+- **THEN** 返回 409，轮照常跑完，不写 `session/end`
 
 ### Requirement: 事件流是日志的逐行镜像
 
-`GET /sessions/{id}/events` SHALL 是 SSE：每个 durable 帧的 `id` 是该记录的 `seq`、`event` 是类型、`data` 是整行记录的 JSON；游标来自 `?from=` 或 `Last-Event-ID`，`0` 合法、负数与非整数是 `400`；`?snapshot=1` 时 SHALL 先发一帧 `event: snapshot`（含 `session_id`、`status`、`last_seq` 与折叠后的 `messages`），随后从 `last_seq + 1` 继续送 durable 帧。H2 还 SHALL 在 durable 帧之间送 `event: model/delta` 的 ephemeral 帧：无 `id`、不落日志、不参与游标，`data` 是 `{turn_id, index, text}`。
+`GET /sessions/{id}/events` SHALL 是 SSE：每个 durable 帧的 `id` 是该记录的 `seq`、`event` 是类型、`data` 是整行记录的 JSON；游标来自 `?from=` 或 `Last-Event-ID`，`0` 合法、负数与非整数是 `400`；`?snapshot=1` 时 SHALL 先发一帧 `event: snapshot`（含 `session_id`、`status`、`last_seq` 与折叠后的 `messages`），随后从 `last_seq + 1` 继续送 durable 帧。H2 还 SHALL 在 durable 帧之间送 `event: model/delta` 的 ephemeral 帧：无 `id`、不落日志、不参与游标，`data` 是 `{step_id, index, text}`。
+
+增量的单位是**步**（一次模型往返），不是轮：`step_id` 与同一步 durable `model/response` 载荷里的 `step_id` 同值。旧键 `turn_id` MUST NOT 再出现。
 
 #### Scenario: 帧与日志逐字段相等
 
@@ -176,6 +178,11 @@
 
 - **WHEN** 一次流式模型调用正在生成正文
 - **THEN** 客户端收到若干无 `id` 的 `model/delta` 帧，随后收到一条 durable `model/response`；日志里没有 delta 记录，重连后也不补这些 delta
+
+#### Scenario: delta 带步 id 而不是轮 id
+
+- **WHEN** 一轮里跑了两步，只有第二步在流式输出
+- **THEN** 这些 `model/delta` 帧的 `step_id` 都是第二步的 id，与那条 `model/response` 的载荷一致
 
 ### Requirement: 鉴权是 Bearer token
 
@@ -228,13 +235,13 @@
 - **WHEN** 请求一个不存在的 32 位 id
 - **THEN** 返回 404 与 `SESSION_NOT_FOUND`，stderr 没有 traceback
 
-### Requirement: 服务退出取消所有段并收尾
+### Requirement: 服务退出取消所有轮并收尾
 
-收到 SIGINT 时，host SHALL 取消所有正在跑的段，并为每个会话写 `session/end`（运行中的先写 `error/abort` / `turn/end` / `segment/end`，空闲的直接写 `session/end(MODEL_COMPLETED)`），再退出；退出码 SHALL 为 0；MUST NOT 留下没有 `session/end` 的空转会话。收尾已经开始的段 MUST NOT 被写成半条。
+收到 SIGINT 时，host SHALL 取消所有正在跑的轮，并为每个会话写 `session/end`（运行中的先写 `error/abort` / `step/end` / `turn/end`，空闲的直接写 `session/end(MODEL_COMPLETED)`），再退出；退出码 SHALL 为 0；MUST NOT 留下没有 `session/end` 的空转会话。收尾已经开始的轮 MUST NOT 被写成半条。
 
 #### Scenario: 退出时收干净
 
-- **WHEN** 一个段正在跑时向 host 发 SIGINT
+- **WHEN** 一轮正在跑时向 host 发 SIGINT
 - **THEN** 该会话以 `ABORTED` 收尾、日志有 `session/end`，进程退出码为 0
 
 ### Requirement: 装配复用且失败不建日志
@@ -256,7 +263,7 @@
 
 ### Requirement: 命令面
 
-`GET /commands` SHALL 返回本进程可执行的命令清单，每项含 `name` 与 `description`。`POST /sessions/{id}/commands` SHALL 接受 `{name, arguments}`，执行与 CLI 相同的命令实现，写 `command/run` + `command/done`，并返回 200 与 `{output, cursor}`；它 MUST NOT 创建模型消息或开启段。未知命令或参数不合法 SHALL 是 400 的 `INVALID_ARGUMENT` 信封且不写日志。鉴权、来源与错误信封与其它会话路由一致。
+`GET /commands` SHALL 返回本进程可执行的命令清单，每项含 `name` 与 `description`。`POST /sessions/{id}/commands` SHALL 接受 `{name, arguments}`，执行与 CLI 相同的命令实现，写 `command/run` + `command/done`，并返回 200 与 `{output, cursor}`；它 MUST NOT 创建模型消息或开启轮。未知命令或参数不合法 SHALL 是 400 的 `INVALID_ARGUMENT` 信封且不写日志。鉴权、来源与错误信封与其它会话路由一致。
 
 #### Scenario: 列命令
 
@@ -266,7 +273,7 @@
 #### Scenario: 执行命令
 
 - **WHEN** `POST /sessions/{id}/commands {name:"skill", arguments:"tdd"}`
-- **THEN** 返回 200 与正文，日志里有 `command/run` + `command/done`，没有 `user/message` 或新段
+- **THEN** 返回 200 与正文，日志里有 `command/run` + `command/done`，没有 `user/message` 或新轮
 
 #### Scenario: 未知命令
 

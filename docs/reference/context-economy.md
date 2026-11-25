@@ -57,7 +57,7 @@
 |---|---|---|
 | 单条剪枝 | `bash` 只保留 16 KiB 尾部 + spill；`read` 有 `READ_MAX_BYTES`；`glob`/`grep` 各有上限 | 没有通用「头 + 标记 + 尾」剪枝；没有 surfaceOp 式替换 |
 | spill | `bash` 超限写 `.mini-harness/spill/bash-<digest>.txt`，结果里留相对路径 | 只有 bash；没有读回指引的统一措辞；没有回收 |
-| 计量 | `budget_reading` 读 `usage`；`estimate_tokens` 是 4 字符 1 token | 没有会话/回合聚合，没有成本，没有投影 |
+| 计量 | `budget_reading` 读 `usage`；`estimate_tokens` 是 4 字符 1 token | 没有会话/步聚合，没有成本，没有投影 |
 | E1 报告 | 未查（E1 是并行支撑轨） | 上下文/成本列待接 |
 
 ## 5. 需要裁决的分叉

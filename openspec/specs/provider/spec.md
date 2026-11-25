@@ -2,13 +2,13 @@
 
 ## Purpose
 
-定义模型层的对外契约：回合循环只依赖一个 Provider 方法，M1 用 JSON fixture 序列驱动的 mock Provider 提供可预期的回复，真实实现之后必须共用同一契约。
+定义模型层的对外契约：步循环只依赖一个 Provider 方法，M1 用 JSON fixture 序列驱动的 mock Provider 提供可预期的回复，真实实现之后必须共用同一契约。
 
 ## Requirements
 
 ### Requirement: Provider 只有一个方法
 
-系统 SHALL 通过唯一方法 `generate(messages, tools, signal, on_delta=None)` 请求模型，返回 `AssistantTurn{content, tool_calls, usage, finish_reason}`；`signal` SHALL 用于传递取消。`on_delta` 是可选的增量回调；没有它时行为与不流式逐点相同。回合循环 MUST NOT 依赖具体 Provider 实现或调用其它方法。
+系统 SHALL 通过唯一方法 `generate(messages, tools, signal, on_delta=None)` 请求模型，返回 `AssistantTurn{content, tool_calls, usage, finish_reason}`；`signal` SHALL 用于传递取消。`on_delta` 是可选的增量回调；没有它时行为与不流式逐点相同。步循环 MUST NOT 依赖具体 Provider 实现或调用其它方法。
 
 #### Scenario: 循环只经由 generate
 - **WHEN** 任意 mock 场景跑完
@@ -23,12 +23,12 @@
 系统 SHALL 支持由 JSON fixture 文件驱动的 mock Provider：fixture 是一个有序回复序列，第 i 次 `generate` 返回第 i 条条目，条目可声明 `content`、`tool_calls`、`usage`、`finish_reason`，并可声明可选的 `deltas`（字符串数组）。给了 `deltas` 且调用方提供 delta sink 时，mock SHALL 依次发出这些增量、再返回最终条目；没有 `deltas` 时 mock 不制造增量。`mock` 路径 MUST NOT 发起网络请求。
 
 #### Scenario: 逐条回放 fixture
-- **WHEN** fixture 含 3 条回复且 run 跑了 3 个回合
+- **WHEN** fixture 含 3 条回复且 run 跑了 3 步
 - **THEN** 三条 `model/response` 的 `content` 与 fixture 条目逐一对应
 
 #### Scenario: fixture 声明工具调用
 - **WHEN** 某条 fixture 条目含非空 `tool_calls`
-- **THEN** 对应的 `model/response` 记录同样的工具调用，且该回合产生 `tool/call` 与 `tool/result`
+- **THEN** 对应的 `model/response` 记录同样的工具调用，且该步产生 `tool/call` 与 `tool/result`
 
 #### Scenario: mock 发出 fixture 的增量
 - **WHEN** fixture 条目声明 `deltas: ["你", "好"]` 且调用方提供 delta sink
@@ -42,7 +42,7 @@
 - **THEN** 退出码为 2，stderr 含 `FIXTURE_INVALID`，且没有 session 日志
 
 ### Requirement: Provider 返回不合法是结果不是异常
-系统 SHALL 校验 Provider 返回值符合 `AssistantTurn`；不符合时 SHALL 写 `error/model`（`code: PROVIDER_SCHEMA_INVALID`）、按 `PROVIDER_ERROR` 结束回合，并以退出码 1 结束 run。真实 provider 收到**状态码合法但响应体形状不合法**的回复时，SHALL 走同一条路径。
+系统 SHALL 校验 Provider 返回值符合 `AssistantTurn`；不符合时 SHALL 写 `error/model`（`code: PROVIDER_SCHEMA_INVALID`）、按 `PROVIDER_ERROR` 结束该步，并以退出码 1 结束 run。真实 provider 收到**状态码合法但响应体形状不合法**的回复时，SHALL 走同一条路径。
 
 #### Scenario: 返回缺少 finish_reason
 - **WHEN** Provider 返回一个缺少 `finish_reason` 的对象
@@ -54,15 +54,15 @@
 
 ### Requirement: OpenAI 兼容 provider 按 chat completions 形状请求
 
-系统 SHALL 提供 `openai` provider：向 `<base-url>/chat/completions` 发 POST，请求体含 `model`、`messages`、`tools`（每个工具带参数 JSON Schema）；默认是非流式，调用方给 delta sink 时 SHALL 使用流式请求。成功时 SHALL 把回复转成 `AssistantTurn{content, tool_calls, usage, finish_reason}`。它 MUST 实现与 mock 相同的 `generate` 契约，回合循环 MUST NOT 因 provider 不同而改变行为。
+系统 SHALL 提供 `openai` provider：向 `<base-url>/chat/completions` 发 POST，请求体含 `model`、`messages`、`tools`（每个工具带参数 JSON Schema）；默认是非流式，调用方给 delta sink 时 SHALL 使用流式请求。成功时 SHALL 把回复转成 `AssistantTurn{content, tool_calls, usage, finish_reason}`。它 MUST 实现与 mock 相同的 `generate` 契约，步循环 MUST NOT 因 provider 不同而改变行为。
 
 #### Scenario: 两种 provider 走同一入口
 - **WHEN** 同一个场景分别用 mock fixture 与 openai provider（对着注入的假 HTTP 层）跑
-- **THEN** 两条日志的 `model/response`、`tool/call`、`tool/result` 序列一致，且回合循环没有 provider 分支
+- **THEN** 两条日志的 `model/response`、`tool/call`、`tool/result` 序列一致，且步循环没有 provider 分支
 
 #### Scenario: 一轮多个工具调用
 - **WHEN** 响应的 `message.tool_calls` 含两个调用
-- **THEN** 该回合产生两条 `tool/call` 与两条 `tool/result`，`turn/end` 的 `stop_reason` 为 `TOOL_CALLS`
+- **THEN** 该步产生两条 `tool/call` 与两条 `tool/result`，`turn/end` 的 `stop_reason` 为 `TOOL_CALLS`
 
 ### Requirement: 工具面带参数 JSON Schema 且由注册表派生
 系统 SHALL 在送给模型的工具面里为每个工具带上参数 JSON Schema。该 schema MUST 由该工具在注册表里的参数模型派生，MUST NOT 是手搓的第二份描述。
@@ -100,7 +100,7 @@
 
 #### Scenario: 首 delta 之后不重试
 - **WHEN** 流式响应已经发出至少一个 delta 后连接中断
-- **THEN** 不写 `model/retry`，不重发请求，该回合以 `PROVIDER_ERROR` 收尾
+- **THEN** 不写 `model/retry`，不重发请求，该步以 `PROVIDER_ERROR` 收尾
 
 ### Requirement: 超时、连接失败与取消是失败结果
 系统 SHALL 在请求超时、连接层失败或取消信号已置位时停止请求。模型请求的超时 SHALL 是 120 秒（决策 15 锁定的数值；实现常量，MUST NOT 有命令行开关）。超时 SHALL 塌成 `error/model`（`code: PROVIDER_TIMEOUT`）；连接层失败（无法建立请求，例如端点没在监听）SHALL 塌成 `error/model`（`code: PROVIDER_TRANSPORT`）且 MUST NOT 重试；取消信号已置位时 MUST NOT 再发出新的请求，此时 SHALL 返回 `code: PROVIDER_ABORTED` 的失败结果而不是异常。
@@ -114,7 +114,7 @@
 - **THEN** 日志写 `error/model`（`code: PROVIDER_TRANSPORT`），退出码为 1，且没有 `model/retry`
 
 #### Scenario: 取消之后不再请求
-- **WHEN** 取消信号在某个回合被置位
+- **WHEN** 取消信号在某一步被置位
 - **THEN** 该 session 之后没有任何新的模型请求发出
 - **AND** `generate` 返回 `code: PROVIDER_ABORTED` 的失败结果（M3 的取消落在派发段，`generate` 在它之前，因此内核仍没有路径在 `generate` 期间置位该信号；这条只在 provider 侧兜住）
 
@@ -186,7 +186,7 @@
 
 ### Requirement: 流式读取中断是失败结果
 
-流式响应在 `[DONE]` 之前断开（连接错误、超时、取消）SHALL 塌成失败结果，而不是抛出未捕获异常；已经交给 sink 的增量不补、不改写日志。取消 SHALL 照常由回合循环写 `error/abort` / `turn/end(ABORTED)`。
+流式响应在 `[DONE]` 之前断开（连接错误、超时、取消）SHALL 塌成失败结果，而不是抛出未捕获异常；已经交给 sink 的增量不补、不改写日志。取消 SHALL 照常由步循环写 `error/abort` / `turn/end(ABORTED)`。
 
 #### Scenario: 流中断
 - **WHEN** 假端点在第一个 delta 后关闭连接
@@ -194,4 +194,4 @@
 
 #### Scenario: 流式调用被取消
 - **WHEN** 流式读取期间取消事件置位
-- **THEN** 适配器停止读流，回合以 `ABORTED` 收尾，不写 `model/response`
+- **THEN** 适配器停止读流，该步以 `ABORTED` 收尾，不写 `model/response`

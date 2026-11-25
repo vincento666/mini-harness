@@ -5,11 +5,11 @@ TBD - created by archiving change m12-subagent-delegation. Update Purpose after 
 ## Requirements
 ### Requirement: subagent 是 spawn 工具
 
-系统 SHALL 提供 `subagent` 工具，参数至少 `task`（非空、自足提示词）、可选 `max_turns` / `sandbox` / `agent_preset`。`agent_preset` 只在部署配置了 `allowed_presets` 时出现，取值 SHALL 是该白名单的枚举；它是**整套 preset 的选择**，模型 MUST NOT 在选中的 preset 内部再选择或排除单个工具。工具 MUST NOT 接受任意工具名列表（`tools` 参数已删除，见「子级工具集来自部署 preset」）。它 SHALL 创建一个独立子会话；MUST NOT 把父会话历史作为 seed（fork 不做）。结果 SHALL 是子会话最终文本（可含产物路径），MUST NOT 是子日志或完整过程。
+系统 SHALL 提供 `subagent` 工具，参数至少 `task`（非空、自足提示词）、可选 `max_steps` / `sandbox` / `agent_preset`。`agent_preset` 只在部署配置了 `allowed_presets` 时出现，取值 SHALL 是该白名单的枚举；它是**整套 preset 的选择**，模型 MUST NOT 在选中的 preset 内部再选择或排除单个工具。工具 MUST NOT 接受任意工具名列表（`tools` 参数已删除，见「子级工具集来自部署 preset」）。它 SHALL 创建一个独立子会话；MUST NOT 把父会话历史作为 seed（fork 不做）。结果 SHALL 是子会话最终文本（可含产物路径），MUST NOT 是子日志或完整过程。
 
 #### Scenario: 子会话独立起步
 
-- **WHEN** 父段调用 `subagent(task="读 a.md 并总结")`
+- **WHEN** 父轮调用 `subagent(task="读 a.md 并总结")`
 - **THEN** 子会话从空对话开始，有自己的 `session/start` 与日志
 
 #### Scenario: 没有白名单时模型不能选 preset
@@ -28,12 +28,12 @@ TBD - created by archiving change m12-subagent-delegation. Update Purpose after 
 
 ### Requirement: 深度与容量是结果词
 
-`maxDepth` 默认 1（0 禁止委派）；`maxActiveSubagents` 默认每父会话 8。超限 SHALL 返回 `DEPTH_EXCEEDED` / `ACTIVATION_LIMIT_REACHED`，作为 `tool/result` 的结果，MUST NOT 抛异常打断父回合。
+`maxDepth` 默认 1（0 禁止委派）；`maxActiveSubagents` 默认每父会话 8。超限 SHALL 返回 `DEPTH_EXCEEDED` / `ACTIVATION_LIMIT_REACHED`，作为 `tool/result` 的结果，MUST NOT 抛异常打断父步。
 
 #### Scenario: 深度超限
 
 - **WHEN** 子会话在 `maxDepth=1` 下再调 `subagent`
-- **THEN** 结果是 `DEPTH_EXCEEDED`，父回合继续
+- **THEN** 结果是 `DEPTH_EXCEEDED`，父步继续
 
 ### Requirement: 子会话不继承 approval 放行
 
@@ -53,7 +53,7 @@ TBD - created by archiving change m12-subagent-delegation. Update Purpose after 
 
 ### Requirement: subagent 同批真并发
 
-`subagent` SHALL 标为 `parallel` 类别；同一批多个调用 SHALL 并发执行，结果按完成顺序落盘。子会话内部仍受自己的工具并发与 `max_turns` 约束。
+`subagent` SHALL 标为 `parallel` 类别；同一批多个调用 SHALL 并发执行，结果按完成顺序落盘。子会话内部仍受自己的工具并发与 `max_steps` 约束。
 
 #### Scenario: 两个子代理并发
 
@@ -62,11 +62,11 @@ TBD - created by archiving change m12-subagent-delegation. Update Purpose after 
 
 ### Requirement: 取消传播到子会话
 
-父段取消 SHALL 传播到该段派生且仍在跑的子会话；子会话 SHALL 按 ABORTED 收尾，已完成结果保留。父 MUST NOT 留下孤儿任务。
+父轮取消 SHALL 传播到该轮派生且仍在跑的子会话；子会话 SHALL 按 ABORTED 收尾，已完成结果保留。父 MUST NOT 留下孤儿任务。
 
 #### Scenario: 父取消子收尾
 
-- **WHEN** 父段在子代理运行中取消
+- **WHEN** 父轮在子代理运行中取消
 - **THEN** 子日志有 ABORTED 收尾，父取消照常返回
 
 ### Requirement: Host 视图带父子字段

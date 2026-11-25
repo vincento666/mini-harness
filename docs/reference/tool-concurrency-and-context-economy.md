@@ -76,7 +76,7 @@ compaction_retain_tokens = 0   # >0 时覆盖 ratio
 
 **CAS 与截断必须用同一份窗口**：`read` 的行/字节/单行上限一旦生效，`edit` 的写前必读判定要拿同一份截断窗口去比；否则合法编辑会被误报 `STALE_EDIT`。M10 把「读窗口」抽成一个函数，`read` 与 `edit` 共用。
 
-**批内日志前缀复用**：一批调用共享一次日志前缀读；不要每个工具自己 `read_events`。provider 的 prompt prefix cache 不在 M10；跨回合的折叠缓存是 M11。
+**批内日志前缀复用**：一批调用共享一次日志前缀读；不要每个工具自己 `read_events`。provider 的 prompt prefix cache 不在 M10；跨步的折叠缓存是 M11。
 
 ## 5. 判据（M10 起草时落成 seam 判据）
 

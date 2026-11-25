@@ -31,7 +31,7 @@ mini 的落法：
 - `tool_calls` 的流式拼装按 `index` 聚合 `id` / `function.name` / `arguments`；拼完仍产出原来的 `AssistantTurn`。
 - `Provider.generate` 多一个可选的 delta sink（或等价的回调）；没有 sink 时行为与非流式完全一样。mock provider 也要能发 delta，否则 CI 覆盖不到。
 - **重试**：只在首 delta 之前重试一次（429/5xx，照 ADR-0006 的既有规则）；已经吐过字的流不重试，直接塌成 `PROVIDER_ERROR`，避免屏幕上出现两遍开头。
-- **取消**：停止读流、关闭响应；内核在回合边界照常写 `error/abort` / `turn/end(ABORTED)`；已经显示的增量不补。
+- **取消**：停止读流、关闭响应；内核在步边界照常写 `error/abort` / `turn/end(ABORTED)`；已经显示的增量不补。
 
 ## 4. 断线、重连与 UI 客户端
 

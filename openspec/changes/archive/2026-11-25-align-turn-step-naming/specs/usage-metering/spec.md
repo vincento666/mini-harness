@@ -2,7 +2,7 @@
 
 ## MODIFIED Requirements
 
-### Requirement: 回合与会话的 token 四桶计量
+### Requirement: 步与会话的 token 四桶计量
 
 系统 SHALL 从日志里每个 `model/response` 的 `usage` 聚合四个互不重叠的 bucket：`input_uncached`、`cache_read`、`cache_write`、`output`。`reasoning` 是 `output` 的细分，MUST NOT 再加一次。缺 `usage` 的步 SHALL 跳过，MUST NOT 用估算值代替。
 

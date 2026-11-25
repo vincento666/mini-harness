@@ -2,74 +2,74 @@
 
 ## Purpose
 
-定义显式回合主循环：每个回合做哪五步、按什么顺序记账、什么条件下停止，以及工具与模型失败如何作为结果而非异常被记录。
+定义显式步主循环：每一步按哪五个阶段执行、按什么顺序记账、什么条件下停止，以及工具与模型失败如何作为结果而非异常被记录。
 ## Requirements
-### Requirement: 回合主循环按固定五步显式执行
-系统 SHALL 对每个回合按固定顺序执行：写 `turn/start` → 折叠装配上下文（越线时先压缩并写 `compaction/summary`）并写 `context/assembled` → 调 Provider 并写 `model/request` 与 `model/response` → 派发工具调用并写 `tool/call` 与 `tool/result` → 写 `turn/end`。该顺序 MUST NOT 藏在回调或隐式钩子里；压缩 MUST NOT 成为第六步，它属于装配步之内。
+### Requirement: 步主循环按固定五阶段显式执行
+系统 SHALL 对每一步按固定顺序执行：写 `step/start` → 折叠装配上下文（越线时先压缩并写 `compaction/summary`）并写 `context/assembled` → 调 Provider 并写 `model/request` 与 `model/response` → 派发工具调用并写 `tool/call` 与 `tool/result` → 写 `step/end`。该顺序 MUST NOT 藏在回调或隐式钩子里；压缩 MUST NOT 成为第六个阶段，它属于装配步之内。
 
-#### Scenario: 两个回合的事件顺序可断言
-- **WHEN** 一次 run 完成两个回合
-- **THEN** 日志里事件类型按上述五步成组出现，且每个 `turn/end` 都在下一个 `turn/start` 之前
+#### Scenario: 连续两步的事件顺序可断言
+- **WHEN** 一次 run 完成两步
+- **THEN** 日志里事件类型按上述五个阶段成组出现，且每个 `step/end` 都在下一个 `step/start` 之前
 
-#### Scenario: 压缩不改变五步的顺序
-- **WHEN** 某回合的装配触发了压缩
-- **THEN** 该回合仍是 `turn/start` 开始、`turn/end` 收尾，`compaction/summary` 位于该回合的 `context/assembled` 之前
+#### Scenario: 压缩不改变五阶段的顺序
+- **WHEN** 某步的装配触发了压缩
+- **THEN** 该步仍是 `step/start` 开始、`step/end` 收尾，`compaction/summary` 位于该步的 `context/assembled` 之前
 
-### Requirement: 回合内事件携带 turn_id
-系统 SHALL 在 `turn/start`、`context/assembled`、`model/request`、`model/response`、`tool/call`、`tool/result`、`turn/end` 的 payload 里写入 `turn_id`；同一回合内 `turn_id` 相同，跨回合 MUST NOT 重复。
+### Requirement: 步内事件携带 step_id
+系统 SHALL 在 `step/start`、`context/assembled`、`model/request`、`model/response`、`tool/call`、`tool/result`、`step/end` 的 payload 里写入 `step_id`；同一步内 `step_id` 相同，跨步 MUST NOT 重复。
 
-#### Scenario: turn_id 与回合序号一一对应
-- **WHEN** 一次 run 跑了 3 个回合
-- **THEN** 日志里恰有 3 个不同的 `turn_id`，每个 `turn_id` 恰对应一条 `turn/start` 与一条 `turn/end`
+#### Scenario: step_id 与步序号一一对应
+- **WHEN** 一次 run 跑了 3 步
+- **THEN** 日志里恰有 3 个不同的 `step_id`，每个 `step_id` 恰对应一条 `step/start` 与一条 `step/end`
 
-### Requirement: 停止判定写在 turn/end
-系统 SHALL 在每条 `turn/end` 的 payload 里写 `stop_reason`，取值只允许 `MODEL_COMPLETED`、`TOOL_CALLS`、`MAX_TURNS`、`PROVIDER_ERROR`、`ABORTED`、`FENCE_DENIED`、`CONTEXT_WINDOW_EXCEEDED` 七个词表值，每个值只用于它对应的那一类收尾（见各 scenario）。`session/end` SHALL 记录整个 session 的最终 `stop_reason` 与回合总数；段级收尾不写 `session/end`。
+### Requirement: 停止判定写在 step/end
+系统 SHALL 在每条 `step/end` 的 payload 里写 `stop_reason`，取值只允许 `MODEL_COMPLETED`、`TOOL_CALLS`、`MAX_STEPS`、`PROVIDER_ERROR`、`ABORTED`、`FENCE_DENIED`、`CONTEXT_WINDOW_EXCEEDED` 七个词表值，每个值只用于它对应的那一类收尾（见各 scenario）。`session/end` SHALL 记录整个 session 的最终 `stop_reason` 与步总数；轮级收尾不写 `session/end`。
 
 #### Scenario: 模型不请求工具即停止
 - **WHEN** Provider 返回的 `tool_calls` 为空
-- **THEN** 该回合 `stop_reason` 为 `MODEL_COMPLETED`，且不再开始下一回合
+- **THEN** 该步 `stop_reason` 为 `MODEL_COMPLETED`，且本轮不再开始下一步
 
-#### Scenario: 模型要求调工具时回合以 TOOL_CALLS 收尾
-- **WHEN** Provider 返回的 `tool_calls` 非空且回合数未达 `--max-turns`
-- **THEN** 该回合 `stop_reason` 为 `TOOL_CALLS`，且紧接着开始下一回合
+#### Scenario: 模型要求调工具时步以 TOOL_CALLS 收尾
+- **WHEN** Provider 返回的 `tool_calls` 非空且步数未达 `--max-steps`
+- **THEN** 该步 `stop_reason` 为 `TOOL_CALLS`，且紧接着开始下一步
 
-#### Scenario: 达到回合上限即停止
-- **WHEN** 一次性 `minihns run` 里已完成的回合数达到 `--max-turns`
-- **THEN** 最后一个回合的 `stop_reason` 为 `MAX_TURNS`（即使该回合也要求调工具），`session/end` 被写入，run 以退出码 0 结束
+#### Scenario: 达到步上限即停止
+- **WHEN** 一次性 `minihns run` 里已完成的步数达到 `--max-steps`
+- **THEN** 最后一步的 `stop_reason` 为 `MAX_STEPS`（即使该步也要求调工具），`session/end` 被写入，run 以退出码 0 结束
 
-#### Scenario: 围栏拒绝的回合以 FENCE_DENIED 收尾
-- **WHEN** 一次性 `minihns run` 的某回合派发工具时发生围栏或审批拒绝
-- **THEN** 该回合写一条 `turn/end` 且 `stop_reason` 为 `FENCE_DENIED`，`session/end` 的最终 `stop_reason` 也是 `FENCE_DENIED`
+#### Scenario: 围栏拒绝的步以 FENCE_DENIED 收尾
+- **WHEN** 一次性 `minihns run` 的某步派发工具时发生围栏或审批拒绝
+- **THEN** 该步写一条 `step/end` 且 `stop_reason` 为 `FENCE_DENIED`，`session/end` 的最终 `stop_reason` 也是 `FENCE_DENIED`
 
-#### Scenario: 预算溢出的回合以 CONTEXT_WINDOW_EXCEEDED 收尾
-- **WHEN** 某回合的装配预算读数超过压力预算，压缩之后仍超过它
-- **THEN** 该回合写一条 `turn/end` 且 `stop_reason` 为 `CONTEXT_WINDOW_EXCEEDED`，`session/end` 的最终 `stop_reason` 也是它
+#### Scenario: 预算溢出的步以 CONTEXT_WINDOW_EXCEEDED 收尾
+- **WHEN** 某步的装配预算读数超过压力预算，压缩之后仍超过它
+- **THEN** 该步写一条 `step/end` 且 `stop_reason` 为 `CONTEXT_WINDOW_EXCEEDED`，`session/end` 的最终 `stop_reason` 也是它
 
 ### Requirement: 未注册工具是 UNKNOWN_TOOL 结果
-系统 SHALL 把模型请求的每个工具调用派发到本次运行装配出的工具注册表；注册表的内容由装配决定（见 `config-layering`），未注册的工具名 SHALL 产生一条 `tool/result` 且 `outcome` 为 `UNKNOWN_TOOL`，回合 MUST NOT 因此中断。
+系统 SHALL 把模型请求的每个工具调用派发到本次运行装配出的工具注册表；注册表的内容由装配决定（见 `config-layering`），未注册的工具名 SHALL 产生一条 `tool/result` 且 `outcome` 为 `UNKNOWN_TOOL`，步 MUST NOT 因此中断。
 
-#### Scenario: UNKNOWN_TOOL 不打断回合
+#### Scenario: UNKNOWN_TOOL 不打断步
 - **WHEN** Provider 返回一个调用未注册工具名的回复
-- **THEN** 该调用有配对的 `tool/call` 与 `tool/result`，`outcome` 为 `UNKNOWN_TOOL`，且该回合正常写 `turn/end`
+- **THEN** 该调用有配对的 `tool/call` 与 `tool/result`，`outcome` 为 `UNKNOWN_TOOL`，且该步正常写 `step/end`
 
-#### Scenario: 工具结果喂回下一回合
-- **WHEN** 某回合产生了 `tool/result` 记录
-- **THEN** 下一回合的装配里这些结果作为工具消息出现
+#### Scenario: 工具结果喂回下一步
+- **WHEN** 某步产生了 `tool/result` 记录
+- **THEN** 下一步的装配里这些结果作为工具消息出现
 
 #### Scenario: 空白名单下任何工具调用都是 UNKNOWN_TOOL
 - **WHEN** 配置文件写 `tools = []`，Provider 仍返回一个工具调用
-- **THEN** 该调用产出 `outcome: UNKNOWN_TOOL` 的 `tool/result`，且回合正常写 `turn/end`
+- **THEN** 该调用产出 `outcome: UNKNOWN_TOOL` 的 `tool/result`，且步正常写 `step/end`
 
-### Requirement: Provider 失败是回合终止结果
-当 Provider 无法产出合法回复时，系统 SHALL 写一条 `error/model` 记录（含 `code`）与 `turn/end`（`stop_reason: PROVIDER_ERROR`）。`session/end` 与退出码由入口决定：一次性入口（`run` / `serve`）写 `session/end` 并以退出码 1 结束，`minihns chat` 里这是段级收尾、会话回到提示符（ADR-0011 与 ADR-0019）。MUST NOT 抛出未捕获异常打断进程。`code` 取值：`PROVIDER_EXHAUSTED`、`PROVIDER_SCHEMA_INVALID`、`PROVIDER_HTTP_STATUS`、`PROVIDER_TIMEOUT`、`PROVIDER_TRANSPORT`、`PROVIDER_ABORTED`；前两个来自 mock 路径，后四个来自真实 provider 路径。`PROVIDER_ABORTED` 只在 provider 侧兜住「取消信号已置位却仍被调用」；内核取消仍走 `error/abort` 与退出码 5。
+### Requirement: Provider 失败是步终止结果
+当 Provider 无法产出合法回复时，系统 SHALL 写一条 `error/model` 记录（含 `code`）与 `step/end`（`stop_reason: PROVIDER_ERROR`）。`session/end` 与退出码由入口决定：一次性入口（`run` / `serve`）写 `session/end` 并以退出码 1 结束，`minihns chat` 里这是轮级收尾、会话回到提示符（ADR-0011 与 ADR-0019）。MUST NOT 抛出未捕获异常打断进程。`code` 取值：`PROVIDER_EXHAUSTED`、`PROVIDER_SCHEMA_INVALID`、`PROVIDER_HTTP_STATUS`、`PROVIDER_TIMEOUT`、`PROVIDER_TRANSPORT`、`PROVIDER_ABORTED`；前两个来自 mock 路径，后四个来自真实 provider 路径。`PROVIDER_ABORTED` 只在 provider 侧兜住「取消信号已置位却仍被调用」；内核取消仍走 `error/abort` 与退出码 5。
 
 #### Scenario: fixture 条目耗尽
-- **WHEN** 一次性 run 里需要的回合数超过 fixture 里的回复条目数
+- **WHEN** 一次性 run 里需要的步数超过 fixture 里的回复条目数
 - **THEN** 日志写 `error/model`（`code: PROVIDER_EXHAUSTED`）与 `session/end`，退出码为 1
 
 #### Scenario: HTTP 状态码不可接受
 - **WHEN** 一次性 run 的真实 provider 请求重试一次后仍收到 5xx
-- **THEN** 日志写 `error/model`（`code: PROVIDER_HTTP_STATUS`）、`turn/end`（`stop_reason: PROVIDER_ERROR`）与 `session/end`，退出码为 1
+- **THEN** 日志写 `error/model`（`code: PROVIDER_HTTP_STATUS`）、`step/end`（`stop_reason: PROVIDER_ERROR`）与 `session/end`，退出码为 1
 
 #### Scenario: 请求超时
 - **WHEN** 一次性 run 的真实 provider 请求超时
@@ -79,16 +79,16 @@
 - **WHEN** 一次性 run 的真实 provider 请求无法建立连接（端点没在监听）
 - **THEN** 日志写 `error/model`（`code: PROVIDER_TRANSPORT`）与 `session/end`，退出码为 1，且没有 `model/retry`
 
-#### Scenario: REPL 里 provider 失败是段级收尾
-- **WHEN** 一次 chat 的某个段因 fixture 条目耗尽拿到 `PROVIDER_EXHAUSTED`
-- **THEN** 该段有 `error/model`、`turn/end` 与 `segment/end`（`stop_reason: PROVIDER_ERROR`）、没有 `session/end`，下一条输入开启新的段，进程退出码为 0
+#### Scenario: REPL 里 provider 失败是轮级收尾
+- **WHEN** 一次 chat 的某一轮因 fixture 条目耗尽拿到 `PROVIDER_EXHAUSTED`
+- **THEN** 该轮有 `error/model`、`step/end` 与 `turn/end`（`stop_reason: PROVIDER_ERROR`）、没有 `session/end`，下一条输入开启新的轮，进程退出码为 0
 
 ### Requirement: 用户取消是 ABORTED 结果
-当运行期间收到取消信号时，系统 SHALL 终止**当前回合**而不是整批派发：已开始执行的调用被打断并塌成 `TOOL_CANCELLED`（配一条 `tool/cancelled`），尚未派发的每个声明调用 SHALL 落一对 `tool/call` 与 `tool/result(ABORTED_BEFORE_DISPATCH)`；随后写 `error/abort`（含 `turn_id` 与 `code: ABORTED`）与 `turn/end`（`stop_reason: ABORTED`）。内核 MUST NOT 把「会话是否结束」写进回合语义：一次性入口（`run` / `serve`）据此写 `session/end` 并以退出码 5 结束；`minihns chat` 里段中取消只写 `segment/end`、会话回到提示符（ADR-0011，见 `chat-repl`）。取消与围栏拒绝同时在场时取消优先到底：收尾是 `ABORTED`，围栏拒绝的事实留在 `error/fence` 与 `RunOutcome.failure_code`。
+当运行期间收到取消信号时，系统 SHALL 终止**当前步**而不是整批派发：已开始执行的调用被打断并塌成 `TOOL_CANCELLED`（配一条 `tool/cancelled`），尚未派发的每个声明调用 SHALL 落一对 `tool/call` 与 `tool/result(ABORTED_BEFORE_DISPATCH)`；随后写 `error/abort`（含 `step_id` 与 `code: ABORTED`）与 `step/end`（`stop_reason: ABORTED`）。内核 MUST NOT 把「会话是否结束」写进「步」的语义：一次性入口（`run` / `serve`）据此写 `session/end` 并以退出码 5 结束；`minihns chat` 里轮中取消只写 `turn/end`、会话回到提示符（ADR-0011，见 `chat-repl`）。取消与围栏拒绝同时在场时取消优先到底：收尾是 `ABORTED`，围栏拒绝的事实留在 `error/fence` 与 `RunOutcome.failure_code`。
 
-#### Scenario: 回合进行中取消
-- **WHEN** 一次性 `minihns run` 的某回合尚未写 `turn/end` 时收到取消信号
-- **THEN** 日志以 `error/abort`、`turn/end`（`stop_reason: ABORTED`）与 `session/end` 收尾，退出码为 5
+#### Scenario: 步进行中取消
+- **WHEN** 一次性 `minihns run` 的某步尚未写 `step/end` 时收到取消信号
+- **THEN** 日志以 `error/abort`、`step/end`（`stop_reason: ABORTED`）与 `session/end` 收尾，退出码为 5
 
 #### Scenario: 取消打断正在执行的调用
 - **WHEN** 一次性 run 里一条 `bash` 正在执行时收到取消信号
@@ -104,37 +104,37 @@
 
 #### Scenario: 取消与围栏拒绝同时在场
 - **WHEN** 一次性 run 的同一批次里一条调用被围栏拒绝、取消也在场
-- **THEN** 未派发的调用各落一对 `tool/call` 与 `tool/result(ABORTED_BEFORE_DISPATCH)`，`error/fence` 与 `error/abort` 都在盘上，`turn/end` 与 `session/end` 的 `stop_reason` 是 `ABORTED`，退出码为 5
+- **THEN** 未派发的调用各落一对 `tool/call` 与 `tool/result(ABORTED_BEFORE_DISPATCH)`，`error/fence` 与 `error/abort` 都在盘上，`step/end` 与 `session/end` 的 `stop_reason` 是 `ABORTED`，退出码为 5
 
 #### Scenario: 取消收尾的日志前缀是完整的
 - **WHEN** 对一次以 `ABORTED` 收尾的 run 的日志折叠
 - **THEN** 折叠结果里每个 assistant 工具请求消息都有配平的工具结果消息，且该日志可被逐点重放而不出现在读方闭合
 
 #### Scenario: M2 不写 tool/cancelled
-- **WHEN** 跑完 M2 的既有场景（围栏拒绝、参数不合法、审批拒绝，且取消发生在回合边界而不是工具执行中）
+- **WHEN** 跑完 M2 的既有场景（围栏拒绝、参数不合法、审批拒绝，且取消发生在步边界而不是工具执行中）
 - **THEN** 日志里没有任何 `tool/cancelled` 记录
 
-### Requirement: 回合数上限由 --max-turns 决定
+### Requirement: 步数上限由 --max-steps 决定
 
-系统 SHALL 用 `--max-turns` 限制**一个段**的回合数，默认 8，取值 MUST 是 ≥ 1 的整数；非法取值 SHALL 以退出码 2 结束且在 session 开始之前失败。会话级 MUST NOT 设回合数上限：会话的段数由目标轮次决定（没有目标续跑时恰一个段；有则每轮一段），`minihns chat` 里每条输入或每一轮是一个段，段用完上限 MUST NOT 结束会话（见 `chat-repl`）。目标的轮数上限是 `max_rounds`，与这里的 `max_turns` 是两个量，MUST NOT 混名。
+系统 SHALL 用 `--max-steps` 限制**单轮**的步数，默认 8，取值 MUST 是 ≥ 1 的整数；非法取值 SHALL 以退出码 2 结束且在 session 开始之前失败。会话级 MUST NOT 设步数上限：会话的轮数由目标轮次决定（没有目标续跑时恰一轮；有目标续跑时每个目标轮开一轮），`minihns chat` 里每条输入或每个目标轮开一轮，一轮用完步数上限 MUST NOT 结束会话（见 `chat-repl`）。目标的轮数上限是 `max_rounds`，与这里的 `max_steps` 是两个量，MUST NOT 混名。目标的轮数上限是 `max_rounds`，与这里的 `max_steps` 是两个量，MUST NOT 混名。
 
-#### Scenario: 非法 max-turns 不产生日志
+#### Scenario: 非法 max-steps 不产生日志
 
-- **WHEN** 执行 `minihns run -p "x" --max-turns 0`
+- **WHEN** 执行 `minihns run -p "x" --max-steps 0`
 - **THEN** 退出码为 2，stderr 含 `INVALID_ARGUMENT`，且没有创建任何 session 日志
 
-#### Scenario: 上限判的是段不是会话
+#### Scenario: 上限判的是轮不是会话
 
-- **WHEN** 一次 chat 的第一条输入用完 `max_turns = 2`
-- **THEN** 该段的 `segment/end` 的 `stop_reason` 是 `MAX_TURNS`、`turns` 为 2，日志里没有 `session/end`，下一条输入开一个新的段并照样有 2 个回合的额度
+- **WHEN** 一次 chat 的第一条输入用完 `max_steps = 2`
+- **THEN** 该轮的 `turn/end` 的 `stop_reason` 是 `MAX_STEPS`、`steps` 为 2，日志里没有 `session/end`，下一条输入开一轮，照样有两步的额度
 
-#### Scenario: 段额度不随目标轮次累计
+#### Scenario: 每轮的步数额度不随目标轮次累计
 
-- **WHEN** 目标连跑三轮，`max_turns = 2`
-- **THEN** 每个段各自最多两个回合，第三段的 `turns` 不从前面累加
+- **WHEN** 目标连跑三轮，`max_steps = 2`
+- **THEN** 每一轮各自最多两步，第三轮的 `steps` 不从前面累加
 
 ### Requirement: 工具派发按校验、围栏、执行的固定顺序判定
-系统 SHALL 对每个工具调用按固定顺序判定：先校验入参，再做围栏与 approval 判定，最后执行；执行段 SHALL 包含该调用的超时判定。任一段的失败 SHALL 产出该调用的 `tool/result` 而不是异常；入参校验失败时 MUST NOT 做围栏判定，围栏判定拒绝时 MUST NOT 执行该工具。超时与取消 MUST NOT 以异常形式逃出执行段。
+系统 SHALL 对每个工具调用按固定顺序判定：先校验入参，再做围栏与 approval 判定，最后执行；执行区间 SHALL 包含该调用的超时判定。任何一次派发的失败 SHALL 产出该调用的 `tool/result` 而不是异常；入参校验失败时 MUST NOT 做围栏判定，围栏判定拒绝时 MUST NOT 执行该工具。超时与取消 MUST NOT 以异常形式逃出执行区间。
 
 #### Scenario: 参数不合法时不碰文件
 - **WHEN** 一个 `write` 调用缺 `content` 参数
@@ -144,9 +144,9 @@
 - **WHEN** 一个 `write` 的目标解析后在工作区之外
 - **THEN** 结果是 `DENIED_BY_FENCE`，且该路径上没有被创建的文件
 
-#### Scenario: 超时不逃出执行段
+#### Scenario: 超时不逃出执行区间
 - **WHEN** 一个调用的执行因超时被打断
-- **THEN** 该调用产出 `outcome: TOOL_TIMEOUT` 的 `tool/result`，进程没有未捕获异常，回合继续
+- **THEN** 该调用产出 `outcome: TOOL_TIMEOUT` 的 `tool/result`，进程没有未捕获异常，步继续
 
 ### Requirement: 派发使用本次运行的围栏上下文
 系统 SHALL 在派发每次工具调用时提供本次运行的工作区根、`--sandbox` 档位、approval 策略，以及从该派发点之前的日志前缀派生的「已读过」判定。这些事实 MUST NOT 来自与日志并列的进程内真源。
@@ -156,25 +156,25 @@
 - **THEN** 两次得到相同的 `outcome`
 
 ### Requirement: 只读工具并发、会改动的工具串行
-系统 SHALL 在同一回合内并发派发只读工具（`read`、`glob`、`grep`），同时在跑的只读调用数量 MUST NOT 超过 8；会改动的工具（`write`、`edit`、`bash`）SHALL 串行派发。上限是实现常量，MUST NOT 有命令行开关。
+系统 SHALL 在同一步内并发派发只读工具（`read`、`glob`、`grep`），同时在跑的只读调用数量 MUST NOT 超过 8；会改动的工具（`write`、`edit`、`bash`）SHALL 串行派发。上限是实现常量，MUST NOT 有命令行开关。
 
-#### Scenario: 同一回合两个 read 并发
-- **WHEN** 一个回合的模型回复包含两个 `read` 调用
+#### Scenario: 同一步两个 read 并发
+- **WHEN** 一步的模型回复包含两个 `read` 调用
 - **THEN** 两个调用的执行时间区间重叠（第二个在第一个结束之前已经开始）
 
-#### Scenario: 同一回合两个 edit 串行
-- **WHEN** 一个回合的模型回复包含两个 `edit` 调用
+#### Scenario: 同一步两个 edit 串行
+- **WHEN** 一步的模型回复包含两个 `edit` 调用
 - **THEN** 第二个只在第一个执行结束之后才开始执行
 
 #### Scenario: 并发不超过上限
-- **WHEN** 一个回合包含 10 个 `read` 调用
+- **WHEN** 一步包含 10 个 `read` 调用
 - **THEN** 同时在跑的只读调用数量始终不超过 8，且 10 个调用都有配对的 `tool/result`
 
 ### Requirement: 一批并发派发共享同一份日志前缀
-系统 SHALL 在一个回合开始派发时取样一次该回合之前的日志前缀，并用同一份前缀判定该批次里的每一个调用。一个并发调用的结果 MUST NOT 影响同批另一个调用的围栏判定或写前必读判定。
+系统 SHALL 在一步开始派发时取样一次该步之前的日志前缀，并用同一份前缀判定该批次里的每一个调用。一个并发调用的结果 MUST NOT 影响同批另一个调用的围栏判定或写前必读判定。
 
 #### Scenario: 同批的 read 不算已读过
-- **WHEN** 同一回合里模型先请求 `read` 某文件、再请求 `write` 同一文件
+- **WHEN** 同一步里模型先请求 `read` 某文件、再请求 `write` 同一文件
 - **THEN** 该 `write` 的结果是 `WRITE_WITHOUT_READ`
 
 #### Scenario: 同一批次重放得到同一判定
@@ -182,11 +182,11 @@
 - **THEN** 每个调用的 `outcome` 与串行派发时相同
 
 ### Requirement: 超时与取消是工具结果词
-`tool/result.outcome` SHALL 包含 `TOOL_TIMEOUT` 与 `TOOL_CANCELLED`：前者是执行段超时，后者是被取消信号打断。两者 SHALL 各配一条 `tool/cancelled`。超时之后同一回合剩余的调用 SHALL 照常派发，`turn/end` 的 `stop_reason` MUST NOT 因此变成 `ABORTED`。词表外的值 MUST NOT 被写出。
+`tool/result.outcome` SHALL 包含 `TOOL_TIMEOUT` 与 `TOOL_CANCELLED`：前者是执行区间超时，后者是被取消信号打断。两者 SHALL 各配一条 `tool/cancelled`。超时之后同一步剩余的调用 SHALL 照常派发，`step/end` 的 `stop_reason` MUST NOT 因此变成 `ABORTED`。词表外的值 MUST NOT 被写出。
 
-#### Scenario: 超时后回合继续
+#### Scenario: 超时后步继续
 - **WHEN** 一批调用里第一个 `bash` 超时、后面还有一个 `read`
-- **THEN** 第一个是 `TOOL_TIMEOUT` 加一条 `tool/cancelled`，第二个照常派发，`turn/end` 的 `stop_reason` 不是 `ABORTED`
+- **THEN** 第一个是 `TOOL_TIMEOUT` 加一条 `tool/cancelled`，第二个照常派发，`step/end` 的 `stop_reason` 不是 `ABORTED`
 
 #### Scenario: 两个新取值各有可达判据
 - **WHEN** 跑完 M3 的 seam ① 与 seam ② 测试
@@ -222,88 +222,111 @@
 - **WHEN** 一次取消让同一批里三个声明调用中的两个未被派发
 - **THEN** 这两条 `tool/result` 的 `outcome` 是 `ABORTED_BEFORE_DISPATCH`，且日志里没有为它们写任何 `tool/cancelled`
 
-### Requirement: 一条输入开一个段，段的边界在日志里
+### Requirement: 一条输入开一轮，轮的边界在日志里
 
-系统 SHALL 把一条输入（一次性 `run` 与 `serve` 的 prompt、REPL 的一条输入）展开成一个**段**，并把段的边界 durable 写进日志：段开始时写 `segment/start`（payload 含 `segment_id`），段结束时写 `segment/end`（payload 含 `segment_id`、该段最后一个回合的 `stop_reason`、该段实际跑掉的回合数 `turns`、该段真正派发过的工具调用数 `tool_calls`）。`tool_calls` 是驱动的停滞判据（零调用 = 空转），MUST 在收尾时落盘，方便审计与回放读。`segment_id` 在会话内连续编号（`s1`、`s2`…）且 MUST NOT 重复。`segment/*` MUST NOT 产出上下文里的消息。照 DSH：段的边界对应 DSH 的 `turn` 边界（`turn = phase.turn + 1` 后 `session.append("turn/start", {turn})`，编号单调且落日志），本项目的「回合」仍是 DSH 的 `step`（GLOSSARY）。
+系统 SHALL 把一条输入（一次性 `run` 与 `serve` 的 prompt、REPL 的一条输入）展开成一个**轮**，并把轮的边界 durable 写进日志：轮开始时写 `turn/start`（payload 含 `turn_id`），轮结束时写 `turn/end`（payload 含 `turn_id`、该轮最后一步的 `stop_reason`、该轮实际跑掉的步数 `steps`、该轮真正派发过的工具调用数 `tool_calls`）。`tool_calls` 是驱动的停滞判据（零调用 = 空转），MUST 在收尾时落盘，方便审计与回放读。`turn_id` 在会话内连续编号（`s1`、`s2`…）且 MUST NOT 重复。`turn/*` 边界事件 MUST NOT 产出上下文里的消息。照 DSH：轮的边界对应 DSH 的 `turn` 边界（`turn = phase.turn + 1` 后 `session.append("step/start", {turn})`，编号单调且落日志），本项目的「步」对应 DSH 的 `step`（GLOSSARY）。
 
-一次性入口（`run` / `serve`）的段数 SHALL 由目标轮次决定：没有目标续跑时恰有一个段；有目标续跑时每轮一段，段数等于「一加起的轮次数」。REPL 的每个段仍由一条输入或一轮目标驱动。
+一次性入口（`run` / `serve`）的轮数 SHALL 由目标轮次决定：没有目标续跑时恰一轮；有目标续跑时每个目标轮开一轮，总轮数等于「1 + 已跑目标轮数」。REPL 的每一轮仍由一条输入或一个目标轮驱动。
 
-#### Scenario: 一次 run 恰一个段
+#### Scenario: 一次 run 恰一轮
 
-- **WHEN** 一次 run 跑了一个回合就正常结束，且会话里没有可续跑的目标
-- **THEN** 日志的类型序列是 `session/start`、`segment/start`、`turn/start`、`context/assembled`、`model/request`、`model/response`、`turn/end`、`segment/end`、`session/end`，`segment/end` 的 `stop_reason` 是 `MODEL_COMPLETED`、`turns` 为 1
+- **WHEN** 一次 run 跑了一步就正常结束，且会话里没有可续跑的目标
+- **THEN** 日志的类型序列是 `session/start`、`turn/start`、`step/start`、`context/assembled`、`model/request`、`model/response`、`step/end`、`turn/end`、`session/end`，`turn/end` 的 `stop_reason` 是 `MODEL_COMPLETED`、`steps` 为 1
 
-#### Scenario: 有目标续跑时 run 有多个段
+#### Scenario: 有目标续跑时 run 有多轮
 
 - **WHEN** 一次 run 里目标续了两轮，随后撞上轮次上限
-- **THEN** 日志里有三个段（`s1`、`s2`、`s3`），每个段各有配对的 `segment/start` 与 `segment/end`，最后一段的 `stop_reason` 是 `MODEL_COMPLETED`
+- **THEN** 日志里有三轮（`s1`、`s2`、`s3`），每轮各有配对的 `turn/start` 与 `turn/end`，最后一轮的 `stop_reason` 是 `MODEL_COMPLETED`
 
-#### Scenario: 段编号在会话内连续
+#### Scenario: 轮编号在会话内连续
 
-- **WHEN** 一次 chat 跑两个段
-- **THEN** 日志里恰有 `s1` 与 `s2` 各一条 `segment/start` 与一条 `segment/end`，没有第三个段编号
+- **WHEN** 一次 chat 跑两轮
+- **THEN** 日志里恰有 `s1` 与 `s2` 各一条 `turn/start` 与一条 `turn/end`，没有第三个轮次
 
-#### Scenario: 段级取消段的边界也写
+#### Scenario: 轮级取消也写轮边界
 
-- **WHEN** 一个段进行中收到取消信号
-- **THEN** 日志里有 `error/abort`、`turn/end`（`stop_reason: ABORTED`）与 `segment/end`（`stop_reason: ABORTED`），没有 `session/end`
+- **WHEN** 一轮进行中收到取消信号
+- **THEN** 日志里有 `error/abort`、`step/end`（`stop_reason: ABORTED`）与 `turn/end`（`stop_reason: ABORTED`），没有 `session/end`
 
-### Requirement: 预算溢出是回合终止结果，会话是否继续由入口决定
-当某回合的 `stop_reason` 是 `CONTEXT_WINDOW_EXCEEDED` 时，系统 SHALL 结束**该回合**：MUST NOT 开始下一回合，MUST NOT 为该回合调用模型或派发任何工具。内核 MUST NOT 把「会话是否结束」写进回合语义——`session/end` 与退出码由入口决定：一次性入口（`run` / `serve`）据此结束 session 并以退出码 4 收尾，`minihns chat` 里会话 SHALL 回到提示符等下一条输入（ADR-0019）。该结果与取消、围栏拒绝、provider 失败互不遮蔽：同时在场时按「取消优先到底、其余按发生的先后」判定，事实各自留在自己的 `error/*` 记录里。
+### Requirement: 预算溢出是步终止结果，会话是否继续由入口决定
+当某步的 `stop_reason` 是 `CONTEXT_WINDOW_EXCEEDED` 时，系统 SHALL 结束**该步**：MUST NOT 开始下一步，MUST NOT 为该步调用模型或派发任何工具。内核 MUST NOT 把「会话是否结束」写进「步」的语义——`session/end` 与退出码由入口决定：一次性入口（`run` / `serve`）据此结束 session 并以退出码 4 收尾，`minihns chat` 里会话 SHALL 回到提示符等下一条输入（ADR-0019）。该结果与取消、围栏拒绝、provider 失败互不遮蔽：同时在场时按「取消优先到底、其余按发生的先后」判定，事实各自留在自己的 `error/*` 记录里。
 
-#### Scenario: 溢出回合没有 model/request
-- **WHEN** 某回合因预算溢出收尾
-- **THEN** 该 `turn_id` 有 `turn/start` 与 `turn/end`，没有任何 `model/request`、`model/response`、`tool/call`，也没有下一回合
+#### Scenario: 溢出步没有 model/request
+- **WHEN** 某步因预算溢出收尾
+- **THEN** 该 `step_id` 有 `step/start` 与 `step/end`，没有任何 `model/request`、`model/response`、`tool/call`，也没有下一步
 
 #### Scenario: 取消在场时不为压缩调用模型
 - **WHEN** 装配越线的同时取消信号已置位
-- **THEN** 系统不生成摘要、不写 `compaction/summary`、不写 `error/context`，`turn/end` 与 `session/end` 的 `stop_reason` 是 `ABORTED`，退出码为 5
+- **THEN** 系统不生成摘要、不写 `compaction/summary`、不写 `error/context`，`step/end` 与 `session/end` 的 `stop_reason` 是 `ABORTED`，退出码为 5
 
 #### Scenario: REPL 里溢出之后会话继续
-- **WHEN** 一次 chat 的某个段以 `CONTEXT_WINDOW_EXCEEDED` 收尾
-- **THEN** 该段有 `error/context`、`turn/end` 与 `segment/end`（`stop_reason: CONTEXT_WINDOW_EXCEEDED`）、没有 `session/end`，下一条输入开启新的段
+- **WHEN** 一次 chat 的某一轮以 `CONTEXT_WINDOW_EXCEEDED` 收尾
+- **THEN** 该轮有 `error/context`、`step/end` 与 `turn/end`（`stop_reason: CONTEXT_WINDOW_EXCEEDED`）、没有 `session/end`，下一条输入开启新的轮
 
-### Requirement: 段结束后按目标条件续跑
+### Requirement: 轮结束后按目标条件续跑
 
-每个 `segment/end` 之后，系统 SHALL 判定是否续跑，判定只看当前目标快照、本次段的 `stop_reason` 与本段是否产生过工具调用：`phase == "active"`、`armed` 为真、`rounds_started < max_rounds`、`stop_reason` 不在 `{ABORTED, FENCE_DENIED, PROVIDER_ERROR, CONTEXT_WINDOW_EXCEEDED, MAX_TURNS}` 之内，且（人类段或本段至少有一个工具调用）时，SHALL 开新段；否则 MUST NOT 开新段。段尾仍有未决问题时 SHALL 回到入口等待人类输入，MUST NOT 开自动轮次。
+每个 `turn/end` 之后，系统 SHALL 判定是否续跑，判定只看当前目标快照、本轮的 `stop_reason` 与本轮是否产生过工具调用：`phase == "active"`、`armed` 为真、`rounds_started < max_rounds`、`stop_reason` 不在 `{ABORTED, FENCE_DENIED, PROVIDER_ERROR, CONTEXT_WINDOW_EXCEEDED}` 之内，且（人类轮或本轮至少有一个工具调用）时，SHALL 开新轮；否则 MUST NOT 开新轮。轮尾仍有未决问题时 SHALL 回到入口等待人类输入，MUST NOT 开自动轮次。
 
-开新段时，系统 SHALL 按固定顺序写：`segment/start`、goal 来源的 `user/message`（`source.round` 等于快照的 `rounds_started + 1`）、首条 `turn/start`、首条 `context/assembled`、`goal/updated`（`rounds_started` 递增，`revision` 不变）。
+开新轮时，系统 SHALL 按固定顺序写：`turn/start`、goal 来源的 `user/message`（`source.round` 等于快照的 `rounds_started + 1`）、首条 `step/start`、首条 `context/assembled`、`goal/updated`（`rounds_started` 递增，`revision` 不变）。
 
 轮次额度在首条 `context/assembled` 落盘后消耗；装配完成之前失败 MUST NOT 计入。写日志失败 SHALL 落 `error/*` 并终止会话，MUST NOT 静默重试。
 
-`rounds_started` 已达 `max_rounds` 时，系统 SHALL 写 `goal/updated` 把 `phase` 置 `blocked`、`blocked_reason.code` 置 `round-limit`，并 MUST NOT 开新段。
+`rounds_started` 已达 `max_rounds` 时，系统 SHALL 写 `goal/updated` 把 `phase` 置 `blocked`、`blocked_reason.code` 置 `round-limit`，并 MUST NOT 开新轮。
 
 #### Scenario: 达标即续跑
 
-- **WHEN** 段以 `MODEL_COMPLETED` 收尾，目标 `active`、已武装、`rounds_started == 1`、`max_rounds == 3`
-- **THEN** 日志出现 `segment/start`（新 `segment_id`）、`source.round == 2` 的 `user/message`、`rounds_started == 2` 的 `goal/updated`，顺序与这里一致，且 `revision` 与上一轮相同
+- **WHEN** 本轮以 `MODEL_COMPLETED` 收尾，目标 `active`、已武装、`rounds_started == 1`、`max_rounds == 3`
+- **THEN** 日志出现 `turn/start`（新 `turn_id`）、`source.round == 2` 的 `user/message`、`rounds_started == 2` 的 `goal/updated`，顺序与这里一致，且 `revision` 与上一轮相同
 
-#### Scenario: 上限不再开段
+#### Scenario: 上限不再开轮
 
 - **WHEN** `rounds_started == max_rounds` 且目标仍 `active`
-- **THEN** 不出现新的 `segment/start`，出现一条 `goal/updated`：`phase == "blocked"`、`blocked_reason.code == "round-limit"`
+- **THEN** 不出现新的 `turn/start`，出现一条 `goal/updated`：`phase == "blocked"`、`blocked_reason.code == "round-limit"`
 
 #### Scenario: 失败收尾不续跑
 
-- **WHEN** 段以 `CONTEXT_WINDOW_EXCEEDED` 或 `MAX_TURNS` 收尾
-- **THEN** 不出现新的段、不出现 goal 来源消息、不出现 `goal/updated`
+- **WHEN** 本轮以 `CONTEXT_WINDOW_EXCEEDED` 收尾
+- **THEN** 不出现新的轮、不出现 goal 来源消息、不出现 `goal/updated`
 
 #### Scenario: 重放相等
 
 - **WHEN** 对一份含三轮续跑的日志执行 `replay`
 - **THEN** 折叠结果与写入时逐点相等，轮号序列不变
 
-### Requirement: 段后收尾只有一份实现
+### Requirement: 轮后收尾只有一份实现
 
-`run` / `chat` / `host` 三个入口 MUST 调同一个段后收尾实现（读目标 → 判下一轮 → 落额度/停滞/失败收尾），MUST NOT 各自复制一份判定。入口之间的差别只允许在「谁来提供下一条输入」：`run` 没有输入、`chat` 回到提示符、`host` 从待跑队列取。
+`run` / `chat` / `host` 三个入口 MUST 调同一个轮后收尾实现（读目标 → 判下一轮 → 落额度/停滞/失败收尾），MUST NOT 各自复制一份判定。入口之间的差别只允许在「谁来提供下一条输入」：`run` 没有输入、`chat` 回到提示符、`host` 从待跑队列取。
 
 #### Scenario: host 也自动续跑
 
-- **WHEN** host 会话里的人类段建了一个 `active` 目标并正常收尾
-- **THEN** 日志出现 goal 来源的下一段，不需要再来一条 `POST /messages`
+- **WHEN** host 会话里的人类轮建了一个 `active` 目标并正常收尾
+- **THEN** 日志出现 goal 来源的下一轮，不需要再来一条 `POST /messages`
 
 #### Scenario: 三个入口的判定一致
 
 - **WHEN** 同一份目标状态与同一个 `stop_reason` 分别交给三个入口
-- **THEN** 是否开下一段的结论相同；差异只在下一段由谁触发
+- **THEN** 是否开下一轮的结论相同；差异只在下一轮由谁触发
+
+### Requirement: 三层时间词与事件名按 DSH 对齐
+
+系统 SHALL 使用 `turn` 表示一条输入展开的那串 `step`，使用 `step` 表示一次「装配 → 调模型 → 派发」；`turn` 等价于 DSH 的 turn，`step` 等价于 DSH 的 step。目标轮（goal round）是一次 goal 来源的 `turn`，`rounds_started` 数它。
+
+日志事件名 SHALL 为 `turn/start`、`turn/end`（轮的边界）与 `step/start`、`step/end`（步的边界）；`turn/start` 的载荷含 `turn_id`，`step/start` 与步内事件含 `step_id`。原 `segment/*` 与旧语义的 `turn/*` MUST NOT 出现在新日志里；读取 v1 日志时按 `event-log` 的版本门拒绝（`SCHEMA_UNSUPPORTED`），不尝试猜它的新名字。
+
+实现标识符 SHALL 同步改名：`SegmentOutcome → TurnOutcome`、`run_turn_segment → run_turn`、`RunOutcome.turns → steps`、`first_turn_index → first_step_index`、`TurnDeltaSink → StepDeltaSink`。行为、事件顺序、额度与退出码 MUST NOT 因改名改变。
+
+#### Scenario: 轮的边界与步的边界可区分
+
+- **WHEN** 一次 run 的一条输入展开两个步
+- **THEN** 日志里恰有一条 `turn/start`、两条 `step/start`、两条 `step/end`、一条 `turn/end`；`turn/end` 在最后一个 `step/end` 之后
+
+#### Scenario: 目标轮就是一次 turn
+
+- **WHEN** 一个上限为 2 的目标连跑两轮
+- **THEN** 日志里有三条 turn（人类首轮加两个目标轮）；两条 goal 来源的 `user/message` 各自落在一条 `turn/start` 之后，`rounds_started` 为 2
+
+#### Scenario: 旧日志被版本门拒绝
+
+- **WHEN** 读取一份 `schema_version == 1` 的日志
+- **THEN** 以 `SCHEMA_UNSUPPORTED` 失败，不产出投影、不改写文件
 

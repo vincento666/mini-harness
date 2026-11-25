@@ -27,16 +27,16 @@
 系统 SHALL 按「内置默认 < 配置文件 < CLI flag」派生每一项设置：配置文件里的值覆盖内置默认，命令行显式给出的值覆盖配置文件。判断「命令行显式给出」以该开关是否出现为准，MUST NOT 用「值恰好等于默认」来判断。`provider` 的内置默认由环境决定：CLI 与配置文件都没给 `provider` 时，`MINIHNS_API_KEY` 已设且非空则默认 `openai`，否则默认 `mock`。
 
 #### Scenario: 配置文件覆盖内置默认
-- **WHEN** 配置文件写 `max_turns = 3`，命令行未给 `--max-turns`
-- **THEN** 本次运行的 `max_turns` 为 3
+- **WHEN** 配置文件写 `max_steps = 3`，命令行未给 `--max-steps`
+- **THEN** 本次运行的 `max_steps` 为 3
 
 #### Scenario: 命令行覆盖配置文件
-- **WHEN** 配置文件写 `max_turns = 3`，命令行给 `--max-turns 5`
-- **THEN** 本次运行的 `max_turns` 为 5
+- **WHEN** 配置文件写 `max_steps = 3`，命令行给 `--max-steps 5`
+- **THEN** 本次运行的 `max_steps` 为 5
 
 #### Scenario: 与默认同值的命令行开关仍是显式值
-- **WHEN** 配置文件写 `max_turns = 8`，命令行给 `--max-turns 8`（内置默认也是 8）
-- **THEN** 本次运行的 `max_turns` 为 8，且它取自命令行这一层
+- **WHEN** 配置文件写 `max_steps = 8`，命令行给 `--max-steps 8`（内置默认也是 8）
+- **THEN** 本次运行的 `max_steps` 为 8，且它取自命令行这一层
 
 #### Scenario: 有密钥时裸跑的默认 provider 是 openai
 - **WHEN** `MINIHNS_API_KEY` 已设且非空，配置文件与命令行都没给 `provider`
@@ -48,7 +48,7 @@
 
 ### Requirement: 配置文件只承载设置类字段
 
-配置文件 SHALL 只接受这些键：`provider`、`base_url`、`model`、`api_key_env`、`max_turns`、`window`、`reserve`、`compaction_threshold_ratio`、`compaction_headroom_tokens`、`compaction_retain_ratio`、`compaction_retain_tokens`、`append_system_prompt`、`sandbox`、`approval`、`tools`、`session_dir`、`workspace`。`prompt` 与 `fixture` MUST NOT 出现在配置文件里；密钥的值 MUST NOT 出现在配置文件里（只有环境变量**名字**可配）。压缩参数的类型按数字校验：ratio 接受 float，tokens 接受 int；`bool` MUST NOT 被当成数字。
+配置文件 SHALL 只接受这些键：`provider`、`base_url`、`model`、`api_key_env`、`max_steps`、`window`、`reserve`、`compaction_threshold_ratio`、`compaction_headroom_tokens`、`compaction_retain_ratio`、`compaction_retain_tokens`、`append_system_prompt`、`sandbox`、`approval`、`tools`、`session_dir`、`workspace`。`prompt` 与 `fixture` MUST NOT 出现在配置文件里；密钥的值 MUST NOT 出现在配置文件里（只有环境变量**名字**可配）。压缩参数的类型按数字校验：ratio 接受 float，tokens 接受 int；`bool` MUST NOT 被当成数字。
 
 #### Scenario: prompt 进配置文件是参数错误
 - **WHEN** 配置文件里有 `prompt = "任务"`
@@ -74,12 +74,12 @@
 配置文件不是合法 TOML、或某个键的值类型不对时，系统 SHALL 以退出码 2 结束、往 stderr 写 `INVALID_ARGUMENT` 与出错位置（键名或 TOML 的行与列），且 MUST NOT 创建 session 日志。
 
 #### Scenario: 语法错误
-- **WHEN** 配置文件内容是 `max_turns = = 3`
+- **WHEN** 配置文件内容是 `max_steps = = 3`
 - **THEN** 退出码为 2，stderr 含 `INVALID_ARGUMENT`，且没有创建 session 日志
 
 #### Scenario: 类型不对
-- **WHEN** 配置文件写 `max_turns = "three"`
-- **THEN** 退出码为 2，stderr 含 `INVALID_ARGUMENT` 与键名 `max_turns`，且没有创建 session 日志
+- **WHEN** 配置文件写 `max_steps = "three"`
+- **THEN** 退出码为 2，stderr 含 `INVALID_ARGUMENT` 与键名 `max_steps`，且没有创建 session 日志
 
 ### Requirement: 工具表由内置定义与配置白名单筛出
 系统 SHALL 内置 `read`、`write`、`edit`、`glob`、`grep`、`bash` 六个工具定义；本次运行的工具表 SHALL 由配置文件里的 `tools` 白名单对这六个定义筛选得出：未给 `tools` 时六个全部进入，给了则只保留列出的那些。`tools` 里的名字不在六个之内时 SHALL 以退出码 2 结束、stderr 含 `INVALID_ARGUMENT` 与那个名字，且 MUST NOT 创建 session 日志。`tools = []` SHALL 合法，此时模型没有工具可用。
@@ -200,10 +200,19 @@
 #### Scenario: 默认阈值为 2
 
 - **WHEN** 配置文件没有 `stall_rounds`，连续两个 goal 轮次零工具调用
-- **THEN** 第二轮之后不再开新段、武装位解除，目标 `phase` 仍为 `active`
+- **THEN** 第二轮之后不再开新轮、武装位解除，目标 `phase` 仍为 `active`
 
 #### Scenario: 配成 0 关闭闸门
 
 - **WHEN** 配置文件写 `stall_rounds = 0`，goal 轮次连续空转
-- **THEN** 驱动一路开到 `max_rounds`；日志里 `segment/end.tool_calls == 0` 只作审计
+- **THEN** 驱动一路开到 `max_rounds`；日志里 `turn/end.tool_calls == 0` 只作审计
+
+### Requirement: max_steps 是步数上限的唯一键
+
+`mini.config.toml` 的会话段 SHALL 用 `max_steps` 表示一轮的步数上限。旧键 `max_turns` MUST NOT 被接受：它是一条未知键（`CONFIG_UNKNOWN_KEY`），会话开始之前失败，且不建日志。
+
+#### Scenario: 旧键被拒
+
+- **WHEN** 配置文件只写 `max_turns = 4`
+- **THEN** 会话开始之前失败，退出码 2，不建日志
 

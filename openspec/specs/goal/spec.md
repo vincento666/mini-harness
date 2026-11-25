@@ -35,7 +35,7 @@ TBD - created by archiving change m13-goal-rounds. Update Purpose after archive.
 
 系统 SHALL 提供 `get_goal()`、`create_goal(objective, max_rounds?)`、`update_goal(goal_id, revision, action, objective?, max_rounds?, blocked_reason?)` 三个工具，`action` 取 `edit` / `pause` / `resume` / `complete` / `blocked`。所有工具结果 SHALL 是同一份紧凑 JSON：无目标时 `{"goal": null}`，否则含快照与 `armed`。
 
-`create`、`edit`、`pause`、`resume` MUST 只在本段由人类来源的 `user/message` 开启时成立；`entry == "subagent"` 的会话 MUST NOT 具备该权威，返回 `GOAL_AUTHORITY_REQUIRED`。
+`create`、`edit`、`pause`、`resume` MUST 只在本轮由人类来源的 `user/message` 开启时成立；`entry == "subagent"` 的会话 MUST NOT 具备该权威，返回 `GOAL_AUTHORITY_REQUIRED`。
 
 `create` 在存在非 `complete` 目标时 MUST 返回 `GOAL_ALREADY_ACTIVE`；上一个目标已 `complete` 时 SHALL 允许创建**新**目标（新 `id`、`revision == 1`、`rounds_started == 0`）。
 
@@ -93,7 +93,7 @@ TBD - created by archiving change m13-goal-rounds. Update Purpose after archive.
 
 `user/message` 的载荷 SHALL 含 `source`：`{kind: "user"}` 或 `{kind: "goal", goal_id, revision, round}`；缺该字段的旧日志 MUST 按 `{kind: "user"}` 读。
 
-goal 来源消息的正文 SHALL 是一个 `<goal_round>` 块，至少含 `Objective: <JSON 引号的目标原文>` 与 `Round: <轮号>/<轮次上限>` 两行，以及一段终局约束：完成则调用 `update_goal` 标 `complete`、已达阻塞门槛则标 `blocked`、否则现在执行下一步具体动作；只复述计划而不调用工具会被视为停滞。正文 MUST NOT 为空。
+goal 来源消息的正文 SHALL 是一个 `<goal_round>` 块，至少含 `Objective: <JSON 引号的目标原文>` 与 `Round: <轮号>/<轮次上限>` 两行，以及一条终局约束：完成则调用 `update_goal` 标 `complete`、已达阻塞门槛则标 `blocked`、否则现在执行下一步具体动作；只复述计划而不调用工具会被视为停滞。正文 MUST NOT 为空。
 
 goal 来源消息的 `round` MUST 等于写入时快照的 `rounds_started + 1`，`revision` MUST 等于写入时快照的 `revision`。`replay` MUST 在下列任一情形判日志不自洽：轮号非正、同一 `goal_id` 内轮号跳号、轮号超过该目标的 `max_rounds`、`revision` 与当前快照不符、`phase` 已停。校验 SHALL 按 `goal_id` 分组——不同目标各自从 1 起算，重复轮号合法。
 
@@ -124,7 +124,7 @@ goal 来源消息的 `round` MUST 等于写入时快照的 `rounds_started + 1`�
 
 ### Requirement: 轮次驱动与上限
 
-一轮结束且 `turn/end.stop_reason` 不在 `{ABORTED, FENCE_DENIED, PROVIDER_ERROR, CONTEXT_WINDOW_EXCEEDED}` 之内时，系统 SHALL 检查当前目标：`phase == active`、`armed` 为真、`rounds_started < max_rounds` 三者同时成立才 SHALL 开新轮，并按顺序写 `turn/start`、goal 来源的 `user/message`、该轮首条 `step/start`、该轮首条 `context/assembled`、`goal/updated`（`rounds_started` 递增，`revision` 不变）。三者任一不成立 MUST NOT 开新轮。
+一轮结束且 `step/end.stop_reason` 不在 `{ABORTED, FENCE_DENIED, PROVIDER_ERROR, CONTEXT_WINDOW_EXCEEDED}` 之内时，系统 SHALL 检查当前目标：`phase == active`、`armed` 为真、`rounds_started < max_rounds` 三者同时成立才 SHALL 开新轮，并按顺序写 `step/start`、goal 来源的 `user/message`、该轮首条 `step/start`、该轮首条 `context/assembled`、`goal/updated`（`rounds_started` 递增，`revision` 不变）。三者任一不成立 MUST NOT 开新轮。
 
 `MAX_STEPS` MUST NOT 阻止续轮：它表示**本轮步数用尽**，不是任务失败；模型与工具都可能完全正常。只有 `ABORTED`、`FENCE_DENIED`、`PROVIDER_ERROR`、`CONTEXT_WINDOW_EXCEEDED` 四类收尾才 MUST NOT 自动续轮。没有可续的目标时，`MAX_STEPS` 仍按普通收尾停住（没有目标就没有下一轮）。
 
@@ -143,17 +143,17 @@ goal 轮次以零个成功派发的工具调用收尾（模型只说话、没有
 #### Scenario: 达标即续跑
 
 - **WHEN** 一轮以 `MODEL_COMPLETED` 收尾，目标 `active`、已武装、`rounds_started == 1`、`max_rounds == 3`
-- **THEN** 日志依次出现 `turn/start`（新 `turn_id`）、`source.round == 2` 的 `user/message`、`step/start`、`context/assembled`、`rounds_started == 2` 的 `goal/updated`
+- **THEN** 日志依次出现 `step/start`（新 `step_id`）、`source.round == 2` 的 `user/message`、`step/start`、`context/assembled`、`rounds_started == 2` 的 `goal/updated`
 
 #### Scenario: 人类轮写满步数后目标轮接上
 
 - **WHEN** 一条人类输入建了 `active` 目标，该轮在第 `max_steps` 步以 `MAX_STEPS` 收尾
-- **THEN** 日志出现 goal 来源的 `user/message` 与新的 `turn/start`，`rounds_started` 从 0 变为 1；该轮不是失败收尾，武装位保持
+- **THEN** 日志出现 goal 来源的 `user/message` 与新的 `step/start`，`rounds_started` 从 0 变为 1；该轮不是失败收尾，武装位保持
 
 #### Scenario: 目标轮写满步数后继续下一轮
 
 - **WHEN** 一个 goal 轮次在第 `max_steps` 步以 `MAX_STEPS` 收尾，且 `rounds_started < max_rounds`
-- **THEN** 系统开下一轮，`rounds_started` 递增；`turn/end.stop_reason` 仍记为 `MAX_STEPS`
+- **THEN** 系统开下一轮，`rounds_started` 递增；`step/end.stop_reason` 仍记为 `MAX_STEPS`
 
 #### Scenario: 没有目标时写满就停
 
@@ -163,12 +163,12 @@ goal 轮次以零个成功派发的工具调用收尾（模型只说话、没有
 #### Scenario: 一轮空转不误杀
 
 - **WHEN** 一个 goal 轮次零工具调用，上一轮有工具调用（计数从 0 起），目标仍 `active`、已武装、还有额度
-- **THEN** 驱动照常开下一轮；`turn/end.tool_calls == 0` 只作审计
+- **THEN** 驱动照常开下一轮；`step/end.tool_calls == 0` 只作审计
 
 #### Scenario: 连续两轮空转按默认阈值停
 
 - **WHEN** `[goal]` 没有 `stall_rounds`（缺省 2），连续两个 goal 轮次零工具调用
-- **THEN** 第二个轮次之后不再开轮、武装位解除、`phase` 仍 `active`、计数清零；下一次 `/goal resume` 从零重新计
+- **THEN** 第二轮之后不再开轮、武装位解除、`phase` 仍 `active`、计数清零；下一次 `/goal resume` 从零重新计
 
 #### Scenario: 关闭闸门就完全对齐 DSH
 
@@ -178,11 +178,11 @@ goal 轮次以零个成功派发的工具调用收尾（模型只说话、没有
 #### Scenario: 上限不再开轮
 
 - **WHEN** `rounds_started == max_rounds` 且目标仍 `active`
-- **THEN** 不出现新的 `turn/start`，出现一条 `goal/updated`：`phase == "blocked"`、`blocked_reason.code == "round-limit"`
+- **THEN** 不出现新的 `step/start`，出现一条 `goal/updated`：`phase == "blocked"`、`blocked_reason.code == "round-limit"`
 
 #### Scenario: 早失败不消耗轮次
 
-- **WHEN** 第 2 轮的 `turn/start` 与 goal 消息已写，首条 `context/assembled` 落盘之前装配失败（预算超线、契约或工具目录写失败）
+- **WHEN** 第 2 轮的 `step/start` 与 goal 消息已写，首条 `context/assembled` 落盘之前装配失败（预算超线、契约或工具目录写失败）
 - **THEN** `rounds_started` 仍为 1（这一轮不算数），这一轮的 `goal/updated` 不出现；且不再自动续跑
 
 #### Scenario: 取消把目标置暂停
@@ -202,22 +202,22 @@ goal 轮次以零个成功派发的工具调用收尾（模型只说话、没有
 
 ### Requirement: 未回答的问题把控制权交回人类
 
-一个段在收尾时若仍带着**没有答案的问题**（`ask_user` 返回 `QUESTION_UNAVAILABLE`，日志有 `question/asked` 且没有配对的 `question/answered`），驱动 MUST NOT 再开自动轮次，SHALL 回到入口等待人类输入；目标 MUST 保持 `active` 与武装，MUST NOT 落 `paused`。人类的下一段是一条 `{kind: "user"}` 消息，MUST NOT 计入 `rounds_started`；该段结束之后，驱动 SHALL 照常判定并开下一 goal 轮。已 `blocked` / `complete` / `paused` 的目标 MUST NOT 被这条改写。`rounds_started >= max_rounds` 时以额度用尽为准（先落 `blocked{round-limit}`）。未决问题是**段作用域**：每个段开头清空，MUST NOT 跨段继承。
+一轮在收尾时若仍带着**没有答案的问题**（`ask_user` 返回 `QUESTION_UNAVAILABLE`，日志有 `question/asked` 且没有配对的 `question/answered`），驱动 MUST NOT 再开自动轮次，SHALL 回到入口等待人类输入；目标 MUST 保持 `active` 与武装，MUST NOT 落 `paused`。人类的下一轮是一条 `{kind: "user"}` 消息，MUST NOT 计入 `rounds_started`；该轮结束之后，驱动 SHALL 照常判定并开下一 goal 轮。已 `blocked` / `complete` / `paused` 的目标 MUST NOT 被这条改写。`rounds_started >= max_rounds` 时以额度用尽为准（先落 `blocked{round-limit}`）。未决问题是**轮作用域**：每轮开头清空，MUST NOT 跨轮继承。
 
 #### Scenario: 轮次里问不到人就交回控制权
 
-- **WHEN** 第 1 轮里 `ask_user` 返回 `QUESTION_UNAVAILABLE`，该段以 `MODEL_COMPLETED` 收尾
-- **THEN** 日志没有第 2 段的 goal `user/message`；`phase` 仍为 `active`、`armed` 仍为真；`question/asked` 有一条且没有 `question/answered`
+- **WHEN** 第 1 轮里 `ask_user` 返回 `QUESTION_UNAVAILABLE`，该轮以 `MODEL_COMPLETED` 收尾
+- **THEN** 日志没有第 2 轮的 goal `user/message`；`phase` 仍为 `active`、`armed` 仍为真；`question/asked` 有一条且没有 `question/answered`
 
-#### Scenario: 回答是人的一段，不是 goal 轮
+#### Scenario: 回答是人的一轮，不是 goal 轮
 
 - **WHEN** 上一场之后人输入答案
-- **THEN** 该段写一条 `source.kind == "user"` 的 `user/message`；`rounds_started` 不变；该段以 `MODEL_COMPLETED` 收尾后，才出现 `source.round == 2` 的 goal 消息
+- **THEN** 该轮写一条 `source.kind == "user"` 的 `user/message`；`rounds_started` 不变；该轮以 `MODEL_COMPLETED` 收尾后，才出现 `source.round == 2` 的 goal 消息
 
-#### Scenario: 段首清空
+#### Scenario: 轮首清空
 
-- **WHEN** 上一段留了未决问题，新的一段里没有再提问
-- **THEN** 新段结尾不因上一段的问题而停止（标记已在 `segment/start` 清空）
+- **WHEN** 上一轮留了未决问题，新的一轮里没有再提问
+- **THEN** 新轮结尾不因上一轮的问题而停止（标记已在 `turn/start` 清空）
 
 ### Requirement: 阻塞需要轮数门槛
 
@@ -247,7 +247,7 @@ goal 轮次以零个成功派发的工具调用收尾（模型只说话、没有
 
 ### Requirement: 武装是进程内状态
 
-`armed` MUST NOT 出现在任何事件载荷里，只活在会话运行期。会话启动、`--resume` 恢复、以及从日志重建会话之后，`armed` MUST 为假；只有 `/goal resume` 或 `update_goal(action="resume")` 能把它置真。`pause`、`complete`、`blocked`、达到轮次上限、以及以失败收尾的段 MUST 把它置假。
+`armed` MUST NOT 出现在任何事件载荷里，只活在会话运行期。会话启动、`--resume` 恢复、以及从日志重建会话之后，`armed` MUST 为假；只有 `/goal resume` 或 `update_goal(action="resume")` 能把它置真。`pause`、`complete`、`blocked`、达到轮次上限、以及以失败收尾的轮 MUST 把它置假。
 
 #### Scenario: 恢复后不自动跑
 
@@ -261,9 +261,9 @@ goal 轮次以零个成功派发的工具调用收尾（模型只说话、没有
 
 ### Requirement: 人类消息优先于自动轮次
 
-同一会话里，段进行中投递的人类消息 SHALL 在该段收尾后**先**跑；只要待跑队列非空，入口 MUST NOT 先开 goal 轮次。人类段结束后，入口 SHALL 重新判定目标；队列里再有人话就继续先跑人话。`chat` 没有段中队列，提示符上的下一条输入同样先于自动轮次。
+同一会话里，轮进行中投递的人类消息 SHALL 在该轮收尾后**先**跑；只要待跑队列非空，入口 MUST NOT 先开 goal 轮次。人类轮结束后，入口 SHALL 重新判定目标；队列里再有人话就继续先跑人话。`chat` 没有轮中队列，提示符上的下一条输入同样先于自动轮次。
 
-这条对齐 DSH 的 `competingQueued`：自动轮次给竞争输入让位。差别只在粒度——mini 在段（DSH 的 turn）边界让位，不在一个段内部的模型步之间插队。
+这条对齐 DSH 的 `competingQueued`：自动轮次给竞争输入让位。差别只在粒度——mini 在轮（DSH 的 turn）边界让位，不在一轮内部的模型步之间插队。
 
 #### Scenario: 队列里的人话先跑
 
@@ -272,8 +272,8 @@ goal 轮次以零个成功派发的工具调用收尾（模型只说话、没有
 
 #### Scenario: 人话不推进轮号
 
-- **WHEN** 第 1 轮之后夹了一段人类消息
-- **THEN** 人类段的 `user/message` 不带 `source.round`；其后的 goal 消息 `source.round == 2`
+- **WHEN** 第 1 轮之后夹了一轮人类消息
+- **THEN** 人类轮的 `user/message` 不带 `source.round`；其后的 goal 消息 `source.round == 2`
 
 #### Scenario: 请求的上限被部署上限截住
 

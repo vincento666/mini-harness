@@ -42,7 +42,7 @@
 
 #### Scenario: 小窗口下每次装配都越线
 - **WHEN** 一次 run 的 `--window` 为 70000、`--reserve` 为 100（触发线 4364，比默认保留预算 11200 还小）
-- **THEN** 每一个需要装配的回合都进入压缩判定，且触发线本身是 4364 而不是负数
+- **THEN** 每一个需要装配的步都进入压缩判定，且触发线本身是 4364 而不是负数
 
 #### Scenario: 自定义比例与 headroom 改变触发线
 - **WHEN** `window` 为 100000、`reserve` 为 1000、`compaction_threshold_ratio = 0.5`、`compaction_headroom_tokens = 1000`
@@ -52,8 +52,8 @@
 系统 SHALL 把一次装配的预算读数定义为两者中较大的一个：本次折叠上下文的估算 token 数（每条消息的 `content` 与 `tool_calls` 文本长度之和除以 4、向上取整后逐条相加），与该日志前缀里未被遮蔽、`purpose` 不是 `compaction` 的 `model/response` 的 `usage.input_tokens` 的最大值。读数 MUST NOT 依赖进程内缓存或该点之后的事件。
 
 #### Scenario: provider 回报的读数比估算大时用它
-- **WHEN** 某回合之前的 `model/response` 里 `usage.input_tokens` 大于同一份上下文的估算值
-- **THEN** 该回合的预算读数是那个回报值，判定用它
+- **WHEN** 某步之前的 `model/response` 里 `usage.input_tokens` 大于同一份上下文的估算值
+- **THEN** 该步的预算读数是那个回报值，判定用它
 
 #### Scenario: 被遮蔽的读数不参与校准
 - **WHEN** 一条回报过 `input_tokens` 的 `model/response` 落在遮蔽范围里
@@ -61,7 +61,7 @@
 
 #### Scenario: 摘要调用的读数不参与校准
 - **WHEN** 一次压缩的 `model/response`（`purpose` 为 `compaction`）回报的 `input_tokens` 远大于压缩后的上下文
-- **THEN** 之后每一次装配的预算读数都不用它，只用回合级回复的回报值与当前估算
+- **THEN** 之后每一次装配的预算读数都不用它，只用步级回复的回报值与当前估算
 
 #### Scenario: 没有回报时只有估算
 - **WHEN** 一次 mock run 的日志里没有任何 `usage.input_tokens` 大于 0 的记录
@@ -103,8 +103,8 @@
 当一次装配的预算读数超过触发线时，系统 SHALL 在写出该点的 `context/assembled` 之前完成一次压缩：生成摘要、写一条 `compaction/summary`、再按新的日志前缀重新折叠。**同一次装配之内** MUST NOT 压缩多于一次；未越线的装配 MUST NOT 写 `compaction/summary`。provider 报出上下文超限触发的**请求级压缩**是另一次尝试，上限 1 次（见「provider 报出的上下文超限塌成同一个溢出结果」与 ADR-0019），不受「一次装配最多一次」约束。越线只触发压缩尝试；是否溢出由压力预算判（见「溢出判据是压力预算，触发线只决定要不要压缩」）。
 
 #### Scenario: 压缩记录在装配记录之前
-- **WHEN** 某回合的装配越线并完成了压缩
-- **THEN** 该回合的日志里 `compaction/summary` 出现在该点的 `context/assembled` 之前
+- **WHEN** 某步的装配越线并完成了压缩
+- **THEN** 该步的日志里 `compaction/summary` 出现在该点的 `context/assembled` 之前
 
 #### Scenario: 未越线就没有压缩记录
 - **WHEN** 跑完一次预算充裕的 run
@@ -112,18 +112,18 @@
 
 #### Scenario: 一次装配只尝试一次
 - **WHEN** 一次装配压缩之后预算读数仍超过触发线
-- **THEN** 系统不在同一装配里尝试第二次压缩；该回合是否溢出由压力预算判
+- **THEN** 系统不在同一装配里尝试第二次压缩；该步是否溢出由压力预算判
 
 ### Requirement: 压缩救不了时是 CONTEXT_WINDOW_EXCEEDED 结果
-预算读数超过**压力预算**（`W − O`）时，系统 SHALL 写一条 `error/context` 与 `turn/end`（`stop_reason: CONTEXT_WINDOW_EXCEEDED`）结束该回合；`session/end` 与退出码由入口决定。`detail` SHALL 含预算读数、压力预算、触发线三个数；MUST NOT 抛未捕获异常，也 MUST NOT 为这个结果调用回合模型（带 `purpose: compaction` 的摘要调用除外）。
+预算读数超过**压力预算**（`W − O`）时，系统 SHALL 写一条 `error/context` 与 `turn/end`（`stop_reason: CONTEXT_WINDOW_EXCEEDED`）结束该步；`session/end` 与退出码由入口决定。`detail` SHALL 含预算读数、压力预算、触发线三个数；MUST NOT 抛未捕获异常，也 MUST NOT 为这个结果调用模型（带 `purpose: compaction` 的摘要调用除外）。
 
-#### Scenario: detail 按本回合的事实选措辞
+#### Scenario: detail 按本步的事实选措辞
 - **WHEN** 溢出分别发生在「真写过摘要」「给不出遮蔽范围」「给得出范围但裁到最小仍装不下」三种情况
 - **THEN** `detail` 分别以「压缩之后」「无可遮蔽的内容」「可遮蔽的那一段本身就装不下」开头，三个数都在，且端点自己报出的超限共用同一串数
 
-#### Scenario: 溢出的回合不产出该回合自己的模型调用
+#### Scenario: 溢出的步不产出该步自己的模型调用
 - **WHEN** 一次装配以 `CONTEXT_WINDOW_EXCEEDED` 收尾
-- **THEN** 该回合没有 `context/assembled`、没有不带 `purpose: compaction` 的 `model/request`、没有 `tool/call`
+- **THEN** 该步没有 `context/assembled`、没有不带 `purpose: compaction` 的 `model/request`、没有 `tool/call`
 
 #### Scenario: 单条消息本身就超线
 - **WHEN** 对话体里没有任何可遮蔽的内容，而预算读数已超过压力预算
@@ -134,7 +134,7 @@
 - **THEN** 每条 `context/assembled` 都与其前缀的重算结果逐字段相等，replay 以退出码 0 结束；溢出发生在第一次装配之前时，日志里没有装配点，replay 照样以退出码 0 结束并说明这一点
 
 ### Requirement: 摘要请求只装本次要遮蔽的那一段
-生成摘要的那次模型调用 SHALL 只携带三类消息：折叠派生的系统消息、本次遮蔽范围（`shadowed_range` 给出的 seq 闭区间）折出的消息、以及作为最后一条的摘要指令。该调用 MUST NOT 携带落在遮蔽范围之外的对话消息，也 MUST NOT 携带保留尾部。该调用携带的全部消息按既有的估算 SHALL NOT 超过压力预算：超过时系统 SHALL 从该范围的头部按工具往返整对丢弃直到装得下——带调用的那条 assistant 与回答它的 tool 消息 MUST NOT 被拆散。一条都装不下时 SHALL NOT 发出该调用；发不出该调用本身 MUST NOT 直接构成溢出结果，该回合是否溢出由压力预算判。
+生成摘要的那次模型调用 SHALL 只携带三类消息：折叠派生的系统消息、本次遮蔽范围（`shadowed_range` 给出的 seq 闭区间）折出的消息、以及作为最后一条的摘要指令。该调用 MUST NOT 携带落在遮蔽范围之外的对话消息，也 MUST NOT 携带保留尾部。该调用携带的全部消息按既有的估算 SHALL NOT 超过压力预算：超过时系统 SHALL 从该范围的头部按工具往返整对丢弃直到装得下——带调用的那条 assistant 与回答它的 tool 消息 MUST NOT 被拆散。一条都装不下时 SHALL NOT 发出该调用；发不出该调用本身 MUST NOT 直接构成溢出结果，该步是否溢出由压力预算判。
 
 #### Scenario: 保留尾部不进摘要请求
 - **WHEN** 一次装配越线并发出了摘要调用
@@ -150,10 +150,10 @@
 
 #### Scenario: 一段都装不下时不发请求
 - **WHEN** 遮蔽范围折出的消息加摘要指令即使裁到只剩一条也超过压力预算
-- **THEN** 日志里没有带 `purpose: compaction` 的 `model/request`，也没有 `error/model`；该回合照常装配，除非预算读数本身超过压力预算
+- **THEN** 日志里没有带 `purpose: compaction` 的 `model/request`，也没有 `error/model`；该步照常装配，除非预算读数本身超过压力预算
 
 ### Requirement: 摘要调用失败沿用 provider 失败结果
-生成摘要的那次模型调用失败时，系统 SHALL 沿用既有的 provider 失败形状：写 `error/model`（含 `code`）与 `turn/end`（`stop_reason: PROVIDER_ERROR`）。`session/end` 与退出码由入口决定：一次性 `minihns run` 写 `session/end` 并以退出码 1 结束，`minihns chat` 里这是段级收尾（见 `turn-loop` 的「Provider 失败是回合终止结果」）。此时 MUST NOT 写 `compaction/summary`，也 MUST NOT 产出 `CONTEXT_WINDOW_EXCEEDED`。摘要调用**没有发出**时不是 provider 失败：那条路 MUST NOT 写 `error/model`、MUST NOT 发出带 `purpose: compaction` 的 `model/request`，也 MUST NOT 仅因为它没发出就产出溢出——该回合是否溢出由压力预算判（见「溢出判据是压力预算，触发线只决定要不要压缩」）。
+生成摘要的那次模型调用失败时，系统 SHALL 沿用既有的 provider 失败形状：写 `error/model`（含 `code`）与 `turn/end`（`stop_reason: PROVIDER_ERROR`）。`session/end` 与退出码由入口决定：一次性 `minihns run` 写 `session/end` 并以退出码 1 结束，`minihns chat` 里这是轮级收尾（见 `turn-loop` 的「Provider 失败是步终止结果」）。此时 MUST NOT 写 `compaction/summary`，也 MUST NOT 产出 `CONTEXT_WINDOW_EXCEEDED`。摘要调用**没有发出**时不是 provider 失败：那条路 MUST NOT 写 `error/model`、MUST NOT 发出带 `purpose: compaction` 的 `model/request`，也 MUST NOT 仅因为它没发出就产出溢出——该步是否溢出由压力预算判（见「溢出判据是压力预算，触发线只决定要不要压缩」）。
 
 #### Scenario: fixture 里没有摘要回复
 - **WHEN** 一次性 run 里装配越线但 fixture 的回复条目已耗尽
@@ -161,33 +161,33 @@
 
 #### Scenario: 没发出的摘要调用不产生 provider 失败
 - **WHEN** 装配越线但遮蔽范围裁到最小仍装不下
-- **THEN** 日志里没有 `error/model`、没有带 `purpose: compaction` 的 `model/request`；这一回合的读数超过压力预算时它以 `CONTEXT_WINDOW_EXCEEDED` 收尾，没超过时照常装配
+- **THEN** 日志里没有 `error/model`、没有带 `purpose: compaction` 的 `model/request`；这一步的读数超过压力预算时它以 `CONTEXT_WINDOW_EXCEEDED` 收尾，没超过时照常装配
 
 ### Requirement: provider 报出的上下文超限塌成同一个溢出结果
 当 Provider 返回 `code: PROVIDER_CONTEXT_OVERFLOW` 的失败结果时，系统 SHALL 先做一次**请求级压缩**：有可遮蔽的内容就生成摘要、写一条 `compaction/summary`、按新的日志前缀重新折叠并重试该请求一次（上限 1 次，照 DSH 的 `maxOverflowRetries` 默认 1）。压缩无可遮蔽、重试次数已用完、或重试仍报同一失败时，系统 SHALL 产出与估算兜底同一个溢出结果：写 `error/context`（`code: CONTEXT_WINDOW_EXCEEDED`）与 `turn/end`（`stop_reason: CONTEXT_WINDOW_EXCEEDED`），`session/end` 与退出码由入口决定。此时 MUST NOT 写 `error/model`。
 
 #### Scenario: 真实超限不走 provider 失败那条路
-- **WHEN** 某回合的模型调用得到 `PROVIDER_CONTEXT_OVERFLOW` 的失败结果且没有可遮蔽的内容
-- **THEN** 该回合的 `stop_reason` 是 `CONTEXT_WINDOW_EXCEEDED`，日志里没有 `error/model`，也没有 `compaction/summary`
+- **WHEN** 某步的模型调用得到 `PROVIDER_CONTEXT_OVERFLOW` 的失败结果且没有可遮蔽的内容
+- **THEN** 该步的 `stop_reason` 是 `CONTEXT_WINDOW_EXCEEDED`，日志里没有 `error/model`，也没有 `compaction/summary`
 
 #### Scenario: 两条触发路径产出同一个停止理由
 - **WHEN** 一次 run 由估算兜底溢出、另一次由 provider 报出溢出
 - **THEN** 两份日志的 `turn/end` 的 `stop_reason` 相同，一次性 run 的退出码都是 4
 
 #### Scenario: 请求级压缩救回一次
-- **WHEN** 某回合的模型调用得到 `PROVIDER_CONTEXT_OVERFLOW`，而对话体里有可遮蔽的较早往返
-- **THEN** 日志里恰有一条 `compaction/summary`，该请求被重试一次，该回合以正常的 `model/response` 继续而不是以溢出收尾
+- **WHEN** 某步的模型调用得到 `PROVIDER_CONTEXT_OVERFLOW`，而对话体里有可遮蔽的较早往返
+- **THEN** 日志里恰有一条 `compaction/summary`，该请求被重试一次，该步以正常的 `model/response` 继续而不是以溢出收尾
 
 ### Requirement: 溢出判据是压力预算，触发线只决定要不要压缩
 系统 SHALL 把「窗口减保留额」（`W − O`）作为压力预算，上下文装不装得下 SHALL 只问它：一次装配的预算读数不超过压力预算时 MUST NOT 产出 `CONTEXT_WINDOW_EXCEEDED`，即使它超过触发线、即使本次没有可遮蔽的内容。触发线 SHALL 只决定「这次装配要不要尝试压缩」，MUST NOT 被用作溢出判据。触发线小于保留预算（`floor(W × 0.16)`）的窗口组合 SHALL 可跑。端点自己报出的上下文超限是另一条触发路径，照「provider 报出的上下文超限塌成同一个溢出结果」那条处理——它由回报触发，不由压力预算判定，两条路产出同一个停止理由。
 
 #### Scenario: 死区窗口里装得下的读数不判溢出
 - **WHEN** `--window` 为 70000、`--reserve` 为 100（触发线 4364、保留预算 11200、压力预算 69900），一次装配的预算读数为 5933 且没有可遮蔽的内容
-- **THEN** 该回合照常写 `context/assembled` 与不带 `purpose` 的 `model/request`，日志里没有 `error/context`，一次性 run 不以退出码 4 结束
+- **THEN** 该步照常写 `context/assembled` 与不带 `purpose` 的 `model/request`，日志里没有 `error/context`，一次性 run 不以退出码 4 结束
 
 #### Scenario: 压缩之后仍超压力预算才溢出
 - **WHEN** 一次装配越线、写出了一条 `compaction/summary`，按新日志前缀重折叠后的读数仍超过压力预算
-- **THEN** 该回合以 `error/context`（`code: CONTEXT_WINDOW_EXCEEDED`）与 `turn/end`（同一停止理由）收尾，`detail` 含预算读数、压力预算与触发线三个数
+- **THEN** 该步以 `error/context`（`code: CONTEXT_WINDOW_EXCEEDED`）与 `turn/end`（同一停止理由）收尾，`detail` 含预算读数、压力预算与触发线三个数
 
 #### Scenario: 触发线小于保留预算不是配置错误
 - **WHEN** 执行 `minihns run -p "x" --window 70000 --reserve 100`

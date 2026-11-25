@@ -120,11 +120,11 @@ TBD - created by archiving change m14c-personal-assistant-tools. Update Purpose 
 
 ### Requirement: `todos` 投影
 
-系统 SHALL 提供 `todos` 投影：`todo/updated` 整表替换；`segment/start` SHALL 清空为 `[]`（**含 goal 来源的段**，照 DSH 的 `turn/start`）；`segment/end` SHALL 保留最后一张表；其它事件不改变状态。投影 SHALL 可从日志重建（`project(records, name)`），并通过 host 快照接口 `GET /sessions/{id}/projections/todos` 与 SSE `session/projection` 帧提供给 UI。
+系统 SHALL 提供 `todos` 投影：`todo/updated` 整表替换；`turn/start` SHALL 清空为 `[]`（**含 goal 来源的轮**，照 DSH 的 `turn/start`）；`turn/end` SHALL 保留最后一张表；其它事件不改变状态。投影 SHALL 可从日志重建（`project(records, name)`），并通过 host 快照接口 `GET /sessions/{id}/projections/todos` 与 SSE `session/projection` 帧提供给 UI。
 
 #### Scenario: 跨段清空
 
-- **WHEN** 一段里有 `todo/updated`，下一段以 `segment/start` 开始
+- **WHEN** 一轮里有 `todo/updated`，下一轮以 `turn/start` 开始
 - **THEN** 投影值为 `[]`
 
 #### Scenario: goal 轮次也清空
@@ -134,7 +134,7 @@ TBD - created by archiving change m14c-personal-assistant-tools. Update Purpose 
 
 #### Scenario: 段内保留
 
-- **WHEN** `segment/end` 之后再次投影
+- **WHEN** `turn/end` 之后再次投影
 - **THEN** 仍是最后一张表
 
 #### Scenario: 快照接口
@@ -153,7 +153,7 @@ TBD - created by archiving change m14c-personal-assistant-tools. Update Purpose 
 
 ### Requirement: `get_todos` 读回本段待办表
 
-系统 SHALL 提供无入参的只读工具 `get_todos`，返回**本段**当前的待办表：内容取 `todos` 投影，与 `/todo`、`GET /sessions/{id}/projections/todos` MUST 同值；逐条形如 `- [status] id text`，并带一行计数（`pending` / `in_progress` / `completed`）。读回 MUST NOT 写 `todo/updated`、MUST NOT 改动任何状态。`segment/start` 之后读回 SHALL 是空表（投影在段首清空）；空表的结果 SHALL 说明「本段还没有提交过待办表」，MUST NOT 把上一段的表当成本段的。`get_todos` MUST NOT 被计划模式拦截，MUST NOT 触发审批，`meta` SHALL 带 `todo_read` 与 `todo_count`。
+系统 SHALL 提供无入参的只读工具 `get_todos`，返回**本轮**当前的待办表：内容取 `todos` 投影，与 `/todo`、`GET /sessions/{id}/projections/todos` MUST 同值；逐条形如 `- [status] id text`，并带一行计数（`pending` / `in_progress` / `completed`）。读回 MUST NOT 写 `todo/updated`、MUST NOT 改动任何状态。`turn/start` 之后读回 SHALL 是空表（投影在轮首清空）；空表的结果 SHALL 说明「本轮还没有提交过待办表」，MUST NOT 把上一轮的表当成本轮的。`get_todos` MUST NOT 被计划模式拦截，MUST NOT 触发审批，`meta` SHALL 带 `todo_read` 与 `todo_count`。
 
 #### Scenario: 读回刚提交的表
 

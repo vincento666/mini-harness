@@ -14,11 +14,11 @@
 
 #### Scenario: 未注册的名字仍是 UNKNOWN_TOOL
 - **WHEN** 模型调用一个不在本次工具表里的工具名
-- **THEN** 该调用产出 `outcome: UNKNOWN_TOOL` 的 `tool/result`，且回合继续
+- **THEN** 该调用产出 `outcome: UNKNOWN_TOOL` 的 `tool/result`，且该步继续
 
 #### Scenario: 被白名单筛掉的文件工具不在工具表里
 - **WHEN** 配置文件写 `tools = ["read"]`，模型调用 `grep`
-- **THEN** 该调用产出 `outcome: UNKNOWN_TOOL` 的 `tool/result`，且回合继续
+- **THEN** 该调用产出 `outcome: UNKNOWN_TOOL` 的 `tool/result`，且该步继续
 
 ### Requirement: 工具入参路径相对工作区根解析
 系统 SHALL 把文件工具的 `file_path` 与 `path` 参数相对工作区根解析；给出绝对路径时 SHALL 按绝对路径解析。解析 MUST NOT 跟随符号链接或目录 junction 逃出工作区根（判定结果由 `fences` 规定）。
@@ -43,11 +43,11 @@
 - **THEN** 结果是 `TOOL_ARGS_INVALID`，内容里含该正则的解析错误
 
 ### Requirement: 执行段的文件 I/O 失败是 TOOL_IO_FAILED 结果
-系统 SHALL 把执行段的文件系统错误塌成 `outcome: TOOL_IO_FAILED` 的 `tool/result`：内容里写明是哪个工具、哪个路径、什么错误，MUST NOT 让异常逃出派发管线打断回合。这类结果 MUST NOT 被写成围栏拒绝——它没有对应的 `error/fence`。
+系统 SHALL 把执行区间的文件系统错误塌成 `outcome: TOOL_IO_FAILED` 的 `tool/result`：内容里写明是哪个工具、哪个路径、什么错误，MUST NOT 让异常逃出派发管线打断步。这类结果 MUST NOT 被写成围栏拒绝——它没有对应的 `error/fence`。
 
 #### Scenario: 父路径是已存在的文件
 - **WHEN** `write` 的 `file_path` 为 `a.md/b.md` 而 `a.md` 是一个文件
-- **THEN** 结果是 `TOOL_IO_FAILED`，没有任何文件被创建或改写，回合继续走到 `turn/end`
+- **THEN** 结果是 `TOOL_IO_FAILED`，没有任何文件被创建或改写，该步继续走到 `step/end`
 
 #### Scenario: I/O 失败不写 error/fence
 - **WHEN** 任一文件工具因 I/O 失败产出 `TOOL_IO_FAILED`
