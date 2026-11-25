@@ -35,10 +35,10 @@
 | **projection** | 客户端把 durable 事件映射成 UI 状态（消息/tool/error/审批行） | 把事件翻译成界面上的一行行内容 | 不是 `replay`，不是 `fold` |
 | **cache / fold 缓存** | 同一日志前缀的 `fold` 结果便签；不缓存会话现场 | 同一页账本反复算总账时贴的便签 | 不是会话状态，不是日志读取缓存；详见 `storage-resume-and-cache.md` |
 | **replay** | Host 本机重算 `context/assembled` 并逐点比对的校验工具 | 拿账本重算一遍，检查对不对 | 不是远端 UI 的渲染接口 |
-| **chat shell** | `minihns chat` 的终端适配器；默认 `--stream` | 终端里的聊天壳，不是网页 | 不是 host SSE 的复刻 |
+| **chat shell** | `minihns chat` 的终端适配器；`--stream` 由 `restore-chat-streaming` 补回（当前 main 还没有这个 flag） | 终端里的聊天壳，不是网页 | 不是 host SSE 的复刻 |
 | **stdout / stderr** | 正常输出流 / 诊断输出流；chat 正文走 stdout，思考/标记走 stderr | 正常台词 / 旁白字幕；都不是错误码 | stderr 不是“错误码”；退出码才是数字状态 |
 | **tty** | 真实交互式终端；Ctrl-C 能变成 SIGINT | 真人在键盘前敲的终端；管道、CI 不是 | 管道、CI、后台进程不是 tty |
-| **`[thinking]` / `[answer]`** | chat 在 stderr 上给思考和正文的开始标志；正文本身仍在 stdout | 旁白字幕里的“思考中 / 回答开始”，不是台词本身 | 不是模型内容的一部分 |
+| **`[thinking]` / `[answer]`** | chat 在 stderr 上给思考和正文的开始标志；`[answer]` 随 `restore-chat-streaming` 回来，`[thinking]` 仍 deferred（当前 main 两者都没有） | 旁白字幕里的“思考中 / 回答开始”，不是台词本身 | 不是模型内容的一部分 |
 
 ---
 
@@ -337,6 +337,11 @@ data: {"delta":{"tool_calls":[{"index":0,
 ## 6. 思考帧：mini 的实现与 DSH 的完整实现
 
 ### 6.1 mini 已实现
+
+> **状态（2026-11-25 核对）**：本节原本按 `change/reasoning-mode-and-budget` 分支写，**该分支未合入 main**。
+> 当前 main 的 `model/response` 只有 `content` / `tool_calls` / `usage` / `finish_reason`，**没有 `blocks`**；
+> provider 不解析 `reasoning_content`，也没有 `reasoning/delta` 与 `reasoning_effort`；chat 没有 `--stream`。
+> 正文流式由 `restore-chat-streaming` 补回；思考流仍 deferred 到那条分支的能力。
 
 `model/response` 现在有有序 `blocks`：
 

@@ -1,6 +1,6 @@
 # 当前状态
 
-**更新：2026-11-23**。以 `git status --short` 与 `git log --oneline -3` 为准；本文件只写「现在」，历史在 `docs/CURRENT-history.md`、`docs/verification/` 与 `openspec/changes/archive/`。
+**更新：2026-11-25**。以 `git status --short` 与 `git log --oneline -3` 为准；本文件只写「现在」，历史在 `docs/CURRENT-history.md`、`docs/verification/` 与 `openspec/changes/archive/`。
 
 ## 现在
 
@@ -14,7 +14,8 @@
 - **日志 schema 是 v2，没有兼容层（2026-11-24，`e9c43a2`）**：`SCHEMA_VERSION = 2`；写入与读取都只认 v2 名字（`turn/*` 是轮、`step/*` 是步）。v1 上迁（`_upcast_v1` / `LEGACY_EVENT_TYPES` / `migrate_schema`）已按 `align-turn-step-naming` design D4 在合并前删除：`sessions/` 下 14 份 v1 日志声明作废，`replay` 读到即 `SCHEMA_UNSUPPORTED`（exit 1）。旧 flag `--max-turns`、旧配置键 `max_turns`、`subagent` 的旧参数名同批删除。
 - **验证与调优端点统一走 OpenRouter（2026-11-24 人裁）**：功能验证、真实端点验收、调优一律用 `qwen/qwen3.8-27b`（`https://openrouter.ai/api/v1`，密钥变量 `OPENROUTER_API_KEY`），不再用 `deepseek-chat`。mini 侧的命令形状是 `--provider openai --base-url https://openrouter.ai/api/v1 --model qwen/qwen3.8-27b --api-key-env OPENROUTER_API_KEY`（`openai` 预设不给默认模型，缺 `--model` 当场失败）。规则与裸 curl 冒烟在 `docs/reference/verification-endpoint.md`。密钥放 `~/.config/minihns/openrouter.env`（目录 700、文件 600，仓库外），跑前 `set -a && . ~/.config/minihns/openrouter.env && set +a`——它不在交互式 zsh、`launchctl` 与任何 `.env` 里，不 source 就只会拿到 401。
 - **`openrouter` 预设与本地默认（2026-11-24，`add-openrouter-preset`）**：`PROVIDER_PRESETS` 增加第四项——`https://openrouter.ai/api/v1` / `qwen/qwen3.8-27b` / `OPENROUTER_API_KEY`，所以 `--provider openrouter` 一个 flag 就够（显式 `--model` 不被覆盖）。仓库根另有 `mini.config.toml`，内容只有 `provider = "openrouter"`，被 `.gitignore` 忽略——它让「在仓库根不传任何端点 flag」也走 qwen，但只在 workspace 是仓库根时生效（`discover_config` 的既有规则）。**默认 provider 没变**：不写 config、不传 flag 时仍是 `MINIHNS_API_KEY` → `openai`，否则 `mock`。
-- **活动 change（四条）**：`m13-goal-rounds`（**tasks 全勾**，四场 UAT 已过含场次 2 的真控制终端复跑，等归档）；`align-turn-step-naming`（基于 m13；兼容层已删、真实端点三场过、变异与 Learning Gate 完，剩 4.1/4.3 待 m13 归档后改主规格）；`add-openrouter-preset`（同一分支叠加，代码与真实端点过，UAT 已代跑）；`add-http-proxy`（新；`--proxy` 已落，判据 4 条 + 真端点 1 场过）
+- **m13 已归档（2026-11-25）**：`openspec archive m13-goal-rounds` 通过，goal 主规格新建（8 条 Requirement），8 个既有主规格同步。归档时修了 delta 里两条错标 `MODIFIED` 的 Requirement（「段后收尾只有一份实现」「`get_todos` 读回本段待办表」——它们在主规格里不存在，应为 `ADDED`），否则 sync 报 header not found。
+- **活动 change（五条）**：`align-turn-step-naming`（基于 m13；兼容层已删、真实端点三场过、变异与 Learning Gate 完，m13 已归档，4.1/4.3 解封）；`add-openrouter-preset`（同一分支叠加，代码与真实端点过，UAT 已代跑）；`add-http-proxy`（新；`--proxy` 已落，判据 4 条 + 真端点 1 场过）；`restore-chat-streaming`（新；propose 已落，复核 3 个 blocker 待修——补的是 2026-11-03 那套 chat 正文流式：`chat-streaming-shell` 只合进了 `change/reasoning-mode-and-budget` 分支，`6857ce4` 从未进 main，所以当前 chat 与 goal 轮都没有增量输出）；`goal-round-pacing`（新；L3 把 `MAX_STEPS` 移出「不续跑」集合 + L0 默认系统提示加 goal 政策段；propose 已落，待人审）
 - **端点出口被封，`--proxy` 是官方出口（2026-11-25）**：本机直连 OpenRouter 的推理请求一律 400 `Request path cannot be relayed`（`GET /key`、`/models` 仍 200；两把同账户 key、免费模型、eu/us 域名、双栈全试过），经 `http://127.0.0.1:7897` 立刻 200。因 provider 是 `trust_env=False`（ADR-0006），环境代理无效，故加显式 `--proxy`（`add-http-proxy`）：只收 http/https，不进 `session/start`，不读环境变量。分诊表在 `docs/reference/verification-endpoint.md` §5。
 - **API JSON 键的单位错位已修（2026-11-24，3.6）**：`minihns usage` 原输出 `turns[] / turn_id`，列表里装的却是**步**——真实端点场次 2 第一次跑就出现「一轮两步」被写成「两项 turns」的自相矛盾；同批修 SSE `model/delta` 帧的 `turn_id → step_id`。现为 `steps[] / step_id` 与 `{step_id, index, text}`，delta 规格补了 `usage-metering` 与 `host-api`（L-099）。
 - **m13 明细**：apply 到 5.x：**1.1–5.10 已落**——goal 事件与折叠、`user/message.source`、`[goal]` 四键与 todo 并行纪律、三个目标工具（CAS / 相位矩阵 / 阻塞门槛）、段后续跑（四事件顺序、`round-limit`、失败收尾）、`replay` 的轮次校验、`get_todos` 读回（补 D8 的遮蔽缺口）、武装位收口、`/goal` 六条命令（edit 不带 flag）、`--resume` 黑盒、REPL 段后驱动、host 驱动与队列人话优先、未决问题交回人类、停滞闸门（默认开、阈值 2）、`/goal edit` / `complete`。**6.1 真实端点已通过**（`deepseek-chat`，A/B 两场）；**6.3 变异已完成**（六条全杀，M5 单点覆盖记为薄弱处）；**6.4 Learning Gate 已完成**（L-086–L-089 进收件箱，无晋升）。只剩 **6.2 UAT**（人跑；场次 1 已按 D15 改口）。六问已答：单目标 + 任务并行（ADR-0042）。
@@ -35,6 +36,8 @@
 3. 并行支撑轨：E1 评测（`scripts/eval/` 只有 README，无 runner）；E2 组件接缝在 M 核心之后。
 
 ## 开放缺口
+
+- **L4 轮内工作量预算（待办，2026-11-25）**：`goal-round-pacing` 只解决「写满一轮不杀死长任务」；如果 L3 之后仍出现「一轮里写太多、轮次粒度不够用」，再开 `goal-round-budget`（按工具调用数/写入数给轮内预算），不要塞进 L3。L1（工具描述条件句）与 L2（`create_goal` 后硬停）经与 DSH 对照不做。
 
 - **P0 预算读数未复现**：`fix-post-compaction-budget-reading` 20 个 task 未 apply；2026-10-27 的真实端点诊断没复现「遮蔽后 tokens 后 > 前」。要么补稳定样本，要么降级为未复现的历史缺陷。
 - **`SESSION_BUSY` 状态码自相矛盾**：spec 表写 409，实现按 429 归档；留到后续 spec 修正时裁。
