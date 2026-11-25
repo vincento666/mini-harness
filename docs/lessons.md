@@ -276,6 +276,15 @@
 - Next use: 任何「必须 tty 才能验」的判据，代跑前先打印 `tcgetpgrp`；为 0 就别下结论说功能坏了。**反过来：拿不到控制终端的 pty 也不能用来证明功能正常**
 - Status: inbox
 
+### L-102
+- Seen: 1（2026-11-25）
+- Date: 2026-11-25
+- Context: 端点从本机出口（广州）被 400 拒，而 `httpx` 客户端是 `trust_env=False` 构造的——环境里设 `HTTPS_PROXY` 完全无效，harness 没有任何出口可换
+- Observation: 「关掉环境代理」与「没有代理」是两件事。`trust_env=False` 关掉的是**隐式来源**，代价是连正当的代理需求一起关掉；正确的补法是加一条**显式**来源（`--proxy` → `AsyncHTTPTransport(proxy=...)`），而不是把 `trust_env` 翻回 `True`——后者的代价（`NO_PROXY=[::1]` 让 httpx 抛 `InvalidURL` 并绕过失败捕获）当初就是关掉它的原因。另有一个只在实测中暴露的坑：`urllib.getproxies()` 同时读大小写两份变量，本机小写 `https_proxy` 覆盖了大写，表现为「设了代理，出口没变」
+- Evidence: 直连 400 / 经 `127.0.0.1:7897` 200（同一把 key、同一个模型）；`add-http-proxy` 的 D1 与两条判据（transport 收到 URL、注入 transport 优先）；黑盒桩收到 `CONNECT example.invalid:443` 才证明「真的走了代理」
+- Next use: 见到「某能力被一个安全开关关着」时，先问「关的是隐式还是全部」；补显式入口，别把开关翻回去。验证代理是否生效不要看配置，要看对端收到了什么
+- Status: inbox
+
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 - 每个里程碑收尾扫一次，**允许输出 `NO-PROMOTION`**（没有可复用信号就不写条目）。
 - 收件箱条目超过 **15 条**必须先消化再收新的：合并同类、把已被代码或规格自证的条目删掉。

@@ -35,6 +35,15 @@ uv run minihns run -p "读 README.md 第一段并总结一句" \
 
 改造前的写法（`--provider openai` + 三个覆盖参数）现在仍能跑，但三缺一就失败：`openai` 预设默认读 `MINIHNS_API_KEY`、base URL 是 `api.openai.com`、且**不给默认模型**。留作兜底，不再当默认路径。
 
+**出口被拒时用 `--proxy`**（`add-http-proxy`，2026-11-25）：它显式构造 `httpx.AsyncHTTPTransport`，**不读** `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`（环境代理对 harness 始终无效，ADR-0006）。形状只收 `http://` / `https://`，坏值退出码 2 且不建日志。
+
+```bash
+uv run minihns run -p "只回一个词：ok" --provider openrouter \
+  --proxy http://127.0.0.1:7897 --max-steps 2 --yes
+```
+
+同一台机器上，直连是 400、加 `--proxy` 是 200——这条差别就是它存在的理由。`proxy` 不进 `session/start`（URL 可能带凭据），所以日志形状不变、`replay` 不受影响。
+
 ## 3. 密钥从哪来
 
 `minihns` 只从**进程环境**读，不读 `.env`、不读配置文件。所以跑之前那个变量必须已经在 shell 里。
@@ -82,7 +91,7 @@ curl -sS -w "\nchat=%{http_code}\n" https://openrouter.ai/api/v1/chat/completion
 | 读数 | 结论 | 下一步 |
 |---|---|---|
 | `key=200` + `chat=200` | 端点通 | 再跑 harness；仍失败才是代码侧 |
-| `key=200` + `chat=4xx/5xx` | **端点/账户侧**，与 mini 无关 | 换 key、看控制台、向 OpenRouter 报（附 `x-openrouter-release`） |
+| `key=200` + `chat=4xx/5xx` | **端点/账户侧**，与 mini 无关 | 换出口（`--proxy`）→ 换 key → 看控制台 → 向 OpenRouter 报（附 `x-openrouter-release`） |
 | `key=401` | 变量没进这个进程 | `set -a && . ~/.config/minihns/openrouter.env && set +a` |
 
 **2026-11-25 实例（400 `Request path cannot be relayed`）**：`key=200`（余额 $2.89 / $3、非 free tier、无 `expires_at`），而推理请求一律 400。逐项排除过：4 个模型、`openrouter/auto`、指定 provider（Darkbloom）、`/chat/completions` 与 `/responses` 与 `/messages` 三条路径、换 UA/`HTTP-Referer`、`--http1.1`、`--noproxy '*'` 直连——全是同一句 400。同时 `GET /api/v1/models` 与 `/models/<id>/endpoints` 都是 200（模型在列、6 个端点 `status=0`）。响应头 `x-openrouter-error-origin: client` 是网关自己判的，不是上游透传。结论：**只拒推理类 POST，读取类 GET 正常**，属端点侧；前一晚同一条 curl 还是 200。
