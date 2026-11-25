@@ -108,6 +108,28 @@ def validate_base_url(value: str) -> str | None:
     return None
 
 
+def validate_proxy(value: str) -> str | None:
+    """`--proxy` 的形状检查：返回 `None` 表示可用，否则返回一句说明哪里不对。
+
+    两段：先用 `urlsplit` 给出人能读的原因（`socks5://` 这类要指名道姓），再真的构造一次
+    transport 把 httpx 自己的判据跑一遍——`AsyncHTTPTransport` 是惰性的，不会连任何东西，
+    但构造时就会把坏 URL 抛出来。在这里挡住，CLI 才能把它当参数错误（退出码 2）处理。
+    """
+    try:
+        parts = urlsplit(value)
+    except ValueError as error:
+        return f"--proxy {value!r} 不是合法 URL：{error}"
+    if parts.scheme not in ("http", "https"):
+        return f"--proxy {value!r} 必须以 http:// 或 https:// 开头（不支持 socks）"
+    if parts.hostname is None:
+        return f"--proxy {value!r} 没有主机名"
+    try:
+        httpx.AsyncHTTPTransport(proxy=value)
+    except (ValueError, TypeError, httpx.InvalidURL) as error:
+        return f"--proxy {value!r} 不是可用的代理地址：{error}"
+    return None
+
+
 async def _post(
     client: httpx.AsyncClient,
     base_url: str,
@@ -310,12 +332,16 @@ class OpenAICompatProvider:
         model: str,
         api_key: str | None,
         transport: httpx.AsyncBaseTransport | None = None,
+        proxy: str | None = None,
         timeout_s: float = _TIMEOUT_S,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._model = model
         self._api_key = api_key
         self._transport = transport
+        # 显式代理只吃一个 URL（design D1）：不做环境解析，所以 `NO_PROXY=[::1]` 那个坑不会回来。
+        # 给了 `transport`（测试注入）就以它为准，代理不参与。
+        self._proxy = proxy
         self._timeout_s = timeout_s
 
     async def generate(
@@ -344,8 +370,13 @@ class OpenAICompatProvider:
         # 本机实测 `NO_PROXY=localhost,127.0.0.1,::1,[::1]` 会让 httpx 在构造客户端时抛
         # `InvalidURL: Invalid port: ':1]'`——它不是 `httpx.HTTPError` 的子类，会绕过下面
         # 的失败捕获、直接打断进程（违反不变量 B）。见 ADR-0006 的简化清单。
+        # 代理只从显式参数来；transport 每次现建——`AsyncClient.aclose()` 会把它一起关掉，
+        # 复用会撞「transport is closed」（design D2）。
+        transport = self._transport
+        if transport is None and self._proxy is not None:
+            transport = httpx.AsyncHTTPTransport(proxy=self._proxy)
         async with httpx.AsyncClient(
-            transport=self._transport, timeout=self._timeout_s, trust_env=False
+            transport=transport, timeout=self._timeout_s, trust_env=False
         ) as client:
             if on_delta is not None:
                 return await self._stream_generate(

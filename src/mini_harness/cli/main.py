@@ -170,6 +170,14 @@ def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
         ),
     )
     parser.add_argument(
+        "--proxy",
+        default=None,
+        help=(
+            "显式 HTTP 代理（http:// 或 https://，不支持 socks）。不读 HTTP_PROXY / "
+            "HTTPS_PROXY / NO_PROXY：环境代理对 harness 始终无效。没给就是直连。"
+        ),
+    )
+    parser.add_argument(
         "--max-steps",
         type=int,
         default=None,

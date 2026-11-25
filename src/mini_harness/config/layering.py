@@ -52,6 +52,8 @@ BUILTIN_DEFAULTS: dict[str, Any] = {
     "goal": None,
     "session_dir": None,
     "workspace": None,
+    # 显式 HTTP 代理（`add-http-proxy`）：不给就是直连，与加这个键之前完全一致。
+    "proxy": None,
 }
 
 # 端点三项结伴：预设表填的就是这三项里没被给的那几项。
@@ -85,6 +87,8 @@ class EffectiveSettings:
     goal: dict[str, Any] | None
     session_dir: str | None
     workspace: str | None
+    # 显式代理 URL；`None` 是直连。它**不**进 `session/start` 的配置快照（可能含凭据）。
+    proxy: str | None
 
 
 def _from_layers(args: argparse.Namespace, config: Mapping[str, Any], name: str) -> Any:

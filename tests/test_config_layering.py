@@ -105,3 +105,23 @@ def test_every_config_failure_code_is_reachable(tmp_path: Path) -> None:
         code_of(build_registry(["web_search"])),
     }
     assert reached == CONFIG_CODES
+
+
+def test_proxy_comes_from_the_config_and_the_flag_wins() -> None:
+    """`proxy` 走同一条三层优先级；没给就是直连（与加这个键之前一致）。"""
+    from_config = layer_settings(argparse.Namespace(), {"proxy": "http://127.0.0.1:7897"}, env={})
+    from_flag = layer_settings(
+        argparse.Namespace(proxy="http://127.0.0.1:8888"),
+        {"proxy": "http://127.0.0.1:7897"},
+        env={},
+    )
+
+    assert from_config.proxy == "http://127.0.0.1:7897"
+    assert from_flag.proxy == "http://127.0.0.1:8888"
+    assert layer_settings(argparse.Namespace(), {}, env={}).proxy is None
+
+
+def test_a_non_string_proxy_is_a_config_error() -> None:
+    assert validate_config({"proxy": 7897}) == ConfigFailure(
+        "CONFIG_INVALID_VALUE", "键 proxy 的值类型不对：int"
+    )

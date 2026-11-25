@@ -73,6 +73,8 @@ _SESSION_STRING_FIELDS = frozenset(
         "base_url",
         "model",
         "api_key_env",
+        # 显式代理：与 `--proxy` 同一个字段，形状在装配期校验。
+        "proxy",
         "append_system_prompt",
         "sandbox",
         "approval",

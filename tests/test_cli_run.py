@@ -8,7 +8,9 @@ import json
 import os
 import signal
 import socket
+import socketserver
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -453,6 +455,7 @@ _RUN_SWITCHES = {
     "--base-url",
     "--model",
     "--api-key-env",
+    "--proxy",
     "--max-steps",
     "--window",
     "--reserve",
@@ -1299,3 +1302,62 @@ def test_the_run_log_carries_the_workspace_contract(tmp_path: Path) -> None:
     text = logs[0].read_text(encoding="utf-8")
     assert '"source": "workspace-instructions"' in text
     assert "项目约定：先读 README" in text
+
+
+def test_a_socks_proxy_is_rejected_before_the_session_starts(tmp_path: Path) -> None:
+    """形状不对在装配期就拒：不发请求、不建日志（`add-http-proxy` 的 2.4）。"""
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "deepseek",
+        "--proxy",
+        "socks5://127.0.0.1:1080",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 2
+    assert "不支持 socks" in result.stderr
+    assert not (tmp_path / "sessions").exists()
+
+
+def test_the_run_reaches_the_given_proxy(tmp_path: Path) -> None:
+    """真起一个 CONNECT 桩：它收到 `CONNECT` 才说明请求走了代理，而不只是写进了设置。"""
+    seen: list[bytes] = []
+
+    class Handler(socketserver.BaseRequestHandler):
+        def handle(self) -> None:
+            seen.append(self.request.recv(4096))
+            self.request.sendall(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
+
+    server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), Handler)
+    server.daemon_threads = True
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        result = _cli(
+            "run",
+            "-p",
+            "任务",
+            "--provider",
+            "openai",
+            "--model",
+            "test-model",
+            "--base-url",
+            "https://example.invalid/v1",
+            "--api-key-env",
+            "MINIHNS_TEST_KEY",
+            "--proxy",
+            f"http://127.0.0.1:{server.server_address[1]}",
+            "--yes",
+            cwd=tmp_path,
+            env={**os.environ, "MINIHNS_TEST_KEY": "test"},
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    # 桩回 502：httpx 把它当代理层传输失败，不是 HTTP 状态失败。
+    assert result.returncode == 1
+    assert "PROVIDER_TRANSPORT" in result.stderr
+    assert any(b"CONNECT example.invalid:443" in chunk for chunk in seen)

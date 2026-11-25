@@ -891,3 +891,51 @@ async def test_stream_usage_reads_openai_cached_tokens_details() -> None:
     assert isinstance(turn, AssistantTurn)
     assert turn.usage.input_tokens == 70
     assert turn.usage.cache_read_tokens == 30
+
+
+async def test_the_proxy_url_becomes_the_transport(monkeypatch: Any) -> None:
+    """显式代理只从参数来：它落在 transport 上，不经过环境解析（design D1）。"""
+    captured: list[object] = []
+
+    def fake_transport(*, proxy: object = None, **_: object) -> httpx.MockTransport:
+        captured.append(proxy)
+        return httpx.MockTransport(lambda request: httpx.Response(200, json=_OK_BODY))
+
+    monkeypatch.setattr(httpx, "AsyncHTTPTransport", fake_transport)
+    provider = OpenAICompatProvider(
+        base_url=_BASE_URL,
+        model="test-model",
+        api_key="k",
+        proxy="http://127.0.0.1:7897",
+    )
+
+    turn = await _generate(provider)
+
+    assert captured == ["http://127.0.0.1:7897"]
+    assert turn.content == "done"
+
+
+async def test_an_injected_transport_beats_the_proxy(monkeypatch: Any) -> None:
+    """注入的 transport 优先：测试不该被真实 transport 顶掉。"""
+    monkeypatch.setattr(
+        httpx,
+        "AsyncHTTPTransport",
+        lambda **_: (_ for _ in ()).throw(AssertionError("注入 transport 时不该再构造代理")),
+    )
+    seen: list[httpx.Request] = []
+
+    def record(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=_OK_BODY)
+
+    provider = OpenAICompatProvider(
+        base_url=_BASE_URL,
+        model="test-model",
+        api_key="k",
+        transport=httpx.MockTransport(record),
+        proxy="http://127.0.0.1:7897",
+    )
+
+    await _generate(provider)
+
+    assert len(seen) == 1

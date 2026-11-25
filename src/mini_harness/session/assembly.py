@@ -34,7 +34,11 @@ from mini_harness.loop import (
 from mini_harness.loop.settings import ApprovalMode
 from mini_harness.provider import FixtureLoadFailure, load_fixture_provider
 from mini_harness.provider.contract import Provider
-from mini_harness.provider.openai_compat import OpenAICompatProvider, validate_base_url
+from mini_harness.provider.openai_compat import (
+    OpenAICompatProvider,
+    validate_base_url,
+    validate_proxy,
+)
 from mini_harness.skill_providers import FilesystemProvider, SkillRegistry
 from mini_harness.tools import ToolRegistry
 from mini_harness.tools.bash_tools import platform_facts
@@ -59,6 +63,8 @@ class AssemblyRequest:
     base_url: str | None = None
     model: str | None = None
     api_key_env: str | None = None
+    # 显式 HTTP 代理（`add-http-proxy`）：`None` 是直连，与加这个字段之前一致。
+    proxy: str | None = None
     max_steps: int | None = None
     window: int | None = None
     reserve: int | None = None
@@ -83,6 +89,7 @@ def request_from_args(args: Namespace, *, auto_approve: bool = False) -> Assembl
         base_url=args.base_url,
         model=args.model,
         api_key_env=args.api_key_env,
+        proxy=getattr(args, "proxy", None),
         max_steps=args.max_steps,
         window=args.window,
         reserve=args.reserve,
@@ -256,6 +263,11 @@ def assemble(
         invalid = validate_base_url(layered.base_url)
         if invalid is not None:
             return Failure("INVALID_ARGUMENT", invalid, EXIT_INVALID_ARGUMENT)
+        # 代理的形状也在装配期判掉（design D4）：坏值不该先建日志、先花钱再报错。
+        if layered.proxy is not None:
+            invalid_proxy = validate_proxy(layered.proxy)
+            if invalid_proxy is not None:
+                return Failure("INVALID_ARGUMENT", invalid_proxy, EXIT_INVALID_ARGUMENT)
         # 端点三条在这里塌成一个对象：payload 那三个字段由它派生，不再各判一遍。
         # 密钥是装配的必需项：未设或空串都在 session 开始之前当场失败，一个请求都不发。
         api_key = environ.get(layered.api_key_env)
@@ -282,6 +294,7 @@ def assemble(
             base_url=endpoint.base_url,
             model=endpoint.model,
             api_key=api_key,
+            proxy=layered.proxy,
         )
     else:
         if request.fixture is None:
