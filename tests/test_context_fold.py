@@ -43,6 +43,7 @@ def _one_turn_events(
     tools: tuple[str, ...] = (),
     platform: dict[str, str] | None = None,
     delegated: bool = False,
+    goal_policy: str | None = None,
 ) -> list[EventRecord]:
     start_payload: dict[str, Any] = {
         "append_system_prompt": append_system_prompt,
@@ -52,6 +53,8 @@ def _one_turn_events(
         start_payload["platform"] = platform
     if delegated:
         start_payload["delegated"] = True
+    if goal_policy is not None:
+        start_payload["goal_policy"] = goal_policy
     return [
         _rec(0, "session/start", start_payload),
         _rec(1, "step/start", {"step_id": "t1"}),
@@ -111,6 +114,33 @@ def test_a_log_without_the_platform_facts_keeps_the_old_header() -> None:
     assert "运行环境" not in content
     assert "dir" not in content
     assert "Get-Content" not in content
+
+
+def test_the_goal_policy_is_injected_when_the_session_carries_it() -> None:
+    """`session/start.goal_policy` 有版本号时，头部注入对应文本（goal-round-pacing L0）。"""
+    content = fold(_one_turn_events(goal_policy="v1")).messages[0].content
+
+    assert content.startswith(SYSTEM_PROMPT)
+    assert "写满步数上限" in content
+    assert "目标轮" in content
+
+
+def test_a_log_without_the_goal_policy_has_no_policy_segment() -> None:
+    """没有字段的旧日志不注入政策段——否则 replay 会与当时的 `context/assembled` 不一致。"""
+    content = fold(_one_turn_events()).messages[0].content
+
+    assert "写满步数上限" not in content
+
+
+def test_the_append_prompt_comes_after_the_goal_policy() -> None:
+    """`--append-system-prompt` 只能追加在政策段之后，覆盖不了它。"""
+    content = (
+        fold(_one_turn_events(goal_policy="v1", append_system_prompt="额外规则"))
+        .messages[0]
+        .content
+    )
+
+    assert content.index("写满步数上限") < content.index("额外规则")
 
 
 def test_the_advice_names_the_native_tools_before_the_shell_commands() -> None:

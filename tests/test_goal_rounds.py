@@ -199,6 +199,74 @@ async def test_three_rounds_run_in_order_and_stop_at_the_cap(tmp_path: Path) -> 
     assert outcome.stop_reason == "MODEL_COMPLETED"
 
 
+class _AlwaysTool:
+    """第一步建目标，之后每步都派发一个只读工具：专门把每一轮写成 `MAX_STEPS`。"""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def generate(
+        self, messages: Any, tools: Any, signal: Any, on_delta: Any = None
+    ) -> AssistantTurn | ProviderFailure:
+        self.calls += 1
+        if self.calls == 1:
+            return AssistantTurn(
+                content="先立个目标",
+                finish_reason="tool_calls",
+                tool_calls=[
+                    ToolCall(
+                        id="c1",
+                        name="create_goal",
+                        arguments={"objective": OBJECTIVE, "max_rounds": 2},
+                    )
+                ],
+            )
+        return AssistantTurn(
+            content="",
+            finish_reason="tool_calls",
+            tool_calls=[ToolCall(id=f"g{self.calls}", name="get_goal", arguments={})],
+        )
+
+
+async def test_max_steps_is_a_round_boundary_and_the_cap_still_stops(tmp_path: Path) -> None:
+    """写满一轮不再判死：人类轮与目标轮都按 `MAX_STEPS` 收尾，但驱动继续开轮。
+
+    `max_rounds=2` 时共三轮（人类 + 两个目标轮）；每轮的 `turn/end` 都是 `MAX_STEPS`，
+    第三轮之后额度用尽照旧落 `round-limit`——证明「续轮」与「额度兜底」同时成立。
+    """
+    provider = _AlwaysTool()
+    log, env = build_session_env(
+        tmp_path, "s-max-steps", provider, registry=_registry(), max_steps=2
+    )
+    cancel = asyncio.Event()
+    outcome = await run_session_env(prompt="写三篇", entry=ENTRY_RUN, env=env, cancel=cancel)
+
+    records = read_events(log.path)
+    turns = _turns(records)
+    assert list(turns) == ["s1", "s2", "s3"]
+
+    stop_reasons = [
+        record.payload["stop_reason"] for record in records if record.type == "turn/end"
+    ]
+    assert stop_reasons == ["MAX_STEPS", "MAX_STEPS", "MAX_STEPS"]
+
+    goal_messages = [
+        record
+        for record in records
+        if record.type == "user/message" and record.payload.get("source", {}).get("kind") == "goal"
+    ]
+    assert [message.payload["source"]["round"] for message in goal_messages] == [1, 2]
+
+    goal = fold_goal(records)
+    assert goal is not None
+    assert goal.phase == "blocked"
+    assert goal.blocked_reason is not None
+    assert goal.blocked_reason.code == "round-limit"
+    assert goal.rounds_started == 2
+    # 最后一轮的收尾事实仍是 `MAX_STEPS`；它不是失败，退出码与正常收尾同档。
+    assert outcome.stop_reason == "MAX_STEPS"
+
+
 class _AsksThenStops:
     """第 1 轮问一个人答不了的问题，然后收尾；用来钉住「未决问题不续跑」。"""
 
@@ -377,9 +445,12 @@ def test_the_round_decision_only_looks_at_the_snapshot_the_arm_and_the_stop_reas
         "FENCE_DENIED",
         "PROVIDER_ERROR",
         "CONTEXT_WINDOW_EXCEEDED",
-        "MAX_STEPS",
     ):
         assert next_round(goal=active, armed=True, stop_reason=stop_reason).kind == "stop"
+
+    # `MAX_STEPS` 是轮边界，不是失败：有目标且已武装时继续下一轮（2026-11-25 人裁）。
+    # 否则长任务会在第一轮写满步数时被截断，`max_rounds` 永远用不上。
+    assert next_round(goal=active, armed=True, stop_reason="MAX_STEPS").kind == "continue"
     paused = active.model_copy(update={"phase": "paused"})
     assert next_round(goal=paused, armed=True, stop_reason="MODEL_COMPLETED").kind == "stop"
 

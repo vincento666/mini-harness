@@ -16,6 +16,21 @@ SYSTEM_PROMPT = (
     "工具失败也是结果，不是异常。"
 )
 
+# goal 政策段：由 `session/start.goal_policy` 的版本号启用，`--append-system-prompt`
+# 只能追加在它之后、覆盖不了它。文本按版本冻结——改文案必须新增版本，旧日志才能按
+# 当时的文本重算（`context/assembled` 里存了完整 messages）。
+GOAL_POLICY_VERSION = "v1"
+GOAL_POLICY_VERSIONS: dict[str, str] = {
+    "v1": (
+        "你在一个多轮循环里工作：一次输入开一轮，一轮由若干步组成，步数有上限。\n"
+        "写满步数上限只是本轮结束，不是失败。若你有 create_goal 工具：目标为 active、"
+        "已武装、还有轮次额度且没有待回答的问题时，结束本轮会自动开始下一目标轮；"
+        "条件不满足时不会自动续跑。\n"
+        "人输入开的轮不推进目标轮次；创建目标只是登记长任务，想分轮完成就在创建后结束本轮。\n"
+        "真正完成时才调用 update_goal 标 complete；不要用文字宣告代替。"
+    ),
+}
+
 # 读方闭合的结果词：只出现在折叠出来的消息里，不在日志里。
 # 名字与值一致，且与 `tools.registry.ToolOutcome` 里那个词是同一个字符串——
 # 这里不 import 它，因为 `events` 不依赖 `tools`（依赖方向是工具读事件）。
@@ -77,6 +92,7 @@ def protected_header(
     platform: Mapping[str, str] | None = None,
     delegated: bool = False,
     persona: str | None = None,
+    goal_policy: str | None = None,
 ) -> list[Message]:
     """受保护头部：内置常量在前，只能追加不能替换。"""
     parts = [SYSTEM_PROMPT]
@@ -90,6 +106,9 @@ def protected_header(
         )
     if delegated:
         parts.append(DELEGATION_SCOPE_DECLARATION)
+    policy = GOAL_POLICY_VERSIONS.get(goal_policy or "")
+    if policy:
+        parts.append(policy)
     if append_system_prompt:
         parts.append(append_system_prompt)
     return [Message(role="system", content="\n\n".join(parts))]
@@ -97,8 +116,8 @@ def protected_header(
 
 def _start_facts(
     events: Sequence[EventRecord],
-) -> tuple[list[str], str, dict[str, str] | None, bool, str | None]:
-    """头部里的工具块、追加段与平台事实取自日志里的 `session/start`，不取自进程内注册表。
+) -> tuple[list[str], str, dict[str, str] | None, bool, str | None, str | None]:
+    """头部里的工具块、追加段、平台事实与政策版本取自日志里的 `session/start`，不取自进程内注册表。
 
     这样实时装配与回放折叠的是同一份事实：注册表在回放时根本不存在。
     """
@@ -117,14 +136,16 @@ def _start_facts(
             else None
         )
         persona = event.payload.get("preset_persona")
+        policy = event.payload.get("goal_policy")
         return (
             names,
             appended if isinstance(appended, str) else "",
             platform,
             event.payload.get("delegated") is True,
             persona if isinstance(persona, str) and persona else None,
+            policy if isinstance(policy, str) and policy else None,
         )
-    return [], "", None, False, None
+    return [], "", None, False, None, None
 
 
 def _body_message(event: EventRecord) -> Message | None:
@@ -239,13 +260,16 @@ def fold(events: Sequence[EventRecord]) -> AssembledContext:
     cached = _FOLD_CACHE.get(key)
     if isinstance(cached, AssembledContext):
         return cached.model_copy(deep=True)
-    tool_names, append_system_prompt, platform, delegated, persona = _start_facts(events)
+    tool_names, append_system_prompt, platform, delegated, persona, goal_policy = _start_facts(
+        events
+    )
     header = protected_header(
         append_system_prompt=append_system_prompt,
         tool_names=tool_names,
         platform=platform,
         delegated=delegated,
         persona=persona,
+        goal_policy=goal_policy,
     )
     shadowed = shadowed_seqs(events)
     body: list[Message] = []

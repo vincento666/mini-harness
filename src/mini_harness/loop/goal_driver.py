@@ -11,7 +11,9 @@ from typing import Literal
 
 from mini_harness.goals import GoalSnapshot
 
-# 这些收尾不再开新轮：三个是中止/失败，两个是「本轮已经撞到自己的上限」。
+# 这些收尾不再开新轮：三个是中止/失败，一个是「本轮撞到上下文上限」。
+# `MAX_STEPS` 故意不在里面：它只表示「这一轮把步数用完了」，不是任务失败——
+# 写满一轮应该换一轮继续，否则长任务会在第一轮就被截断（2026-11-25 人裁）。
 # 它们与 `turn/end.stop_reason` 的词表同源，只是驱动只关心「还能不能继续往前推」。
 NO_CONTINUE_REASONS: frozenset[str] = frozenset(
     {
@@ -19,7 +21,6 @@ NO_CONTINUE_REASONS: frozenset[str] = frozenset(
         "FENCE_DENIED",
         "PROVIDER_ERROR",
         "CONTEXT_WINDOW_EXCEEDED",
-        "MAX_STEPS",
     }
 )
 

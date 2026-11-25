@@ -18,6 +18,7 @@ from mini_harness.context.budget import (
 )
 from mini_harness.contracts import contract_home, load_contracts, render_removed
 from mini_harness.events.fold import (
+    GOAL_POLICY_VERSION,
     PURPOSE_COMPACTION,
     AssembledContext,
     Message,
@@ -920,6 +921,7 @@ def start_session(*, prompt: str, entry: SessionEntry, env: SessionEnv) -> TurnO
         "provider": settings.provider_name,
         "max_steps": settings.max_steps,
         "append_system_prompt": settings.append_system_prompt,
+        "goal_policy": GOAL_POLICY_VERSION,
         "prompt": prompt,
         "sandbox": settings.sandbox,
         "approval": settings.approval,

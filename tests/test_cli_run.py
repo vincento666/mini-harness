@@ -916,6 +916,7 @@ def test_the_three_entries_still_write_the_same_payload(tmp_path: Path) -> None:
         "provider",
         "max_steps",
         "append_system_prompt",
+        "goal_policy",
         "prompt",
         "sandbox",
         "approval",
