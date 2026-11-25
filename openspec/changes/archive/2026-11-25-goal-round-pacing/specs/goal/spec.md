@@ -62,8 +62,8 @@ goal 轮次以零个成功派发的工具调用收尾（模型只说话、没有
 
 #### Scenario: 早失败不消耗轮次
 
-- **WHEN** 第 2 轮的 goal 消息刚写完，provider 在首条 `step/start` 之前失败
-- **THEN** `rounds_started` 仍为 1（这一轮不算数），且不再自动续跑
+- **WHEN** 第 2 轮的 `turn/start` 与 goal 消息已写，首条 `context/assembled` 落盘之前装配失败（预算超线、契约或工具目录写失败）
+- **THEN** `rounds_started` 仍为 1（这一轮不算数），这一轮的 `goal/updated` 不出现；且不再自动续跑
 
 #### Scenario: 取消把目标置暂停
 

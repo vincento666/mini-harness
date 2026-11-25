@@ -185,6 +185,29 @@ def test_an_unknown_key_is_an_argument_error(tmp_path: Path) -> None:
     assert list((tmp_path / "sessions").glob("*.jsonl")) == []
 
 
+def test_the_goal_policy_is_not_a_config_key(tmp_path: Path) -> None:
+    """政策版本由内置常量决定，配置关不掉也改不了（goal-round-pacing / cli 规格）。"""
+    config = tmp_path / "mini.config.toml"
+    config.write_text('goal_policy = "off"\n', encoding="utf-8")
+
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        "--yes",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert "goal_policy" in result.stderr
+    assert list((tmp_path / "sessions").glob("*.jsonl")) == []
+
+
 def test_a_wrong_typed_value_is_an_argument_error(tmp_path: Path) -> None:
     config = tmp_path / "mini.config.toml"
     config.write_text('max_steps = "three"\n', encoding="utf-8")

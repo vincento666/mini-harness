@@ -21,7 +21,7 @@ from mini_harness.cli import main as cli_main
 from mini_harness.cli.main import STOP_REASONS_TO_EXIT_CODES, exit_code_for, sigint_handler
 from mini_harness.config import build_registry
 from mini_harness.events import EventLog
-from mini_harness.events.fold import SYSTEM_PROMPT
+from mini_harness.events.fold import GOAL_POLICY_VERSION, SYSTEM_PROMPT
 from mini_harness.loop import ENTRY_RUN, STOP_REASONS, RunOutcome, SessionSettings
 from mini_harness.provider import AssistantTurn
 from mini_harness.tools.bash_tools import shell_form
@@ -949,12 +949,14 @@ def test_a_new_session_carries_the_goal_policy(tmp_path: Path) -> None:
     log = next((tmp_path / "sessions").glob("*.jsonl"))
     records = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
     start = next(record for record in records if record["type"] == "session/start")
-    assert start["payload"]["goal_policy"] == "v1"
+    assert start["payload"]["goal_policy"] == GOAL_POLICY_VERSION
 
     assembled = next(record for record in records if record["type"] == "context/assembled")
     header = assembled["payload"]["messages"][0]["content"]
     assert header.startswith(SYSTEM_PROMPT)
     assert "写满步数上限" in header
+    # v2 的措辞：完成声明也是条件句，不能给没有该工具的会话下无条件命令（两轴 review F7）
+    assert "若你有 update_goal 工具" in header
 
 
 def test_the_platform_facts_are_not_a_cli_flag(tmp_path: Path) -> None:
@@ -963,6 +965,17 @@ def test_the_platform_facts_are_not_a_cli_flag(tmp_path: Path) -> None:
     assert "platform" not in help_result.stdout
 
     rejected = _cli("run", "-p", "任务", "--platform", "posix", cwd=tmp_path)
+    assert rejected.returncode == 2
+    assert "unrecognized arguments" in rejected.stderr
+    assert _log_files(tmp_path) == []
+
+
+def test_the_goal_policy_is_not_a_cli_flag(tmp_path: Path) -> None:
+    """政策版本同样没有开关：`--goal-policy` 是不认识的参数，会话照旧带 v2。"""
+    help_result = _cli("run", "--help", cwd=tmp_path)
+    assert "goal-policy" not in help_result.stdout
+
+    rejected = _cli("run", "-p", "任务", "--goal-policy", "off", cwd=tmp_path)
     assert rejected.returncode == 2
     assert "unrecognized arguments" in rejected.stderr
     assert _log_files(tmp_path) == []

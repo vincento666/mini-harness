@@ -10,10 +10,10 @@ import pytest
 
 from mini_harness.events import EventRecord, read_events
 from mini_harness.events.writer import LogWriteFailure
-from mini_harness.goals import GoalPolicy, GoalSnapshot, fold_goal
+from mini_harness.goals import GoalPolicy, GoalRound, GoalSnapshot, fold_goal, render_goal_round
 from mini_harness.loop import ENTRY_RUN, exhaust_goal_rounds, run_session_env
 from mini_harness.loop.goal_driver import RoundDecision, next_round
-from mini_harness.loop.turn_loop import TurnOutcome, close_failed_round
+from mini_harness.loop.turn_loop import TurnOutcome, run_turn, settle_turn
 from mini_harness.provider import AssistantTurn, FixtureProvider, ProviderFailure, ToolCall
 from mini_harness.tools import ToolRegistry
 from mini_harness.tools.assistant import assistant_tool_definitions
@@ -672,7 +672,11 @@ def test_without_a_goal_max_steps_still_stops() -> None:
 
 @pytest.mark.parametrize("reason", ["FENCE_DENIED", "CONTEXT_WINDOW_EXCEEDED"])
 async def test_fence_and_overflow_disarm_without_pausing(tmp_path: Path, reason: str) -> None:
-    """`FENCE_DENIED` / `CONTEXT_WINDOW_EXCEEDED` 只解除武装，不把 active 目标置 paused。"""
+    """`FENCE_DENIED` / `CONTEXT_WINDOW_EXCEEDED` 只解除武装，不把 active 目标置 paused。
+
+    走 `settle_turn` 而不是直接调 `close_failed_round`：入口实际经过的是收尾判定，
+    武装位的副作用属于那条路径（两轴 review F6）。
+    """
     provider = _Scripted(max_rounds=2)
     log, env = build_session_env(
         tmp_path, f"s-{reason.lower()}", provider, registry=_registry(), max_steps=8
@@ -689,9 +693,114 @@ async def test_fence_and_overflow_disarm_without_pausing(tmp_path: Path, reason:
     assert isinstance(written, EventRecord), written
     env.goal_runtime.armed = True
 
-    close_failed_round(env=env, turn=TurnOutcome(stop_reason=reason, steps=1))  # type: ignore[arg-type]
+    settled = settle_turn(
+        env=env,
+        turn=TurnOutcome(stop_reason=reason, steps=1),  # type: ignore[arg-type]
+        steps=1,
+        goal_round=True,
+    )
 
+    assert settled.failure is None
+    assert settled.decision.kind == "stop"
     assert env.goal_runtime.armed is False
     goal = fold_goal(read_events(log.path))
     assert goal is not None
     assert goal.phase == "active"
+
+
+def test_the_goal_round_text_does_not_hardcode_the_stall_threshold() -> None:
+    """目标轮正文不写死「两轮」：阈值是 `[goal] stall_rounds`，可配（两轴 review F3）。"""
+    snapshot = GoalSnapshot(
+        id="g1",
+        revision=1,
+        objective=OBJECTIVE,
+        phase="active",
+        max_rounds=3,
+        rounds_started=0,
+    )
+
+    text = render_goal_round(snapshot, 1)
+
+    assert "连续两轮" not in text
+    assert "停滞阈值" in text
+    assert "Round: 1/3" in text
+
+
+async def test_max_steps_keeps_the_goal_armed_through_settle_turn(tmp_path: Path) -> None:
+    """写满一轮经收尾判定后：结论是续轮，武装位保持，轮次由下一轮开轮时才推进。"""
+    provider = _Scripted(max_rounds=2)
+    log, env = build_session_env(tmp_path, "s-max-steps", provider, registry=_registry())
+    snapshot = GoalSnapshot(
+        id="g1",
+        revision=1,
+        objective=OBJECTIVE,
+        phase="active",
+        max_rounds=2,
+        rounds_started=0,
+    )
+    written = log.append("goal/updated", {"goal": snapshot.model_dump(exclude_none=True)})
+    assert isinstance(written, EventRecord), written
+    env.goal_runtime.armed = True
+
+    settled = settle_turn(
+        env=env,
+        turn=TurnOutcome(stop_reason="MAX_STEPS", steps=8),
+        steps=8,
+        goal_round=True,
+    )
+
+    assert settled.failure is None
+    assert settled.decision.kind == "continue"
+    assert env.goal_runtime.armed is True
+    goal = fold_goal(read_events(log.path))
+    assert goal is not None
+    assert goal.phase == "active"
+    assert goal.rounds_started == 0
+
+
+async def test_an_assembly_overflow_before_context_assembled_keeps_the_round_count(
+    tmp_path: Path,
+) -> None:
+    """装配阶段就超线：首条 `context/assembled` 没落盘，这一轮不扣轮次（ADR-0043）。
+
+    两轴 review F2：原规格把 WHEN 写成「provider 在 `step/start` 之前失败」，不可达
+    （provider 只在 `step/start` 之后被调；`turn/start` 与 goal 消息还是同批写的）。
+    真实的早失败点是装配期的预算超线，`_context_overflow` 在 `context/assembled` 之前返回。
+    """
+    provider = _Scripted(max_rounds=2)
+    log, env = build_session_env(
+        tmp_path,
+        "s-early-overflow",
+        provider,
+        registry=_registry(),
+        max_steps=1,
+        window=50,
+        reserve=10,
+    )
+    snapshot = GoalSnapshot(
+        id="g1",
+        revision=1,
+        objective=OBJECTIVE,
+        phase="active",
+        max_rounds=2,
+        rounds_started=0,
+    )
+    written = log.append("goal/updated", {"goal": snapshot.model_dump(exclude_none=True)})
+    assert isinstance(written, EventRecord), written
+    env.goal_runtime.armed = True
+
+    outcome = await run_turn(
+        env=env,
+        turn_id="s1",
+        first_step_index=0,
+        cancel=asyncio.Event(),
+        goal_round=GoalRound(goal=snapshot, round=1),
+    )
+
+    assert outcome.stop_reason == "CONTEXT_WINDOW_EXCEEDED"
+    records = read_events(log.path)
+    # 首条装配没写成：本轮没有 `context/assembled`
+    assert not any(record.type == "context/assembled" for record in records)
+    goal = fold_goal(records)
+    assert goal is not None
+    assert goal.rounds_started == 0

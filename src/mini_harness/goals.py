@@ -140,7 +140,7 @@ def render_goal_round(goal: GoalSnapshot, round_number: int) -> str:
         "以工作区、工具结果与持久状态为准：完成前取证。\n"
         "本轮结束前必须三选一：完成则调用 update_goal 标 complete；已达阻塞门槛则调用 "
         "update_goal 标 blocked；否则现在就执行下一步的具体动作。只复述计划、不调用任何"
-        "工具会被记为停滞；连续两轮如此将停止自动推进。\n"
+        "工具会被记为停滞；连续零动作的轮数达到停滞阈值将停止自动推进。\n"
         "</goal_round>"
     )
 

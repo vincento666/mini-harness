@@ -10,6 +10,8 @@ from mini_harness.config import build_registry
 from mini_harness.events import EventLog, EventRecord
 from mini_harness.events.fold import (
     _FOLD_CACHE,
+    GOAL_POLICY_VERSION,
+    GOAL_POLICY_VERSIONS,
     SYSTEM_PROMPT,
     TOOL_OUTCOME_UNKNOWN,
     AssembledContext,
@@ -116,13 +118,33 @@ def test_a_log_without_the_platform_facts_keeps_the_old_header() -> None:
     assert "Get-Content" not in content
 
 
+def test_the_current_policy_version_has_a_text() -> None:
+    """`GOAL_POLICY_VERSION` 必须指到表里的一格：两个事实不能各写各的（两轴 review F4）。"""
+    assert GOAL_POLICY_VERSION in GOAL_POLICY_VERSIONS
+
+
 def test_the_goal_policy_is_injected_when_the_session_carries_it() -> None:
     """`session/start.goal_policy` 有版本号时，头部注入对应文本（goal-round-pacing L0）。"""
-    content = fold(_one_turn_events(goal_policy="v1")).messages[0].content
+    content = fold(_one_turn_events(goal_policy=GOAL_POLICY_VERSION)).messages[0].content
 
     assert content.startswith(SYSTEM_PROMPT)
     assert "写满步数上限" in content
     assert "目标轮" in content
+
+
+def test_the_goal_policy_mentions_the_stall_gate() -> None:
+    """政策不能只列四条续跑条件：停滞闸门也会停，漏了它就是假承诺（两轴 review F3）。"""
+    content = fold(_one_turn_events(goal_policy=GOAL_POLICY_VERSION)).messages[0].content
+
+    assert "停滞" in content
+
+
+def test_an_old_v1_log_still_injects_the_old_text() -> None:
+    """v1 的文本冻结在表里：旧日志按当时的文案重算，不会被新版本改写。"""
+    content = fold(_one_turn_events(goal_policy="v1")).messages[0].content
+
+    assert "若你有 update_goal 工具" not in content
+    assert "真正完成时才调用 update_goal" in content
 
 
 def test_a_log_without_the_goal_policy_has_no_policy_segment() -> None:
@@ -135,7 +157,7 @@ def test_a_log_without_the_goal_policy_has_no_policy_segment() -> None:
 def test_the_append_prompt_comes_after_the_goal_policy() -> None:
     """`--append-system-prompt` 只能追加在政策段之后，覆盖不了它。"""
     content = (
-        fold(_one_turn_events(goal_policy="v1", append_system_prompt="额外规则"))
+        fold(_one_turn_events(goal_policy=GOAL_POLICY_VERSION, append_system_prompt="额外规则"))
         .messages[0]
         .content
     )
