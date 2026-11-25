@@ -32,6 +32,20 @@
 - **WHEN** 对一份含三轮续跑的日志执行 `replay`
 - **THEN** 折叠结果与写入时逐点相等，轮号序列不变
 
+### Requirement: 段后收尾只有一份实现
+
+`run` / `chat` / `host` 三个入口 MUST 调同一个段后收尾实现（读目标 → 判下一轮 → 落额度/停滞/失败收尾），MUST NOT 各自复制一份判定。入口之间的差别只允许在「谁来提供下一条输入」：`run` 没有输入、`chat` 回到提示符、`host` 从待跑队列取。
+
+#### Scenario: host 也自动续跑
+
+- **WHEN** host 会话里的人类段建了一个 `active` 目标并正常收尾
+- **THEN** 日志出现 goal 来源的下一段，不需要再来一条 `POST /messages`
+
+#### Scenario: 三个入口的判定一致
+
+- **WHEN** 同一份目标状态与同一个 `stop_reason` 分别交给三个入口
+- **THEN** 是否开下一段的结论相同；差异只在下一段由谁触发
+
 ## MODIFIED Requirements
 
 ### Requirement: 一条输入开一个段，段的边界在日志里
@@ -78,17 +92,3 @@
 
 - **WHEN** 目标连跑三轮，`max_turns = 2`
 - **THEN** 每个段各自最多两个回合，第三段的 `turns` 不从前面累加
-
-### Requirement: 段后收尾只有一份实现
-
-`run` / `chat` / `host` 三个入口 MUST 调同一个段后收尾实现（读目标 → 判下一轮 → 落额度/停滞/失败收尾），MUST NOT 各自复制一份判定。入口之间的差别只允许在「谁来提供下一条输入」：`run` 没有输入、`chat` 回到提示符、`host` 从待跑队列取。
-
-#### Scenario: host 也自动续跑
-
-- **WHEN** host 会话里的人类段建了一个 `active` 目标并正常收尾
-- **THEN** 日志出现 goal 来源的下一段，不需要再来一条 `POST /messages`
-
-#### Scenario: 三个入口的判定一致
-
-- **WHEN** 同一份目标状态与同一个 `stop_reason` 分别交给三个入口
-- **THEN** 是否开下一段的结论相同；差异只在下一段由谁触发

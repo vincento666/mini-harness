@@ -3,9 +3,7 @@
 ## Purpose
 
 定义 `minihns serve --http` 怎么把一份会话日志对外读：一条记录一帧的 SSE 事件流、续读游标就是日志的 `seq`、客户端断开与慢读不改变会话，以及会话收尾就是进程退出。
-
 ## Requirements
-
 ### Requirement: serve 把会话日志作为事件流输出
 系统 SHALL 提供 `minihns serve --http`：启动一个会话（prompt 来自 `-p/--prompt`，必填非空）并在 `GET /events` 上以 SSE 输出该会话的日志——每条记录一帧，帧的 `id` 是该记录的 `seq`、`event` 是记录的事件类型、`data` 是**该记录整行的 JSON**（信封与 payload 都在里面）。事件流 MUST NOT 重排、合并、新增或改写日志里没有的事件，也 MUST NOT 把 HTTP 层的事实（连接、断开、状态码）写进日志。
 
@@ -56,15 +54,23 @@
 - **THEN** 另一个从自己的位置继续读到底，帧集合与单客户端读到底相同
 
 ### Requirement: serve 的会话收尾就是进程退出
-系统 SHALL 在会话收尾时结束 serve 进程：`session/end` 写完之后进程结束，退出码 SHALL 取自固定表（正常收尾 0、provider 失败 1、围栏拒绝 3、预算溢出 4、取消 5）。serve 是一次性入口，一个会话恰一个段，MUST NOT 出现「段级收尾而进程继续」的形状。stdout SHALL 只打 session id 一行。
+
+系统 SHALL 在会话收尾时结束 serve 进程：`session/end` 写完之后进程结束，退出码 SHALL 取自固定表（正常收尾 0、provider 失败 1、围栏拒绝 3、预算溢出 4、取消 5）。serve 是一次性入口：会话里可以有多个段（目标续跑时每轮一段），但 MUST NOT 出现「段级收尾而成进程空转等人」或「会话收尾之后进程继续」的形状。stdout SHALL 只打 session id 一行。
 
 #### Scenario: 溢出在 serve 里就是进程退出
+
 - **WHEN** 一次 serve 会话以 `CONTEXT_WINDOW_EXCEEDED` 收尾
 - **THEN** 日志里有 `error/context`、`turn/end`、`segment/end` 与 `session/end`，进程退出码为 4
 
 #### Scenario: 取消在 serve 里就是进程退出
+
 - **WHEN** serve 进程在会话进行中收到 Ctrl-C
 - **THEN** 日志以 `error/abort`、`turn/end`（`stop_reason: ABORTED`）、`segment/end` 与 `session/end` 收尾，退出码为 5，且没有未捕获异常
+
+#### Scenario: 目标续跑不改变进程生命周期
+
+- **WHEN** 一次 serve 会话里的目标续了两轮
+- **THEN** 日志里有三个段，`session/end` 只在最后一个段之后出现一次，进程在它写完即退出
 
 ### Requirement: host 与 port 在会话开始之前判掉
 系统 SHALL 只接受 `--host` 取 `127.0.0.1` 或 `0.0.0.0`、`--port` 取 1 至 65535 的整数（照 DSH 的 `dsh-host-webserver`：`host: union("127.0.0.1","0.0.0.0")`、`port: natural().max(65535)`）。取值越界 SHALL 以退出码 2 结束、stderr 含 `INVALID_ARGUMENT`，且 MUST NOT 创建 session 日志。端口被占或绑定失败 SHALL 同样是 session 开始之前的失败：退出码 2、stderr 含 `INVALID_ARGUMENT` 与失败原因，MUST NOT 创建 session 日志、MUST NOT 发出任何模型请求。
@@ -95,3 +101,4 @@
 #### Scenario: serve 的窗口预算失败与 run 同形
 - **WHEN** 执行 `minihns serve --http -p "x"` 带使触发线为 0 的 `--window` 与 `--reserve`
 - **THEN** 退出码为 2、stderr 含 `INVALID_ARGUMENT`，且没有创建 session 日志
+

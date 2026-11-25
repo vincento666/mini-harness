@@ -64,57 +64,17 @@
 
 ### Requirement: 事件类型只取自当前事件词表
 
-系统 SHALL 只发出当前词表中的事件类型：`session/start`、`session/end`、`segment/start`、`segment/end`、`turn/start`、`turn/end`、`context/assembled`、`model/request`、`model/retry`、`model/response`、`user/message`、`tool/call`、`tool/result`、`tool/cancelled`、`approval/request`、`approval/response`、`compaction/summary`、`command/run`、`command/done`、`error/*`。`error/*` 用到的具体类型是 `error/model`、`error/internal`、`error/abort`、`error/fence`、`error/context`。词表外的事实 MUST NOT 通过临时新造类型表达。
+系统 SHALL 只发出当前词表中的事件类型：`session/start`、`session/end`、`segment/start`、`segment/end`、`turn/start`、`turn/end`、`context/assembled`、`model/request`、`model/retry`、`model/response`、`user/message`、`tool/call`、`tool/result`、`tool/cancelled`、`approval/request`、`approval/response`、`compaction/summary`、`command/run`、`command/done`、`plan/mode`、`goal/updated`、`todo/updated`、`question/asked`、`question/answered`、`present/artifact`、`error/*`。`error/*` 用到的具体类型是 `error/model`、`error/internal`、`error/abort`、`error/fence`、`error/context`。词表外的事实 MUST NOT 通过临时新造类型表达。
 
 #### Scenario: 一次带审批的写的事件序列
 
 - **WHEN** 一次 run 的某回合派发一次获批的 `edit`
 - **THEN** 该 `tool_call_id` 的记录按 `tool/call`、`approval/request`、`approval/response`、`tool/result` 的相对顺序出现
 
-#### Scenario: 并发批次里不同调用的记录可以交错
+#### Scenario: goal 事件可写入词表
 
-- **WHEN** 同一回合里一个只读调用与一个获批的会改动调用同批派发
-- **THEN** 每个 `tool_call_id` 自己的记录保持上面那个相对顺序，`tool/result` 之间按各自的完成顺序；不同调用的组可以交错，规格不要求它们连续
-
-#### Scenario: 无法归类的内部故障仍走 error 命名空间
-
-- **WHEN** 内核发生一个不属于任何既有 `namespace/method` 的故障
-- **THEN** 日志写入 `error/internal` 记录，而不是新造事件类型
-
-#### Scenario: 一次重试一条 model/retry
-
-- **WHEN** 一次请求收到 429 并被重试
-- **THEN** 日志里在配对的 `model/request` 与下一条 `model/response`（或 `error/model`）之间恰好有一条 `model/retry`，payload 含 `turn_id`、`attempt`、`status`
-
-#### Scenario: 没有重试就没有该记录
-
-- **WHEN** 跑完一次没有 429 与 5xx 的 run
-- **THEN** 日志里没有任何 `model/retry` 记录
-
-#### Scenario: tool/cancelled 自 M3 起在词表内
-
-- **WHEN** 一次 `bash` 超时
-- **THEN** 日志里有一条 `tool/cancelled` 记录，它不被记为 `unrecognized_type`
-
-#### Scenario: 一次压缩一条 compaction/summary
-
-- **WHEN** 一次装配越线并完成压缩
-- **THEN** 日志里恰有一条 `compaction/summary`，它不被记为 `unrecognized_type`
-
-#### Scenario: 一次 REPL 输入一条 user/message
-
-- **WHEN** 一次 chat 里人提交一条非空输入
-- **THEN** 日志里恰有一条 `user/message`，payload 含 `segment_id` 与 `content`，它不被记为 `unrecognized_type`
-
-#### Scenario: 一次命令一对 command/run 与 command/done
-
-- **WHEN** 客户端执行一次 `skills` 或 `skill` 命令
-- **THEN** 日志里有 `command/run`（含 `command_id`、`name`、`raw_input`）与配对的 `command/done`（含 `command_id`、`ok`），它们不被记为 `unrecognized_type`
-
-#### Scenario: 未知命令不产生记录
-
-- **WHEN** 一次输入是未知的斜杠命令
-- **THEN** 日志里没有任何 `command/*` 记录
+- **WHEN** 会话写入一条 `goal/updated`
+- **THEN** 该行通过事件校验，重放时不被记为词表外类型
 
 ### Requirement: approval 事件记录问与答
 系统 SHALL 在**向人提问之前**写一条 `approval/request`（含 `turn_id`、`tool_call_id`、工具名、关键参数），并在得到结论时立刻写一条 `approval/response`（含同样的 `turn_id` 与 `tool_call_id`，`decision` 取 `APPROVED`、`DENIED`、`UNAVAILABLE`）。在非 `ABORTED` 收尾的 session 里，每条 `approval/request` MUST 有且只有一条配对的 `approval/response`。以 `error/abort` 收尾的 session 里允许一条没有配对的 `approval/request`，它读成「未回答」。
