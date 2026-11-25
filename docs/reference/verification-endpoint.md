@@ -67,7 +67,37 @@ curl -N https://openrouter.ai/api/v1/chat/completions \
 
 401 且 message 里写着 `No API key in the Authorization header` 就是变量没进这个进程，不是模型名或端点的问题。
 
-## 5. 不做什么
+## 5. 报错分诊：先分「端点侧」与「代码侧」
+
+两条裸 curl 就能分，别看代码：
+
+```bash
+curl -sS -o /dev/null -w "key=%{http_code}\n" https://openrouter.ai/api/v1/key \
+  -H "Authorization: Bearer $OPENROUTER_API_KEY"
+curl -sS -w "\nchat=%{http_code}\n" https://openrouter.ai/api/v1/chat/completions \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+  -d '{"model":"qwen/qwen3.8-27b","messages":[{"role":"user","content":"hi"}],"max_tokens":8}'
+```
+
+| 读数 | 结论 | 下一步 |
+|---|---|---|
+| `key=200` + `chat=200` | 端点通 | 再跑 harness；仍失败才是代码侧 |
+| `key=200` + `chat=4xx/5xx` | **端点/账户侧**，与 mini 无关 | 换 key、看控制台、向 OpenRouter 报（附 `x-openrouter-release`） |
+| `key=401` | 变量没进这个进程 | `set -a && . ~/.config/minihns/openrouter.env && set +a` |
+
+**2026-11-25 实例（400 `Request path cannot be relayed`）**：`key=200`（余额 $2.89 / $3、非 free tier、无 `expires_at`），而推理请求一律 400。逐项排除过：4 个模型、`openrouter/auto`、指定 provider（Darkbloom）、`/chat/completions` 与 `/responses` 与 `/messages` 三条路径、换 UA/`HTTP-Referer`、`--http1.1`、`--noproxy '*'` 直连——全是同一句 400。同时 `GET /api/v1/models` 与 `/models/<id>/endpoints` 都是 200（模型在列、6 个端点 `status=0`）。响应头 `x-openrouter-error-origin: client` 是网关自己判的，不是上游透传。结论：**只拒推理类 POST，读取类 GET 正常**，属端点侧；前一晚同一条 curl 还是 200。
+
+harness 侧看到这事的形状是固定的，**不要**据此改轮次逻辑：
+
+```text
+error/model {code: PROVIDER_HTTP_STATUS, detail: "HTTP 400：Request path cannot be relayed"}
+step/end    {stop_reason: PROVIDER_ERROR}
+turn/end    {stop_reason: PROVIDER_ERROR, tool_calls: 0}
+```
+
+`tool_calls=0` 且第一次 `model/request` 之后就报错，说明模型一次都没叫通——目标根本没建起来，`[轮] 收尾 PROVIDER_ERROR` 只是入口照常收尾。
+
+## 6. 不做什么
 
 - **不把密钥写进仓库**：不出现在 `.env`、不出现在 `mini.config.toml`、不写进日志。
 - **不把这条端点加进 CI**：ADR-0024 明写真实那一半不进 CI，理由是密钥与抖动。
