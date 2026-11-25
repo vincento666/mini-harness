@@ -120,7 +120,8 @@
 - **THEN** 退出码为 2，stderr 含 `INVALID_ARGUMENT` 与 `--model`，没有创建 session 日志，也没有发出请求
 
 ### Requirement: provider 预设表填的是没被给的那几项
-系统 SHALL 内置一张按 provider 名索引的端点预设表：`openai` = `base_url https://api.openai.com/v1`、`api_key_env MINIHNS_API_KEY`、`model` **无默认**；`deepseek` = `https://api.deepseek.com` / `deepseek-chat` / `DEEPSEEK_API_KEY`；`mock` 没有端点三项。预设 SHALL 只填 CLI 与配置文件都没给的那几项，MUST NOT 覆盖已给出的那一项。表里 MUST NOT 出现任何密钥的值，只有变量名。
+
+系统 SHALL 内置一张按 provider 名索引的端点预设表：`openai` = `base_url https://api.openai.com/v1`、`api_key_env MINIHNS_API_KEY`、`model` **无默认**；`deepseek` = `https://api.deepseek.com` / `deepseek-chat` / `DEEPSEEK_API_KEY`；`openrouter` = `https://openrouter.ai/api/v1` / `qwen/qwen3.8-27b` / `OPENROUTER_API_KEY`；`mock` 没有端点三项。预设 SHALL 只填 CLI 与配置文件都没给的那几项，MUST NOT 覆盖已给出的那一项。表里 MUST NOT 出现任何密钥的值，只有变量名。
 
 #### Scenario: 预设不覆盖命令行给过的那一项
 - **WHEN** 执行 `--provider openai --base-url http://127.0.0.1:8300/v1 --model q --api-key-env TEST_KEY_ENV`
@@ -133,6 +134,10 @@
 #### Scenario: openai 预设不落到 deepseek 的默认
 - **WHEN** `--provider openai` 且未给 `--base-url`
 - **THEN** 生效的 `base_url` 是 `https://api.openai.com/v1`，不是 `https://api.deepseek.com`
+
+#### Scenario: 配置文件只写一行 provider 就够
+- **WHEN** 配置文件只写 `provider = "openrouter"`，三项端点都没写
+- **THEN** 生效的 `base_url`、`model`、`api_key_env` 全取 `openrouter` 预设（`https://openrouter.ai/api/v1` / `qwen/qwen3.8-27b` / `OPENROUTER_API_KEY`）
 
 #### Scenario: mock 预设没有端点三项
 - **WHEN** 生效 provider 为 `mock`
@@ -215,4 +220,23 @@
 
 - **WHEN** 配置文件只写 `max_turns = 4`
 - **THEN** 会话开始之前失败，退出码 2，不建日志
+
+### Requirement: proxy 是端点出口的可配键
+
+`mini.config.toml` SHALL 接受顶层键 `proxy`（字符串），取值优先级与其它可配字段一致：命令行 `--proxy` > 配置文件 `proxy` > 没有（直连）。值 MUST 是 `http://` 或 `https://` 的绝对 URL；类型不对按 `CONFIG_INVALID_VALUE` 拒，形状不对在装配期以 `INVALID_ARGUMENT` 拒。`proxy` MUST NOT 写进 `session/start` 的配置快照。
+
+#### Scenario: 配置文件给 proxy
+
+- **WHEN** 配置文件写 `proxy = "http://127.0.0.1:7897"` 且命令行不给 `--proxy`
+- **THEN** 该会话的请求经这个代理发出
+
+#### Scenario: 命令行覆盖配置文件
+
+- **WHEN** 配置文件写 `proxy = "http://127.0.0.1:7897"`，命令行给 `--proxy http://127.0.0.1:8888`
+- **THEN** 请求经 `8888` 发出
+
+#### Scenario: 类型不对是配置错误
+
+- **WHEN** 配置文件写 `proxy = 7897`
+- **THEN** 会话开始之前失败，`CONFIG_INVALID_VALUE`，退出码 2
 

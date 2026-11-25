@@ -124,7 +124,8 @@
 - **THEN** 进程退出码为 0，日志里 `error/fence` 在盘上而 `session/end` 的 `stop_reason` 是 `MODEL_COMPLETED`
 
 ### Requirement: provider 选择与密钥是装配的必需项
-系统 SHALL 接受 `mock`、`openai`、`deepseek` 三个 provider 取值，其它取值 SHALL 以退出码 2 结束、stderr 含 `UNKNOWN_PROVIDER`，且 MUST NOT 创建 session 日志。密钥 SHALL 只从 `api_key_env` 指定的环境变量读取；该项未显式给出时默认变量名随预设而变（`openai` 是 `MINIHNS_API_KEY`、`deepseek` 是 `DEEPSEEK_API_KEY`），未设或为空时 SHALL 以退出码 2 结束、stderr 含 `INVALID_ARGUMENT` 与该变量名，且 MUST NOT 创建 session 日志、MUST NOT 发出任何 HTTP 请求。密钥 MUST NOT 出现在命令行参数、stdout、stderr、session 日志或 `session/start` 的 payload 里。
+
+系统 SHALL 接受 `mock`、`openai`、`deepseek`、`openrouter` 四个 provider 取值，其它取值 SHALL 以退出码 2 结束、stderr 含 `UNKNOWN_PROVIDER`，且 MUST NOT 创建 session 日志。密钥 SHALL 只从 `api_key_env` 指定的环境变量读取；该项未显式给出时默认变量名随预设而变（`openai` 是 `MINIHNS_API_KEY`、`deepseek` 是 `DEEPSEEK_API_KEY`、`openrouter` 是 `OPENROUTER_API_KEY`），未设或为空时 SHALL 以退出码 2 结束、stderr 含 `INVALID_ARGUMENT` 与该变量名，且 MUST NOT 创建 session 日志、MUST NOT 发出任何 HTTP 请求。密钥 MUST NOT 出现在命令行参数、stdout、stderr、session 日志或 `session/start` 的 payload 里。
 
 #### Scenario: 未知 provider
 - **WHEN** 执行 `minihns run -p "x" --provider claude`
@@ -141,6 +142,14 @@
 #### Scenario: deepseek 预设走自己的默认变量
 - **WHEN** `MINIHNS_API_KEY` 未设、`DEEPSEEK_API_KEY` 已设，执行 `minihns run -p "x" --provider deepseek`
 - **THEN** 装配成功，`session/start` 的 payload 里 `provider` 为 `deepseek`，且请求打到 `https://api.deepseek.com`
+
+#### Scenario: openrouter 只要一个 flag
+- **WHEN** `OPENROUTER_API_KEY` 已设，执行 `minihns run -p "x" --provider openrouter`，不给 `--base-url`、`--model`、`--api-key-env`
+- **THEN** 装配成功，`session/start` 的 payload 里 `provider` 为 `openrouter`、`model` 为 `qwen/qwen3.8-27b`、`base_url` 为 `https://openrouter.ai/api/v1`，请求打到 OpenRouter
+
+#### Scenario: openrouter 的默认模型可被覆盖
+- **WHEN** `--provider openrouter --model 别的模型`
+- **THEN** 生效的 `model` 是显式给的那个；`base_url` 与 `api_key_env` 仍由预设补齐
 
 ### Requirement: 配置层失败都在 session 开始之前
 配置文件非法、`--config` 指向的路径不存在、工具白名单里的未知名、以及 openai 路径缺失密钥时，系统 SHALL 以退出码 2 结束、往 stderr 写 `INVALID_ARGUMENT`，且 MUST NOT 创建 session 日志、MUST NOT 追加任何事件。这一类失败与既有的参数错误同形，是「每个非零退出都有 `error/*`」的例外之一。
@@ -280,4 +289,18 @@
 
 - **WHEN** 用 `--max-turns 2` 跑一次 run
 - **THEN** 退出码 2，stderr 里是 `unrecognized arguments`，不建日志
+
+### Requirement: --proxy 让真实端点经显式代理出去
+
+`run` / `chat` / `host` SHALL 接受 `--proxy URL`，把它交给 provider 的 HTTP transport。它 MUST 只支持 `http://` 与 `https://` 且主机非空；其它形状（含 `socks5://`）SHALL 以 `INVALID_ARGUMENT` 退出（退出码 2），MUST NOT 建日志、MUST NOT 发请求。`--provider mock` 时给 `--proxy` SHALL 被接受但无效果（mock 不发 HTTP）。
+
+#### Scenario: 坏代理值当场拒绝
+
+- **WHEN** 用 `--proxy socks5://127.0.0.1:1080` 跑一次 run
+- **THEN** 退出码 2，stderr 说明只支持 http/https，且没有新建 session 日志
+
+#### Scenario: 好代理值不改日志形状
+
+- **WHEN** 用 `--proxy http://127.0.0.1:7897` 跑一次 run
+- **THEN** `session/start` 的键集合与不给 `--proxy` 时完全相同（代理不进 payload）
 

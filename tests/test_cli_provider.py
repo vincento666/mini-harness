@@ -323,6 +323,29 @@ def test_a_hostile_no_proxy_does_not_stop_the_request(tmp_path: Path) -> None:
     assert len(endpoint.requests) == 1
 
 
+def test_a_proxy_in_the_environment_does_not_change_the_exit(tmp_path: Path) -> None:
+    """规格「不读环境代理」：环境里给一个打不通的 HTTP_PROXY，请求仍直连端点（ADR-0006）。
+
+    NO_PROXY 必须显式清空——否则端点主机被豁免，环境代理本来就不会生效，这条判据就杀不死
+    `trust_env=True`（2026-11-25 的变异 M1 就是这么活下来的）。
+    """
+    with _FakeEndpoint(status=200, body=_STOP_BODY) as endpoint:
+        result = _run_openai(
+            tmp_path,
+            endpoint.base_url,
+            key_env_value=_KEY_VALUE,
+            extra_env={
+                "HTTP_PROXY": "http://127.0.0.1:1",
+                "http_proxy": "http://127.0.0.1:1",
+                "NO_PROXY": "",
+                "no_proxy": "",
+            },
+        )
+
+    assert result.returncode == 0, result.stderr
+    assert len(endpoint.requests) == 1
+
+
 def test_a_200_without_choices_is_a_schema_error_at_the_cli(tmp_path: Path) -> None:
     """规格 scenario「200 的响应体不是合法 chat completion」：日志与退出码那一层也要有判据。"""
     with _FakeEndpoint(status=200, body={"id": "chatcmpl-4"}) as endpoint:
