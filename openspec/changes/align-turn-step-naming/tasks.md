@@ -34,7 +34,7 @@
 
 ## 4. 规格与文档
 
-- [ ] 4.1 `openspec/specs/` 全量改词：`turn-loop`、`event-log`、`event-stream`、`cli`、`config-layering`、`chat-repl`、`host-api`、`session-resume`、`subagent-delegation`、`usage-metering`。**延后到 m13 归档之后**：m13 的 delta 会在归档时把旧词写进主规格，现在改会被覆盖
+- [ ] 4.1 `openspec/specs/` 全量改词：`turn-loop`、`event-log`、`event-stream`、`cli`、`config-layering`、`chat-repl`、`host-api`、`session-resume`、`subagent-delegation`、`usage-metering`、`goal`（2026-11-25 加：m13 归档后新建；`goal-round-pacing` 只重写了「轮次驱动与上限」一条）。**延后到 m13 归档之后**：m13 的 delta 会在归档时把旧词写进主规格，现在改会被覆盖
 - [x] 4.2 `GLOSSARY.md`：三条时间词重写为「轮（turn）／步（step）／目标轮（goal round）」，加 `_历史_` 一行说明 2026-11 之前写作「段／回合」；`_Avoid_` 行同步换词
 - [ ] 4.3 `docs/reference/`、`docs/roadmap.md`、`docs/CURRENT.md` 改词；历史文档与归档 change 不动。**已落三份（2026-11-24）**：`goal-rounds.md`（整篇改口 + 标识符对齐）、`runtime-layers-and-control-plane.md`（含时间线与事件名 `segment/*→turn/*`、`turn/*→step/*`、`MAX_STEPS`）、`h2-streaming-and-reasoning.md`（`StepDeltaSink`、delta 帧 `step_id`、三个时间尺度）。`docs/roadmap.md` 只改当前规划段，已完成里程碑表加了一句「保留当时的词」的表态。**剩约 143 行命中，多数是普通语义**（`阶段`/`字段`/`片段`/`整段`）；真需要改的集中在 `plan-and-todo` 13、`dsh-subagent-design` 11、`skills-and-commands` 9、`subagents` 8、`reasoning-mode` 8、`context-economy` 8
 - [x] 4.4 本 change 的 delta 规格：`event-log`（schema v2、只接受 2、v1 被拒）、`turn-loop`（三层词与事件名）、`cli` / `config-layering`（`max_steps` 主名与旧名窗口）。**delta 写归档后的最终态**，改造期的上迁只作一次性验证（见 5.2）

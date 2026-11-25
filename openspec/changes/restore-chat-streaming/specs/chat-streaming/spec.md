@@ -42,27 +42,39 @@
 
 ### Requirement: 按步去重与无 delta 回退
 
-某一步已经流过非空正文 delta 时，轮末 MUST NOT 再打印该步 `model/response` 的整段 `content`。某一步没有流过任何非空正文 delta 时，系统 SHALL 在该步 `model/response` 落盘之后、下一步开始之前，用该步的 `content` 补一次正文输出（回退），MUST NOT 等到轮末——否则同轮里「前一步回退、后一步流式」会把顺序倒成 2→1。去重与回退的判断单位 SHALL 是步，不是轮或会话。回复计数的游标 SHALL 按**非 `purpose`** 的 `model/response` 条数推进，MUST NOT 因跳过打印而回退。
+`--stream` 下，某一步已经流过非空正文 delta 时，轮末 MUST NOT 再打印该步 `model/response` 的整段 `content`。某一步没有流过任何非空正文 delta 时，系统 SHALL 在该步 `step/end` 落盘之后、下一步 `step/start` 之前，用该步的正文补一次输出（回退），MUST NOT 等到轮末——否则同轮里「前一步回退、后一步流式」会把顺序倒成 2→1。回退的正文 MUST 是该 `step_id` 下 `purpose` 不在 payload 里的那条 `model/response.content`，且 `content.strip()` 非空才输出；步末已经回退打印过的步，轮末 MUST NOT 再打印（同一步恰输出一次）。
+
+去重与回退的判断单位 SHALL 是步，不是轮或会话。回复计数的游标 SHALL 按**非 `purpose`** 的 `model/response` 条数推进，MUST NOT 因跳过打印而回退。`--no-stream` 与会话入口为 `host` 时 MUST NOT 安装步末回退钩子：前者由轮末投影打印，后者由 SSE 的 durable 帧承载。
 
 #### Scenario: 有 delta 不重复
 
 - **WHEN** 某步流过 `你`、`好`，该步最终 `content` 是 `你好`
 - **THEN** stdout 里 `你好` 恰出现一次
 
-#### Scenario: 无 delta 在步末回退
+#### Scenario: 无 delta 在步末回退且只出现一次
 
 - **WHEN** `--stream` 下某步的 provider 不发正文 delta，最终 `content` 是 `答案`
-- **THEN** 该步结束、下一步开始之前，stdout 已出现 `答案`，不留到轮末
+- **THEN** 该步结束、下一步开始之前，stdout 已出现 `答案`，且整轮结束时 `答案` 仍只出现一次
 
 #### Scenario: 同一轮里混合不倒序
 
 - **WHEN** 一轮两步：第一步没有 delta，第二步流过正文 delta
-- **THEN** stdout 先出现第一步的 `content`，再出现第二步的增量；顺序不是 2→1
+- **THEN** stdout 先出现第一步的 `content`，再出现第二步的增量；顺序不是 2→1，第一步也不在轮末重打
 
 #### Scenario: 空 delta 不算流式
 
 - **WHEN** provider 只发空字符串 delta，最终 `content` 非空
 - **THEN** 该步按「没有流过非空 delta」处理，在步末回退打印 `content`
+
+#### Scenario: 空白正文不出空行
+
+- **WHEN** 某步 `content` 是空串或全空白（只调工具的步）
+- **THEN** 步末不回退、不输出空行，与 `--no-stream` 的投影规则一致
+
+#### Scenario: 压缩摘要不进 stdout
+
+- **WHEN** 同一轮里发生过请求级压缩（`purpose == "compaction"` 的 `model/response`）
+- **THEN** 该摘要从不出现在 stdout；回退只取该步真正的回复
 
 ### Requirement: 按轮收尾，目标多轮不粘连
 
@@ -78,24 +90,29 @@
 - **WHEN** 一条输入触发一轮人类轮与两次自动续跑，随后回到提示符
 - **THEN** 提示符在该条输入的整个过程中恰出现一次（在最后一轮结束后）
 
-### Requirement: 流式取消按「是否真的流过」分叉
+### Requirement: 流式取消按「该步回复是否已落盘」分叉
 
-`--stream` 下轮进行中收到取消信号时，系统 SHALL 先看**该步是否已经流过非空正文 delta**：
+`--stream` 下轮进行中收到取消信号时，系统 SHALL 先看**该步的 `model/response` 是否已经落盘**，不是只看有没有流过 delta：
 
-- 流过：按既有轮级取消收尾，已经写出的 stdout 片段 MUST NOT 被撤回，MUST NOT 再补整段最终 `content`；日志写 `error/abort` 与 `step/end`（`stop_reason` 为 `ABORTED`），MUST NOT 写该步的 `model/response`。
-- 没流过：MUST NOT 丢掉已经生成的完整回复；系统 SHALL 写完整的 `model/response`（或由回退通道输出完整正文），再按取消收尾。
+- 未落盘（流式读取中途被中断）：按既有轮级取消收尾，已经写出的 stdout 片段 MUST NOT 被撤回，MUST NOT 写该步的 `model/response`；日志写 `error/abort` 与 `step/end`（`stop_reason` 为 `ABORTED`）。
+- 已落盘（模型已完整返回，取消落在工具派发或轮内其他窗口）：MUST 保留这条完整记录；MUST NOT 再补第二段正文（屏幕上已显示的增量就是这条记录的前缀）。
 
 无论哪条路，`model/response` 要么不存在、要么是完整记录，MUST NOT 出现半条。进程 SHALL 回到提示符。
 
-#### Scenario: 有增量时保留半句
+#### Scenario: 流式中途取消保留半句
 
-- **WHEN** `--stream` 已显示正文 `半` 后收到 SIGINT
+- **WHEN** `--stream` 已显示正文 `半` 后收到 SIGINT，该步的 `model/response` 尚未落盘
 - **THEN** stdout 只保留 `半`（加收尾换行），不再出现该步的最终 `content`；日志里该步是 `error/abort` + `step/end ABORTED`，没有 `model/response`
+
+#### Scenario: 工具窗口取消保留完整记录
+
+- **WHEN** 某步流过 delta 且 `model/response` 已落盘，取消发生在随后的工具派发中
+- **THEN** 日志保留该条完整 `model/response`；stdout 不出现第二条正文；没有半条记录
 
 #### Scenario: 没有增量时不吞整段
 
-- **WHEN** `--stream` 下 provider 不发正文 delta，模型已完整返回，此时收到 SIGINT
-- **THEN** 该步的完整 `content` 仍被写出（步末回退或完整 `model/response`），日志里没有半条记录
+- **WHEN** `--stream` 下 provider 不发正文 delta，模型已完整返回并落盘，此时收到 SIGINT
+- **THEN** 该步的完整 `content` 仍被写出（步末回退），日志里是完整 `model/response`
 
 #### Scenario: 关闭流式时形状不变
 

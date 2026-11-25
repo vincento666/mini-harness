@@ -22,10 +22,11 @@
 | 1 | 黑盒：人类轮 `max_steps=2` 写满、目标 active → 日志有 goal 来源 `user/message`，`rounds_started == 1`，第二条 `turn/start` 存在（`test_a_human_turn_that_hits_max_steps_starts_the_first_goal_round`） |
 | 2 | 黑盒：目标轮 `max_steps=2` 写满、`max_rounds=3` → 出现第三轮；两条 `turn/end` 的 `stop_reason` 都是 `MAX_STEPS`（`test_a_goal_round_that_hits_max_steps_opens_the_next_round`） |
 | 3 | 单测：`next_round(goal=None, armed=True, stop_reason="MAX_STEPS")` 返回 `stop`；`goal` 为 `paused` 同样 `stop`（`test_without_a_goal_max_steps_still_stops`） |
-| 4 | 单测参数化：四个失败理由各一次 → 全部 `stop`；`ABORTED` 的 `phase` 变 `paused`，其余相位不变（`test_other_failure_reasons_still_stop`） |
-| 5 | 单测：默认 settings 下 `append_system_prompt` 含「轮」「目标」，且 `SYSTEM_PROMPT` 常量原文不含这些政策句（`test_the_default_append_prompt_carries_the_goal_policy`） |
+| 4 | 单测（纯函数）：`next_round` 对四个失败理由各一次 → 全部 `stop`（`test_other_failure_reasons_still_stop`） |
+| 4 | 单测（经 `settle_turn`）：`ABORTED` → `phase == "paused"` 且 `armed == false`；其余三类 → `phase` 不变且 `armed == false`（`test_failed_rounds_disarm_and_only_abort_pauses`） |
+| 5 | 端到端：不开 flag/config 启动会话 → `session/start.append_system_prompt` 含「轮」「目标」；首条 `context/assembled.messages[0].content` 以 `SYSTEM_PROMPT` 开头且含政策段（`test_a_new_session_carries_the_goal_policy`） |
 | 5 | 单测：`--append-system-prompt "额外规则"` → 折叠头部只有「额外规则」，不含默认政策（`test_an_explicit_append_prompt_overrides_the_default`） |
-| 5 | 金样本：一份 `append_system_prompt` 为空串的旧日志 `replay` 退 0，逐点无 `REPLAY_MISMATCH`（`test_old_logs_without_the_policy_replay_unchanged`） |
+| 5 | 合成 v2 日志（`append_system_prompt=""`、含 `context/assembled`）：`replay` 退 0，逐点无 `REPLAY_MISMATCH`（`test_a_synthetic_v2_log_without_the_policy_replays`） |
 
 ## 坏法清单（变异种子）
 
@@ -48,5 +49,5 @@
 ## 待裁决
 
 - 默认政策段被 `--append-system-prompt` 覆盖时，政策消失：已定「用户自担」，不强行拼接。
-- 总步数上限 8×32=256 是否可接受：已定「部署可配」，本 change 不改默认值。
+- 总步数上限：目标轮最多 `8×32=256` 步，另加人类首轮的 8 步，共 264 步；已定「部署可配」，本 change 不改默认值。
 - 政策段是否也进子代理会话：已定「进」——文本用条件句「若你有 `create_goal` 工具」，避免误导。

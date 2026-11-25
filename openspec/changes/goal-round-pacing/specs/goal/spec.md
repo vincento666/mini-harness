@@ -4,7 +4,7 @@
 
 ### Requirement: 轮次驱动与上限
 
-一轮结束且 `turn/end.stop_reason` 不在 `{ABORTED, FENCE_DENIED, PROVIDER_ERROR, CONTEXT_WINDOW_EXCEEDED}` 之内时，系统 SHALL 检查当前目标：`phase == active`、`armed` 为真、`rounds_started < max_rounds` 三者同时成立才 SHALL 开新轮，并按顺序写 `turn/start`、goal 来源的 `user/message`、该轮首条 `context/assembled`、`goal/updated`（`rounds_started` 递增，`revision` 不变）。三者任一不成立 MUST NOT 开新轮。
+一轮结束且 `turn/end.stop_reason` 不在 `{ABORTED, FENCE_DENIED, PROVIDER_ERROR, CONTEXT_WINDOW_EXCEEDED}` 之内时，系统 SHALL 检查当前目标：`phase == active`、`armed` 为真、`rounds_started < max_rounds` 三者同时成立才 SHALL 开新轮，并按顺序写 `turn/start`、goal 来源的 `user/message`、该轮首条 `step/start`、该轮首条 `context/assembled`、`goal/updated`（`rounds_started` 递增，`revision` 不变）。三者任一不成立 MUST NOT 开新轮。
 
 `MAX_STEPS` MUST NOT 阻止续轮：它表示**本轮步数用尽**，不是任务失败；模型与工具都可能完全正常。只有 `ABORTED`、`FENCE_DENIED`、`PROVIDER_ERROR`、`CONTEXT_WINDOW_EXCEEDED` 四类收尾才 MUST NOT 自动续轮。没有可续的目标时，`MAX_STEPS` 仍按普通收尾停住（没有目标就没有下一轮）。
 
@@ -20,6 +20,11 @@ goal 轮次以零个成功派发的工具调用收尾（模型只说话、没有
 
 一轮以 `ABORTED` 收尾时，系统 SHALL 把 `phase` 置 `paused` 并解除武装；以其余三类失败收尾时 SHALL 只解除武装（`phase` 保持，等人 `/goal resume`）。
 
+#### Scenario: 达标即续跑
+
+- **WHEN** 一轮以 `MODEL_COMPLETED` 收尾，目标 `active`、已武装、`rounds_started == 1`、`max_rounds == 3`
+- **THEN** 日志依次出现 `turn/start`（新 `turn_id`）、`source.round == 2` 的 `user/message`、`step/start`、`context/assembled`、`rounds_started == 2` 的 `goal/updated`
+
 #### Scenario: 人类轮写满步数后目标轮接上
 
 - **WHEN** 一条人类输入建了 `active` 目标，该轮在第 `max_steps` 步以 `MAX_STEPS` 收尾
@@ -30,17 +35,47 @@ goal 轮次以零个成功派发的工具调用收尾（模型只说话、没有
 - **WHEN** 一个 goal 轮次在第 `max_steps` 步以 `MAX_STEPS` 收尾，且 `rounds_started < max_rounds`
 - **THEN** 系统开下一轮，`rounds_started` 递增；`turn/end.stop_reason` 仍记为 `MAX_STEPS`
 
-#### Scenario: 额度用尽时写满不再续
-
-- **WHEN** `rounds_started == max_rounds`，该轮以 `MAX_STEPS` 收尾
-- **THEN** 系统写 `blocked`（`round-limit`），不再开轮
-
 #### Scenario: 没有目标时写满就停
 
 - **WHEN** 会话里没有目标，或目标不是 `active`，一轮以 `MAX_STEPS` 收尾
 - **THEN** 不开新轮，行为与加这个能力之前相同
 
-#### Scenario: 四类失败仍不续
+#### Scenario: 一轮空转不误杀
 
-- **WHEN** 一轮以 `ABORTED`、`FENCE_DENIED`、`PROVIDER_ERROR` 或 `CONTEXT_WINDOW_EXCEEDED` 收尾
-- **THEN** 系统不开新轮；`ABORTED` 另把 `active` 目标置 `paused`，其余三类只解除武装
+- **WHEN** 一个 goal 轮次零工具调用，上一轮有工具调用（计数从 0 起），目标仍 `active`、已武装、还有额度
+- **THEN** 驱动照常开下一轮；`turn/end.tool_calls == 0` 只作审计
+
+#### Scenario: 连续两轮空转按默认阈值停
+
+- **WHEN** `[goal]` 没有 `stall_rounds`（缺省 2），连续两个 goal 轮次零工具调用
+- **THEN** 第二个轮次之后不再开轮、武装位解除、`phase` 仍 `active`、计数清零；下一次 `/goal resume` 从零重新计
+
+#### Scenario: 关闭闸门就完全对齐 DSH
+
+- **WHEN** `[goal] stall_rounds = 0`，goal 轮次连续空转
+- **THEN** 驱动一路开到 `max_rounds`，最后落 `blocked{round-limit}`，不因空转提前停
+
+#### Scenario: 上限不再开轮
+
+- **WHEN** `rounds_started == max_rounds` 且目标仍 `active`
+- **THEN** 不出现新的 `turn/start`，出现一条 `goal/updated`：`phase == "blocked"`、`blocked_reason.code == "round-limit"`
+
+#### Scenario: 早失败不消耗轮次
+
+- **WHEN** 第 2 轮的 goal 消息刚写完，provider 在首条 `step/start` 之前失败
+- **THEN** `rounds_started` 仍为 1（这一轮不算数），且不再自动续跑
+
+#### Scenario: 取消把目标置暂停
+
+- **WHEN** 第 2 轮进行中被取消，轮以 `ABORTED` 收尾
+- **THEN** 日志新增 `goal/updated`：`phase == "paused"`；`get_goal()` 的 `armed == false`
+
+#### Scenario: 失败收尾解除武装
+
+- **WHEN** 一轮以 `CONTEXT_WINDOW_EXCEEDED` 收尾
+- **THEN** 不出现新的轮、不出现 goal 来源消息；`get_goal()` 的 `armed == false`
+
+#### Scenario: 写不进日志就停
+
+- **WHEN** 续跑要写的 `goal/updated` 落盘失败
+- **THEN** 不出现新的轮，日志里留下 `error/*`，命令以非零码结束

@@ -8,7 +8,7 @@
 - `turn/end.stop_reason = MAX_STEPS`，而 `MAX_STEPS` 在 `NO_CONTINUE_REASONS` 里，驱动直接按失败收尾、不续轮；
 - 于是 `rounds_started = 0`，`max_rounds = 4` 一次没花，目标悬在 `active`，人看到的是「怎么都不进第二轮」。
 
-根因不是模型「不肯分轮」，而是**把「轮内步数上限」当成了「失败收尾」**。这条裁决来自 `MAX_TURNS` 时代——那时它表示「一次输入最多几轮」，用完当然该停；改名后它表示「一轮最多几步」，写完只是这一轮满了，任务并没有失败。旧理由（对齐 DSH 的 max-tokens 停止）也不再成立：max-tokens 是模型输出长度上限，不是一轮里的工具步数。
+根因不是模型「不肯分轮」，而是**把「轮内步数上限」当成了「失败收尾」**。旧名 `MAX_TURNS` 里的 `turn` 指的是今天的**步**（旧词把它读作「回合」），它一直是「一次输入内最多几步」；改名后词义才和事实对上——之前被误读成「轮数上限」，用完就停的裁决正是这个误读的产物。旧理由（对齐 DSH 的 max-tokens 停止）也不再成立：max-tokens 是模型输出长度上限，不是一轮里的工具步数。
 
 第二个缺口是模型根本不知道「轮」的存在：`fold.py` 的内置系统提示只有一句「你是 mini-harness 的 agent…」，没有轮/步、人类轮与目标轮的说明。模型只能从 `create_goal` 的一句工具描述里猜。于是它选最省事的策略：一轮干完。
 
@@ -28,7 +28,7 @@
 ## Impact
 
 - 行为：有目标的会话里，撞 `MAX_STEPS` 不再停死；驱动会开下一轮，直到完成、额度用尽、停滞或其他失败收尾。
-- 成本：总步数上限从 `max_steps` 变成 `max_steps × max_rounds`（默认 8×32=256，部署可配）。无目标的会话行为不变。
-- 测试：`test_goal_rounds.py` 的驱动判定用例（把 `MAX_STEPS` 从「不续跑」集合里拿出来，补续跑正向用例）；`test_context_fold.py` 里 `content == SYSTEM_PROMPT` 的等值断言要改成「以 SYSTEM_PROMPT 开头、且含政策段」。
+- 成本：目标轮的步数上限从 `max_steps` 变成 `max_steps × max_rounds`（默认 8×32=256），另加人类首轮的 8 步，共 264 步；部署可配。无目标的会话**驱动行为**不变，但系统提示多一段条件句政策（模型可见输入变了，见 design D3 的代价）。
+- 测试：`test_goal_rounds.py` 的驱动判定用例（把 `MAX_STEPS` 从「不续跑」集合里拿出来，补续跑正向用例）；`tests/test_cli_config.py:78` 的默认值守卫（无配置文件 → `append_system_prompt` 为空串）会红，改为断言等于 `DEFAULT_APPEND_SYSTEM_PROMPT`；`SessionSettings.append_system_prompt` 的字段默认也要与常量统一，否则直接构造 settings 的路径没有政策段；`test_context_fold.py:440/460` 用的是合成日志的空 append，**不受影响，不要改**。
 - 文档：`docs/reference/goal-rounds.md` 的驱动表、`docs/CURRENT.md`。
 - 规格：`goal` 的「轮次驱动与上限」、`context-projection` 的「系统提示……只能追加」。

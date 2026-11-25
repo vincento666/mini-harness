@@ -10,7 +10,7 @@
 
 `sink` 的形状是 `(step_id, text)`；stdout / stderr 的分流、`[answer]` 标记、换行时机都是**终端适配**。内核只把 `step_id` 交出去，不知道有人在看。
 
-渲染器只做三件事：写正文、打一次 `[answer] `、轮末收行。不读日志、不判停止理由、不碰事件。
+渲染器只做三件事：写正文、打一次 `[answer] `、轮末收行。它不读日志——缺正文的步由钩子把内容送进来（D3.1）。
 
 ## D3 收尾按「轮」，不按「输入」
 
@@ -22,7 +22,9 @@ m13 之后一条输入可以连开多轮（目标续跑）。渲染器的 `finis
 
 `_print_new_replies` 是轮末统一投影。如果同一轮里第一步没有 delta、第二步流了 delta，轮末才回退第一步，屏幕顺序会变成 2→1——这是复核指出的 blocker。
 
-解决办法是给 `SessionEnv` 加一个可选钩子 `on_step_end(step_id)`：`turn_loop` 在该步的 `model/response` 落盘之后、下一步开始之前调用它。CLI 的渲染器在钩子里读该步的 response：这一流没有非空 delta 就**当场**打印 `content`，并把这个 `step_id` 记进「已输出」集合；轮末的 `_print_new_replies` 跳过整个集合（流式的与回退的都算）。
+解决办法是给 `SessionEnv` 加一个可选钩子 `on_step_end(step_id, content)`：`turn_loop` 在该步的 `step/end` 落盘之后、下一步 `step/start` 之前调用它，`content` 是该 `step_id` 下 `purpose` 不在 payload 里的那条 `model/response.content`。CLI 的渲染器在钩子里判断：这一流没有非空 delta、且 `content.strip()` 非空，就当场打印，并把这个 `step_id` 记进「已输出」集合；轮末的 `_print_new_replies` 跳过整个集合（流式的、回退的都算），保证同一步恰输出一次。
+
+钩子只由 CLI 的 `--stream` 路径安装：`--no-stream` 不装（由轮末投影打印），`host` 不装（由 SSE 的 durable 帧承载）。钩子不得抛异常——实现里捕获并转成 `error/*`，否则会留下 `model/response` 而无 `step/end` 的半截边界。最后一步没有「下一步」，仍要在 `break` 之前调用一次。
 
 否决「在 `turn_loop` 里对所有 sink 补发一次完整正文」：host 也用同一个 `on_delta`，补发会让 SSE 客户端收到「增量 + 整段」两份。钩子只由 CLI 传，host 与 `--no-stream` 都不受影响。
 
@@ -36,7 +38,7 @@ m13 之后一条输入可以连开多轮（目标续跑）。渲染器的 `finis
 
 `on_reasoning` 在当前 `SessionEnv` 不存在，`openai_compat` 也不解析 `reasoning_content`。要补不是加一个字段的事：得先把 assistant message 升级成有序 content blocks（`docs/reference/reasoning-mode.md` §结论）。本 change 只做正文；`[thinking]` 与 `reasoning/delta` 留给 `reasoning-mode-and-budget`，触发条件就是那个 change 落地。
 
-## D6 取消按「是否真的流过」分叉
+## D6 取消在「写 response 之前」按是否流过正文分叉
 
 `turn_loop` 现在的判据只看「有没有 sink」：
 
@@ -47,14 +49,14 @@ if cancel.is_set() and env.on_delta is not None:
 
 但「装了 sink」不等于「这一步真的流过正文」：provider 可能不流式、fixture 可能没 delta、也可能只发空串。这时模型已经完整返回，取消却会走 `_abort_turn`，把整段回复吞掉——复核指出的 major。
 
-改成在 provider 调用处包一层记录 `streamed_any`（本步是否发过非空正文 delta），判据变为：
+判断点在 `provider.generate` 返回之后、写 `model/response` 之前。在这一刻：
 
-```
-if cancel.is_set() and env.on_delta is not None and streamed_any:
-    return _abort_turn(log, step_id, steps)
-```
+- `streamed_any` 为真（本步发过非空正文 delta）→ `_abort_turn`，不写半条；
+- `streamed_any` 为假 → 写完整 `model/response`，再由步末回退把正文显示出来。
 
-没流过就走正常路径写完整 `model/response`，再由步末回退把正文显示出来。host 的 delta 语义不变（它本来就有 durable `model/response` 帧）；`--no-stream` 仍保持今天的形状。这样三条路径的共同不变量是：**`model/response` 要么不存在、要么完整，永不写半条**。
+`streamed_any` 只统计**非空** text；每次可能产生最终回复的 `generate` 调用前重置（包括上下文溢出的压缩重试，否则上一次尝试的 delta 会污染判断）。
+
+取消落在**工具派发**阶段时，`model/response` 早已落盘，不会走到这个判据；它由既有工具取消逻辑收尾，日志本来就是完整的。三条路径的共同不变量是：**`model/response` 要么不存在、要么完整，永不写半条**。
 
 ## D7 默认 `--stream`
 
