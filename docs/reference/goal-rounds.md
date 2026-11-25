@@ -117,7 +117,8 @@ run_turn 返回 TurnOutcome
 | 顺序 | 条件 | 结论 | 处置 |
 |---|---|---|---|
 | 1 | 无目标 / 非 `active` / 未武装 | `stop` | 不开轮 |
-| 2 | `stop_reason ∈ {ABORTED, FENCE_DENIED, PROVIDER_ERROR, CONTEXT_WINDOW_EXCEEDED, MAX_STEPS}` | `stop` | 解除武装；`ABORTED` 另把 `active` 置 `paused`，其余失败相位不动 |
+| 2 | `stop_reason ∈ {ABORTED, FENCE_DENIED, PROVIDER_ERROR, CONTEXT_WINDOW_EXCEEDED}` | `stop` | 解除武装；`ABORTED` 另把 `active` 置 `paused`，其余失败相位不动 |
+| 2.5 | `stop_reason == MAX_STEPS` | 继续判 3–6 | **轮边界，不是失败**：写满本轮步数只结束这一轮；目标 `active` 且已武装时照常开下一轮（2026-11-25 人裁，`goal-round-pacing`） |
 | 3 | `rounds_started >= max_rounds` | `exhausted` | 写 `blocked{round-limit}`，解除武装 |
 | 4 | 轮尾有未决问题 | `awaiting_input` | 不开轮，保持 `active/armed`，交回控制权 |
 | 5 | `stall_rounds > 0` 且是 goal 轮且 `idle_rounds >= stall_rounds` | `stalled` | 解除武装、相位不动、计数清零 |

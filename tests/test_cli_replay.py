@@ -10,7 +10,7 @@ from typing import Any
 
 from cli_blackbox import _cli
 from mini_harness.events import EventLog, EventRecord, read_events
-from mini_harness.events.fold import assembled_payload, fold
+from mini_harness.events.fold import _FOLD_CACHE, GOAL_POLICY_VERSIONS, assembled_payload, fold
 from mini_harness.provider import FixtureProvider, load_fixture_provider
 from paths import (
     COMPACTION_SCENARIO,
@@ -522,3 +522,83 @@ def test_replay_rebuilds_contract_messages_without_touching_disk(tmp_path: Path)
     second = _cli("replay", session_id, cwd=tmp_path)
     assert second.returncode == 0, second.stderr
     assert "项目约定" in log_path.read_text(encoding="utf-8")
+
+
+def test_replay_of_a_log_with_the_goal_policy_still_verifies(tmp_path: Path) -> None:
+    """带 `goal_policy` 的日志：政策段由日志里的版本号重算，逐点一致（goal-round-pacing L0）。"""
+    session_dir = tmp_path / "sessions"
+    session_dir.mkdir()
+    log = EventLog.create(session_dir, session_id="with-goal-policy")
+    assert isinstance(log, EventLog), log
+    records: list[EventRecord] = []
+
+    def emit(event_type: str, payload: dict[str, Any]) -> None:
+        record = log.append(event_type, payload)
+        assert isinstance(record, EventRecord), record
+        records.append(record)
+
+    emit(
+        "session/start",
+        {
+            "entry": "run",
+            "workspace": str(tmp_path),
+            "provider": "mock",
+            "max_steps": 1,
+            "append_system_prompt": "",
+            "goal_policy": "v1",
+            "prompt": "任务",
+            "sandbox": "workspace-write",
+            "approval": "ask",
+            "window": 128000,
+            "reserve": 8192,
+            "tools": ["read"],
+        },
+    )
+    emit("step/start", {"step_id": "t1"})
+    assembled = assembled_payload("t1", fold(records))
+    emit("context/assembled", assembled)
+    emit(
+        "model/response",
+        {"step_id": "t1", "content": "hi", "tool_calls": [], "finish_reason": "stop"},
+    )
+    emit("step/end", {"step_id": "t1", "stop_reason": "MODEL_COMPLETED"})
+    emit("session/end", {"stop_reason": "MODEL_COMPLETED", "steps": 1})
+
+    header = assembled["messages"][0]["content"]
+    assert "写满步数上限" in header
+
+    replay = _cli("replay", "with-goal-policy", "--session-dir", str(session_dir), cwd=tmp_path)
+    assert replay.returncode == 0, replay.stderr
+    assert "REPLAY_MISMATCH" not in replay.stdout
+
+
+def test_changing_the_policy_text_without_a_new_version_breaks_replay(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """文本与版本绑定：改 `v1` 的文案但不升版本，同一份日志重算就与记录不一致。"""
+    events = [
+        EventRecord(
+            schema_version=2,
+            type="session/start",
+            session_id="policy-bound",
+            seq=0,
+            ts="2026-11-25T00:00:00+00:00",
+            payload={"goal_policy": "v1", "tools": []},
+        ),
+        EventRecord(
+            schema_version=2,
+            type="step/start",
+            session_id="policy-bound",
+            seq=1,
+            ts="2026-11-25T00:00:01+00:00",
+            payload={"step_id": "t1"},
+        ),
+    ]
+    recorded = assembled_payload("t1", fold(events))
+
+    _FOLD_CACHE.clear()
+    monkeypatch.setitem(GOAL_POLICY_VERSIONS, "v1", "改写后的政策文本")
+    recomputed = assembled_payload("t1", fold(events))
+
+    assert recomputed != recorded
+    assert "写满步数上限" not in recomputed["messages"][0]["content"]

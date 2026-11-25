@@ -14,22 +14,24 @@
 
 同理，`turn/end` 的 `steps` 与 `tool_calls` 不动；`step/end` 的 `MAX_STEPS` 不动。
 
-## D3 L0 走 `append_system_prompt` 的默认值，不改 `SYSTEM_PROMPT`
+## D3 L0 是独立政策段，由 `session/start` 的版本字段启用
 
-三个候选落点，只有第三个同时满足「模型看得到」与「旧日志 replay 不断」：
+人裁决：政策段必须**不可覆盖**，对齐 DSH 的 `tool:goal` 层级。所以不能用 `append_system_prompt` 的默认值——那个通道会被 `--append-system-prompt` 整体覆盖。
 
-| 落点 | 模型看得到 | 旧日志 replay | 结论 |
-|---|---|---|---|
-| 改 `SYSTEM_PROMPT` 常量 | 是 | **断**：`context/assembled` 里存了系统提示全文，重算对不上（L-097 已踩过） | 否决 |
-| `create_goal` 的返回结果里附政策 | 是（只在创建那一刻） | 安全（`tool/result` 是 durable，replay 不重算） | 可用，但太晚、太窄 |
-| `append_system_prompt` 默认值 | 是（每个会话开头） | 安全：它写进 `session/start`，`fold._start_facts` 从日志读；旧日志是空串 | **采用** |
+落点：
+
+- `events/fold.py` 定义 `GOAL_POLICY_VERSIONS = {"v1": "<文本>"}` 与 `GOAL_POLICY_VERSION = "v1"`。**文本必须按版本存**：将来改文案要新增 `v2`，`v1` 的文本留在映射里，否则旧日志 replay 会用新文案重算而对不上。
+- `start_session` 在 `session/start.payload` 写 `"goal_policy": GOAL_POLICY_VERSION`。它不来自配置、没有 flag、没有关闭入口。
+- `fold._start_facts` 读这个字段；`protected_header` 在 `SYSTEM_PROMPT`（及其后的人格/工具/环境块）之后、`append_system_prompt` 之前插入该版本的文本。
+- `--append-system-prompt` 只追加在政策段之后，覆盖不了它。
+
+为什么不是改 `SYSTEM_PROMPT` 常量：`context/assembled` 里存了系统提示全文，改常量会让所有历史日志重算不一致（L-097 已踩过）。版本字段是日志事实：旧日志没有它 → 不注入 → replay 不变；新日志有它 → 重算一致。
 
 代价写清楚：
 
 - 所有**新**会话都带这段政策，包括没有目标的 `run` 与子代理。文本里用「若你有 `create_goal` 工具」的条件句，避免误导。
-- 用户显式 `--append-system-prompt` 会**覆盖**默认（层叠语义是 flag > config > default），政策段随之消失。这是用户自担的覆盖，不在运行时强行拼接——否则「追加段」会变成两段来源，规格要重写。
-- 默认值要在**两处**统一：`DEFAULT_APPEND_SYSTEM_PROMPT` 与 `SessionSettings.append_system_prompt` 的字段默认。只改前者，会让直接构造 settings 的路径（`build_session_env`、未来的宿主）没有政策段。
-- 判据必须读到会话事实：断言 `session/start.append_system_prompt` 与首条 `context/assembled` 的头部，不能只断言常量含关键词——后者是同义反复，杀不死「只在 `create_goal` 之后注入」的变异。
+- 没有关闭面。要改政策只能改代码并升版本，不能在运行时关掉——这是「不可覆盖」的代价，也是本裁决的目的。
+- 判据必须读到会话事实：断言 `session/start.goal_policy == "v1"` 与首条 `context/assembled` 的头部；只断言常量非空是同义反复，杀不死「没写进会话」的变异。
 
 ## D4 不做 L1 / L2
 

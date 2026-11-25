@@ -15,7 +15,7 @@
 ## 要改什么
 
 - **L3（硬约束，治本）**：把 `MAX_STEPS` 移出 `NO_CONTINUE_REASONS`。撞步数上限 = 本轮收尾，驱动按既有条件判续轮（`phase == active`、已武装、`rounds_started < max_rounds`、无未决问题、未触发停滞）。`turn/end.stop_reason` 仍是 `MAX_STEPS`，词表与日志事实都不变。
-- **L0（配套，让模型知道为什么）**：内置系统提示之后默认追加一段 `tool:goal` 政策——轮/步是什么、写满不是失败、人输入开的轮不推进目标轮次、创建目标后想分轮就收尾、真正完成才调 `complete`。落点是 `append_system_prompt` 的默认值：它会被写进 `session/start`，replay 从日志读（`fold.py:112`），所以旧日志不受影响。
+- **L0（配套，让模型知道为什么）**：内置系统提示之后注入一段**不可覆盖**的 `tool:goal` 政策——轮/步是什么、写满不是失败、人输入开的轮不推进目标轮次、创建目标后想分轮就收尾、真正完成才调 `complete`。落点是 `session/start.goal_policy = "v1"`：折叠从日志里的版本号取对应文本，`--append-system-prompt` 只能追加在它之后、覆盖不了；旧日志没有这个字段，replay 不受影响。
 
 ## 不做什么
 
@@ -28,7 +28,7 @@
 ## Impact
 
 - 行为：有目标的会话里，撞 `MAX_STEPS` 不再停死；驱动会开下一轮，直到完成、额度用尽、停滞或其他失败收尾。
-- 成本：目标轮的步数上限从 `max_steps` 变成 `max_steps × max_rounds`（默认 8×32=256），另加人类首轮的 8 步，共 264 步；部署可配。无目标的会话**驱动行为**不变，但系统提示多一段条件句政策（模型可见输入变了，见 design D3 的代价）。
-- 测试：`test_goal_rounds.py` 的驱动判定用例（把 `MAX_STEPS` 从「不续跑」集合里拿出来，补续跑正向用例）；`tests/test_cli_config.py:78` 的默认值守卫（无配置文件 → `append_system_prompt` 为空串）会红，改为断言等于 `DEFAULT_APPEND_SYSTEM_PROMPT`；`SessionSettings.append_system_prompt` 的字段默认也要与常量统一，否则直接构造 settings 的路径没有政策段；`test_context_fold.py:440/460` 用的是合成日志的空 append，**不受影响，不要改**。
+- 成本：目标轮的步数上限从 `max_steps` 变成 `max_steps × max_rounds`（默认 8×32=256），另加人类首轮的 8 步，共 264 步；部署可配。无目标的会话**驱动行为**不变，但系统提示多一段政策（模型可见输入变了，见 design D3 的代价）。
+- 测试：`test_goal_rounds.py` 的驱动判定用例（把 `MAX_STEPS` 从「不续跑」集合里拿出来，补续跑正向用例）；新增「`session/start.goal_policy == "v1"` + 首条 `context/assembled` 含政策段」「显式 `--append-system-prompt` 后政策段仍在」「无 `goal_policy` 的合成 v2 日志 replay 不变」三条判据；`append_system_prompt` 的默认值**不动**，`test_cli_config.py:78` 与 `test_context_fold.py` 的等值断言都不受影响。
 - 文档：`docs/reference/goal-rounds.md` 的驱动表、`docs/CURRENT.md`。
 - 规格：`goal` 的「轮次驱动与上限」、`context-projection` 的「系统提示……只能追加」。
