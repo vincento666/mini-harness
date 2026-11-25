@@ -247,6 +247,10 @@ def build_parser() -> argparse.ArgumentParser:
     # stdout 上只有模型回复正文与提示符（chat-repl 规格）。
     chat = subcommands.add_parser("chat", help="跑一个连续会话的 REPL", parents=[shared])
     chat.add_argument("--resume", default=None)
+    # 默认流式：正文增量写 stdout，轮末收行。`--no-stream` 回到旧的轮末投影（design D7）。
+    streaming = chat.add_mutually_exclusive_group()
+    streaming.add_argument("--stream", dest="stream", action="store_true", default=True)
+    streaming.add_argument("--no-stream", dest="stream", action="store_false")
 
     replay = subcommands.add_parser("replay", help="重放一个 session 的日志")
     replay.add_argument("session_id")
@@ -511,15 +515,19 @@ def _tool_observer() -> Callable[[EventRecord], None]:
     return observe
 
 
-def _print_new_replies(log: EventLog, printed: int) -> int | LogReadFailure:
+def _print_new_replies(
+    log: EventLog, printed: int, already_shown: set[str] | None = None
+) -> int | LogReadFailure:
     """把日志里新增的模型回复正文按发生顺序打到 stdout（design D11）。
 
     stdout 是日志的一个投影，不是第二真源：读回来打，内核就不需要知道有人在看着。
     带 `purpose` 的那次 `model/response` 是请求级压缩的内部摘要，不是给人的回复，不打。
+    `already_shown` 是流式渲染器已经输出过的步（流过增量的、步末回退过的），这些步不再打第二遍。
     """
     events = read_events(log.path)
     if isinstance(events, LogReadFailure):
         return events
+    shown = already_shown or set()
     seen = 0
     for event in events:
         if event.type != "model/response" or "purpose" in event.payload:
@@ -527,11 +535,70 @@ def _print_new_replies(log: EventLog, printed: int) -> int | LogReadFailure:
         seen += 1
         if seen <= printed:
             continue
+        step_id = str(event.payload.get("step_id", ""))
+        if step_id in shown:
+            continue
         # 只带工具调用的步 `content` 是空串：打出去就是一条空行（design D2）。
         content = str(event.payload.get("content", ""))
         if content.strip():
             print(content)
     return seen
+
+
+class _ChatStreamRenderer:
+    """`--stream` 的终端适配器：写正文增量、步末补打没有增量的步、轮末收行。
+
+    它只碰 stdout/stderr，不读日志、不判停止理由、不碰事件（design D3）。
+    `already_shown` 同时是「本会话哪些步已经显示过」，轮末投影据此去重。
+    """
+
+    def __init__(self) -> None:
+        self.already_shown: set[str] = set()
+        self._marked = False
+        self._wrote = False
+
+    def _mark(self) -> None:
+        """每一轮第一次输出正文之前打一次 `[answer] `，走 stderr（design D4）。"""
+        if self._marked:
+            return
+        sys.stderr.write("[answer] ")
+        sys.stderr.flush()
+        self._marked = True
+
+    async def text(self, step_id: str, text: str) -> None:
+        if not text:
+            return
+        if not text.strip():
+            # 纯空白增量（换行、缩进）照写，但不当作「有正文」：不打标记、不算已显示，
+            # 步末仍能回退完整正文——否则一段以空行开头的回复可能整段不显示。
+            sys.stdout.write(text)
+            sys.stdout.flush()
+            return
+        self._mark()
+        sys.stdout.write(text)
+        sys.stdout.flush()
+        self._wrote = True
+        self.already_shown.add(step_id)
+
+    def on_step_end(self, step_id: str, content: str) -> None:
+        """没有增量的步在步末补一次；空正文（只调工具的步）不回退，免得出一条空行。
+
+        回退**不**打 `[answer] `：那个标记只属于真正的增量流（spec「空 delta 不触发标记」）。
+        """
+        if step_id in self.already_shown or not content.strip():
+            return
+        sys.stdout.write(content)
+        sys.stdout.flush()
+        self._wrote = True
+        self.already_shown.add(step_id)
+
+    def finish_turn(self) -> None:
+        """一轮结束：写过正文才换行，并重置 `[answer]` 标记——目标连续多轮各占一行。"""
+        if self._wrote:
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+        self._marked = False
+        self._wrote = False
 
 
 # 只有这一种收尾不打那一行，其余收尾理由一律打（design D4 与 D5；2026-10-23 人裁决：写反面集合）。
@@ -647,13 +714,15 @@ def _resume_round(env: SessionEnv, text: str, *, was_armed: bool) -> GoalRound |
     return next_goal_round(env)
 
 
-async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
+async def _chat_session(prepared: Prepared, signals: _ChatSignals, *, stream: bool) -> int:
     """读一行、开一轮、回到提示符；EOF 或提示符上的 Ctrl-C 收尾整个会话。
 
     SIGINT 处理器由 `_chat` 装（design D7）：会话收尾也在它的覆盖范围里，
     取消落进「循环已经退出、`end_session` 还没开始」那道缝隙里也有人接。
     """
     signals.loop = asyncio.get_running_loop()
+    # `--no-stream` 不装任何钩子：投影与日志形状必须与加这个能力之前逐点一致（design D7）。
+    renderer = _ChatStreamRenderer() if stream else None
     env = SessionEnv(
         provider=prepared.provider,
         log=prepared.log,
@@ -661,6 +730,8 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
         settings=prepared.settings,
         skills_registry=prepared.skills_registry,
         question_gate=STDIN_QUESTION_GATE,
+        on_delta=renderer.text if renderer is not None else None,
+        on_step_end=renderer.on_step_end if renderer is not None else None,
     )
     if not prepared.resumed:
         started = start_session(prompt="", entry=ENTRY_CHAT, env=env)
@@ -684,7 +755,13 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
         turns = sum(1 for event in events if event.type == "turn/start")
         steps = [event for event in events if event.type == "step/start"]
         turn_index = len(steps) + 1
-        printed = sum(1 for event in events if event.type == "model/response")
+        # 游标按**非 `purpose`** 的条数推进，与 `_print_new_replies` 同一口径：
+        # 压缩摘要不进投影，算进去会把后面的真回复一起跳过。
+        printed = sum(
+            1
+            for event in events
+            if event.type == "model/response" and "purpose" not in event.payload
+        )
         scanned = events[-1].seq if events else 0
     # 连续溢出的说明靠这两个局部变量（design 的 Risks）：记住上一轮的收尾理由、这一句说过没有。
     # 不进日志、不新增状态机。
@@ -753,6 +830,10 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
                         )
                     finally:
                         signals.active = None
+                    if renderer is not None:
+                        # 先收行再打诊断：tty 上 `[轮] 收尾 ABORTED` / `[遮蔽]` 不能粘在正文后面
+                        # （spec「按轮收尾」要求轮边界在这里）。
+                        renderer.finish_turn()
                     if turn.stop_reason not in STOP_REASONS:
                         # 内核坏了：不再回到提示符，按内部错误收尾。
                         return _report_failure(
@@ -781,7 +862,11 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals) -> int:
                         return _report_failure(
                             shadow_failure.code, shadow_failure.detail, EXIT_INTERNAL_ERROR
                         )
-                    replies = _print_new_replies(prepared.log, printed)
+                    replies = _print_new_replies(
+                        prepared.log,
+                        printed,
+                        renderer.already_shown if renderer is not None else None,
+                    )
                     if isinstance(replies, LogReadFailure):
                         return _report_failure(replies.code, replies.detail, EXIT_INTERNAL_ERROR)
                     printed = replies
@@ -850,7 +935,7 @@ def _chat(args: argparse.Namespace) -> int:
     signal.signal(signal.SIGINT, _chat_sigint_handler(signals))
     # 不换回旧处理器（design D7）：会话收尾之后进程正在退出，换回去等于在退出前的缝隙里
     # 重新开一个没人接的洞——那里落进一次 Ctrl-C 就是一段 traceback 加一个非 0 退出码。
-    return asyncio.run(_chat_session(prepared, signals))
+    return asyncio.run(_chat_session(prepared, signals, stream=bool(args.stream)))
 
 
 def _replay(args: argparse.Namespace) -> int:

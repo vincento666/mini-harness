@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, get_args
@@ -140,6 +140,11 @@ class QuestionRuntime:
     pending: str | None = None
 
 
+# 步末钩子：`(step_id, content)`。入口用它补打在流式里没有增量的那一步（chat 的渲染器）；
+# host 与 `--no-stream` 不装——前者由 SSE 的 durable 帧承载，后者由轮末投影打印。
+StepEndSink = Callable[[str, str], None]
+
+
 @dataclass(frozen=True)
 class SessionEnv:
     """一次会话的冻结环境：轮调用不再一路结伴（ADR-0002 第 21 条）。
@@ -154,6 +159,8 @@ class SessionEnv:
     approval_gate: ApprovalGate = STDIN_APPROVAL_GATE
     question_gate: QuestionGate = UNAVAILABLE_QUESTION_GATE
     on_delta: StepDeltaSink | None = None
+    # 步末回退（restore-chat-streaming）：`step/end` 落盘之后、下一步开始之前调用。
+    on_step_end: StepEndSink | None = None
     # 委派账本：活跃子代理数与宿主登记回调（M12）；每个会话一份。
     delegation: DelegationState = field(default_factory=DelegationState)
     # 技能注册表（skill-providers）：目录与命令面都读它的快照；None 时回落到 settings。
@@ -594,15 +601,44 @@ def _retry_events(
     ]
 
 
-def _forward_delta(sink: StepDeltaSink | None, step_id: str) -> DeltaSink | None:
-    """把宿主的 `(step_id, text)` sink 包成 provider 只认 `text` 的回调。"""
+@dataclass
+class DeltaState:
+    """本步是否流过非空正文 delta。
+
+    取消分叉要用它：流过就说明屏幕上已有半句，不能再把半条回复写成 durable 真相；
+    没流过就说明模型已完整返回、只是没流式，取消不该吞掉整段（restore-chat-streaming）。
+    """
+
+    streamed_any: bool = False
+
+
+def _forward_delta(sink: StepDeltaSink | None, step_id: str, state: DeltaState) -> DeltaSink | None:
+    """把宿主的 `(step_id, text)` sink 包成 provider 只认 `text` 的回调，并记下有没有非空增量。"""
     if sink is None:
         return None
 
     async def forward(text: str) -> None:
+        if text:
+            state.streamed_any = True
         await sink(step_id, text)
 
     return forward
+
+
+def _notify_step_end(env: SessionEnv, step_id: str, content: str, steps: int) -> TurnOutcome | None:
+    """调步末钩子。渲染器的故障不该打断一轮：记一条 `error/internal`，`step/end` 已经在盘上。"""
+    if env.on_step_end is None:
+        return None
+    try:
+        env.on_step_end(step_id, content)
+    except Exception as error:
+        written = env.log.append(
+            "error/internal",
+            {"step_id": step_id, "code": "RENDER_FAILED", "detail": str(error)},
+        )
+        if isinstance(written, LogWriteFailure):
+            return _turn_failure(written, steps)
+    return None
 
 
 def _abort_turn(log: EventLog, step_id: str, steps: int) -> TurnOutcome:
@@ -738,6 +774,7 @@ async def _recover_overflowed_request(
     failure: ProviderFailure,
     retry_events: Sequence[tuple[str, dict[str, Any]]],
     on_delta: DeltaSink | None = None,
+    delta_state: DeltaState | None = None,
 ) -> _RetriedRequest | TurnOutcome:
     """provider 报出上下文超限时先压一次、再重试一次，上限 1 次（ADR-0019）。
 
@@ -792,6 +829,9 @@ async def _recover_overflowed_request(
     if written is not None:
         return _turn_failure(written, steps)
 
+    # 重试是另一次 generate：本步的增量事实从头算（design D6 的「含压缩重试」）。
+    if delta_state is not None:
+        delta_state.streamed_any = False
     generated = await provider.generate(
         folded.messages, registry.specs(), cancel, on_delta=on_delta
     )
@@ -1211,7 +1251,8 @@ async def _run_steps(
         steps = offset + 1
         step_id = f"t{turn_index}"
         tool_names = [spec.name for spec in registry.specs()]
-        text_sink = _forward_delta(env.on_delta, step_id)
+        delta_state = DeltaState()
+        text_sink = _forward_delta(env.on_delta, step_id, delta_state)
 
         failure = _append_all(log, [("step/start", {"step_id": step_id})])
         if failure is not None:
@@ -1303,6 +1344,7 @@ async def _run_steps(
                     failure=generated,
                     retry_events=retry_events,
                     on_delta=text_sink,
+                    delta_state=delta_state,
                 )
                 if isinstance(recovered, TurnOutcome):
                     return recovered
@@ -1316,8 +1358,9 @@ async def _run_steps(
                     return _abort_turn(log, step_id, steps)
                 return await _provider_error(log, step_id, generated, steps, retry_events)
 
-        if cancel.is_set() and env.on_delta is not None:
+        if cancel.is_set() and env.on_delta is not None and delta_state.streamed_any:
             # 流式读取中途取消：已经显示的增量不补，但不把半条回复写成 durable 真相。
+            # 没流过增量时走下面的正常路径——模型其实已经完整返回，取消不该吞掉整段。
             return _abort_turn(log, step_id, steps)
 
         failure = _append_all(
@@ -1385,6 +1428,12 @@ async def _run_steps(
         if failure is not None:
             return _turn_failure(failure, steps)
 
+        # 步末回退：`step/end` 已落盘、下一步还没开始。放在这里而不是轮末，
+        # 同轮里「前一步没增量、后一步流式」才不会倒序（restore-chat-streaming design D3.1）。
+        notified = _notify_step_end(env, step_id, generated.content, steps)
+        if notified is not None:
+            return notified
+
         if (
             cancel.is_set()
             or fence_denied
@@ -1421,6 +1470,7 @@ async def run_session(
     cancel: asyncio.Event,
     approval_gate: ApprovalGate = STDIN_APPROVAL_GATE,
     on_delta: StepDeltaSink | None = None,
+    on_step_end: StepEndSink | None = None,
     skills_registry: SkillRegistry | None = None,
 ) -> RunOutcome:
     """一次性入口（`run` / `serve`）：开始会话、恰一轮、结束会话。
@@ -1434,6 +1484,7 @@ async def run_session(
         settings=settings,
         approval_gate=approval_gate,
         on_delta=on_delta,
+        on_step_end=on_step_end,
         skills_registry=skills_registry,
     )
     return await run_session_env(prompt=prompt, entry=entry, env=env, cancel=cancel)

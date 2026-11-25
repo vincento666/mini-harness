@@ -4,7 +4,7 @@
 
 ### Requirement: chat 的 `--stream` 是默认的 shell 模式
 
-`minihns chat` SHALL 接受互斥的 `--stream` 与 `--no-stream`；不传时 MUST 为 `--stream`。`--no-stream` 的 stdout、stderr、日志与退出码 MUST 与加这个能力之前逐点相同。`--stream` SHALL 复用 `SessionEnv.on_delta`，MUST NOT 新造 provider 方法、内核流式路径或事件类型。
+`minihns chat` SHALL 接受互斥的 `--stream` 与 `--no-stream`；不传时 MUST 为 `--stream`。`--no-stream` 的 stdout、stderr、日志与退出码 MUST 与加这个能力之前逐点相同，唯一例外是 `--resume` 的回复游标：它原先按「所有 `model/response`」计数、而投影只打「非 `purpose`」的那些，两者口径不一致会在「有压缩摘要的日志」上少打一条真回复；本能力把初始化改成同一口径，这是修正而非行为变更。`--stream` SHALL 复用 `SessionEnv.on_delta`，MUST NOT 新造 provider 方法、内核流式路径或事件类型。
 
 #### Scenario: 不传 flag 就是流式
 
@@ -92,7 +92,7 @@
 
 ### Requirement: 流式取消按「该步回复是否已落盘」分叉
 
-`--stream` 下轮进行中收到取消信号时，系统 SHALL 先看**该步的 `model/response` 是否已经落盘**，不是只看有没有流过 delta：
+`--stream` 下轮进行中收到取消信号时，系统 SHALL 按**该步的完整回复是否已经落盘**分叉。实现上的判断点在「写 `model/response` 之前」：那里若本步流过非空正文增量，说明模型还没返回完，按未落盘处理；没流过则模型已完整返回（只是没流式），按已落盘处理。工具派发期间置位的取消走收尾分支，那条路径上回复已经落盘，因此保留完整记录、不补第二段正文。
 
 - 未落盘（流式读取中途被中断）：按既有轮级取消收尾，已经写出的 stdout 片段 MUST NOT 被撤回，MUST NOT 写该步的 `model/response`；日志写 `error/abort` 与 `step/end`（`stop_reason` 为 `ABORTED`）。
 - 已落盘（模型已完整返回，取消落在工具派发或轮内其他窗口）：MUST 保留这条完整记录；MUST NOT 再补第二段正文（屏幕上已显示的增量就是这条记录的前缀）。

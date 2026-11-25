@@ -7,7 +7,9 @@ import json
 import os
 import re
 import signal
+import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -24,7 +26,7 @@ from cli_blackbox import (
 )
 from mini_harness.cli.main import _chat_sigint_handler, _ChatSignals
 from mini_harness.events import EventLog
-from paths import WRITE_OUTSIDE_SCENARIO
+from paths import REPO_ROOT, WRITE_OUTSIDE_SCENARIO
 
 
 def _log_files(cwd: Path) -> list[Path]:
@@ -453,7 +455,7 @@ def test_stdout_carries_only_model_reply_text_and_the_prompt(tmp_path: Path) -> 
         ],
     )
 
-    result = _chat("--fixture", fixture, cwd=tmp_path, stdin_text="读一下 a.md\n")
+    result = _chat("--fixture", fixture, "--no-stream", cwd=tmp_path, stdin_text="读一下 a.md\n")
 
     assert result.returncode == 0
     assert result.stdout.splitlines() == ["> 先读一下", "这是回复正文", "> "]
@@ -583,6 +585,7 @@ def test_a_turns_summary_never_appears_on_stdout(tmp_path: Path) -> None:
         "70000",
         "--reserve",
         "100",
+        "--no-stream",
         cwd=tmp_path,
         stdin_text="读一下 a.md\n",
     )
@@ -678,6 +681,7 @@ def test_a_chat_that_compacted_replays_the_same_log_unchanged(tmp_path: Path) ->
         "70000",
         "--reserve",
         "100",
+        "--no-stream",
         cwd=tmp_path,
         stdin_text="读一下 a.md\n",
     )
@@ -706,7 +710,7 @@ def test_chats_flag_table_is_runs_flag_table_minus_two(tmp_path: Path) -> None:
         "-p",
         "--prompt",
         "--events",
-    } | {"--resume"}
+    } | {"--resume", "--stream", "--no-stream"}
 
     for rejected in (("-p", "写一份报告"), ("--prompt", "写一份报告"), ("--events", "jsonl")):
         result = _cli("chat", *rejected, cwd=tmp_path)
@@ -1094,3 +1098,311 @@ async def test_the_chat_handler_wakes_the_loop_instead_of_only_queueing() -> Non
     assert callable(loop.scheduled[0])
     loop.scheduled[0]()
     assert cancel.is_set() is True
+
+
+# ---------------------------------------------------------------------------
+# restore-chat-streaming：默认流式、按步去重与回退
+# ---------------------------------------------------------------------------
+
+
+def test_streaming_is_the_default_and_writes_deltas_in_order(tmp_path: Path) -> None:
+    """不传 flag 就是流式：增量按序落到 stdout，轮末不再重复整段（tasks 2.1）。"""
+    fixture = _fixture(
+        tmp_path,
+        "delta.json",
+        [{"content": "你好", "finish_reason": "stop", "deltas": ["你", "好"]}],
+    )
+
+    result = _chat("--fixture", fixture, cwd=tmp_path, stdin_text="说句话\n")
+
+    assert result.returncode == 0
+    assert result.stdout.count("你好") == 1
+    assert result.stdout.index("你") < result.stdout.index("好")
+    # `[answer] ` 走 stderr，正文走 stdout（design D4）
+    assert "[answer]" in result.stderr
+    assert "[answer]" not in result.stdout
+
+
+def test_no_stream_keeps_the_old_projection(tmp_path: Path) -> None:
+    """`--no-stream` 是旧行为：轮内没有输出，轮末一次性打印，stderr 没有 `[answer]`。"""
+    fixture = _fixture(
+        tmp_path,
+        "delta2.json",
+        [{"content": "你好", "finish_reason": "stop", "deltas": ["你", "好"]}],
+    )
+
+    result = _chat("--fixture", fixture, "--no-stream", cwd=tmp_path, stdin_text="说句话\n")
+
+    assert result.returncode == 0
+    assert result.stdout.splitlines() == ["> 你好", "> "]
+    assert "[answer]" not in result.stderr
+
+
+def test_the_two_streaming_flags_are_mutually_exclusive(tmp_path: Path) -> None:
+    """两个 flag 同时给：参数解析失败，退出码 2，不建日志（spec scenario）。"""
+    result = _cli("chat", "--stream", "--no-stream", cwd=tmp_path, stdin_text="")
+
+    assert result.returncode == 2
+    assert "not allowed" in result.stderr
+    assert list((tmp_path / "sessions").glob("*.jsonl")) == []
+
+
+def test_a_step_without_deltas_falls_back_at_step_end_once(tmp_path: Path) -> None:
+    """无 delta 的步在步末回退，整轮仍只出现一次（tasks 2.4）。"""
+    fixture = _fixture(
+        tmp_path,
+        "nod.json",
+        [{"content": "答案", "finish_reason": "stop"}],
+    )
+
+    result = _chat("--fixture", fixture, cwd=tmp_path, stdin_text="问个问题\n")
+
+    assert result.returncode == 0
+    assert result.stdout.count("答案") == 1
+
+
+def test_a_mixed_turn_does_not_reverse_the_order(tmp_path: Path) -> None:
+    """同轮两步：第一步无 delta（步末回退）、第二步流式——先甲甲后乙乙，且各一次。"""
+    fixture = _fixture(
+        tmp_path,
+        "mixed.json",
+        [
+            {
+                "content": "甲甲",
+                "finish_reason": "tool_calls",
+                "tool_calls": [{"id": "c1", "name": "read", "arguments": {"file_path": "a.md"}}],
+            },
+            {"content": "乙乙", "finish_reason": "stop", "deltas": ["乙", "乙"]},
+        ],
+    )
+    (tmp_path / "a.md").write_text("内容\n", encoding="utf-8")
+
+    result = _chat("--fixture", fixture, cwd=tmp_path, stdin_text="读一下\n")
+
+    assert result.returncode == 0
+    # 精确序列：一步的正文在前、二步的增量在后，拼成同一行；倒序或重复都会红
+    assert result.stdout.startswith("> 甲甲乙乙")
+
+
+def test_empty_deltas_do_not_trigger_the_marker(tmp_path: Path) -> None:
+    """只发空串 delta：按「没有流过非空 delta」处理，回退打印，且没有 `[answer]`。"""
+    fixture = _fixture(
+        tmp_path,
+        "empty.json",
+        [{"content": "答案", "finish_reason": "stop", "deltas": ["", ""]}],
+    )
+
+    result = _chat("--fixture", fixture, cwd=tmp_path, stdin_text="问\n")
+
+    assert result.returncode == 0
+    assert result.stdout.count("答案") == 1
+    assert "[answer]" not in result.stderr
+
+
+def test_two_steps_in_one_turn_mark_answer_once(tmp_path: Path) -> None:
+    """一轮两步都流式：`[answer] ` 只打一次（spec scenario）。"""
+    fixture = _fixture(
+        tmp_path,
+        "two.json",
+        [
+            {
+                "content": "先读",
+                "finish_reason": "tool_calls",
+                "deltas": ["先", "读"],
+                "tool_calls": [{"id": "c1", "name": "read", "arguments": {"file_path": "a.md"}}],
+            },
+            {"content": "再答", "finish_reason": "stop", "deltas": ["再", "答"]},
+        ],
+    )
+    (tmp_path / "a.md").write_text("内容\n", encoding="utf-8")
+
+    result = _chat("--fixture", fixture, cwd=tmp_path, stdin_text="读一下\n")
+
+    assert result.returncode == 0
+    assert result.stderr.count("[answer]") == 1
+    assert result.stdout.index("先读") < result.stdout.index("再答")
+
+
+def test_a_tool_only_step_does_not_emit_a_blank_line(tmp_path: Path) -> None:
+    """只调工具、`content` 为空的步：步末不回退，不出空行（spec scenario）。"""
+    fixture = _fixture(
+        tmp_path,
+        "toolonly.json",
+        [
+            {
+                "content": "",
+                "finish_reason": "tool_calls",
+                "tool_calls": [{"id": "c1", "name": "read", "arguments": {"file_path": "a.md"}}],
+            },
+            {"content": "好了", "finish_reason": "stop"},
+        ],
+    )
+    (tmp_path / "a.md").write_text("内容\n", encoding="utf-8")
+
+    result = _chat("--fixture", fixture, cwd=tmp_path, stdin_text="读一下\n")
+
+    assert result.returncode == 0
+    # 提示符那一行 + 正文那一行；没有额外空行
+    assert result.stdout.splitlines() == ["> 好了", "> "]
+
+
+def test_streaming_does_not_change_the_event_types(tmp_path: Path) -> None:
+    """流式不改变日志：类型序列与 `model/response` 键集合和 `--no-stream` 相同（tasks 2.11）。"""
+    entries = [{"content": "你好", "finish_reason": "stop", "deltas": ["你", "好"]}]
+
+    streamed = tmp_path / "streamed"
+    streamed.mkdir()
+    fixture_a = _fixture(streamed, "s.json", entries)
+    first = _chat("--fixture", fixture_a, cwd=streamed, stdin_text="说句话\n")
+    assert first.returncode == 0
+
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    fixture_b = _fixture(plain, "p.json", entries)
+    second = _chat("--fixture", fixture_b, "--no-stream", cwd=plain, stdin_text="说句话\n")
+    assert second.returncode == 0
+
+    def shape(root: Path) -> tuple[list[str], set[str]]:
+        log = next((root / "sessions").glob("*.jsonl"))
+        records = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+        types = [record["type"] for record in records]
+        keys = next(
+            set(record["payload"]) for record in records if record["type"] == "model/response"
+        )
+        return types, keys
+
+    assert shape(streamed) == shape(plain)
+    assert "model/delta" not in shape(streamed)[0]
+
+
+def test_the_first_delta_is_visible_before_the_turn_ends(tmp_path: Path) -> None:
+    """实时性：首 delta 写上管道之后、本轮结束之前就能读到（tasks 2.2）。
+
+    用真子进程 + 真管道：渲染器写首帧后在 stdout 上 `flush`，脚本随后还要停一会儿，
+    父进程此刻必须已经读得到那个字。把写攒到轮末的实现会在这里读不到。
+    """
+    script = (
+        "import asyncio, sys\n"
+        "from mini_harness.cli.main import _ChatStreamRenderer\n"
+        "async def main():\n"
+        "    r = _ChatStreamRenderer()\n"
+        "    await r.text('t1', '你')\n"
+        "    sys.stderr.write('FIRST\\n'); sys.stderr.flush()\n"
+        "    await asyncio.sleep(3)\n"
+        "    await r.text('t1', '好')\n"
+        "    r.finish_turn()\n"
+        "asyncio.run(main())\n"
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-c", script],
+        cwd=str(REPO_ROOT),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+    )
+    try:
+        assert process.stderr is not None
+        assert process.stdout is not None
+        assert "FIRST" in process.stderr.readline()
+
+        seen: dict[str, str] = {}
+
+        def read_one() -> None:
+            seen["char"] = process.stdout.read(1) or ""
+
+        reader = threading.Thread(target=read_one, daemon=True)
+        reader.start()
+        reader.join(timeout=0.5)
+
+        assert seen.get("char") == "你", f"首帧在轮末前不可读：{seen!r}"
+    finally:
+        process.kill()
+        process.wait(timeout=5)
+
+
+def test_goal_rounds_each_get_their_own_line(tmp_path: Path) -> None:
+    """目标连续两轮：正文各自成行，不被粘成一行；`[轮] n/cap` 在该轮正文之前（tasks 2.7）。"""
+    fixture = _fixture(
+        tmp_path,
+        "goal.json",
+        [
+            {
+                "content": "先立目标",
+                "finish_reason": "tool_calls",
+                "tool_calls": [
+                    {
+                        "id": "c1",
+                        "name": "create_goal",
+                        "arguments": {"objective": "分两轮说完", "max_rounds": 2},
+                    }
+                ],
+            },
+            {"content": "第一段", "finish_reason": "stop", "deltas": ["第一", "段"]},
+            {"content": "第二段", "finish_reason": "stop", "deltas": ["第二", "段"]},
+        ],
+    )
+
+    result = _chat("--fixture", fixture, cwd=tmp_path, stdin_text="开始\n")
+
+    assert result.returncode == 0
+    lines = [line for line in result.stdout.splitlines() if line.strip()]
+    # 人类轮那句 + 两个目标轮各一句，各占一行
+    assert "第一段" in result.stdout
+    assert "第二段" in result.stdout
+    assert not any("第一段第二段" in line for line in lines), f"目标轮被粘成一行：{lines!r}"
+    # [轮] 说明在该轮正文之前（pty 合流时也是这个顺序）
+    assert result.stderr.index("[轮] 1/2") < result.stderr.index("[轮] 2/2")
+
+
+def test_a_compaction_summary_never_reaches_stdout_while_streaming(tmp_path: Path) -> None:
+    """流式下压缩摘要也不进 stdout：钩子只取该步真正的回复（tasks 2.6）。"""
+    (tmp_path / "a.md").write_text(("x" * 100 + "\n") * 1000, encoding="utf-8")
+    fixture = _fixture(
+        tmp_path,
+        "compact-stream.json",
+        [
+            {
+                "content": "先读一下",
+                "finish_reason": "tool_calls",
+                "tool_calls": [{"id": "c1", "name": "read", "arguments": {"file_path": "a.md"}}],
+            },
+            {"content": "那是摘要不该出现", "finish_reason": "stop"},
+            {"content": "这是回复", "finish_reason": "stop"},
+        ],
+    )
+
+    result = _chat(
+        "--fixture",
+        fixture,
+        "--window",
+        "70000",
+        "--reserve",
+        "100",
+        cwd=tmp_path,
+        stdin_text="读一下 a.md\n",
+    )
+
+    assert result.returncode == 0
+    assert "compaction/summary" in _types(tmp_path)
+    assert "那是摘要不该出现" not in result.stdout
+    assert "这是回复" in result.stdout
+
+
+def test_a_streamed_log_still_replays(tmp_path: Path) -> None:
+    """流式跑出的日志仍可 replay：退出码 0、无 `REPLAY_MISMATCH`（tasks 2.11）。"""
+    fixture = _fixture(
+        tmp_path,
+        "replay.json",
+        [{"content": "你好", "finish_reason": "stop", "deltas": ["你", "好"]}],
+    )
+
+    result = _chat("--fixture", fixture, cwd=tmp_path, stdin_text="说句话\n")
+    assert result.returncode == 0
+
+    session_id = next((tmp_path / "sessions").glob("*.jsonl")).stem
+    replay = _cli("replay", session_id, cwd=tmp_path)
+
+    assert replay.returncode == 0, replay.stderr
+    assert "REPLAY_MISMATCH" not in replay.stderr
+    assert "REPLAY_MISMATCH" not in replay.stdout

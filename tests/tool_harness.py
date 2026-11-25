@@ -19,6 +19,7 @@ from mini_harness.loop import (
     run_session,
 )
 from mini_harness.loop.settings import ApprovalMode, ProviderEndpoint, SandboxLevel
+from mini_harness.loop.turn_loop import StepEndSink
 from mini_harness.provider import FixtureProvider, Provider
 from mini_harness.provider.contract import StepDeltaSink, ToolCall
 from mini_harness.tools import ToolRegistry
@@ -256,6 +257,7 @@ def build_session_env(
     registry: ToolRegistry | None = None,
     approval_gate: ApprovalGate | None = None,
     on_delta: StepDeltaSink | None = None,
+    on_step_end: StepEndSink | None = None,
     goal: GoalPolicy | None = None,
 ) -> tuple[EventLog, SessionEnv]:
     """seam ① 的「一个会话的冻结环境」形状：建日志、建设置、冻成 `SessionEnv`。
@@ -280,6 +282,7 @@ def build_session_env(
         registry=file_registry() if registry is None else registry,
         settings=settings,
         approval_gate=STDIN_APPROVAL_GATE if approval_gate is None else approval_gate,
+        on_step_end=on_step_end,
         on_delta=on_delta,
     )
     return log, env
@@ -303,6 +306,7 @@ async def run_session_fixture(
     registry: ToolRegistry | None = None,
     approval_gate: ApprovalGate | None = None,
     on_delta: StepDeltaSink | None = None,
+    on_step_end: StepEndSink | None = None,
     cancel: asyncio.Event | None = None,
     entry: SessionEntry = ENTRY_RUN,
 ) -> tuple[EventLog, RunOutcome]:
@@ -326,6 +330,7 @@ async def run_session_fixture(
         registry=registry,
         approval_gate=approval_gate,
         on_delta=on_delta,
+        on_step_end=on_step_end,
     )
     outcome = await run_session(
         prompt=prompt,
@@ -337,6 +342,7 @@ async def run_session_fixture(
         cancel=asyncio.Event() if cancel is None else cancel,
         approval_gate=env.approval_gate,
         on_delta=env.on_delta,
+        on_step_end=env.on_step_end,
     )
     return log, outcome
 

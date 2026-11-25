@@ -10,7 +10,7 @@
 
 1. **默认就是流式，且是实时的**：不传 flag 时，首 delta 到达就写到 stdout；用「首 delta 后阻塞」的桩在**管道**上观测，阻塞期间首 delta 可读、第二个尚不可读（seam：sink → 终端）。
 2. **增量按序、不重复**：delta 顺序等于屏幕顺序；流过 delta 的步不再整段重打（seam：sink → 终端）。
-3. **无增量在步末回退、恰一次**：某步没发 delta，就在 `step/end` 之后、下一步 `step/start` 之前打印它的 `content`；同轮混合不倒序，且该步整轮只出现一次（seam：步边界）。
+3. **无增量在步末回退、恰一次**：某步没发 delta，就在 `step/end` 之后、下一步 `step/start` 之前打印它的 `content`；同轮混合不倒序，且该步整轮只出现一次（seam：步边界）。同轮多步的正文按顺序**拼接在同一行**，轮末一个换行——流式的收尾单位是轮，不是步。
 4. **轮边界清楚**：有非空正文 delta 的轮 `[answer] ` 恰一次；目标多轮各自成行；`[轮] n/cap` 在该轮正文前；提示符一条输入只一次（seam：轮边界）。
 5. **取消按「回复是否已落盘」分叉**：未落盘 → 保留前缀、不写 response；已落盘 → 保留完整记录、不补第二段正文（seam：取消路径）。
 6. **日志与 provider 契约不变**：不写 `model/delta`、不新增事件类型、`model/response` 键集合不变、replay 仍退 0（seam：日志面）。
@@ -56,6 +56,9 @@
 12. **按输入收尾**：`finish_turn()` 挂在外层输入循环而不是每轮 → 行为 4 的两行判据红。
 
 ## 不验什么
+
+- **取消的 CLI 屏幕判据**：`--stream` 中途取消时「半句保留、不补整段」在 CLI 层没有独立黑盒判据——内核层用 sink barrier 钉住了「不写半条 `model/response`」，屏幕上的前缀由 UAT 场次 4 的人眼判。工具窗口取消同理。
+- **`--resume` + 压缩摘要的首条回复**：游标口径已统一，但没有专门造「有摘要的日志 + resume」的判据；它的行为由 `_print_new_replies` 与初始化两处同口径的代码审查兜住。
 
 - 不做思考流：`[thinking]` / `reasoning/delta` / `on_reasoning` 全在 `reasoning-mode-and-budget`，本 change 不碰。
 - 不改 host / serve 的 SSE 合流、游标、断线续读；host 不装 `on_step_end`，行为不变（由判据锁住）。

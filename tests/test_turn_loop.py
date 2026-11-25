@@ -1098,3 +1098,72 @@ async def test_a_builtin_tool_filtered_out_by_the_whitelist_is_unknown(tmp_path:
     assert result_outcomes(records) == [("c1", "UNKNOWN_TOOL")]
     assert [record.type for record in records].count("step/end") == 2
     assert outcome.stop_reason == "MODEL_COMPLETED"
+
+
+class _CancelWithoutDeltaProvider:
+    """取消落在「模型已完整返回、只是没流式」：不该吞掉整段。"""
+
+    def __init__(self, cancel: asyncio.Event) -> None:
+        self._cancel = cancel
+
+    async def generate(
+        self,
+        messages: object,
+        tools: object,
+        signal: asyncio.Event,
+        on_delta: object = None,
+    ) -> AssistantTurn:
+        self._cancel.set()
+        return AssistantTurn(content="完整回复", finish_reason="stop")
+
+
+async def test_a_cancel_without_deltas_keeps_the_full_response(tmp_path: Path) -> None:
+    """没有增量时取消：写完整 `model/response`（模型已经返回），正文不会被吞（tasks 2.9）。"""
+    cancel = asyncio.Event()
+
+    async def sink(step_id: str, text: str) -> None:
+        return None
+
+    log, outcome = await run_session_fixture(
+        tmp_path,
+        "s-no-delta-cancel",
+        _CancelWithoutDeltaProvider(cancel),
+        registry=ToolRegistry(),
+        cancel=cancel,
+        on_delta=sink,
+        max_steps=8,
+    )
+
+    records = read_events(log.path)
+    responses = [record for record in records if record.type == "model/response"]
+    assert outcome.stop_reason == "ABORTED"
+    assert len(responses) == 1
+    assert responses[0].payload["content"] == "完整回复"
+
+
+async def test_a_broken_step_end_hook_records_an_internal_error(tmp_path: Path) -> None:
+    """渲染器的钩子抛异常：记一条 `error/internal`，`step/end` 仍在盘上，这一轮照常收尾。"""
+    calls: list[tuple[str, str]] = []
+
+    def hook(step_id: str, content: str) -> None:
+        calls.append((step_id, content))
+        raise RuntimeError("渲染器坏了")
+
+    log, outcome = await run_session_fixture(
+        tmp_path,
+        "s-bad-hook",
+        _DeltaProvider(),
+        registry=ToolRegistry(),
+        on_step_end=hook,
+        max_steps=8,
+    )
+
+    records = read_events(log.path)
+    types = [record.type for record in records]
+    assert outcome.stop_reason == "MODEL_COMPLETED"
+    assert calls and calls[0][1] == "x"
+    assert "error/internal" in types
+    internal = next(record for record in records if record.type == "error/internal")
+    assert internal.payload["code"] == "RENDER_FAILED"
+    # 边界完整：`step/end` 先落盘，`error/internal` 在它之后、`turn/end` 之前
+    assert types.index("step/end") < types.index("error/internal") < types.index("turn/end")
