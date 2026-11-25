@@ -44,6 +44,8 @@
 ### Major / Minor（记账，待人裁）
 
 - **模型面政策段**（`tool:goal` 的系统提示）：mini 没有；`GOAL_BLOCK_TOO_EARLY` 只能靠试错。`deferred`，触发条件：真实使用里出现「模型反复试错才知门槛」的记录。
+  - **2026-11-25 人裁注记**：`goal-round-pacing` 补了一段 goal 政策（轮/步边界、续跑条件、完成声明），但**不记命中本条**。理由不同：本条问的是「门槛类细规要不要提前给」，当时裁决是先不给、让模型自主试错，只要能干完就行；那次补的是另一件事——**轮/步是硬边界，不告知模型就无法规划轮次切分**，且后续更细的预算控制要以它为前提。属相关但不同族。
+  - 结果上本条**仍是 `deferred`**：政策 `v1` 的正文只有边界与续跑语义，不含 `GOAL_BLOCK_TOO_EARLY` 等门槛规则。门槛细规的触发条件不变。
 - **激活事件**（`goal/activation-changed`）与宿主 `goal` 投影：本 change 不做（非目标已列），结论 `deferred`，触发条件：壳需要实时显示武装状态。
 - **损坏态 `GOAL_STATE_CORRUPT`**：mini 用 `replay` 非零退出代替专名；`simplified`，代价是错误分类粒度更粗。
 - **`clear` 是否置假 `armed`**：mini 无观察后果（clear 后无目标），`aligned` by construction；不单列 Requirement。
