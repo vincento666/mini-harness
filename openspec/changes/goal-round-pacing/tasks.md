@@ -20,6 +20,10 @@
 - [x] 2.7 单测：显式 `--append-system-prompt "额外规则"` → 头部顺序为 `SYSTEM_PROMPT` → 政策段 → `额外规则`，政策段仍在
 - [x] 2.8 合成 v2 日志（`session/start` 不带 `goal_policy`、含 `context/assembled`）→ `replay` 退 0、无 `REPLAY_MISMATCH`、头部无政策段
 - [x] 2.9 单测：`GOAL_POLICY_VERSIONS` 的 `v1` 文本改了但版本没升 → 同一份合成日志重算与记录不一致
+- [x] 2.10 政策升 `v2`：文本补停滞闸门、完成声明改成条件句；`v1` 原文保留在表里给旧日志重算（两轴 review F3/F7）
+- [x] 2.11 黑盒：配置写 `goal_policy = "off"` → `INVALID_ARGUMENT`；`--goal-policy off` → `unrecognized arguments`（F5）
+- [x] 2.12 黑盒：极小窗口下首步装配前超线 → `CONTEXT_WINDOW_EXCEEDED`、本轮无 `context/assembled`、`rounds_started` 仍为 0（F2）
+- [x] 2.13 `GOAL_POLICY_VERSION` 必须命中 `GOAL_POLICY_VERSIONS`；`render_goal_round` 不写死「连续两轮」（F3/F4）
 
 ## 3 收尾
 
@@ -27,9 +31,10 @@
 - [x] 3.2 真实端点验收：OpenRouter `qwen/qwen3.8-27b`（`--proxy http://127.0.0.1:7897`）5 场 + 无目标 1 场，记录在 `docs/verification/goal-round-pacing-real-endpoint.md`
 - [x] 3.3 UAT 验收：**人已授权代跑**（2026-11-25），偏离记在 `docs/verification/goal-round-pacing-uat.md`
 - [x] 3.4 变异测试一轮：记录 `docs/verification/goal-round-pacing-mutation.md`（3 条全杀）
-- [x] 3.5 DSH 对齐账本：`docs/verification/goal-round-pacing-dsh-review.md`（L3/L0 均 `simplified`；m13 deferred 是否命中请人裁）
-- [ ] 3.6 两轴 code review 与对照门禁（子代理，归档前）
+- [x] 3.5 DSH 对齐账本：`docs/verification/goal-round-pacing-dsh-review.md`（L3/L0 均 `simplified`；与 m13 那条 `deferred` 的关系已写成「相关但不同族」的**分析**，并列出两条可选记法——**仍待人裁**，本 change 不自行关闭那条 `deferred`）
+- [x] 3.6 两轴 code review 与对照门禁（子代理，归档前）：`docs/verification/goal-round-pacing-code-review.md`
 - [x] 3.7 Learning Gate：L-103「改名要连单位与消费方一起改」进 `docs/lessons.md` 收件箱
 - [x] 3.8 文档：`docs/reference/goal-rounds.md` 驱动表删掉 `MAX_STEPS` 不续行、加「轮边界」一行；`docs/CURRENT.md` 更新
 - [x] 3.9 改名收尾：`goal` 已在 `align-turn-step-naming` 的 4.1 清单里；本 delta 已用新词重写「轮次驱动与上限」
 - [x] 3.10 待办登记：L4 写进 `docs/CURRENT.md` 开放缺口（`goal-round-budget`）
+- [x] 3.11 两轴 review 的 7 条 finding 全部处置（F1–F7），处置表在 `goal-round-pacing-code-review.md`
