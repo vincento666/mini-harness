@@ -21,6 +21,7 @@ from mini_harness.cli import main as cli_main
 from mini_harness.cli.main import STOP_REASONS_TO_EXIT_CODES, exit_code_for, sigint_handler
 from mini_harness.config import build_registry
 from mini_harness.events import EventLog
+from mini_harness.events.fold import SYSTEM_PROMPT
 from mini_harness.loop import ENTRY_RUN, STOP_REASONS, RunOutcome, SessionSettings
 from mini_harness.provider import AssistantTurn
 from mini_harness.tools.bash_tools import shell_form
@@ -929,6 +930,31 @@ def test_the_three_entries_still_write_the_same_payload(tmp_path: Path) -> None:
         "tools",
         "platform",
     }
+
+
+def test_a_new_session_carries_the_goal_policy(tmp_path: Path) -> None:
+    """新会话把政策版本写进 `session/start`，并出现在首条 `context/assembled` 的头部。"""
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--provider",
+        "mock",
+        "--fixture",
+        str(HELLO_SCENARIO),
+        cwd=tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+
+    log = next((tmp_path / "sessions").glob("*.jsonl"))
+    records = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+    start = next(record for record in records if record["type"] == "session/start")
+    assert start["payload"]["goal_policy"] == "v1"
+
+    assembled = next(record for record in records if record["type"] == "context/assembled")
+    header = assembled["payload"]["messages"][0]["content"]
+    assert header.startswith(SYSTEM_PROMPT)
+    assert "写满步数上限" in header
 
 
 def test_the_platform_facts_are_not_a_cli_flag(tmp_path: Path) -> None:

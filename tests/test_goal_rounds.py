@@ -6,11 +6,14 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from mini_harness.events import EventRecord, read_events
 from mini_harness.events.writer import LogWriteFailure
 from mini_harness.goals import GoalPolicy, GoalSnapshot, fold_goal
 from mini_harness.loop import ENTRY_RUN, exhaust_goal_rounds, run_session_env
 from mini_harness.loop.goal_driver import RoundDecision, next_round
+from mini_harness.loop.turn_loop import TurnOutcome, close_failed_round
 from mini_harness.provider import AssistantTurn, FixtureProvider, ProviderFailure, ToolCall
 from mini_harness.tools import ToolRegistry
 from mini_harness.tools.assistant import assistant_tool_definitions
@@ -451,8 +454,12 @@ def test_the_round_decision_only_looks_at_the_snapshot_the_arm_and_the_stop_reas
     # `MAX_STEPS` 是轮边界，不是失败：有目标且已武装时继续下一轮（2026-11-25 人裁）。
     # 否则长任务会在第一轮写满步数时被截断，`max_rounds` 永远用不上。
     assert next_round(goal=active, armed=True, stop_reason="MAX_STEPS").kind == "continue"
+    # 没有目标可续时，写满仍然停。
+    assert next_round(goal=None, armed=True, stop_reason="MAX_STEPS").kind == "stop"
     paused = active.model_copy(update={"phase": "paused"})
     assert next_round(goal=paused, armed=True, stop_reason="MODEL_COMPLETED").kind == "stop"
+    # 目标已暂停时，写满也停。
+    assert next_round(goal=paused, armed=True, stop_reason="MAX_STEPS").kind == "stop"
 
     decision = next_round(goal=active, armed=True, stop_reason="MODEL_COMPLETED")
     assert (decision.kind, decision.round) == ("continue", 2)
@@ -646,3 +653,45 @@ async def test_stall_rounds_zero_disables_the_gate_entirely(tmp_path: Path) -> N
     assert goal.blocked_reason.code == "round-limit"
     assert goal.rounds_started == 3
     assert outcome.stop_reason == "MODEL_COMPLETED"
+
+
+def test_without_a_goal_max_steps_still_stops() -> None:
+    """没有目标、或目标已暂停时，`MAX_STEPS` 不开新轮。"""
+    paused = GoalSnapshot(
+        id="g1",
+        revision=1,
+        objective=OBJECTIVE,
+        phase="paused",
+        max_rounds=2,
+        rounds_started=0,
+    )
+
+    assert next_round(goal=None, armed=True, stop_reason="MAX_STEPS").kind == "stop"
+    assert next_round(goal=paused, armed=True, stop_reason="MAX_STEPS").kind == "stop"
+
+
+@pytest.mark.parametrize("reason", ["FENCE_DENIED", "CONTEXT_WINDOW_EXCEEDED"])
+async def test_fence_and_overflow_disarm_without_pausing(tmp_path: Path, reason: str) -> None:
+    """`FENCE_DENIED` / `CONTEXT_WINDOW_EXCEEDED` 只解除武装，不把 active 目标置 paused。"""
+    provider = _Scripted(max_rounds=2)
+    log, env = build_session_env(
+        tmp_path, f"s-{reason.lower()}", provider, registry=_registry(), max_steps=8
+    )
+    snapshot = GoalSnapshot(
+        id="g1",
+        revision=1,
+        objective=OBJECTIVE,
+        phase="active",
+        max_rounds=2,
+        rounds_started=0,
+    )
+    written = log.append("goal/updated", {"goal": snapshot.model_dump(exclude_none=True)})
+    assert isinstance(written, EventRecord), written
+    env.goal_runtime.armed = True
+
+    close_failed_round(env=env, turn=TurnOutcome(stop_reason=reason, steps=1))  # type: ignore[arg-type]
+
+    assert env.goal_runtime.armed is False
+    goal = fold_goal(read_events(log.path))
+    assert goal is not None
+    assert goal.phase == "active"

@@ -4,7 +4,7 @@
 
 ### Requirement: 系统提示与工具描述是内置常量且只能追加
 
-系统 SHALL 使用内置常量系统提示作为受保护头部的第一条；内置常量之后 SHALL 注入一段 `tool:goal` 政策（`GOAL_POLICY_PROMPT`），当且仅当该会话的 `session/start.payload.goal_policy` 等于 `"v1"`。政策文本 MUST 说明：轮由若干步组成且步数有上限、写满上限只是本轮结束不是失败、人输入开的轮不推进目标轮次、目标 `active` 且已武装且还有轮次额度且没有待回答的问题时轮结束会自动开下一目标轮（MUST NOT 承诺无条件续跑）、创建目标后想分轮就结束本轮、真正完成才调用 `update_goal` 标 `complete`。
+系统 SHALL 使用内置常量系统提示作为受保护头部的第一条；内置常量之后 SHALL 注入一段 `tool:goal` 政策（取自 `GOAL_POLICY_VERSIONS[goal_policy]`，当前版本 `"v1"`），当且仅当该会话的 `session/start.payload.goal_policy` 等于 `"v1"`。政策文本 MUST 说明：轮由若干步组成且步数有上限、写满上限只是本轮结束不是失败、人输入开的轮不推进目标轮次、目标 `active` 且已武装且还有轮次额度且没有待回答的问题时轮结束会自动开下一目标轮（MUST NOT 承诺无条件续跑）、创建目标后想分轮就结束本轮、真正完成才调用 `update_goal` 标 `complete`。
 
 `--append-system-prompt` SHALL 把文本追加在政策段之后，MUST NOT 覆盖或移除政策段；MUST NOT 提供替换内置系统提示的入口。折叠 SHALL 从该会话的 `session/start` 取追加文本与 `goal_policy`，MUST NOT 读进程内的当前配置——没有 `goal_policy` 字段的旧日志不注入政策，折叠结果 MUST NOT 因本能力改变。
 

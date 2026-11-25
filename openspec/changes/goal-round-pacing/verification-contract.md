@@ -18,16 +18,16 @@
 
 | 行为 | 判据 |
 |---|---|
-| 1 | 驱动单测：`next_round(goal=active, armed=True, stop_reason="MAX_STEPS")` 返回 `continue`（`test_max_steps_is_a_round_boundary_when_a_goal_is_active`） |
-| 1 | 黑盒：人类轮 `max_steps=2` 写满、目标 active → 日志有 goal 来源 `user/message`，`rounds_started == 1`，第二条 `turn/start` 存在（`test_a_human_turn_that_hits_max_steps_starts_the_first_goal_round`） |
-| 2 | 黑盒：目标轮 `max_steps=2` 写满、`max_rounds=3` → 出现第三轮；两条 `turn/end` 的 `stop_reason` 都是 `MAX_STEPS`（`test_a_goal_round_that_hits_max_steps_opens_the_next_round`） |
+| 1 | 驱动单测：`next_round(goal=active, armed=True, stop_reason="MAX_STEPS")` 返回 `continue`（`test_the_round_decision_only_looks_at_the_snapshot_the_arm_and_the_stop_reason`） |
+| 1 | 黑盒：人类轮 `max_steps=2` 写满、目标 active → 日志有 goal 来源 `user/message`，`rounds_started` 递增，后续 `turn/start` 存在（`test_max_steps_is_a_round_boundary_and_the_cap_still_stops`） |
+| 2 | 黑盒：目标轮 `max_steps=2` 写满、`max_rounds=2` → 共三轮；三条 `turn/end` 的 `stop_reason` 都是 `MAX_STEPS`（同上） |
 | 3 | 单测：`next_round(goal=None, armed=True, stop_reason="MAX_STEPS")` 返回 `stop`；`goal` 为 `paused` 同样 `stop`（`test_without_a_goal_max_steps_still_stops`） |
-| 4 | 单测（纯函数）：`next_round` 对四个失败理由各一次 → 全部 `stop`（`test_other_failure_reasons_still_stop`） |
-| 4 | 单测（经 `settle_turn`）：`ABORTED` → `phase == "paused"` 且 `armed == false`；其余三类 → `phase` 不变且 `armed == false`（`test_failed_rounds_disarm_and_only_abort_pauses`） |
-| 5 | 端到端：新会话 → `session/start.goal_policy == "v1"`；首条 `context/assembled.messages[0].content` 以 `SYSTEM_PROMPT` 开头且含政策段的「写满」「目标轮」（`test_a_new_session_carries_the_goal_policy`） |
-| 5 | 单测：`--append-system-prompt "额外规则"` → 头部顺序是 `SYSTEM_PROMPT` → 政策段 → `额外规则`；政策段仍在（`test_an_explicit_append_prompt_cannot_replace_the_policy`） |
-| 5 | 合成 v2 日志（`session/start` 无 `goal_policy`）：`replay` 退 0、无 `REPLAY_MISMATCH`、头部无政策段（`test_a_synthetic_v2_log_without_the_policy_replays`） |
-| 5 | 单测：改 `GOAL_POLICY_VERSIONS["v1"]` 的文本但不升版本 → 同一份合成日志 replay 红（`test_the_policy_text_is_bound_to_its_version`） |
+| 4 | 单测（纯函数）：`next_round` 对四个失败理由各一次 → 全部 `stop`（`test_the_round_decision_only_looks_at_the_snapshot_the_arm_and_the_stop_reason`） |
+| 4 | 单测（经 `settle_turn`）：`ABORTED` → `phase == "paused"` 且 `armed == false`（`test_a_cancelled_round_pauses_the_goal_and_disarms_it`）；`PROVIDER_ERROR` → `phase` 不变且 `armed == false`（`test_a_provider_error_keeps_the_goal_active_but_disarmed`）；`FENCE_DENIED` / `CONTEXT_WINDOW_EXCEEDED` 同样只解武装（`test_fence_and_overflow_disarm_without_pausing`） |
+| 5 | 端到端：新会话 → `session/start.goal_policy == "v1"`；首条 `context/assembled.messages[0].content` 以 `SYSTEM_PROMPT` 开头且含政策段的「写满」（`test_a_new_session_carries_the_goal_policy`） |
+| 5 | 单测：`--append-system-prompt "额外规则"` → 头部顺序是 `SYSTEM_PROMPT` → 政策段 → `额外规则`；政策段仍在（`test_the_append_prompt_comes_after_the_goal_policy`） |
+| 5 | 合成 v2 日志（`session/start` 无 `goal_policy`）：折叠头部无政策段（`test_a_log_without_the_goal_policy_has_no_policy_segment`）；带 `v1` 的会话 `replay` 退 0、无 `REPLAY_MISMATCH`（`test_replay_of_a_log_with_the_goal_policy_still_verifies`） |
+| 5 | 单测：改 `GOAL_POLICY_VERSIONS["v1"]` 的文本但不升版本 → 同一份合成日志重算与记录不一致（`test_changing_the_policy_text_without_a_new_version_breaks_replay`） |
 
 ## 坏法清单（变异种子）
 

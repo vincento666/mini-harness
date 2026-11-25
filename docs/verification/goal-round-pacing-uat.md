@@ -10,7 +10,7 @@
 | 1 | `run -p "写三章，每章一轮…" --max-steps 2/3` | 人类轮建目标后，写满或收尾是否自动进目标轮 | 出现 goal 来源 `user/message` 与第二条 `turn/start`，`rounds_started == 1` | **通过**：场次 3、5 均出现（会话 `aabfd8c3…`、`2fcf7997…`） |
 | 2 | 同上，让目标轮写到撞步数上限 | 撞 `MAX_STEPS` 后是否自动开下一轮 | 第二条 `turn/end.stop_reason == MAX_STEPS`，随后有第三条 `turn/start`；`rounds_started` 递增 | **通过**：场次 3、5；场次 2（`--max-steps 1`）4 轮全部 `MAX_STEPS` 仍连续推进 |
 | 3 | `run -p "列目录…不要创建目标" --max-steps 1` | 无目标时写满是否照旧停 | 只有一条 `turn/end`（`MAX_STEPS`），无 goal 事件、无第二条 `turn/start` | **通过**：会话 `eadcfdb4…` |
-| 4 | 目标轮进行中 Ctrl-C | 取消是否仍停、不自动续 | `ABORTED` 收尾；目标 `paused`；不再出现新 `turn/start` | **未在真实端点跑**：由单测 `test_failed_rounds_disarm_and_only_abort_pauses` 覆盖；m13 UAT 场次 2 已在真控制终端验过同一路径 |
+| 4 | 目标轮进行中 Ctrl-C | 取消是否仍停、不自动续 | `ABORTED` 收尾；目标 `paused`；不再出现新 `turn/start` | **未在真实端点跑**：由单测 `test_a_cancelled_round_pauses_the_goal_and_disarms_it` 覆盖；m13 UAT 场次 2 已在真控制终端验过同一路径 |
 | 5 | 任一真实会话的 `session/start` 与首条 `context/assembled` | 政策段是否在会话开头且不可覆盖 | `goal_policy == "v1"`；头部含「写满步数上限」；显式 append 后政策仍在 | **通过**：会话 `2fcf7997…`、`eadcfdb4…` 均为 `goal_policy=v1`，头部含政策段；append 覆盖场景由单测覆盖 |
 
 ## 观察记录

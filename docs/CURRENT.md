@@ -5,7 +5,7 @@
 ## 现在
 
 - `main` 以 `git log -1` 为准；最近一次里程碑合并是 `m14c`（`09caa26`，2026-11-17 07:55）。
-- **门禁实测（2026-11-25，`change/align-turn-step-naming`，stacked on m13 + goal-round-pacing）**：ruff `format --diff` / `check` 绿、`mypy --strict` 绿；**892 passed / 7 skipped / 0 failed**；`openspec validate --all --strict` 绿（29 项）。覆盖率未重跑，口径见下一条——**96.66% 是累积口径，不是单次读数**。
+- **门禁实测（2026-11-25，`change/align-turn-step-naming`，stacked on m13 + goal-round-pacing）**：ruff `format --diff` / `check` 绿、`mypy --strict` 绿；**896 passed / 7 skipped / 0 failed**；`openspec validate --all --strict` 绿（29 项）。覆盖率未重跑，口径见下一条——**96.66% 是累积口径，不是单次读数**。
 - **覆盖率读数机制（源码事实）**：所有 reporting 命令在出报告前都会调一次 `combine`（`coverage/cmdline.py:884-887`），默认 `keep=False` 会删掉全部 partial。所以「为看单文件再跑一次 `report`」会吃掉下一批输入（L-079 的复发形态）——只看 `scripts/coverage-report.sh` 的那一次输出，别为了换视角再跑一遍。
 - **清理 partial 的办法（避开批量删除守卫）**：`mkdir -p .tmp/cov-archive && mv .coverage.* .coverage .tmp/cov-archive/`——移动不算删除。攒多了在**单独一条命令**里删归档目录，或由人批一次批量确认。
 - **不做「关 parallel + 单文件 append」**（2026-11-18 判断，理由留档）：partial 是子进程覆盖率的常规采集方式；append 到同一个 SQLite 在并发子进程下有写冲突风险，收益只是少一步 `combine`。今天的问题已查明是「反复跑 report 吃掉 partial」，不是 partial 机制本身。
