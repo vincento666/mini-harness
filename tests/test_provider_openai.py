@@ -132,6 +132,42 @@ async def test_openai_stream_reasoning_is_separate_from_content() -> None:
     assert [block.type for block in turn.blocks] == ["reasoning", "text"]
 
 
+async def test_openrouter_stream_reasoning_key_is_also_understood() -> None:
+    """OpenRouter 归一的字段是 `delta.reasoning`，不是 `reasoning_content`。"""
+
+    seen_text: list[str] = []
+    seen_reasoning: list[tuple[int, str]] = []
+
+    async def sink(text: str) -> None:
+        seen_text.append(text)
+
+    async def reasoning(_step_id: str, index: int, text: str) -> None:
+        seen_reasoning.append((index, text))
+
+    stream = (
+        'data: {"choices":[{"delta":{"reasoning":"先","reasoning_details":'
+        '[{"type":"reasoning.text","text":"先","index":0}]},"finish_reason":null}]}\n\n'
+        'data: {"choices":[{"delta":{"reasoning":"想"},"finish_reason":null}]}\n\n'
+        'data: {"choices":[{"delta":{"content":"答"},"finish_reason":null}]}\n\n'
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'
+        "data: [DONE]\n\n"
+    )
+    provider, _ = _provider(
+        handler=lambda request: httpx.Response(
+            200, text=stream, headers={"content-type": "text/event-stream"}
+        )
+    )
+
+    turn = await provider.generate([], [], asyncio.Event(), on_delta=sink, on_reasoning=reasoning)
+
+    assert seen_text == ["答"]
+    assert seen_reasoning == [(0, "先"), (1, "想")]
+    assert isinstance(turn, AssistantTurn)
+    assert [block.type for block in turn.blocks] == ["reasoning", "text"]
+    assert turn.blocks[0].text == "先想"
+    assert turn.content == "答"
+
+
 async def test_a_stream_http_error_is_a_provider_failure() -> None:
     async def sink(text: str) -> None:
         raise AssertionError("不会走到这里")

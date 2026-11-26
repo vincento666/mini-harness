@@ -332,3 +332,12 @@
 - Date: 2026-11-26
 - Context: `fix-case-insensitive-path-keys`——旧判据按 `os.name` 分支（Windows 折、POSIX 不折），在 macOS APFS（POSIX + 大小写不敏感）上错，只能 skip 整条测试。改成测试内先探测文件系统行为（建文件后用另一种写法 `exists()`）再分支，macOS/Windows/Linux CI 三端同一条测试各自成立；实现侧同理（`path_key` 按磁盘写法折叠，不按 `os.name`）。
 - Lesson: 判据或实现依赖「平台是否做了某事」时，用一次廉价探测拿环境实测行为，而不是拿平台名字推断——同一 OS 名下存在多种文件系统/环境配置。skipif 掉的测试是这条的信号。
+
+### L-105 同一份数据的两条入口要按同一口径解析
+
+- Seen: 1
+- Status: inbox
+- Date: 2026-11-26
+- Context: `merge-reasoning-stream` 真端点验收时发现：非流式解析 `reasoning_content` **或** `reasoning`（两种 wire 名都收），流式只收 `reasoning_content`。DeepSeek 发前者、OpenRouter 归一发后者，于是「换成验收端点，流式思考全丢、非流式正常」。测试全绿，因为 mock 与单测都按 `reasoning_content` 造的帧。
+- Lesson: 同一份数据既有流式入口又有非流式入口（或既有 M 又有 N 个兼容字段名）时，先看两边是不是同一口径；一个动作在不同传输路径上理解不一致，只有真端点能照出来。补测试时把「换一种 wire 名」当成独立场景，别拿一种名字跑遍两条路径。
+

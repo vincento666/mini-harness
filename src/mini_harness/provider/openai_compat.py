@@ -571,7 +571,9 @@ class OpenAICompatProvider:
                         return _schema_failure("流式 choices[0] 不是对象", attempts)
                     delta = first.get("delta")
                     if isinstance(delta, dict):
-                        reasoning = delta.get("reasoning_content")
+                        # DeepSeek 系发 `reasoning_content`，OpenRouter 归一发 `reasoning`；
+                        # 非流式路径两种都收，流式按同一口径取，免得换个端点就丢思考。
+                        reasoning = delta.get("reasoning_content") or delta.get("reasoning")
                         if isinstance(reasoning, str) and reasoning:
                             reasoning_parts.append(reasoning)
                             if on_reasoning is not None:

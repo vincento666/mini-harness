@@ -9,6 +9,6 @@
 - [x] 1.5 `specs/reasoning/spec.md` 逐句核对 v2 词表后落主规格；`chat-repl` 补 `[thinking]` 行、`provider` 补 reasoning 字段、`event-log` 补 `model/attempt`
 - [x] 1.6 测试：分支自带 reasoning/golden 测试按新词表改名并跑绿；补思考帧判据（`[thinking]` 恰一次、思考不进 stdout、取消半句保留不回归）
 - [ ] 1.7 门禁：全量 pytest、ruff、mypy --strict、`openspec validate --all --strict`
-- [ ] 1.8 真实端点一场（reasoner）：`model/response.blocks` 保序、SSE `reasoning/delta` 与 `model/delta` 分离、usage 不重复计；记录到 `docs/verification/merge-reasoning-stream-real-endpoint.md`
+- [x] 1.8 真实端点一场（reasoner）：`model/response.blocks` 保序、SSE `reasoning/delta` 与 `model/delta` 分离、usage 不重复计；记录到 `docs/verification/merge-reasoning-stream-real-endpoint.md`（顺带修掉流式只认 `reasoning_content`、不认 OpenRouter 归一 `reasoning` 的缺陷，见该文第 0 节）
 - [ ] 1.9 tty 人跑一场：`[thinking]` 恰一次、思考实时、正文不进 stderr 混流、`[answer]` 位置正确（ADR-0025）
 - [ ] 1.10 归档本 change；`docs/CURRENT.md` 把「思考帧未合入」从开放缺口移除

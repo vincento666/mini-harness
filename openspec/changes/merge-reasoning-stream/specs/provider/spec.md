@@ -17,3 +17,8 @@ OpenAI 兼容适配器 SHALL 从响应的 `reasoning_content` / `reasoning` 字�
 
 - **WHEN** 流式响应交错给出 reasoning 与正文片段
 - **THEN** 正文 sink 只收到正文、reasoning sink 只收到 reasoning，两条流都按 step_id 归属
+
+#### Scenario: 流式思考只带 `reasoning` 字段（OpenRouter 归一）
+
+- **WHEN** 流式 delta 里只有 `reasoning`（无 `reasoning_content`），随后才给 `content`
+- **THEN** reasoning sink 照常收到增量、`blocks` 里是 reasoning → text，正文流不受影响
