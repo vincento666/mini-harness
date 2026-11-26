@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from mini_harness.events import read_events
 from mini_harness.tools.dispatch import DispatchOutcome
 from mini_harness.tools.fences import path_key, reads_from_records
@@ -175,3 +177,57 @@ async def test_an_io_failure_stays_a_result_and_the_turn_still_closes(tmp_path: 
     ]
     assert outcome.failure_code is None
     assert outcome.stop_reason == "MODEL_COMPLETED"
+
+
+def test_path_key_normalizes_case_only_when_the_filesystem_does(tmp_path: Path) -> None:
+    """任务 1.2：同一文件两种写法得到同一个键，当且仅当这份文件系统折叠大小写。"""
+    notes = tmp_path / "Notes"
+    notes.mkdir()
+    (notes / "Plan.MD").write_text("x\n", encoding="utf-8")
+    folds = (tmp_path / "notes" / "plan.md").exists()
+
+    key_read = path_key(tmp_path, "notes/plan.md")
+    key_disk = path_key(tmp_path, "Notes/Plan.MD")
+
+    if folds:
+        assert key_read == key_disk
+    else:
+        assert key_read != key_disk
+
+
+def test_a_new_file_keeps_the_given_spelling_while_existing_parents_fold(tmp_path: Path) -> None:
+    """任务 1.3：父目录前缀被规范化成磁盘写法，新文件名保持调用给的写法。"""
+    (tmp_path / "Notes").mkdir()
+    folds = (tmp_path / "notes").exists()
+
+    key = path_key(tmp_path, "notes/NewFile.txt")
+
+    if folds:
+        assert key.endswith("Notes/NewFile.txt")
+    else:
+        assert key.endswith("notes/NewFile.txt")
+    # 新文件名还不存在、没有磁盘写法可言：两种写法仍是两个键（「新文件不需要先读」不变）
+    assert path_key(tmp_path, "notes/newfile.txt") != path_key(tmp_path, "notes/NewFile.txt")
+
+
+def test_a_second_path_key_for_the_same_directories_hits_the_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """任务 2.1：同一目录第二次 path_key 命中缓存，不重新列举目录。"""
+    (tmp_path / "Notes").mkdir()
+    (tmp_path / "Notes" / "Plan.MD").write_text("x\n", encoding="utf-8")
+    calls = 0
+    real_iterdir = Path.iterdir
+
+    def counting(self: Path) -> object:
+        nonlocal calls
+        calls += 1
+        return real_iterdir(self)
+
+    monkeypatch.setattr(Path, "iterdir", counting)
+    path_key(tmp_path, "Notes/Plan.MD")
+    first = calls
+    path_key(tmp_path, "Notes/Plan.MD")
+
+    assert first >= 1
+    assert calls == first

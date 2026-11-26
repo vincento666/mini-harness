@@ -2,11 +2,7 @@
 
 from __future__ import annotations
 
-import os
-import sys
 from pathlib import Path
-
-import pytest
 
 from mini_harness.events import read_events
 from mini_harness.tools.dispatch import DispatchOutcome
@@ -222,23 +218,16 @@ async def test_a_write_does_not_count_as_having_read_it(tmp_path: Path) -> None:
     assert (tmp_path / "new.md").read_text(encoding="utf-8") == "新写的\n"
 
 
-@pytest.mark.skipif(
-    sys.platform == "darwin",
-    reason="APFS 默认大小写不敏感，POSIX 分支的假设在 macOS 上不成立",
-)
-@pytest.mark.skipif(
-    sys.platform == "darwin",
-    reason="APFS 默认大小写不敏感，POSIX 分支的假设在 macOS 上不成立",
-)
 async def test_a_differently_cased_path_folds_only_where_paths_fold(tmp_path: Path) -> None:
-    """seam ②③：路径键的大小写折叠决定写前必读能不能被换写法满足。
+    """seam ③：路径键折叠跟随这份文件系统的实测行为。
 
-    Windows 上 `notes/plan.md` 与 `Notes/Plan.MD` 是同一个文件，读过一种写法就能改另一种写法；
-    大小写敏感的平台上它们本来就是两个文件，那种写法读不到东西，改它也没有前读。
-    两端各跑各的断言，CI 矩阵负责让另一支也跑起来。
+    折叠大小写的文件系统（APFS 默认、NTFS）上 `notes/plan.md` 与 `Notes/Plan.MD` 是同一个
+    文件，读过一种写法就能改另一种写法；大小写敏感的文件系统上它们本来就是两个文件。
+    判据按探测到的文件系统行为分支，不再按 `os.name` 猜。
     """
     (tmp_path / "Notes").mkdir()
     (tmp_path / "Notes" / "Plan.MD").write_text("目标\n", encoding="utf-8")
+    folds = (tmp_path / "notes" / "plan.md").exists()
     entries = [
         tool_call_entry("read", "c1", file_path="notes/plan.md"),
         tool_call_entry(
@@ -249,7 +238,7 @@ async def test_a_differently_cased_path_folds_only_where_paths_fold(tmp_path: Pa
 
     log, _ = await run_fixture_session(tmp_path, "s-casing", entries)
 
-    if os.name == "nt":
+    if folds:
         assert tool_outcomes(log) == ["OK", "OK"]
         assert (tmp_path / "Notes" / "Plan.MD").read_text(encoding="utf-8") == "换掉\n"
     else:

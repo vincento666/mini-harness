@@ -138,7 +138,8 @@ def path_key(workspace: Path, raw_path: str) -> str:
     """入参路径 → 判定用的键。
 
     相对工作区根解析；`os.path.realpath` 解析 junction 与符号链接；Windows 上 `normcase` 折叠
-    大小写——否则同一个文件换一种写法就能绕过写前必读与 CAS。
+    大小写，POSIX 上把**已存在的前缀**规范成磁盘上的写法——按这份文件系统自己的行为折叠，
+    不按操作系统名字猜：同一个文件换一种写法不能绕过写前必读与 CAS。
     """
     candidate = Path(raw_path)
     if not candidate.is_absolute():
@@ -146,7 +147,49 @@ def path_key(workspace: Path, raw_path: str) -> str:
     resolved = os.path.realpath(candidate)
     if os.name == "nt":
         resolved = os.path.normcase(resolved)
+    else:
+        resolved = str(_folded_existing_prefix(Path(resolved)))
     return resolved
+
+
+_fold_cache: dict[str, dict[str, str]] = {}
+
+
+def _folded_existing_prefix(path: Path) -> Path:
+    """把路径中已存在的前缀规范成磁盘上的写法；首个不存在的成分之后保持原样。
+
+    逐成分在父目录里按 `casefold()` 找磁盘写法（按目录缓存，条目只增不减时映射仍正确）；
+    折叠与否由文件系统的实测行为决定，大小写敏感的文件系统上找不到就不折。
+    """
+    anchor = path.anchor
+    parts = list(path.parts[len(anchor) :]) if anchor else list(path.parts)
+    current = Path(anchor) if anchor else Path()
+    out: list[str] = []
+    stopped = False
+    for name in parts:
+        if stopped:
+            out.append(name)
+            continue
+        if not (current / name).exists():
+            out.append(name)
+            stopped = True
+            continue
+        mapping = _fold_cache.get(str(current))
+        if mapping is None:
+            try:
+                mapping = {p.name.casefold(): p.name for p in current.iterdir()}
+            except OSError:
+                mapping = {}
+            _fold_cache[str(current)] = mapping
+        disk_name = mapping.get(name.casefold(), name)
+        out.append(disk_name)
+        current = current / disk_name
+    if not out:
+        return path
+    folded = Path(anchor) if anchor else Path()
+    for part in out:
+        folded = folded / part
+    return folded
 
 
 def _is_inside_workspace(workspace: Path, key: str) -> bool:

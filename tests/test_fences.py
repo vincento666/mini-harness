@@ -29,10 +29,10 @@ def test_the_same_file_written_two_ways_gets_one_path_key(tmp_path: Path) -> Non
     upper = path_key(tmp_path, "Notes/Plan.MD")
     lower = path_key(tmp_path, "notes/plan.md")
 
-    if os.name == "nt":
-        assert upper == lower, "Windows 上大小写折叠成同一个键，否则换一种写法就能绕过 CAS"
+    if (tmp_path / "notes" / "plan.md").exists():
+        assert upper == lower, "这份文件系统折叠大小写：换一种写法不能绕过 CAS"
     else:
-        assert upper != lower, "大小写敏感的平台上它们本来就是两个文件"
+        assert upper != lower, "大小写敏感的文件系统上它们本来就是两个文件"
 
 
 def test_dot_dot_path_parts_collapse_into_one_key(tmp_path: Path) -> None:
