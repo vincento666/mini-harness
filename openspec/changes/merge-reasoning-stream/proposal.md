@@ -1,8 +1,8 @@
-# 提案：合入 reasoning 两条分支并迁移到当前主线（`[reasoning]` / `[thinking]` 可见）
+# 提案：合入 reasoning 两条分支并迁移到当前主线（`[thinking]` 可见）
 
 ## Why
 
-chat 里 `[reasoning]`（思考帧）一直不显示。原因不是没实现，而是**两条实现分支没有合入 main**：
+chat 里思考帧一直不显示（当时的说法是「`[reasoning]` 没显示」；落地的终端标记是 `[thinking]`，见 `chat-repl` 规格 delta）。原因不是没实现，而是**两条实现分支没有合入 main**：
 
 - `origin/change/reasoning-mode-and-budget`：领先 main **50 个提交**，28 项 tasks 勾了 27 项（只有 7.2 UAT 人跑未做）。覆盖有序 content blocks、`fold` 回传、SSE `reasoning/delta`、`reasoning_tokens` 不重复计。
 - `origin/change/chat-streaming-shell`：领先 main **47 个提交**，但 `git rev-list reasoning..shell == 0`——**shell 是 reasoning 的祖先**，合入 reasoning 就把 shell 一起带进来（`[thinking]` 开始标志、`on_reasoning`、thinking 结束行、`[answer]`）。

@@ -38,7 +38,7 @@
 | **chat shell** | `minihns chat` 的终端适配器；`--stream` 默认开、`--no-stream` 回旧行为（`restore-chat-streaming`，2026-11-25） | 终端里的聊天壳，不是网页 | 不是 host SSE 的复刻 |
 | **stdout / stderr** | 正常输出流 / 诊断输出流；chat 正文走 stdout，思考/标记走 stderr | 正常台词 / 旁白字幕；都不是错误码 | stderr 不是“错误码”；退出码才是数字状态 |
 | **tty** | 真实交互式终端；Ctrl-C 能变成 SIGINT | 真人在键盘前敲的终端；管道、CI 不是 | 管道、CI、后台进程不是 tty |
-| **`[thinking]` / `[answer]`** | chat 在 stderr 上给思考和正文的开始标志；`[answer]` 随 `restore-chat-streaming` 回来；`[thinking]` 已在未合入的 `origin/change/chat-streaming-shell` 分支实现（**已实现未合入，不是 deferred**；当前 main 没有） | 旁白字幕里的“思考中 / 回答开始”，不是台词本身 | 不是模型内容的一部分 |
+| **`[thinking]` / `[answer]`** | chat 在 stderr 上给思考和正文的开始标志；`[answer]` 随 `restore-chat-streaming` 回来；`[thinking]` 随 `merge-reasoning-stream`（2026-11-26）合入，思考增量走 stderr、每轮首次打一个 | 旁白字幕里的“思考中 / 回答开始”，不是台词本身 | 不是模型内容的一部分 |
 
 ---
 
@@ -338,16 +338,21 @@ data: {"delta":{"tool_calls":[{"index":0,
 
 ### 6.1 mini 已实现
 
-> **状态（2026-11-25 核对）**：本节原本按 `change/reasoning-mode-and-budget` 分支写，**该分支未合入 main**。
-> 当前 main 的 `model/response` 只有 `content` / `tool_calls` / `usage` / `finish_reason`，**没有 `blocks`**；
-> provider 不解析 `reasoning_content`，也没有 `reasoning/delta` 与 `reasoning_effort`。
+> **状态（2026-11-26 更新）**：思考帧**已合入当前主线**（`merge/reasoning`，change `merge-reasoning-stream`），
+> 本节描述的形状就是现在的实现：`model/response` 有有序 `blocks`，provider 解析 `reasoning_content` 或 `reasoning`，
+> `reasoning/delta` 与 `reasoning_effort` 都在。下面 2026-11-25 那段「未合入」的核对保留作历史记录——
+> 当时缺的是合入/迁移，不是实现。
+>
+> **当时（2026-11-25）的事实**：本节按 `change/reasoning-mode-and-budget` 分支写而该分支未合入 main，
+> main 的 `model/response` 只有 `content` / `tool_calls` / `usage` / `finish_reason`，provider 不解析
+> `reasoning_content`，也没有 `reasoning/delta` 与 `reasoning_effort`。
 >
 > **正文流式已由 `restore-chat-streaming` 补回**（2026-11-25，默认 `--stream`）：非空正文 delta 写 stdout
 > 并逐次 flush，每轮第一个增量之前 stderr 打一次 `[answer] `；没有增量的步在 `step/end` 之后补打
 > （`SessionEnv.on_step_end`），轮末一个换行；`--no-stream` 回到轮末一次性投影。日志形状不变
 > （无 `model/delta`、`model/response` 键集合不变）。
 >
-> **思考流不是 deferred，是「已实现、未合入」**（2026-11-25 纠正）：`origin/change/reasoning-mode-and-budget`
+> **思考流当时不是 deferred，是「已实现、未合入」**（2026-11-25 纠正，已于 2026-11-26 合入）：`origin/change/reasoning-mode-and-budget`
 > 领先 main **50 个提交**（28 项 tasks 已勾 27 项，只剩 7.2 UAT 人跑），`origin/change/chat-streaming-shell`
 > 领先 **47 个提交**，其 `cli/main.py` 里已有 `[thinking]` 开始标志、`on_reasoning` 与 thinking 结束行；
 > 两条分支都**没合进 main**（`6857ce4` 是分支内的合并，不是 main）。所以当前 main 看不到思考帧，
@@ -369,7 +374,7 @@ finish_reason
 - 用户取消有已交付前缀时写 `interrupted:true` 的 message，不写 attempt；
 - `reasoning_effort` 有 `off|low|high|max`，默认 `high`；
 - provider 历史按 blocks 回传（OpenAI 兼容的 `reasoning_content`）；
-- chat shell 默认 `--stream`，正文 stdout、思考 stderr，`[answer]` 标记正文开始（**该分支的形状**；mini 现状只有正文流式，见 §6.1 状态注记）；
+- chat shell 默认 `--stream`，正文 stdout、思考 stderr，`[thinking]` 打一次、`[answer]` 标记正文开始（已合入，见 §6.1 状态注记）；
 - **R2 折叠/展开视觉仍等壳**；mini 没有 DSH 的 active baseline / compact stream。
 
 ### 6.2 已实现形状
