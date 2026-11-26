@@ -60,4 +60,4 @@
 - 教训：`docs/lessons.md`（只读 Active；归档 `docs/lessons-archive.md` 不读）
 - 流程与升级清单：`docs/process/devops-loop.md`（推理账 `docs/process/devops-loop-rationale.md`，改流程时才读）
 - 延后重构账：`docs/adr/0002-deferred-refactors.md`
-- 每 change 的验收：`docs/verification/<change-id>-{report,uat,real-endpoint,mutation,code-review,dsh-review}.md`
+- 每 change 的验收：`docs/verification/<change-id>-{report,uat,real-endpoint,mutation,code-review,dsh-review}.md`- **分支处置（2026-11-26 人裁四项，已执行）**：① `m13-goal-rounds`/`chat-streaming-shell` 不删引用，等 reasoning 验收后随 merge-reasoning-stream 清理；② `host-event-sync-contract` 对照结论——机制主干已被当前线覆盖，三条防御性条款缺失——**分支已废弃删除**，条款立 `host-stream-hardening` 捡回（snapshot 边界/日志禁令纯追认，stream/end 是唯一实现缺口；attempt 不捡，当前线无该事件）；③ `fix-post-compaction-budget-reading` 确认废弃，分支已删（实质内容 ADR-0026/0016 早已在当前线）；④ `fix-case-insensitive-path-keys` **已 apply 完毕**（`ed729d7` 实现 + `07c3e5b` 收尾：全量 928 passed、变异 M1/M2 全杀、真实端点 `f886d22b…` 通过、L-104 入收件箱），**只差 UAT 人跑**（手册 `docs/verification/fix-case-insensitive-path-keys-uat.md`）后归档。工作区污染产物 essay.txt/snake 已移入 `.tmp/legacy-pollution/`。
