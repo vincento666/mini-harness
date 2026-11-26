@@ -178,6 +178,25 @@ def test_blank_input_writes_no_record_and_opens_no_turn(tmp_path: Path) -> None:
     assert [message["content"] for message in messages] == ["第一条", "第二条"]
 
 
+def test_blank_input_does_not_reprint_the_prompt(tmp_path: Path) -> None:
+    """blank-input-no-reprompt：空白输入不再追加一条提示符，提示符只在回到等待状态时出现。"""
+    fixture = _fixture(tmp_path, "reply.json", [{"content": "回复一", "finish_reason": "stop"}])
+
+    # 首条前空白：开始时一条提示符，空白不加。管道不回显换行，所以初始提示符与回复同行；
+    # 判别点是旧行为的 `> >` 前缀不再出现，且 `> ` 恰出现两次（开始一次、回复后一次）。
+    result = _chat("--fixture", fixture, "--no-stream", cwd=tmp_path, stdin_text="\n第一条\n")
+    assert result.returncode == 0
+    assert result.stdout.splitlines() == ["> 回复一", "> "]
+    assert "> >" not in result.stdout
+    assert result.stdout.count("> ") == 2
+
+    # 末尾空白：粘贴尾随空行不再多出一条 `> `。
+    result = _chat("--fixture", fixture, "--no-stream", cwd=tmp_path, stdin_text="第一条\n\n")
+    assert result.returncode == 0
+    assert result.stdout.splitlines() == ["> 回复一", "> "]
+    assert result.stdout.count("> ") == 2
+
+
 def test_a_provider_failed_turn_says_so_on_stderr(tmp_path: Path) -> None:
     """seam ⑥：段级收尾不是无声的——那一行在 stderr，不在 stdout，也不在日志里。"""
     with _FakeEndpoint(

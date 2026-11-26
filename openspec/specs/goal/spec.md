@@ -35,6 +35,8 @@ TBD - created by archiving change m13-goal-rounds. Update Purpose after archive.
 
 系统 SHALL 提供 `get_goal()`、`create_goal(objective, max_rounds?)`、`update_goal(goal_id, revision, action, objective?, max_rounds?, blocked_reason?)` 三个工具，`action` 取 `edit` / `pause` / `resume` / `complete` / `blocked`。所有工具结果 SHALL 是同一份紧凑 JSON：无目标时 `{"goal": null}`，否则含快照与 `armed`。
 
+`create_goal` 的**工具描述** MUST 写成条件句并说明分轮边界：任务要写文件、改代码、跑命令验证或查多处资料时（哪怕用户只给一句话）使用它、`objective` 复述用户目标；建完 MUST 结束本轮、只做计划，正式内容从目标轮 1 开始；纯问答或寒暄不该用它；建完若发现一步能收尾，当轮标 complete。描述 MUST NOT 承诺「创建后自动把任务做完」。
+
 `create`、`edit`、`pause`、`resume` MUST 只在本轮由人类来源的 `user/message` 开启时成立；`entry == "subagent"` 的会话 MUST NOT 具备该权威，返回 `GOAL_AUTHORITY_REQUIRED`。
 
 `create` 在存在非 `complete` 目标时 MUST 返回 `GOAL_ALREADY_ACTIVE`；上一个目标已 `complete` 时 SHALL 允许创建**新**目标（新 `id`、`revision == 1`、`rounds_started == 0`）。
@@ -49,45 +51,10 @@ TBD - created by archiving change m13-goal-rounds. Update Purpose after archive.
 
 相位不允许该动作时 MUST 返回 `GOAL_INVALID_TRANSITION` 且不落事件：`pause` 只在 `active`，`complete` 只在非 `complete`，`blocked` 只在 `active`，`resume` 在 `complete` 或轮次已用尽时拒绝（`paused` 归人，见 `GOAL_RESUME_BY_TOOL_DENIED`）。
 
-#### Scenario: 单目标约束
+#### Scenario: 工具描述说明建完就停
 
-- **WHEN** 当前目标 `active`，模型再次调用 `create_goal`
-- **THEN** 结果是 `GOAL_ALREADY_ACTIVE`，日志不新增 `goal/updated`
-
-#### Scenario: complete 之后可另起一个目标
-
-- **WHEN** 目标 A 已 `complete`，模型调用 `create_goal` 并给出新的 objective
-- **THEN** 新快照的 `id` 与 A 不同、`revision == 1`、`rounds_started == 0`
-
-#### Scenario: 旧 revision 被拒
-
-- **WHEN** 目标已到 `revision == 3`，调用方仍提交 `revision == 2`
-- **THEN** 结果是 `GOAL_REF_STALE`，`phase` 与 `rounds_started` 不变
-
-#### Scenario: 子会话没有创建权
-
-- **WHEN** 子会话（`entry == "subagent"`）里的模型调用 `create_goal`
-- **THEN** 结果是 `GOAL_AUTHORITY_REQUIRED`，日志不新增 `goal/updated`
-
-#### Scenario: 工具不能恢复已暂停的目标
-
-- **WHEN** `phase == "paused"`，模型调用 `update_goal(action="resume")`
-- **THEN** 结果是 `GOAL_RESUME_BY_TOOL_DENIED`，`phase` 仍为 `paused`，`armed` 仍为 `false`
-
-#### Scenario: 撞上限之后能人工续跑
-
-- **WHEN** 目标因轮次用尽落到 `blocked {code: "round-limit"}`，用户把 `max_rounds` 调大后输入 `/goal resume`
-- **THEN** 新快照 `phase == "active"`、无 `blocked_reason`、`armed == true`，随后出现新的 goal 来源消息
-
-#### Scenario: edit 是部分替换
-
-- **WHEN** 当前 `objective` 为 P、`max_rounds` 为 3，调用 `edit` 只给 `max_rounds: 5`
-- **THEN** 新快照 `objective` 仍为 P、`max_rounds == 5`、`phase` 不变
-
-#### Scenario: 无目标时读取不报错
-
-- **WHEN** 会话里从未创建目标，模型调用 `get_goal`
-- **THEN** 结果是 `OK`，内容为 `{"goal": null}`
+- **WHEN** 读取 `create_goal` 的工具描述
+- **THEN** 描述含「要写文件」这一使用条件、含「结束本轮」与「只做计划」的分轮边界，且不含「一次做完」这类承诺
 
 ### Requirement: 轮次是 goal 来源的用户消息
 

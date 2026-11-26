@@ -34,9 +34,9 @@ m13 之后一条输入可以连开多轮（目标续跑）。渲染器的 `finis
 
 `printed` 游标仍按**非 `purpose`** 的 `model/response` 条数推进：跳过打印不等于不计数，否则下一轮会把旧回复重打一遍；`purpose`（请求级压缩摘要）本来就不打，两个口径必须一致，否则 `compaction` 之后的 `--resume` 会把首条新回复算漏（复核指出的 major）。
 
-## D5 思考流 deferred
+## D5 思考流已实现、未合入（不是 deferred）
 
-`on_reasoning` 在当前 `SessionEnv` 不存在，`openai_compat` 也不解析 `reasoning_content`。要补不是加一个字段的事：得先把 assistant message 升级成有序 content blocks（`docs/reference/reasoning-mode.md` §结论）。本 change 只做正文；`[thinking]` 与 `reasoning/delta` 留给 `reasoning-mode-and-budget`，触发条件就是那个 change 落地。
+`on_reasoning` 在当前 **main** 的 `SessionEnv` 不存在，`openai_compat` 也不解析 `reasoning_content`。但这件事**不是没做**：`origin/change/reasoning-mode-and-budget` 领先 main 50 个提交（28 项 tasks 已勾 27 项，只剩 7.2 UAT 人跑），已经把 assistant message 升级成有序 content blocks、接了 reasoning sink 与 SSE；`origin/change/chat-streaming-shell` 领先 47 个提交，其 `cli/main.py` 里已有 `[thinking]` 开始标志、`on_reasoning` 与 thinking 结束行（`6857ce4` 是分支内的合并，不是 main）。两条分支都**没合进 main**，所以当前 main 看不到思考帧。本 change 只做正文流式，不复刻、也不合并这两条分支；后续把已实现的能力合入/迁移到当前主线（并处理 v2 改词、词表与命名冲突）是独立工作，不是新开 change 重做。
 
 ## D6 取消在「写 response 之前」按是否流过正文分叉
 

@@ -1,0 +1,39 @@
+# Spec Delta: session-resume
+
+## MODIFIED Requirements
+
+### Requirement: `--resume` 重新装配已有 session
+
+`minihns chat --resume <id>` / Host 的 resume 路径 SHALL 从已有日志装配 `SessionEnv`，后续轮继续写同一份日志；MUST NOT 新建 session。若日志缺少闭合（硬杀），resume SHALL 按日志事实补 `session/end` 或明确报告缺口，MUST NOT 改写既有记录。
+
+resume SHALL 从日志的 `session/start.workspace`（绝对路径）恢复会话工作区：显式 `--workspace` 优先于日志值。恢复的目录不存在时 SHALL 以 `WORKSPACE_MISSING`（退出码 1）失败；日志缺 `workspace` 字段且未显式给 `--workspace` 时 SHALL 以 `INVALID_ARGUMENT`（退出码 2）失败，MUST NOT 静默落到当前目录或新建默认工作区。
+
+#### Scenario: resume 后 replay 仍相等
+
+- **WHEN** 对一个已完成 session resume 并追加一轮，再跑 `replay`
+- **THEN** 所有历史装配点逐点相等，新轮也一致
+
+#### Scenario: 硬杀缺口被明确处理
+
+- **WHEN** 日志最后有 `turn/start`/`step/start` 但没有对应闭合
+- **THEN** resume 补一条可解释的 `session/end` 或报告缺口，既有记录不变
+
+#### Scenario: 未显式给 --workspace 时恢复日志里的工作区
+
+- **WHEN** 会话在默认工作区 `$MINIHNS_HOME/workspaces/<sid>/` 下产生过文件，之后在同一或另一启动目录执行 `minihns chat --resume <sid>` 且不传 `--workspace`
+- **THEN** 续轮的围栏根与 bash 工作目录仍是 `$MINIHNS_HOME/workspaces/<sid>/`，先前产物可见、可继续改
+
+#### Scenario: 显式 --workspace 优先于日志
+
+- **WHEN** resume 时显式给 `--workspace <other>`
+- **THEN** 围栏根是 `<other>`，日志里记录的工作区不被使用
+
+#### Scenario: 恢复的工作区已不存在
+
+- **WHEN** 日志记录的工作区目录已被人为删除，resume 未显式给 `--workspace`
+- **THEN** 退出码为 1，stderr 含 `WORKSPACE_MISSING`，不建新文件、不改日志既有记录
+
+#### Scenario: 旧日志缺 workspace 字段
+
+- **WHEN** 日志的 `session/start` payload 没有 `workspace` 字段，resume 也未给 `--workspace`
+- **THEN** 退出码为 2，stderr 含 `INVALID_ARGUMENT`，没有新文件产生

@@ -147,6 +147,30 @@ def test_an_old_v1_log_still_injects_the_old_text() -> None:
     assert "真正完成时才调用 update_goal" in content
 
 
+def test_the_one_line_ux_policy_teaches_round_pacing_without_user_prompts() -> None:
+    """v3：一句话任务也要有分轮依据——建目标那轮只计划、每轮一块、简单问答不建目标。
+
+    这四条是「用户只说一句话」时的唯一依据（场次 3 证明提示词管不住，见 change
+    `goal-ux-one-line`）。缺任一条，等于把流程又推回给用户。
+    """
+    content = GOAL_POLICY_VERSIONS[GOAL_POLICY_VERSION]
+
+    assert GOAL_POLICY_VERSION == "v3"
+    assert "要写文件" in content
+    assert "第一步就建目标" in content
+    assert "建目标的那一轮只做计划" in content
+    assert "每个目标轮只推进一块" in content
+    assert "纯问答" in content
+
+
+def test_the_older_policy_versions_do_not_gain_the_new_sentences() -> None:
+    """版本冻结：v1/v2 不能悄悄长出 v3 的句子，否则旧日志重算会变。"""
+    for version in ("v1", "v2"):
+        text = GOAL_POLICY_VERSIONS[version]
+        assert "建目标的那一轮只做计划" not in text
+        assert "每个目标轮只推进一块" not in text
+
+
 def test_a_log_without_the_goal_policy_has_no_policy_segment() -> None:
     """没有字段的旧日志不注入政策段——否则 replay 会与当时的 `context/assembled` 不一致。"""
     content = fold(_one_turn_events()).messages[0].content

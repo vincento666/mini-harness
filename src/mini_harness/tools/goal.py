@@ -183,7 +183,13 @@ def goal_tool_definitions() -> list[ToolDefinition]:
         ),
         ToolDefinition(
             name="create_goal",
-            description="创建一个目标并开始自动续跑；已有未完成目标时拒绝（单目标）。",
+            description=(
+                "创建一个目标并开始自动续跑；已有未完成目标时拒绝（单目标）。"
+                "任务要写文件、改代码、跑命令验证或查多处资料时用它——哪怕用户只说了一句话，"
+                "也别等用户吩咐流程；objective 复述用户要的结果。建完就结束本轮、"
+                "只做本轮计划（todo 列出分轮步骤），正式内容从目标轮 1 开始；"
+                "建完若发现一步能收尾，当轮标 complete。纯问答或寒暄不要用它。"
+            ),
             args_model=CreateGoalArgs,
             mutates=False,
             concurrency="exclusive",

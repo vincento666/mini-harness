@@ -60,17 +60,20 @@
 - **取消的 CLI 屏幕判据**：`--stream` 中途取消时「半句保留、不补整段」在 CLI 层没有独立黑盒判据——内核层用 sink barrier 钉住了「不写半条 `model/response`」，屏幕上的前缀由 UAT 场次 4 的人眼判。工具窗口取消同理。
 - **`--resume` + 压缩摘要的首条回复**：游标口径已统一，但没有专门造「有摘要的日志 + resume」的判据；它的行为由 `_print_new_replies` 与初始化两处同口径的代码审查兜住。
 
-- 不做思考流：`[thinking]` / `reasoning/delta` / `on_reasoning` 全在 `reasoning-mode-and-budget`，本 change 不碰。
+- 不做思考流：`[thinking]` / `reasoning/delta` / `on_reasoning` 已在**未合入 main** 的 `origin/change/reasoning-mode-and-budget` 与 `origin/change/chat-streaming-shell` 分支实现（**不是 deferred**）；本 change 不复刻、不合并这两条分支。缺的是合入/迁移，不是新开 change 重做。
+- 不做工具调用参数增量的终端呈现：provider 的流式 `tool_calls` 只拼装、不交给正文 sink（H2 既有边界）；长文本若被模型放进工具参数，本 change 的正文流式不适用。UAT 场次 1 原判据（会话 `82db8aadc7b2421c80bd2168f7f42492`）因此不可达，已按 2026-11-25 人裁修订为明确禁用工具的提示词。「工具参数增量的终端呈现」是尚缺的新能力（另开 change），思考帧则是已实现待合入，两者性质不同，见 `docs/CURRENT.md` 开放缺口。
 - 不改 host / serve 的 SSE 合流、游标、断线续读；host 不装 `on_step_end`，行为不变（由判据锁住）。
 - 不做 `run` / `serve` 的正文流式。
 - 不做终端富文本：颜色、Markdown 渲染、行内光标控制都不在范围内。
 - 不验首帧延迟指标（H2 的 1 s 判据属于宿主轨）；只证明「阻塞期间首 delta 可读」。
 - 不验 provider 的 SSE 解析本身：`openai_compat` 已有 H2 判据，本 change 只消费 sink。
 - 不验 pty 上的「半句时刻」：可控性由 sink barrier 单测承担；pty 只验信号投递。
+- 不验空白输入时的提示符重打：`> ` 只在 `cli/main.py:786` 写且不带换行，空白输入 `continue` 会再打一次（管道里 `> > `、pty 上相邻两行各一个 `> `，人眼看成 `>>`）；`--no-stream` 同样出现，属**既有 REPL 行为、非本 change 引入**，改公共循环会动到 2.3 的逐点基线，故记为 `docs/CURRENT.md` 开放缺口的独立缺陷。
 
 ## 待裁决
 
 - 默认 `--stream`：已定（沿用 2026-11-03 人裁）。
-- `[answer] ` 在无思考流时是否保留：保留，将来 `[thinking]` 回来时协议不用改。
+- `[answer] ` 在无思考流时是否保留：保留，将来把已实现的 `[thinking]` 分支合入时协议不用改。
 - `--no-stream` 是否长期保留：保留，作为逐点对照与分诊开关。
 - `on_step_end` 钩子只给 CLI：host 的 SSE 已有 durable `model/response` 帧；若将来 host 也要「无 delta 补发」，另开 change。
+- UAT 场次 1 判据（2026-11-25 人裁，选「修判据并归档」）：原判据「提长回答看正文逐段」在模型把长文本放进工具参数时不可达；修订提示词为明确禁用工具，待人重跑，不扩大本 change 范围。两个缺口性质不同：思考帧是「已实现、未合入 main」（合入/迁移，非 deferred、非另开 change），工具参数增量的终端呈现才是另开 change 的新能力。

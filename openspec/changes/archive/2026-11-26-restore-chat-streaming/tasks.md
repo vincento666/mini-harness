@@ -31,8 +31,8 @@
 
 - [x] 3.1 全量门禁：**920 passed / 7 skipped**、ruff / `mypy --strict` 绿、`openspec validate` 绿
 - [x] 3.2 真实端点：OpenRouter `qwen/qwen3.8-27b` 一场，会话 `2eb3ff10…`；增量拼接等于日志 `content` 且只出现一次
-- [ ] 3.3 UAT 验收：人跑；场次手册 `docs/verification/restore-chat-streaming-uat.md`（关键场次是 UX 手感，按 ADR-0025 不得由 agent 代跑）
+- [x] 3.3 UAT 验收：五场全部人跑通过（2026-11-26 收口）——场次 1（原判据不通过 → 修订判据后 `b24ba173…` 通过）、场次 2（`--no-stream` 对照，人跑通过）、场次 3（`065b1909…` 人裁通过 + **`c1b33863…` 新提示词补跑通过**：`[轮] 1/3→2/3→3/3` 与三段正文对齐；残留：模型仍把第一段写进人类轮导致重复，属跑法层不稳，触发 UX 议题）、场次 4（两场：无 goal `bb940c8e…` + 有 goal `287cae00…`，半句保留、`[轮] 收尾 ABORTED`）、场次 5（`c2de5d36…`：增量、退出码 0、`session/end`）。详见 `docs/verification/restore-chat-streaming-uat.md`
 - [x] 3.4 变异一轮：M1–M8 八条全杀（其中 M8 由既有的 `test_tool_only_turns_leave_no_blank_lines` 杀死）；两条同族合并、一条结构性改法未跑，记录在 `restore-chat-streaming-mutation.md`
 - [x] 3.5 两轴 review：`PASS WITH FINDINGS`，9 major + 4 minor；修复项与处置见 `restore-chat-streaming-code-review.md`
 - [x] 3.6 Learning Gate：**`NO-PROMOTION`**。两条候选（「收行必须紧跟产生它的输出」、「时序类需求要构造两个元素的顺序差异」）与收件箱里 L-098 / L-099 同族；且收件箱已 28 条、超过 15 条上限，按纪律先消化再收，本次不新增
-- [x] 3.7 文档：`h2-streaming-and-reasoning.md` §6.1 按实现回写（正文流式已补回、思考流仍 deferred）；`CURRENT.md` 更新
+- [x] 3.7 文档：`h2-streaming-and-reasoning.md` §6.1 按实现回写（正文流式已补回；思考流**已实现、未合入 main，非 deferred**——见 `origin/change/reasoning-mode-and-budget` 与 `origin/change/chat-streaming-shell`）；`CURRENT.md` 更新

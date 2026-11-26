@@ -38,7 +38,7 @@
 | **chat shell** | `minihns chat` 的终端适配器；`--stream` 默认开、`--no-stream` 回旧行为（`restore-chat-streaming`，2026-11-25） | 终端里的聊天壳，不是网页 | 不是 host SSE 的复刻 |
 | **stdout / stderr** | 正常输出流 / 诊断输出流；chat 正文走 stdout，思考/标记走 stderr | 正常台词 / 旁白字幕；都不是错误码 | stderr 不是“错误码”；退出码才是数字状态 |
 | **tty** | 真实交互式终端；Ctrl-C 能变成 SIGINT | 真人在键盘前敲的终端；管道、CI 不是 | 管道、CI、后台进程不是 tty |
-| **`[thinking]` / `[answer]`** | chat 在 stderr 上给思考和正文的开始标志；`[answer]` 随 `restore-chat-streaming` 回来，`[thinking]` 仍 deferred（当前 main 两者都没有） | 旁白字幕里的“思考中 / 回答开始”，不是台词本身 | 不是模型内容的一部分 |
+| **`[thinking]` / `[answer]`** | chat 在 stderr 上给思考和正文的开始标志；`[answer]` 随 `restore-chat-streaming` 回来；`[thinking]` 已在未合入的 `origin/change/chat-streaming-shell` 分支实现（**已实现未合入，不是 deferred**；当前 main 没有） | 旁白字幕里的“思考中 / 回答开始”，不是台词本身 | 不是模型内容的一部分 |
 
 ---
 
@@ -347,8 +347,12 @@ data: {"delta":{"tool_calls":[{"index":0,
 > （`SessionEnv.on_step_end`），轮末一个换行；`--no-stream` 回到轮末一次性投影。日志形状不变
 > （无 `model/delta`、`model/response` 键集合不变）。
 >
-> **思考流仍 deferred**：它要 provider 解析 `reasoning_content`、`on_reasoning` 与 `[thinking]` 标记，
-> 属于 `reasoning-mode-and-budget` 那条线的能力，本次没有动。
+> **思考流不是 deferred，是「已实现、未合入」**（2026-11-25 纠正）：`origin/change/reasoning-mode-and-budget`
+> 领先 main **50 个提交**（28 项 tasks 已勾 27 项，只剩 7.2 UAT 人跑），`origin/change/chat-streaming-shell`
+> 领先 **47 个提交**，其 `cli/main.py` 里已有 `[thinking]` 开始标志、`on_reasoning` 与 thinking 结束行；
+> 两条分支都**没合进 main**（`6857ce4` 是分支内的合并，不是 main）。所以当前 main 看不到思考帧，
+> 缺的是把已实现能力**合入/迁移**到当前主线（并处理 v2 改词、词表与命名冲突），不是重新实现。
+> 本 change（`restore-chat-streaming`）只做正文，不碰这两条分支。
 
 `model/response` 现在有有序 `blocks`：
 

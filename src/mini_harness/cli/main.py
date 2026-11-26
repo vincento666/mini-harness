@@ -767,6 +767,9 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals, *, stream: bo
     # 不进日志、不新增状态机。
     previous_stop_reason: str | None = None
     said_cannot_come_down = False
+    # 提示符只在「回到等待状态」时出现（blank-input-no-reprompt）：会话开始后第一次、
+    # 以及处理完一条非空输入（轮或命令）之后。空白输入不动旗标——提示符保持原状。
+    prompt_due = True
 
     def finish() -> TurnOutcome | None:
         """会话收尾：先换一个什么都不做的处理器，再写 `session/end`（design D7）。
@@ -783,15 +786,17 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals, *, stream: bo
             while True:
                 # 提示符不带换行（design D1）：人输入的那一行紧跟在它之后，不落在空行上。
                 # 显式 flush：stdout 是管道时它自带缓冲，不 flush 就等于屏幕上还没有提示符。
-                sys.stdout.write(_CHAT_PROMPT)
-                sys.stdout.flush()
+                if prompt_due:
+                    sys.stdout.write(_CHAT_PROMPT)
+                    sys.stdout.flush()
+                    prompt_due = False
                 line = sys.stdin.readline()
                 if line == "":
                     # EOF：会话正常收尾。
                     break
                 text = line.strip()
                 if not text:
-                    # 空白输入不写记录，也不开轮。
+                    # 空白输入不写记录、不开轮，也不重打提示符（blank-input-no-reprompt）。
                     continue
                 if text.startswith("/"):
                     # 命令本身不写 user/message；`/<技能名> 指令` 会展开成一条消息再开轮。
@@ -802,6 +807,8 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals, *, stream: bo
                         # （design D12）。其余命令仍然回到提示符。
                         goal_round = _resume_round(env, text, was_armed=was_armed)
                         if goal_round is None:
+                            # 命令消耗了输入行并产出了屏幕输出：回到等待状态要再给提示符。
+                            prompt_due = True
                             continue
                     else:
                         text = expanded
@@ -912,6 +919,8 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals, *, stream: bo
                         break
                     assert decision.goal is not None
                     goal_round = GoalRound(goal=decision.goal, round=decision.round)
+                # 一轮（或一串自动轮）处理完：回到等待状态，提示符要回来。
+                prompt_due = True
         except KeyboardInterrupt:
             # 提示符上的 Ctrl-C：与 EOF 同一条路，写 `session/end`、退出码 0。
             pass

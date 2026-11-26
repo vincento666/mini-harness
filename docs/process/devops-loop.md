@@ -63,9 +63,9 @@
 1. **顺序**：按 `tasks.md` 从上到下推进，不跳组；设计确需前置时先写清理由，实现仍等前序任务。
 2. **切片**：每个切片先写判据（断言日志或外部行为）→ 实现 → 跑门禁 → 勾任务。
 3. **弹窗**：只在 §0.1 的五类停点、或确实没把握的模糊处弹；其余连续推进，过程输出即审计依据。
-4. **收尾**：全量四道 → 变异一轮 → 两轴子代理复核 → 关键 UAT（人跑或明确授权代跑）→ 归档 → 人批合并。
+4. **收尾**：全量四道 → 变异一轮 → 两轴子代理复核 → 关键 UAT（人跑或明确授权代跑）→ 归档 → 人批合并；**合入 `main` 前必跑 `scripts/branch-inventory.sh`，把未合并分支/未归档 change 清单连同处置建议（合并 / 放弃 / 保留理由）交人逐条确认后才合**（2026-11-26 人裁：`host-event-sync-contract` 归档完未合入、`m13-goal-rounds` 挂分支 6 天无人掌握，均由事后盘点才暴露）。
 5. **判据与汇报**：问「删掉实现里哪一行它会红」；每轮只给「数字 + 已知缺口」。
-6. **工具入口**：`scripts/gates.sh`（四道 + 覆盖率三步）；`scripts/new-change.sh`、`scripts/check-change.sh`（归档前校验）、`scripts/install-hooks.sh`。
+6. **工具入口**：`scripts/gates.sh`（四道 + 覆盖率三步）；`scripts/new-change.sh`、`scripts/check-change.sh`（归档前校验）、`scripts/branch-inventory.sh`（未合并分支/change 盘点）、`scripts/install-hooks.sh`。
 7. **硬兜底**：机械步骤一律脚本化，由 git hook / harness hook / CI 执行，不靠记性。
 
 ## 1. 什么时候找人
@@ -161,7 +161,7 @@ propose 后、每个切片提交后、三半收尾后、归档前。每次三行
 
 在**已批准的计划与 change 范围**内，agent 连续推进，不逐步请示：
 
-- **自动做**：一手调研、propose 起草、契约与对齐复核、apply（红→绿切片）、跑四道门禁、两轴审查、三态验收里的真实端点、归档、推 `change/<id>` 分支。
+- **自动做**：接手与 propose/apply 前跑 `scripts/branch-inventory.sh` 盘点未合并分支与未归档 change（只读、只提醒）、一手调研、propose 起草、契约与对齐复核、apply（红→绿切片）、跑四道门禁、两轴审查、三态验收里的真实端点、归档、推 `change/<id>` 分支。
 - **人来定**：六类升级点（§1.1）、计划变更、UAT 归属、merge `main`、改 AGENTS/ADR/流程规则。
 - **停止条件**：六类升级、merge、UAT、计划外的新需求。除此之外**不问「要不要继续」**，直接做并阶段播报。
 

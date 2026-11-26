@@ -40,6 +40,20 @@ def _registry() -> ToolRegistry:
     return ToolRegistry(goal_tool_definitions())
 
 
+def test_create_goal_description_teaches_when_to_use_it_and_to_stop() -> None:
+    """描述必须写成条件句：何时用、建完就停、只做计划（change `goal-ux-one-line`）。
+
+    用户只给一句话时，模型只有描述与政策段两份依据；描述里若没有「建完结束本轮」，
+    模型会在建目标的那一轮把活干完，`[轮]` 编号随即与内容错位（场次 3 会话 `c1b33863…`）。
+    """
+    definition = next(item for item in goal_tool_definitions() if item.name == "create_goal")
+
+    assert "要写文件" in definition.description
+    assert "结束本轮" in definition.description
+    assert "只做本轮计划" in definition.description
+    assert "一次做完" not in definition.description
+
+
 def _seeded(phase: str, **overrides: Any) -> list[EventRecord]:
     snapshot: dict[str, Any] = {
         "id": "g-old",
