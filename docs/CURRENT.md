@@ -45,7 +45,7 @@
 
 - **L4 轮内工作量预算（待办，2026-11-25）**：`goal-round-pacing` 只解决「写满一轮不杀死长任务」；如果 L3 之后仍出现「一轮里写太多、轮次粒度不够用」，再开 `goal-round-budget`（按工具调用数/写入数给轮内预算），不要塞进 L3。L1（工具描述条件句）与 L2（`create_goal` 后硬停）经与 DSH 对照不做。
 
-- **思考帧已实现、未合入 main（2026-11-25 核对，纠正「deferred」定性）**：`origin/change/reasoning-mode-and-budget` 领先 main **50 个提交**（28 项 tasks 勾了 27 项，只剩 7.2 UAT 人跑：真实 reasoner 的 blocks/usage、`fold` 读 blocks、SSE `reasoning/delta`、`reasoning_tokens` 不重复计都已落地）；`origin/change/chat-streaming-shell` 领先 **47 个提交**（`cli/main.py` 的 `[thinking]` 开始标志、`on_reasoning`、thinking 结束行、`[answer]`）。`6857ce4` 是分支内 merge，**不是 main**。后续动作是**把这两条分支合入/迁移到当前主线**，并处理 v2 改词、词表与命名冲突，**不是新开 change 重做**。UAT 场次 1 观察到的「正文首帧前约 10 秒 reasoning 空白」正对应这个未合入能力。
+- **思考帧已合入当前分支（2026-11-26，`merge/reasoning`）**：`change/reasoning-mode-and-budget` 已合并并迁移到当前主线（14 文件 45 处冲突按「当前线骨架优先、分支能力补入」处置；词表迁移 turn→step / segment→turn；政策仍 v3）。能力：`model/response.blocks` 保序（reasoning/text/tool-call）、live `reasoning/delta` ephemeral 帧、chat 的 `[thinking] ` 走 stderr、取消写 interrupted message、失败带前缀写 `model/attempt`、`usage.reasoning_tokens` 不重复计。全量 **962 passed / 6 skipped**；ruff/mypy 全绿；openspec validate 31 项。剩余：1.8 真实 reasoner 一场、1.9 tty 人跑（`[thinking]` 恰一次）、1.7 覆盖率门禁（后台跑）与归档。
 
 - **工具调用参数增量的终端可见性（待办，2026-11-25，另开 change）**：`restore-chat-streaming` 场次 1（会话 `82db8aad…`）暴露：模型把长文本放进 `tool_calls.arguments` 时正文 sink 无内容、参数增量也不呈现，`[tool] bash {...}` 在流末一次性打全文。provider 的流式 `tool_calls` 只拼装、不交给正文 sink（H2 既有边界）。后续另开 change：把参数增量接进 sink、在 stderr 给可见反馈，不污染 stdout 正文投影、不改日志形状；范围与判据另立 propose。
 

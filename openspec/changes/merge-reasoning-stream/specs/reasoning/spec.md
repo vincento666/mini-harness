@@ -18,7 +18,7 @@
 
 ### Requirement: reasoning 只以 ephemeral delta 实时输出
 
-系统 SHALL 提供 `reasoning/delta` SSE 事件：`turn_id`、`index`、`text`；MUST NOT 写日志、MUST NOT 带 durable `id`、MUST NOT 参与 `Last-Event-ID` 游标。正文 `model/delta` 保持不变；reasoning MUST NOT 混进 `model/delta`。
+系统 SHALL 提供 `reasoning/delta` SSE 事件：`step_id`、`index`、`text`；MUST NOT 写日志、MUST NOT 带 durable `id`、MUST NOT 参与 `Last-Event-ID` 游标。正文 `model/delta` 保持不变；reasoning MUST NOT 混进 `model/delta`。
 
 #### Scenario: 思考与正文分开
 
@@ -27,7 +27,7 @@
 
 #### Scenario: delta 不进日志
 
-- **WHEN** 一次带 reasoning 的回合结束
+- **WHEN** 一次带 reasoning 的模型调用结束
 - **THEN** 日志里没有 `reasoning/delta` 记录，只有最终 `model/response`
 
 ### Requirement: 成功 attempt 与失败 attempt 分开落账
