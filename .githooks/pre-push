@@ -1,0 +1,14 @@
+#!/usr/bin/env sh
+# pre-push（非阻断，2026-11-26 人裁）：推 main 时打印未合并分支/未归档 change 盘点。
+# 只负责「强制看见」：处置（合并/放弃/保留理由）无法自动判定，须人逐条确认。
+set -eu
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+    case "$remote_ref" in
+        refs/heads/main)
+            echo "── 合入 main 前盘点（非阻断提醒）──"
+            "$(git rev-parse --show-toplevel)/scripts/branch-inventory.sh" || true
+            echo "提醒：以上未合并分支/未归档 change 的处置须经人逐条确认后才合（devops-loop §0.6）。"
+            ;;
+    esac
+done
+exit 0

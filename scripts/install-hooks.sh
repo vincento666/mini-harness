@@ -2,7 +2,7 @@
 # 一次性安装：让 git 使用仓库内的 .githooks。
 set -euo pipefail
 cd "$(dirname "$0")/.."
-chmod +x .githooks/pre-commit scripts/pre-commit.sh
+chmod +x .githooks/pre-commit .githooks/pre-push scripts/pre-commit.sh
 if [ "$(git config --get core.hooksPath || true)" = ".githooks" ]; then
   exit 0
 fi

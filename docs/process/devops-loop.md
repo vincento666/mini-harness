@@ -65,7 +65,7 @@
 3. **弹窗**：只在 §0.1 的五类停点、或确实没把握的模糊处弹；其余连续推进，过程输出即审计依据。
 4. **收尾**：全量四道 → 变异一轮 → 两轴子代理复核 → 关键 UAT（人跑或明确授权代跑）→ 归档 → 人批合并；**合入 `main` 前必跑 `scripts/branch-inventory.sh`，把未合并分支/未归档 change 清单连同处置建议（合并 / 放弃 / 保留理由）交人逐条确认后才合**（2026-11-26 人裁：`host-event-sync-contract` 归档完未合入、`m13-goal-rounds` 挂分支 6 天无人掌握，均由事后盘点才暴露）。
 5. **判据与汇报**：问「删掉实现里哪一行它会红」；每轮只给「数字 + 已知缺口」。
-6. **工具入口**：`scripts/gates.sh`（四道 + 覆盖率三步）；`scripts/new-change.sh`、`scripts/check-change.sh`（归档前校验）、`scripts/branch-inventory.sh`（未合并分支/change 盘点）、`scripts/install-hooks.sh`。
+6. **工具入口**：`scripts/gates.sh`（四道 + 覆盖率三步）；`scripts/new-change.sh`、`scripts/check-change.sh`（归档前校验）、`scripts/branch-inventory.sh`（未合并分支/change 盘点，`.githooks/pre-push` 推 main 时自动打印、非阻断）、`scripts/install-hooks.sh`。
 7. **硬兜底**：机械步骤一律脚本化，由 git hook / harness hook / CI 执行，不靠记性。
 
 ## 1. 什么时候找人
