@@ -291,6 +291,33 @@
 - Next use: 重命名一个计数或上限时，列出所有消费它的判定表（不续跑集合、退出码映射、停滞闸门），逐条问「新单位下这个结论还成立吗」；别只做全文替换。
 - Status: inbox
 
+### L-067
+- Date: 2026-11-01
+- Context: reasoning 模式把 assistant message 从单 `content` 升级成有序 blocks
+- Observation: 「失败就不写任何东西」会丢掉排查证据；DSH 把成功 message 与失败 attempt 分开：`assistant/message` 进历史，`assistant/attempt` 只留 stream，用户取消有前缀时另写 `interrupted:true` message。证据和历史是两条不同的写入，不能用一条 `model/response` 硬塞
+- Evidence: `model/attempt` 进事件词表但 `fold` 忽略；取消写 interrupted response 的测试；真实 reasoner 的 reasoning_tokens 是 output 子集
+- Next use: 流式失败先问「证据写哪条 log-only 事件」，再问「模型历史要不要这条」；不要把 attempt 和 message 合并
+- Promotion candidate: 与 L-063（失败码不是失败谓词）同族；本轮不占 AGENTS.md 额度
+- Status: inbox
+
+### L-068
+- Date: 2026-11-02
+- Context: Web 壳通过 Host 恢复 UI 投影，讨论 snapshot、游标与断流
+- Observation: `snapshot.messages` 是 `fold` 的模型上下文，不是完整 UI transcript；只靠 snapshot 会丢 tool/approval/error 行。完整 UI 首次加载必须从 seq 0 读 durable events。SSE 游标只重放 durable 记录，不重传 ephemeral delta；`stream/end` 必须区分业务终止与物理断线，否则客户端会无限重连
+- Evidence: `host-stream-sync` 规格；`test_snapshot_precedes_only_new_frames` 的 system role；`test_session_end_sends_stream_end_without_id`；真实 host session `e10dbb4c...`
+- Next use: 设计远端壳初始化先问「snapshot 是模型基线还是 UI 基线」；断流先问「有没有终止帧」
+- Promotion candidate: 与 L-067 同族（证据 vs 历史）；本轮不占 AGENTS.md 额度
+- Status: inbox
+
+### L-069
+- Date: 2026-11-03
+- Context: 给 chat 加 `--stream`，复用 kernel sink
+- Observation: host 与 chat 的差异应隔离在 adapter：host 需要 SSE/游标/重连，chat 只需要 stdout/stderr/去重/回退。把 sink 以上的传输语义抽成“通用层”会造出无人使用的协议；但 chat 也有自己的小状态（streamed_turns、thinking 行头），不能假装它只是 host 的迷你版
+- Evidence: `ChatStreamRenderer` 只依赖 sink；`--no-stream` 旧行为不变；host sync spec 与 chat spec 分开
+- Next use: 新入口先问“它缺的是 kernel 语义还是传输语义”；只复用前者
+- Promotion candidate: 与 L-067/L-068 同族（证据/传输边界）；本轮不占 AGENTS.md 额度
+- Status: inbox
+
 ## 收敛纪律（防止本文件与 AGENTS.md 线性膨胀）
 - 每个里程碑收尾扫一次，**允许输出 `NO-PROMOTION`**（没有可复用信号就不写条目）。
 - 收件箱条目超过 **15 条**必须先消化再收新的：合并同类、把已被代码或规格自证的条目删掉。

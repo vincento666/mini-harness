@@ -18,12 +18,16 @@ mini 的落法：
 
 ## 2. 帧的形状
 
-- `snapshot`：H1 已有；`{session_id, status, last_seq, messages}`。
-- durable：`id: <seq>`、`event: <记录类型>`、`data: <整行记录 JSON>`；与日志逐字段相等。
+- `snapshot`：H1 已有；`{session_id, status, last_seq, messages}`。`messages` 是 `fold` 出来的**模型上下文**，不是完整 UI transcript；首屏完整 UI 必须从 seq 0 读 durable 事件。
+- durable：`id: <seq>`、`event: <记录类型>`、`data: <整行记录 JSON>`；与日志逐字段相等。`model/response.payload.blocks`、`interrupted`、`model/attempt`、`error/*` 原样透出。
 - `model/delta`：`event: model/delta`，**不带 `id`**；`data: {turn_id, index, text}`。`index` 从 0 递增；`text` 是本次增量。它不进日志，也不参与 `Last-Event-ID`。
-- 一次模型调用的顺序：`model/request`（durable）→ 若干 `model/delta`（ephemeral）→ `model/response`（durable）。`model/response` 的 `content` 是完整文本；UI 用它替换掉已经显示的增量。
+- `reasoning/delta`：同 ephemeral，`data: {turn_id, index, text, kind: "reasoning"}`；与 `model/delta` 分开。
+- `stream/end`：Host 主动终止时发 `event: stream/end`，`data: {reason, code?}`；无 `id`、不落日志。物理断线不发；客户端收到后不自动重连。
+- 一次模型调用的顺序：`model/request`（durable）→ 若干 `model/delta` / `reasoning/delta`（ephemeral）→ `model/response`（durable）。`model/response` 的 `content` 是完整文本；UI 用它替换掉已经显示的增量。
 
-**不发什么**：工具调用的逐字 delta、reasoning token、usage 的逐块——工具调用在 `model/response` 里一次给出，usage 也在最终回复里。H2 只流「可见的正文」。
+**游标**：不带 `from` / `Last-Event-ID` 时从 seq 0（含）开始；`?from=N` 与 `Last-Event-ID: N` 只发 `seq > N`。`from=0` 会跳过 seq 0，这是半开区间的结果；需要 seq 0 时不传游标。只有 durable 帧有 `id`；delta 不推进游标。
+
+**不发什么**：工具调用的逐字 delta、usage 的逐块——工具调用在 `model/response` 里一次给出，usage 也在最终回复里。reasoning 只发 `reasoning/delta`，不混进正文。
 
 ## 3. Provider 侧
 
@@ -35,10 +39,13 @@ mini 的落法：
 
 ## 4. 断线、重连与 UI 客户端
 
-- 重连带 `?from=<last_seq>` 与 `?snapshot=1`：先拿 snapshot（当前 `last_seq` + 折叠后的消息），再从 `last_seq + 1` 收 durable 帧。
+- 首次完整 UI：不带 cursor / snapshot 连接 `/events`，从 seq 0 读 durable 事件，自建 projection。
+- 重连带 `?from=<last_seq>` 与 `?snapshot=1`：先拿 snapshot（当前 `last_seq` + 折叠后的消息），再从 `last_seq + 1` 收 durable 帧。snapshot 只做消息级基线，不补 tool/approval/error 的完整 UI 历史。
 - 重连时**已经丢掉的 delta 不补**；UI 以最终 `model/response` 为准。如果重连发生在一次调用中途，UI 先显示「正在生成」，等最终回复到达再替换。
-- UI 客户端用 `fetch` + `ReadableStream` 解析 SSE（`EventSource` 不能带 Authorization header）；逐行解析 `id:` / `event:` / `data:`，按 `event` 分派；`model/delta` 无 `id`，不更新 `last_seq`。
+- 断流时：收到 `stream/end` 表示 Host 主动终止，**不要自动重连**；没有 `stream/end` 才是可重连断线，带 last_seq 重连。
+- UI 客户端用 `fetch` + `ReadableStream` 解析 SSE（`EventSource` 不能带 Authorization header）；逐行解析 `id:` / `event:` / `data:`，按 `event` 分派；`model/delta` / `reasoning/delta` / `stream/end` 无 `id`，不更新 `last_seq`。
 - 多个客户端各自一个 tailer；一个慢读者只拖自己的连接，不拖内核（与 H1 相同）。
+- **不提供原始日志下载接口**：远端只能读 snapshot + events；原始 JSONL 与 `replay` 留在 Host 本机。
 
 ## 5. 协议版本
 

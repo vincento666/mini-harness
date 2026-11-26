@@ -59,7 +59,12 @@ class _Scripted:
         return goal.rounds_started
 
     async def generate(
-        self, messages: Any, tools: Any, signal: Any, on_delta: Any = None
+        self,
+        messages: Any,
+        tools: Any,
+        signal: Any,
+        on_delta: Any = None,
+        on_reasoning: Any = None,
     ) -> AssistantTurn | ProviderFailure:
         self.calls += 1
         if self.calls == 1:
@@ -209,7 +214,12 @@ class _AlwaysTool:
         self.calls = 0
 
     async def generate(
-        self, messages: Any, tools: Any, signal: Any, on_delta: Any = None
+        self,
+        messages: Any,
+        tools: Any,
+        signal: Any,
+        on_delta: Any = None,
+        on_reasoning: Any = None,
     ) -> AssistantTurn | ProviderFailure:
         self.calls += 1
         if self.calls == 1:
@@ -277,7 +287,12 @@ class _AsksThenStops:
         self.calls = 0
 
     async def generate(
-        self, messages: Any, tools: Any, signal: Any, on_delta: Any = None
+        self,
+        messages: Any,
+        tools: Any,
+        signal: Any,
+        on_delta: Any = None,
+        on_reasoning: Any = None,
     ) -> AssistantTurn | ProviderFailure:
         self.calls += 1
         if self.calls == 1:
@@ -371,7 +386,12 @@ class _TwoTurnRounds:
         self.calls = 0
 
     async def generate(
-        self, messages: Any, tools: Any, signal: Any, on_delta: Any = None
+        self,
+        messages: Any,
+        tools: Any,
+        signal: Any,
+        on_delta: Any = None,
+        on_reasoning: Any = None,
     ) -> AssistantTurn | ProviderFailure:
         self.calls += 1
         if self.calls == 1:

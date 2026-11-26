@@ -47,10 +47,14 @@ from mini_harness.loop.goal_driver import NO_CONTINUE_REASONS, RoundDecision, ne
 from mini_harness.loop.settings import SessionSettings
 from mini_harness.provider.contract import (
     AssistantTurn,
+    Block,
     DeltaSink,
     Provider,
     ProviderFailure,
+    ReasoningBlock,
+    ReasoningSink,
     StepDeltaSink,
+    TextBlock,
     ToolCall,
 )
 from mini_harness.session.delegation import DelegationState
@@ -159,6 +163,8 @@ class SessionEnv:
     approval_gate: ApprovalGate = STDIN_APPROVAL_GATE
     question_gate: QuestionGate = UNAVAILABLE_QUESTION_GATE
     on_delta: StepDeltaSink | None = None
+    # 思考增量（merge-reasoning-stream）：与正文增量分开走同一 sink 契约，思考不进 stdout。
+    on_reasoning: ReasoningSink | None = None
     # 步末回退（restore-chat-streaming）：`step/end` 落盘之后、下一步开始之前调用。
     on_step_end: StepEndSink | None = None
     # 委派账本：活跃子代理数与宿主登记回调（M12）；每个会话一份。
@@ -612,19 +618,6 @@ class DeltaState:
     streamed_any: bool = False
 
 
-def _forward_delta(sink: StepDeltaSink | None, step_id: str, state: DeltaState) -> DeltaSink | None:
-    """把宿主的 `(step_id, text)` sink 包成 provider 只认 `text` 的回调，并记下有没有非空增量。"""
-    if sink is None:
-        return None
-
-    async def forward(text: str) -> None:
-        if text:
-            state.streamed_any = True
-        await sink(step_id, text)
-
-    return forward
-
-
 def _notify_step_end(env: SessionEnv, step_id: str, content: str, steps: int) -> TurnOutcome | None:
     """调步末钩子。渲染器的故障不该打断一轮：记一条 `error/internal`，`step/end` 已经在盘上。"""
     if env.on_step_end is None:
@@ -641,15 +634,107 @@ def _notify_step_end(env: SessionEnv, step_id: str, content: str, steps: int) ->
     return None
 
 
-def _abort_turn(log: EventLog, step_id: str, steps: int) -> TurnOutcome:
-    """流式取消的收尾：不写半条 `model/response`，只写 `error/abort` 与 ABORTED。"""
-    failure = _append_all(
-        log,
+def _forward_reasoning(sink: ReasoningSink | None, step_id: str) -> ReasoningSink | None:
+    """把宿主 sink 包成 provider 只认 `(index, text)` 的回调，绑定当前步。"""
+    if sink is None:
+        return None
+
+    async def forward(_step_id: str, index: int, text: str) -> None:
+        await sink(step_id, index, text)
+
+    return forward
+
+
+@dataclass
+class _StepCapture:
+    """收当前步已交付的 reasoning/text 前缀；取消/失败时它就是 interrupted/attempt 的内容。"""
+
+    reasoning: list[str]
+    text: list[str]
+
+    def __init__(self) -> None:
+        self.reasoning = []
+        self.text = []
+
+    def blocks(self) -> list[Block]:
+        blocks: list[Block] = []
+        if self.reasoning:
+            blocks.append(ReasoningBlock(text="".join(self.reasoning)))
+        if self.text:
+            blocks.append(TextBlock(text="".join(self.text)))
+        return blocks
+
+
+def _capture_sinks(
+    capture: _StepCapture,
+    on_delta: StepDeltaSink | None,
+    on_reasoning: ReasoningSink | None,
+    step_id: str,
+    delta_state: DeltaState | None = None,
+) -> tuple[DeltaSink | None, ReasoningSink | None]:
+    """把 provider sink 包成「先收前缀、再转发宿主」；没有宿主 sink 也收。"""
+
+    async def text(text_value: str) -> None:
+        capture.text.append(text_value)
+        if delta_state is not None and text_value:
+            delta_state.streamed_any = True
+        if on_delta is not None:
+            await on_delta(step_id, text_value)
+
+    async def reasoning(_step_id: str, index: int, text_value: str) -> None:
+        capture.reasoning.append(text_value)
+        if on_reasoning is not None:
+            await on_reasoning(step_id, index, text_value)
+
+    return text, reasoning
+
+
+def _abort_turn(
+    log: EventLog,
+    step_id: str,
+    steps: int,
+    blocks: Sequence[Block] = (),
+    *,
+    evidence: bool = False,
+) -> TurnOutcome:
+    """流式取消的收尾：有已交付前缀写 interrupted message，否则只写 attempt + abort。"""
+    events: list[tuple[str, dict[str, Any]]] = []
+    if blocks:
+        events.append(
+            (
+                "model/response",
+                {
+                    "step_id": step_id,
+                    "content": "\n".join(
+                        block.text for block in blocks if isinstance(block, TextBlock)
+                    ),
+                    "blocks": [block.model_dump(mode="json") for block in blocks],
+                    "tool_calls": [],
+                    "finish_reason": "interrupted",
+                    "interrupted": True,
+                },
+            )
+        )
+    else:
+        if evidence:
+            events.append(
+                (
+                    "model/attempt",
+                    {
+                        "step_id": step_id,
+                        "status": "aborted",
+                        "error_code": STOP_ABORTED,
+                        "partial_blocks": [],
+                    },
+                )
+            )
+    events.extend(
         [
             ("error/abort", {"step_id": step_id, "code": STOP_ABORTED, "detail": "取消被置位"}),
             ("step/end", {"step_id": step_id, "stop_reason": STOP_ABORTED}),
-        ],
+        ]
     )
+    failure = _append_all(log, events)
     if failure is not None:
         return _turn_failure(failure, steps)
     return TurnOutcome(stop_reason=STOP_ABORTED, steps=steps)
@@ -661,15 +746,32 @@ async def _provider_error(
     failure: ProviderFailure,
     steps: int,
     retry_events: Sequence[tuple[str, dict[str, Any]]],
+    partial_blocks: Sequence[Block] = (),
 ) -> TurnOutcome:
-    """provider 失败作为**步**收尾：`error/model` + `step/end`（design D7）。
+    """provider 失败作为**步**收尾：有前缀先写 attempt，再 `error/model` + `step/end`（design D7）。
 
     轮的边界与 `session/end` 不在这里——它们归轮与入口（ADR-0011）。
     """
+    attempt = (
+        [
+            (
+                "model/attempt",
+                {
+                    "step_id": step_id,
+                    "status": "error",
+                    "error_code": failure.code,
+                    "partial_blocks": [block.model_dump(mode="json") for block in partial_blocks],
+                },
+            )
+        ]
+        if partial_blocks
+        else []
+    )
     written = _append_all(
         log,
         [
             *retry_events,
+            *attempt,
             ("error/model", {"step_id": step_id, "code": failure.code, "detail": failure.detail}),
             ("step/end", {"step_id": step_id, "stop_reason": STOP_PROVIDER_ERROR}),
         ],
@@ -775,6 +877,7 @@ async def _recover_overflowed_request(
     retry_events: Sequence[tuple[str, dict[str, Any]]],
     on_delta: DeltaSink | None = None,
     delta_state: DeltaState | None = None,
+    on_reasoning: ReasoningSink | None = None,
 ) -> _RetriedRequest | TurnOutcome:
     """provider 报出上下文超限时先压一次、再重试一次，上限 1 次（ADR-0019）。
 
@@ -833,7 +936,11 @@ async def _recover_overflowed_request(
     if delta_state is not None:
         delta_state.streamed_any = False
     generated = await provider.generate(
-        folded.messages, registry.specs(), cancel, on_delta=on_delta
+        folded.messages,
+        registry.specs(),
+        cancel,
+        on_delta=on_delta,
+        on_reasoning=on_reasoning,
     )
     attempts = _retry_events(step_id, generated)
     if isinstance(generated, ProviderFailure):
@@ -965,6 +1072,7 @@ def start_session(*, prompt: str, entry: SessionEntry, env: SessionEnv) -> TurnO
         "prompt": prompt,
         "sandbox": settings.sandbox,
         "approval": settings.approval,
+        "reasoning_effort": settings.reasoning_effort,
         "window": settings.window,
         "reserve": settings.reserve,
         "compaction_threshold_ratio": settings.compaction_threshold_ratio,
@@ -1252,7 +1360,14 @@ async def _run_steps(
         step_id = f"t{turn_index}"
         tool_names = [spec.name for spec in registry.specs()]
         delta_state = DeltaState()
-        text_sink = _forward_delta(env.on_delta, step_id, delta_state)
+        capture = _StepCapture()
+        if env.on_delta is None and env.on_reasoning is None:
+            text_sink = None
+            reasoning_sink = None
+        else:
+            text_sink, reasoning_sink = _capture_sinks(
+                capture, env.on_delta, env.on_reasoning, step_id, delta_state
+            )
 
         failure = _append_all(log, [("step/start", {"step_id": step_id})])
         if failure is not None:
@@ -1323,7 +1438,11 @@ async def _run_steps(
             return _turn_failure(failure, steps)
 
         generated = await provider.generate(
-            context.messages, registry.specs(), cancel, on_delta=text_sink
+            context.messages,
+            registry.specs(),
+            cancel,
+            on_delta=text_sink,
+            on_reasoning=reasoning_sink,
         )
         # 重试事实由 provider 带回、由循环写进日志：provider 不碰日志（不变量 A）。
         retry_events = _retry_events(step_id, generated)
@@ -1345,6 +1464,7 @@ async def _run_steps(
                     retry_events=retry_events,
                     on_delta=text_sink,
                     delta_state=delta_state,
+                    on_reasoning=reasoning_sink,
                 )
                 if isinstance(recovered, TurnOutcome):
                     return recovered
@@ -1352,16 +1472,18 @@ async def _run_steps(
             if isinstance(generated, ProviderFailure):
                 if (
                     generated.code == "PROVIDER_ABORTED"
-                    and env.on_delta is not None
+                    and (env.on_delta is not None or env.on_reasoning is not None)
                     and cancel.is_set()
                 ):
-                    return _abort_turn(log, step_id, steps)
-                return await _provider_error(log, step_id, generated, steps, retry_events)
+                    return _abort_turn(log, step_id, steps, capture.blocks(), evidence=True)
+                return await _provider_error(
+                    log, step_id, generated, steps, retry_events, capture.blocks()
+                )
 
-        if cancel.is_set() and env.on_delta is not None and delta_state.streamed_any:
-            # 流式读取中途取消：已经显示的增量不补，但不把半条回复写成 durable 真相。
+        if cancel.is_set() and delta_state.streamed_any:
+            # 流式读取中途取消：已交付前缀写成 interrupted message，不写半条成功 response。
             # 没流过增量时走下面的正常路径——模型其实已经完整返回，取消不该吞掉整段。
-            return _abort_turn(log, step_id, steps)
+            return _abort_turn(log, step_id, steps, capture.blocks(), evidence=True)
 
         failure = _append_all(
             log,
@@ -1372,6 +1494,7 @@ async def _run_steps(
                     {
                         "step_id": step_id,
                         "content": generated.content,
+                        "blocks": [block.model_dump(mode="json") for block in generated.blocks],
                         "tool_calls": [
                             call.model_dump(mode="json") for call in generated.tool_calls
                         ],
@@ -1470,6 +1593,7 @@ async def run_session(
     cancel: asyncio.Event,
     approval_gate: ApprovalGate = STDIN_APPROVAL_GATE,
     on_delta: StepDeltaSink | None = None,
+    on_reasoning: ReasoningSink | None = None,
     on_step_end: StepEndSink | None = None,
     skills_registry: SkillRegistry | None = None,
 ) -> RunOutcome:
@@ -1484,6 +1608,7 @@ async def run_session(
         settings=settings,
         approval_gate=approval_gate,
         on_delta=on_delta,
+        on_reasoning=on_reasoning,
         on_step_end=on_step_end,
         skills_registry=skills_registry,
     )

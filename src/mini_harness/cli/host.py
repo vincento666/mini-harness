@@ -147,7 +147,13 @@ def _projection_frame(payload: dict[str, object]) -> bytes:
 
 def _delta_frame(payload: dict[str, object]) -> bytes:
     """ephemeral 帧：不带 `id`，不参与 `Last-Event-ID`，也不落日志。"""
-    return f"event: model/delta\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
+    event = "reasoning/delta" if payload.get("kind") == "reasoning" else "model/delta"
+    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
+
+
+def _stream_end_frame(payload: dict[str, object]) -> bytes:
+    """Host 主动终止标记：无 id、不落日志；物理断线不发。"""
+    return f"event: stream/end\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
 
 
 class HostServer:
@@ -444,6 +450,9 @@ class HostServer:
         try:
             backlog = read_events(handle.log.path)
             if isinstance(backlog, LogReadFailure):
+                await response.write(
+                    _stream_end_frame({"reason": "error", "code": "LOG_UNREADABLE"})
+                )
                 return response
             todos_unit = UNITS["todos"]
             todo_state = todos_unit.init()
@@ -496,6 +505,10 @@ class HostServer:
                             )
                     while not deltas.empty():
                         await response.write(_delta_frame(deltas.get_nowait()))
+                    if handle.stream_ended:
+                        await response.write(_stream_end_frame({"reason": "session_ended"}))
+                        await response.write_eof()
+                        return response
                 except ConnectionResetError:
                     return response
                 await asyncio.sleep(EVENTS_POLL_SECONDS)

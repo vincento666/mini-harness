@@ -205,6 +205,7 @@ class HostSession:
     env: SessionEnv
     created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     status: SessionStatus = SESSION_IDLE
+    stream_ended: bool = False
     queue: deque[str] = field(default_factory=deque)
     cancel: asyncio.Event | None = None
     approvals: dict[str, asyncio.Future[bool | None]] = field(default_factory=dict)
@@ -212,6 +213,7 @@ class HostSession:
     subscribers: set[asyncio.Queue[dict[str, object]]] = field(default_factory=set)
     event_subscribers: set[asyncio.Queue[EventRecord]] = field(default_factory=set)
     delta_indexes: dict[str, int] = field(default_factory=dict)
+    reasoning_indexes: dict[str, int] = field(default_factory=dict)
     task: asyncio.Task[None] | None = None
     stopping: bool = False
     ended_by_failure: bool = False
@@ -251,7 +253,15 @@ class HostSession:
         index = self.delta_indexes.get(step_id, 0)
         self.delta_indexes[step_id] = index + 1
         # 增量属于**步**（一次模型往返），不是轮：键用 `step_id`，与 `model/response` 同口径。
-        frame: dict[str, object] = {"step_id": step_id, "index": index, "text": text}
+        self._publish_ephemeral({"step_id": step_id, "index": index, "text": text})
+
+    async def publish_reasoning(self, step_id: str, index: int, text: str) -> None:
+        """把一个 reasoning 增量广播给当前所有订阅者，与正文共用同一条 ephemeral 队列。"""
+        self._publish_ephemeral(
+            {"step_id": step_id, "index": index, "text": text, "kind": "reasoning"}
+        )
+
+    def _publish_ephemeral(self, frame: dict[str, object]) -> None:
         for queue in list(self.subscribers):
             if queue.full():
                 with contextlib.suppress(asyncio.QueueEmpty):
@@ -340,6 +350,7 @@ def create_session(
         approval_gate=HostApprovalGate(handle),
         question_gate=HostQuestionGate(handle),
         on_delta=handle.publish_delta,
+        on_reasoning=handle.publish_reasoning,
     )
     # 本会话派生的子代理收尾时登记进列表（M12）；它们不占 `MAX_SESSIONS` 的额度。
     handle.env.delegation.on_child_finished = lambda child_env: register_child_session(
@@ -522,6 +533,7 @@ async def _run_turn(
         handle.task = None
         if failed:
             handle.status = SESSION_ENDED
+            handle.stream_ended = True
             handle.ended_by_failure = True
             handle.queue.clear()
         else:
@@ -575,6 +587,7 @@ def close_session(handle: HostSession) -> Failure | None:
             EXIT_INTERNAL_ERROR,
         )
     handle.status = SESSION_ENDED
+    handle.stream_ended = True
     return None
 
 

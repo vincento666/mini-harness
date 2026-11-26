@@ -18,10 +18,15 @@ import httpx
 from mini_harness.events.fold import Message
 from mini_harness.provider.contract import (
     AssistantTurn,
+    Block,
     DeltaSink,
     ProviderAttempt,
     ProviderFailure,
+    ReasoningBlock,
+    ReasoningSink,
+    TextBlock,
     ToolCall,
+    ToolCallBlock,
     ToolSpec,
     Usage,
 )
@@ -49,13 +54,42 @@ _DETAIL_MAX_CHARS = 200
 
 
 def _wire_messages(messages: Sequence[Message]) -> list[dict[str, Any]]:
-    """内核的消息形状 → chat completions 的消息形状（`arguments` 在协议里是 JSON 字符串）。"""
+    """内核的消息形状 → chat completions 的消息形状（`arguments` 在协议里是 JSON 字符串）。
+
+    assistant 有 blocks 时按块回传：reasoning 进 `reasoning_content`，text 进 content，
+    tool-call 仍走 OpenAI 的 tool_calls 形状；旧消息没有 blocks 时保持原行为。
+    """
     wire: list[dict[str, Any]] = []
     for message in messages:
-        entry: dict[str, Any] = {"role": message.role, "content": message.content}
+        reasoning = ""
+        tool_calls = message.tool_calls
+        content = message.content
+        if message.blocks:
+            reasoning = "".join(
+                str(block.get("text", ""))
+                for block in message.blocks
+                if block.get("type") == "reasoning"
+            )
+            content = "\n".join(
+                str(block.get("text", ""))
+                for block in message.blocks
+                if block.get("type") == "text"
+            )
+            tool_calls = [
+                {
+                    "id": block.get("id", ""),
+                    "name": block.get("name", ""),
+                    "arguments": block.get("arguments", {}),
+                }
+                for block in message.blocks
+                if block.get("type") == "tool-call"
+            ]
+        entry: dict[str, Any] = {"role": message.role, "content": content}
+        if reasoning:
+            entry["reasoning_content"] = reasoning
         if message.tool_call_id is not None:
             entry["tool_call_id"] = message.tool_call_id
-        if message.tool_calls:
+        if tool_calls:
             entry["tool_calls"] = [
                 {
                     "id": str(call.get("id", "")),
@@ -65,7 +99,7 @@ def _wire_messages(messages: Sequence[Message]) -> list[dict[str, Any]]:
                         "arguments": json.dumps(call.get("arguments", {}), ensure_ascii=False),
                     },
                 }
-                for call in message.tool_calls
+                for call in tool_calls
             ]
         wire.append(entry)
     return wire
@@ -254,20 +288,32 @@ def _parse_response(
 
     usage = payload.get("usage")
     usage = usage if isinstance(usage, dict) else {}
+    content = str(message.get("content") or "")
+    reasoning = message.get("reasoning_content") or message.get("reasoning")
+    blocks: list[Block] = []
+    if isinstance(reasoning, str) and reasoning:
+        blocks.append(ReasoningBlock(text=reasoning))
+    if content:
+        blocks.append(TextBlock(text=content))
+    blocks.extend(
+        ToolCallBlock(id=call.id, name=call.name, arguments=call.arguments) for call in tool_calls
+    )
     return AssistantTurn(
-        content=str(message.get("content") or ""),
         finish_reason=finish_reason,
+        content=content,
         tool_calls=tool_calls,
+        blocks=blocks,
         usage=_usage_from(usage),
         attempts=list(attempts),
     )
 
 
 def _usage_from(raw: object) -> Usage:
-    """把 provider 的 usage 摊成「未缓存输入 / 缓存读 / 缓存写 / 输出」。
+    """把 provider 的 usage 摊成「未缓存输入 / 缓存读 / 缓存写 / 输出 / 思考」。
 
     DeepSeek 报 `prompt_cache_hit_tokens` + `prompt_cache_miss_tokens`；
     OpenAI 把命中放在 `prompt_tokens_details.cached_tokens`；两者都没有时按未缓存处理。
+    `reasoning_tokens` 是 output 的子集（`completion_tokens_details` 或顶层），缺失按 0。
     """
     usage = raw if isinstance(raw, dict) else {}
     prompt = int(usage.get("prompt_tokens", 0) or 0)
@@ -280,7 +326,15 @@ def _usage_from(raw: object) -> Usage:
     miss = int(usage.get("prompt_cache_miss_tokens", 0) or 0)
     cache_read = hit or cached
     input_tokens = miss if miss else max(prompt - cache_read, 0)
-    return Usage(input_tokens=input_tokens, cache_read_tokens=cache_read, output_tokens=output)
+    out_details = usage.get("completion_tokens_details")
+    out_details = out_details if isinstance(out_details, dict) else {}
+    reasoning = usage.get("reasoning_tokens", out_details.get("reasoning_tokens", 0))
+    return Usage(
+        input_tokens=input_tokens,
+        cache_read_tokens=cache_read,
+        output_tokens=output,
+        reasoning_tokens=int(reasoning or 0),
+    )
 
 
 def _status_failure(
@@ -331,6 +385,7 @@ class OpenAICompatProvider:
         base_url: str,
         model: str,
         api_key: str | None,
+        reasoning_effort: str = "high",
         transport: httpx.AsyncBaseTransport | None = None,
         proxy: str | None = None,
         timeout_s: float = _TIMEOUT_S,
@@ -338,6 +393,7 @@ class OpenAICompatProvider:
         self._base_url = base_url.rstrip("/")
         self._model = model
         self._api_key = api_key
+        self._reasoning_effort = reasoning_effort
         self._transport = transport
         # 显式代理只吃一个 URL（design D1）：不做环境解析，所以 `NO_PROXY=[::1]` 那个坑不会回来。
         # 给了 `transport`（测试注入）就以它为准，代理不参与。
@@ -350,6 +406,7 @@ class OpenAICompatProvider:
         tools: Sequence[ToolSpec],
         signal: asyncio.Event,
         on_delta: DeltaSink | None = None,
+        on_reasoning: ReasoningSink | None = None,
     ) -> AssistantTurn | ProviderFailure:
         if signal.is_set():
             return ProviderFailure(code="PROVIDER_ABORTED", detail="取消信号已置位，未发出请求")
@@ -364,6 +421,8 @@ class OpenAICompatProvider:
             # 决策 23：显式要求允许一轮多个调用，不指望模型的心情。
             "parallel_tool_calls": True,
         }
+        if self._reasoning_effort != "off":
+            body["reasoning_effort"] = self._reasoning_effort
         attempts: list[ProviderAttempt] = []
 
         # trust_env=False：不继承 HTTP_PROXY / NO_PROXY / netrc。
@@ -378,9 +437,9 @@ class OpenAICompatProvider:
         async with httpx.AsyncClient(
             transport=transport, timeout=self._timeout_s, trust_env=False
         ) as client:
-            if on_delta is not None:
+            if on_delta is not None or on_reasoning is not None:
                 return await self._stream_generate(
-                    client, body, headers, attempts, signal, on_delta
+                    client, body, headers, attempts, signal, on_delta, on_reasoning
                 )
             first = await _post(client, self._base_url, body, headers, attempts)
             if isinstance(first, ProviderFailure):
@@ -419,7 +478,8 @@ class OpenAICompatProvider:
         headers: dict[str, str],
         attempts: list[ProviderAttempt],
         signal: asyncio.Event,
-        on_delta: DeltaSink,
+        on_delta: DeltaSink | None,
+        on_reasoning: ReasoningSink | None = None,
         *,
         include_usage: bool = True,
     ) -> AssistantTurn | ProviderFailure:
@@ -448,6 +508,7 @@ class OpenAICompatProvider:
                         attempts,
                         signal,
                         on_delta,
+                        on_reasoning,
                         include_usage=False,
                     )
                 if response.status_code >= 400:
@@ -466,6 +527,7 @@ class OpenAICompatProvider:
                             [*attempts, ProviderAttempt(attempt=1, status=response.status_code)],
                             signal,
                             on_delta,
+                            on_reasoning,
                             include_usage=include_usage,
                         )
                     failure = _status_failure(response, attempts)
@@ -473,6 +535,8 @@ class OpenAICompatProvider:
                     return failure
 
                 content: list[str] = []
+                reasoning_parts: list[str] = []
+                reasoning_index = 0
                 finish_reason: str | None = None
                 usage = Usage()
                 tool_call_parts: dict[int, dict[str, str]] = {}
@@ -507,10 +571,17 @@ class OpenAICompatProvider:
                         return _schema_failure("流式 choices[0] 不是对象", attempts)
                     delta = first.get("delta")
                     if isinstance(delta, dict):
+                        reasoning = delta.get("reasoning_content")
+                        if isinstance(reasoning, str) and reasoning:
+                            reasoning_parts.append(reasoning)
+                            if on_reasoning is not None:
+                                await on_reasoning("", reasoning_index, reasoning)
+                                reasoning_index += 1
                         text = delta.get("content")
                         if isinstance(text, str) and text:
                             content.append(text)
-                            await on_delta(text)
+                            if on_delta is not None:
+                                await on_delta(text)
                         raw_calls = delta.get("tool_calls")
                         if isinstance(raw_calls, list):
                             for raw_call in raw_calls:
@@ -555,10 +626,18 @@ class OpenAICompatProvider:
         tool_calls = _stream_tool_calls(tool_call_parts, attempts)
         if isinstance(tool_calls, ProviderFailure):
             return tool_calls
+        blocks: list[Block] = []
+        if reasoning_parts:
+            blocks.append(ReasoningBlock(text="".join(reasoning_parts)))
+        if content:
+            blocks.append(TextBlock(text="".join(content)))
+        blocks.extend(
+            ToolCallBlock(id=call.id, name=call.name, arguments=call.arguments)
+            for call in tool_calls
+        )
         return AssistantTurn(
-            content="".join(content),
             finish_reason=finish_reason,
-            tool_calls=tool_calls,
+            blocks=blocks,
             usage=usage,
             attempts=list(attempts),
         )

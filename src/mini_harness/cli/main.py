@@ -515,6 +515,100 @@ def _tool_observer() -> Callable[[EventRecord], None]:
     return observe
 
 
+class _ChatStreamRenderer:
+    """`--stream` 的终端适配器：正文增量写 stdout、思考写 stderr、步末补打、轮末收行。
+
+    它只碰 stdout/stderr，不读日志、不判停止理由、不碰事件（design D3）。
+    `already_shown` 同时是「本会话哪些步已经显示过」，轮末投影据此去重。
+    思考走 stderr 且只打一次 `[thinking] `：思考不进 stdout 正文（merge-reasoning-stream D2）。
+    """
+
+    def __init__(self) -> None:
+        self.already_shown: set[str] = set()
+        self._marked = False
+        self._wrote = False
+        self._thinking = False
+        self._thought = False
+
+    def _close_thinking(self) -> None:
+        """思考段收尾：换行，把 stderr 上那一行封住。"""
+        if self._thinking:
+            sys.stderr.write("\n")
+            sys.stderr.flush()
+            self._thinking = False
+
+    def _mark(self) -> None:
+        """每一轮第一次输出正文之前打一次 `[answer] `，走 stderr（design D4）。"""
+        if self._marked:
+            return
+        self._close_thinking()
+        sys.stderr.write("[answer] ")
+        sys.stderr.flush()
+        self._marked = True
+
+    async def reasoning(self, step_id: str, index: int, text: str) -> None:
+        """思考增量走 stderr，每步第一次打 `[thinking] `；正文开始前的思考先收行。"""
+        if not text:
+            return
+        if self._marked:
+            # 同一轮里正文已开始又来了思考：换行分开，不把两段粘在一起。
+            sys.stderr.write("\n")
+            sys.stderr.flush()
+            self._marked = False
+        if not self._thinking:
+            sys.stderr.write("[thinking] ")
+            self._thinking = True
+            self._thought = True
+        sys.stderr.write(text)
+        sys.stderr.flush()
+
+    async def text(self, step_id: str, text: str) -> None:
+        if not text:
+            return
+        if not text.strip():
+            # 纯空白增量（换行、缩进）照写，但不当作「有正文」：不打标记、不算已显示，
+            # 步末仍能回退完整正文——否则一段以空行开头的回复可能整段不显示。
+            sys.stdout.write(text)
+            sys.stdout.flush()
+            return
+        self._mark()
+        sys.stdout.write(text)
+        sys.stdout.flush()
+        self._wrote = True
+        self.already_shown.add(step_id)
+
+    def on_step_end(self, step_id: str, content: str) -> None:
+        """没有增量的步在步末补一次；空正文（只调工具的步）不回退，免得出一条空行。
+
+        回退**不**打 `[answer] `：那个标记只属于真正的增量流（spec「空 delta 不触发标记」）。
+        """
+        if step_id in self.already_shown or not content.strip():
+            return
+        self._close_thinking()
+        sys.stdout.write(content)
+        sys.stdout.flush()
+        self._wrote = True
+        self.already_shown.add(step_id)
+
+    def finish_turn(self) -> None:
+        """一轮结束：写过正文才换行，并重置 `[answer]`/`[thinking]` 标记——目标连续多轮各占一行。
+
+        只有思考流、正文走步末回退的那一轮补一个 `[answer] `：屏幕上要分得清思考与回答
+        （纯无增量的步仍不打标记，spec「空 delta 不触发标记」不变）。
+        """
+        if self._wrote and not self._marked and self._thought:
+            sys.stderr.write("[answer] ")
+            sys.stderr.flush()
+            self._marked = True
+        self._close_thinking()
+        if self._wrote:
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+        self._marked = False
+        self._wrote = False
+        self._thought = False
+
+
 def _print_new_replies(
     log: EventLog, printed: int, already_shown: set[str] | None = None
 ) -> int | LogReadFailure:
@@ -543,62 +637,6 @@ def _print_new_replies(
         if content.strip():
             print(content)
     return seen
-
-
-class _ChatStreamRenderer:
-    """`--stream` 的终端适配器：写正文增量、步末补打没有增量的步、轮末收行。
-
-    它只碰 stdout/stderr，不读日志、不判停止理由、不碰事件（design D3）。
-    `already_shown` 同时是「本会话哪些步已经显示过」，轮末投影据此去重。
-    """
-
-    def __init__(self) -> None:
-        self.already_shown: set[str] = set()
-        self._marked = False
-        self._wrote = False
-
-    def _mark(self) -> None:
-        """每一轮第一次输出正文之前打一次 `[answer] `，走 stderr（design D4）。"""
-        if self._marked:
-            return
-        sys.stderr.write("[answer] ")
-        sys.stderr.flush()
-        self._marked = True
-
-    async def text(self, step_id: str, text: str) -> None:
-        if not text:
-            return
-        if not text.strip():
-            # 纯空白增量（换行、缩进）照写，但不当作「有正文」：不打标记、不算已显示，
-            # 步末仍能回退完整正文——否则一段以空行开头的回复可能整段不显示。
-            sys.stdout.write(text)
-            sys.stdout.flush()
-            return
-        self._mark()
-        sys.stdout.write(text)
-        sys.stdout.flush()
-        self._wrote = True
-        self.already_shown.add(step_id)
-
-    def on_step_end(self, step_id: str, content: str) -> None:
-        """没有增量的步在步末补一次；空正文（只调工具的步）不回退，免得出一条空行。
-
-        回退**不**打 `[answer] `：那个标记只属于真正的增量流（spec「空 delta 不触发标记」）。
-        """
-        if step_id in self.already_shown or not content.strip():
-            return
-        sys.stdout.write(content)
-        sys.stdout.flush()
-        self._wrote = True
-        self.already_shown.add(step_id)
-
-    def finish_turn(self) -> None:
-        """一轮结束：写过正文才换行，并重置 `[answer]` 标记——目标连续多轮各占一行。"""
-        if self._wrote:
-            sys.stdout.write("\n")
-            sys.stdout.flush()
-        self._marked = False
-        self._wrote = False
 
 
 # 只有这一种收尾不打那一行，其余收尾理由一律打（design D4 与 D5；2026-10-23 人裁决：写反面集合）。
@@ -731,6 +769,7 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals, *, stream: bo
         skills_registry=prepared.skills_registry,
         question_gate=STDIN_QUESTION_GATE,
         on_delta=renderer.text if renderer is not None else None,
+        on_reasoning=renderer.reasoning if renderer is not None else None,
         on_step_end=renderer.on_step_end if renderer is not None else None,
     )
     if not prepared.resumed:

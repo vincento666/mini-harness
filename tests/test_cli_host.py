@@ -479,6 +479,7 @@ def test_snapshot_precedes_only_new_frames(tmp_path: Path) -> None:
                 assert snapshot["session_id"] == session_id
                 assert snapshot["last_seq"] == expected_last
                 assert isinstance(snapshot["messages"], list)
+                assert snapshot["messages"][0]["role"] == "system"
 
                 client.post(
                     f"/sessions/{session_id}/messages",
@@ -489,6 +490,197 @@ def test_snapshot_precedes_only_new_frames(tmp_path: Path) -> None:
 
         assert int(new_frame["id"]) == expected_last + 1
         assert json.loads(new_frame["data"])["type"] == "turn/start"
+    finally:
+        _stop(process)
+
+
+def test_session_end_sends_stream_end_without_id(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = _mock_fixture(tmp_path)
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(client, workspace, fixture)
+            with client.stream(
+                "GET", f"/sessions/{session_id}/events", headers=_headers()
+            ) as response:
+                lines = response.iter_lines()
+                assert _next_frame(lines)["event"] == "session/start"
+                deleted = client.delete(f"/sessions/{session_id}", headers=_headers())
+                assert deleted.status_code == 200
+
+                frames = []
+                while True:
+                    frame = _next_frame(lines)
+                    frames.append(frame)
+                    if frame["event"] == "stream/end":
+                        break
+
+        assert frames[-1]["data"] == '{"reason": "session_ended"}'
+        assert "id" not in frames[-1]
+        log = session_dir / f"{session_id}.jsonl"
+        assert "stream/end" not in log.read_text(encoding="utf-8")
+    finally:
+        _stop(process)
+
+
+def test_a_broken_log_sends_stream_end_on_reconnect(tmp_path: Path) -> None:
+    """日志读不动时 Host 先发 `stream/end`（LOG_UNREADABLE）再关流，客户端分得清异常终止。
+
+    当前线用 append observer 推 live 事件、不轮询文件（host-event-observer），所以读失败在
+    重连读 backlog 时暴露——这也是唯一会读盘的时刻。
+    """
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = _mock_fixture(tmp_path)
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(client, workspace, fixture)
+            log = session_dir / f"{session_id}.jsonl"
+            with log.open("a", encoding="utf-8") as handle:
+                handle.write("not-json\n")
+
+            with client.stream(
+                "GET", f"/sessions/{session_id}/events", headers=_headers()
+            ) as response:
+                frames = []
+                while True:
+                    frame = _next_frame(response.iter_lines())
+                    frames.append(frame)
+                    if frame["event"] == "stream/end":
+                        break
+
+        payload = json.loads(frames[-1]["data"])
+        assert payload == {"reason": "error", "code": "LOG_UNREADABLE"}
+        assert "id" not in frames[-1]
+    finally:
+        _stop(process)
+
+
+def test_error_frame_preserves_code_and_detail(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = tmp_path / "empty.json"
+    fixture.write_text("[]", encoding="utf-8")
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(client, workspace, fixture)
+            with client.stream(
+                "GET", f"/sessions/{session_id}/events", headers=_headers()
+            ) as response:
+                lines = response.iter_lines()
+                assert _next_frame(lines)["event"] == "session/start"
+                client.post(
+                    f"/sessions/{session_id}/messages",
+                    headers=_headers(),
+                    json={"content": "任务"},
+                )
+                while True:
+                    frame = _next_frame(lines)
+                    if frame["event"] == "error/model":
+                        break
+
+        payload = json.loads(frame["data"])["payload"]
+        assert payload["code"] == "PROVIDER_EXHAUSTED"
+        assert payload["detail"]
+    finally:
+        _stop(process)
+
+
+def test_no_log_download_route(tmp_path: Path) -> None:
+    process = _start_host(tmp_path, _free_port(), HOST_TOKEN)
+    try:
+        port = int(process.args[process.args.index("--port") + 1])
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            response = client.get("/log?path=anything", headers=_headers())
+        assert response.status_code == 404
+    finally:
+        _stop(process)
+
+
+def test_missing_session_and_bad_json_return_http_errors(tmp_path: Path) -> None:
+    process = _start_host(tmp_path, _free_port(), HOST_TOKEN)
+    try:
+        port = int(process.args[process.args.index("--port") + 1])
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            assert (
+                client.get(
+                    "/sessions/00000000000000000000000000000000", headers=_headers()
+                ).status_code
+                == 404
+            )
+            assert (
+                client.post(
+                    "/sessions/00000000000000000000000000000000/messages",
+                    headers=_headers(),
+                    json={},
+                ).status_code
+                == 404
+            )
+            assert (
+                client.post(
+                    "/sessions/00000000000000000000000000000000/cancel", headers=_headers()
+                ).status_code
+                == 404
+            )
+            assert (
+                client.delete(
+                    "/sessions/00000000000000000000000000000000", headers=_headers()
+                ).status_code
+                == 404
+            )
+            bad = client.post(
+                "/sessions",
+                headers={**_headers(), "Content-Type": "application/json"},
+                content="not-json",
+            )
+            assert bad.status_code == 400
+
+            workspace = tmp_path / "workspace"
+            workspace.mkdir(exist_ok=True)
+            session_id = _create_session(client, workspace, _mock_fixture(tmp_path))
+            bad_message = client.post(
+                f"/sessions/{session_id}/messages",
+                headers={**_headers(), "Content-Type": "application/json"},
+                content="not-json",
+            )
+            assert bad_message.status_code == 400
+            bad_approval = client.post(
+                f"/sessions/{session_id}/approvals/c1",
+                headers={**_headers(), "Content-Type": "application/json"},
+                content="not-json",
+            )
+            assert bad_approval.status_code == 400
+            bad_decision = client.post(
+                f"/sessions/{session_id}/approvals/c1",
+                headers=_headers(),
+                json={"decision": "maybe"},
+            )
+            assert bad_decision.status_code == 400
     finally:
         _stop(process)
 
@@ -559,6 +751,75 @@ def test_the_event_stream_mixes_durable_and_delta_frames(tmp_path: Path) -> None
         _stop(process)
 
 
+def test_reasoning_delta_is_a_separate_ephemeral_frame(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    fixture = tmp_path / "reasoning.json"
+    fixture.write_text(
+        json.dumps(
+            [
+                {
+                    "content": "答案",
+                    "deltas": ["答", "案"],
+                    "reasoning_deltas": ["想", "一下"],
+                    "blocks": [
+                        {"type": "reasoning", "text": "想一下"},
+                        {"type": "text", "text": "答案"},
+                    ],
+                    "finish_reason": "stop",
+                }
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(client, workspace, fixture)
+            with client.stream(
+                "GET", f"/sessions/{session_id}/events", headers=_headers()
+            ) as response:
+                lines = response.iter_lines()
+                assert _next_frame(lines)["event"] == "session/start"
+                client.post(
+                    f"/sessions/{session_id}/messages",
+                    headers=_headers(),
+                    json={"content": "任务"},
+                )
+                frames = []
+                while True:
+                    frame = _next_frame(lines)
+                    frames.append(frame)
+                    if frame["event"] == "model/response":
+                        break
+
+        events = [frame["event"] for frame in frames]
+        assert events.count("reasoning/delta") == 2
+        assert events.count("model/delta") == 2
+        assert events.index("reasoning/delta") < events.index("model/delta")
+        reasoning = [
+            json.loads(frame["data"]) for frame in frames if frame["event"] == "reasoning/delta"
+        ]
+        assert [item["text"] for item in reasoning] == ["想", "一下"]
+        assert all("id" not in frame for frame in frames if frame["event"] == "reasoning/delta")
+        response_frame = next(frame for frame in frames if frame["event"] == "model/response")
+        response_payload = json.loads(response_frame["data"])
+        assert [block["type"] for block in response_payload["payload"]["blocks"]] == [
+            "reasoning",
+            "text",
+        ]
+        log = session_dir / f"{session_id}.jsonl"
+        assert "reasoning/delta" not in log.read_text(encoding="utf-8")
+    finally:
+        _stop(process)
+
+
 def test_a_delta_does_not_move_the_cursor(tmp_path: Path) -> None:
     session_dir = tmp_path / "sessions"
     workspace = tmp_path / "workspace"
@@ -610,7 +871,14 @@ def test_reconnect_does_not_replay_lost_deltas(tmp_path: Path) -> None:
     fixture = tmp_path / "delta-reconnect.json"
     fixture.write_text(
         json.dumps(
-            [{"content": "你好", "deltas": ["你", "好"], "finish_reason": "stop"}],
+            [
+                {
+                    "content": "你好",
+                    "deltas": ["你", "好"],
+                    "reasoning_deltas": ["想"],
+                    "finish_reason": "stop",
+                }
+            ],
             ensure_ascii=False,
         ),
         encoding="utf-8",
@@ -648,6 +916,7 @@ def test_reconnect_does_not_replay_lost_deltas(tmp_path: Path) -> None:
             text = log.read_text(encoding="utf-8")
         assert snapshot["messages"][-1]["content"] == "你好"
         assert "model/delta" not in text
+        assert "reasoning/delta" not in text
         assert text.count('"type": "model/response"') == 1
     finally:
         _stop(process)
@@ -695,6 +964,7 @@ def test_a_disconnected_delta_reader_does_not_stop_the_turn(tmp_path: Path) -> N
         assert _normalized_log(session_dir / f"{watched}.jsonl") == _normalized_log(
             session_dir / f"{baseline}.jsonl"
         )
+        assert "stream/end" not in (session_dir / f"{watched}.jsonl").read_text(encoding="utf-8")
     finally:
         _stop(process)
 

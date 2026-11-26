@@ -21,7 +21,7 @@ from mini_harness.loop import (
 from mini_harness.loop.settings import ApprovalMode, ProviderEndpoint, SandboxLevel
 from mini_harness.loop.turn_loop import StepEndSink
 from mini_harness.provider import FixtureProvider, Provider
-from mini_harness.provider.contract import StepDeltaSink, ToolCall
+from mini_harness.provider.contract import ReasoningSink, StepDeltaSink, ToolCall
 from mini_harness.tools import ToolRegistry
 from mini_harness.tools.bash_tools import bash_tool_definitions
 from mini_harness.tools.dispatch import DispatchOutcome, dispatch_tool_call
@@ -257,6 +257,7 @@ def build_session_env(
     registry: ToolRegistry | None = None,
     approval_gate: ApprovalGate | None = None,
     on_delta: StepDeltaSink | None = None,
+    on_reasoning: ReasoningSink | None = None,
     on_step_end: StepEndSink | None = None,
     goal: GoalPolicy | None = None,
 ) -> tuple[EventLog, SessionEnv]:
@@ -284,6 +285,7 @@ def build_session_env(
         approval_gate=STDIN_APPROVAL_GATE if approval_gate is None else approval_gate,
         on_step_end=on_step_end,
         on_delta=on_delta,
+        on_reasoning=on_reasoning,
     )
     return log, env
 
@@ -306,6 +308,7 @@ async def run_session_fixture(
     registry: ToolRegistry | None = None,
     approval_gate: ApprovalGate | None = None,
     on_delta: StepDeltaSink | None = None,
+    on_reasoning: ReasoningSink | None = None,
     on_step_end: StepEndSink | None = None,
     cancel: asyncio.Event | None = None,
     entry: SessionEntry = ENTRY_RUN,
@@ -330,6 +333,7 @@ async def run_session_fixture(
         registry=registry,
         approval_gate=approval_gate,
         on_delta=on_delta,
+        on_reasoning=on_reasoning,
         on_step_end=on_step_end,
     )
     outcome = await run_session(
@@ -342,6 +346,7 @@ async def run_session_fixture(
         cancel=asyncio.Event() if cancel is None else cancel,
         approval_gate=env.approval_gate,
         on_delta=env.on_delta,
+        on_reasoning=env.on_reasoning,
         on_step_end=env.on_step_end,
     )
     return log, outcome

@@ -15,6 +15,7 @@ from mini_harness.provider.contract import (
     AssistantTurn,
     DeltaSink,
     ProviderFailure,
+    ReasoningSink,
     ToolSpec,
 )
 
@@ -22,6 +23,14 @@ from mini_harness.provider.contract import (
 def _deltas_of(entry: dict[str, Any]) -> list[str] | None:
     """fixture 条目的可选 `deltas`：缺席是空列表；形状不对是 `None`（调用方塌成 schema 失败）。"""
     raw = entry.get("deltas", [])
+    if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
+        return None
+    return list(raw)
+
+
+def _reasoning_deltas_of(entry: dict[str, Any]) -> list[str] | None:
+    """fixture 条目的可选 `reasoning_deltas`；形状不对是 `None`。"""
+    raw = entry.get("reasoning_deltas", [])
     if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
         return None
     return list(raw)
@@ -49,6 +58,7 @@ class FixtureProvider:
         tools: Sequence[ToolSpec],
         signal: asyncio.Event,
         on_delta: DeltaSink | None = None,
+        on_reasoning: ReasoningSink | None = None,
     ) -> AssistantTurn | ProviderFailure:
         if self._index >= len(self._entries):
             return ProviderFailure(
@@ -59,12 +69,17 @@ class FixtureProvider:
         raw = self._entries[self._index]
         self._index += 1
         deltas = _deltas_of(raw)
-        if deltas is None:
+        reasoning_deltas = _reasoning_deltas_of(raw)
+        if deltas is None or reasoning_deltas is None:
             return ProviderFailure("PROVIDER_SCHEMA_INVALID", "fixture 的 deltas 必须是字符串数组")
         try:
             turn = AssistantTurn.model_validate(raw)
         except ValidationError as exc:
             return ProviderFailure("PROVIDER_SCHEMA_INVALID", str(exc))
+        if on_reasoning is not None:
+            for index, text in enumerate(reasoning_deltas):
+                if text:
+                    await on_reasoning("", index, text)
         if on_delta is not None:
             for text in deltas:
                 await on_delta(text)
@@ -91,4 +106,8 @@ def load_fixture_provider(path: Path) -> FixtureProvider | FixtureLoadFailure:
             )
         if _deltas_of(entry) is None:
             return FixtureLoadFailure(path, f"{path}: 第 {index + 1} 条的 deltas 必须是字符串数组")
+        if _reasoning_deltas_of(entry) is None:
+            return FixtureLoadFailure(
+                path, f"{path}: 第 {index + 1} 条的 reasoning_deltas 必须是字符串数组"
+            )
     return FixtureProvider(entries)

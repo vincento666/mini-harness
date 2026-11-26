@@ -22,6 +22,7 @@ from mini_harness.loop.settings import (
     DEFAULT_MAX_STEPS,
     DEFAULT_PROVIDER,
     DEFAULT_PROVIDER_KEY_ENV,
+    DEFAULT_REASONING_EFFORT,
     DEFAULT_RESERVE,
     DEFAULT_SANDBOX,
     DEFAULT_WINDOW,
@@ -44,6 +45,7 @@ BUILTIN_DEFAULTS: dict[str, Any] = {
     "append_system_prompt": DEFAULT_APPEND_SYSTEM_PROMPT,
     "sandbox": DEFAULT_SANDBOX,
     "approval": DEFAULT_APPROVAL,
+    "reasoning_effort": DEFAULT_REASONING_EFFORT,
     # 这三条的「没设置」本身就是有效状态：工具表全开、日志用默认位置、工作区用当前目录。
     "tools": None,
     # 子代理 preset 只有配置文件一个来源（没有 CLI flag）；`None` 是「没配」。
@@ -82,6 +84,7 @@ class EffectiveSettings:
     append_system_prompt: str
     sandbox: SandboxLevel
     approval: ApprovalMode
+    reasoning_effort: str
     tools: list[str] | None
     subagent: dict[str, Any] | None
     goal: dict[str, Any] | None

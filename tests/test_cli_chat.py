@@ -737,6 +737,10 @@ def test_chats_flag_table_is_runs_flag_table_minus_two(tmp_path: Path) -> None:
         assert "unrecognized arguments" in result.stderr
     assert _log_files(tmp_path) == []
 
+    conflict = _cli("chat", "--stream", "--no-stream", cwd=tmp_path)
+    assert conflict.returncode == 2
+    assert "not allowed with argument" in conflict.stderr
+
 
 def test_a_chat_that_cannot_start_leaves_no_log(tmp_path: Path) -> None:
     """seam ⑥：chat 的「会话开始之前失败」与 run 同一条路——退出码 2、不建日志。"""
@@ -1425,3 +1429,103 @@ def test_a_streamed_log_still_replays(tmp_path: Path) -> None:
     assert replay.returncode == 0, replay.stderr
     assert "REPLAY_MISMATCH" not in replay.stderr
     assert "REPLAY_MISMATCH" not in replay.stdout
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason=_WINDOWS_CTRL_C_REASON)
+def test_stream_cancel_keeps_partial_text_without_reprinting_final(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(
+        tmp_path,
+        "stream-cancel.json",
+        [
+            {
+                "content": "半",
+                "deltas": ["半"],
+                "finish_reason": "tool_calls",
+                "tool_calls": [
+                    {
+                        "id": "c1",
+                        "name": "bash",
+                        "arguments": {"command": "sleep 30", "timeout_seconds": 30},
+                    }
+                ],
+            }
+        ],
+    )
+    process = _cli_process(
+        "chat",
+        "--provider",
+        "mock",
+        "--stream",
+        "--fixture",
+        str(fixture),
+        "--yes",
+        cwd=tmp_path,
+        keep_stdin_open=True,
+    )
+    assert process.stdin is not None
+    process.stdin.write("第一条\n")
+    process.stdin.flush()
+    _wait_until_log_contains(tmp_path, process, '"tool/call"', "进入工具执行段")
+    process.send_signal(signal.SIGINT)
+    stdout, _ = process.communicate(timeout=30)
+
+    assert process.returncode == 0
+    assert stdout.count("半") == 1
+
+
+def test_chat_stream_prints_text_deltas_without_repeating_final_content(
+    tmp_path: Path,
+) -> None:
+    fixture = tmp_path / "deltas.json"
+    fixture.write_text(
+        json.dumps(
+            [{"content": "你好", "deltas": ["你", "好"], "finish_reason": "stop"}],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    result = _chat("--fixture", str(fixture), cwd=tmp_path, stdin_text="任务\n")
+
+    assert result.returncode == 0
+    assert result.stdout.count("你好") == 1
+    assert "[answer]" in result.stderr
+
+
+def test_chat_stream_sends_reasoning_to_stderr_only(tmp_path: Path) -> None:
+    fixture = tmp_path / "reasoning.json"
+    fixture.write_text(
+        json.dumps(
+            [
+                {
+                    "content": "答案",
+                    "reasoning_deltas": ["先想"],
+                    "finish_reason": "stop",
+                }
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    result = _chat("--stream", "--fixture", str(fixture), cwd=tmp_path, stdin_text="任务\n")
+
+    assert result.returncode == 0
+    assert "[thinking] 先想" in result.stderr
+    assert "[answer]" in result.stderr
+    assert "先想" not in result.stdout
+
+
+def test_chat_stream_falls_back_when_provider_sends_no_delta(tmp_path: Path) -> None:
+    fixture = tmp_path / "no-delta.json"
+    fixture.write_text(
+        json.dumps([{"content": "完整答案", "finish_reason": "stop"}], ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    result = _chat("--stream", "--fixture", str(fixture), cwd=tmp_path, stdin_text="任务\n")
+
+    assert result.returncode == 0
+    assert result.stdout.count("完整答案") == 1

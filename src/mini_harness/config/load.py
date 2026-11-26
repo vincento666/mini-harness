@@ -25,6 +25,7 @@ SETTINGS_FIELDS: dict[str, tuple[type[Any], ...]] = {
     "append_system_prompt": (str,),
     "sandbox": (str,),
     "approval": (str,),
+    "reasoning_effort": (str,),
     "tools": (list,),
     # 子代理 preset：一张嵌套表，形状与校验细节在 config/assembly.build_registry 里。
     "subagent": (dict,),

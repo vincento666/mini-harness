@@ -333,6 +333,7 @@ class _DeltaProvider:
         tools: object,
         signal: asyncio.Event,
         on_delta: object = None,
+        on_reasoning: object = None,
     ) -> AssistantTurn:
         self.sink = on_delta
         if callable(on_delta):
@@ -373,6 +374,7 @@ class _AbortStreamProvider:
         tools: object,
         signal: asyncio.Event,
         on_delta: object = None,
+        on_reasoning: object = None,
     ) -> ProviderFailure:
         if callable(on_delta):
             await on_delta("半")
@@ -397,9 +399,11 @@ async def test_a_provider_aborted_stream_turn_ends_aborted(tmp_path: Path) -> No
         max_steps=8,
     )
 
-    types = [record.type for record in read_events(log.path)]
+    records = read_events(log.path)
+    types = [record.type for record in records]
     assert seen == [("t1", "半")]
-    assert "model/response" not in types
+    response = next(record for record in records if record.type == "model/response")
+    assert response.payload["interrupted"] is True
     assert "error/model" not in types
     assert "error/abort" in types
     assert outcome.stop_reason == "ABORTED"
@@ -417,6 +421,7 @@ class _CancelDuringGenerate:
         tools: object,
         signal: asyncio.Event,
         on_delta: object = None,
+        on_reasoning: object = None,
     ) -> AssistantTurn:
         if callable(on_delta):
             await on_delta("半")
@@ -468,7 +473,7 @@ async def test_a_cancelled_turn_writes_an_error_abort_event(tmp_path: Path) -> N
     assert outcome.stop_reason == "ABORTED"
 
 
-async def test_a_cancel_during_stream_aborts_without_a_model_response(tmp_path: Path) -> None:
+async def test_a_cancel_during_stream_writes_an_interrupted_response(tmp_path: Path) -> None:
     cancel = asyncio.Event()
     seen: list[tuple[str, str]] = []
 
@@ -485,9 +490,12 @@ async def test_a_cancel_during_stream_aborts_without_a_model_response(tmp_path: 
         max_steps=8,
     )
 
-    types = [record.type for record in read_events(log.path)]
+    records = read_events(log.path)
+    types = [record.type for record in records]
     assert seen == [("t1", "半")]
-    assert "model/response" not in types
+    response = next(record for record in records if record.type == "model/response")
+    assert response.payload["interrupted"] is True
+    assert response.payload["blocks"] == [{"type": "text", "text": "半"}]
     assert "error/abort" in types
     assert outcome.stop_reason == "ABORTED"
 
@@ -539,7 +547,7 @@ async def test_loop_only_calls_generate_with_three_positional_parameters(tmp_pat
         max_steps=8,
     )
 
-    assert spy.calls == [("generate", 3, ("on_delta",))]
+    assert spy.calls == [("generate", 3, ("on_delta", "on_reasoning"))]
     assert spy.signals[0] is cancel
 
 
@@ -1112,6 +1120,7 @@ class _CancelWithoutDeltaProvider:
         tools: object,
         signal: asyncio.Event,
         on_delta: object = None,
+        on_reasoning: object = None,
     ) -> AssistantTurn:
         self._cancel.set()
         return AssistantTurn(content="完整回复", finish_reason="stop")
@@ -1167,3 +1176,133 @@ async def test_a_broken_step_end_hook_records_an_internal_error(tmp_path: Path) 
     assert internal.payload["code"] == "RENDER_FAILED"
     # 边界完整：`step/end` 先落盘，`error/internal` 在它之后、`turn/end` 之前
     assert types.index("step/end") < types.index("error/internal") < types.index("turn/end")
+
+
+class _ReasoningCancelProvider:
+    def __init__(self, cancel: asyncio.Event) -> None:
+        self._cancel = cancel
+
+    async def generate(
+        self,
+        messages: object,
+        tools: object,
+        signal: asyncio.Event,
+        on_delta: object = None,
+        on_reasoning: object = None,
+    ) -> ProviderFailure:
+        if callable(on_reasoning):
+            await on_reasoning("", 0, "想")
+        self._cancel.set()
+        return ProviderFailure("PROVIDER_ABORTED", "取消")
+
+
+class _SchemaAfterTextProvider:
+    async def generate(
+        self,
+        messages: object,
+        tools: object,
+        signal: asyncio.Event,
+        on_delta: object = None,
+        on_reasoning: object = None,
+    ) -> ProviderFailure:
+        if callable(on_delta):
+            await on_delta("半")
+        return ProviderFailure("PROVIDER_SCHEMA_INVALID", "坏标签")
+
+
+async def test_cancel_with_reasoning_prefix_writes_interrupted_reasoning_block(
+    tmp_path: Path,
+) -> None:
+    cancel = asyncio.Event()
+    log, outcome = await run_session_fixture(
+        tmp_path,
+        "s-reasoning-cancel",
+        _ReasoningCancelProvider(cancel),
+        registry=ToolRegistry(),
+        cancel=cancel,
+        on_reasoning=lambda *_args: asyncio.sleep(0),
+        max_steps=4,
+    )
+
+    records = read_events(log.path)
+    response = next(record for record in records if record.type == "model/response")
+    assert response.payload["interrupted"] is True
+    assert response.payload["blocks"] == [{"type": "reasoning", "text": "想"}]
+    assert outcome.stop_reason == "ABORTED"
+    assert "model/attempt" not in [record.type for record in records]
+
+
+async def test_schema_failure_with_prefix_writes_attempt_not_response(
+    tmp_path: Path,
+) -> None:
+    log, outcome = await run_session_fixture(
+        tmp_path,
+        "s-schema-prefix",
+        _SchemaAfterTextProvider(),
+        registry=ToolRegistry(),
+        on_delta=lambda *_args: asyncio.sleep(0),
+        max_steps=4,
+    )
+
+    records = read_events(log.path)
+    types = [record.type for record in records]
+    assert "model/response" not in types
+    attempt = next(record for record in records if record.type == "model/attempt")
+    assert attempt.payload["error_code"] == "PROVIDER_SCHEMA_INVALID"
+    assert attempt.payload["partial_blocks"] == [{"type": "text", "text": "半"}]
+    assert outcome.stop_reason == "PROVIDER_ERROR"
+
+
+async def test_reasoning_delta_is_not_logged(tmp_path: Path) -> None:
+    provider = FixtureProvider(
+        [
+            {
+                "content": "答案",
+                "finish_reason": "stop",
+                "reasoning_deltas": ["想"],
+            }
+        ]
+    )
+    log, _ = await run_session_fixture(
+        tmp_path,
+        "s-reasoning-log",
+        provider,
+        registry=ToolRegistry(),
+        max_steps=2,
+    )
+
+    assert "reasoning/delta" not in log.path.read_text(encoding="utf-8")
+
+
+async def test_reasoning_does_not_reach_the_text_sink(tmp_path: Path) -> None:
+    seen_text: list[str] = []
+    seen_reasoning: list[str] = []
+
+    async def text(step_id: str, value: str) -> None:
+        seen_text.append(value)
+
+    async def reasoning(step_id: str, index: int, value: str) -> None:
+        seen_reasoning.append(value)
+
+    provider = FixtureProvider(
+        [
+            {
+                "content": "答案",
+                "finish_reason": "stop",
+                "deltas": ["答"],
+                "reasoning_deltas": ["想"],
+            }
+        ]
+    )
+    await run_session_fixture(
+        tmp_path,
+        "s-reasoning-sink",
+        provider,
+        registry=ToolRegistry(),
+        on_delta=text,
+        on_reasoning=reasoning,
+        max_steps=2,
+    )
+
+    assert seen_text == ["答"]
+    assert seen_reasoning == ["想"]

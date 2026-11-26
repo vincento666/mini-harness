@@ -239,6 +239,7 @@ class _ScriptedProvider:
         tools: Sequence[ToolSpec],
         signal: asyncio.Event,
         on_delta: DeltaSink | None = None,
+        on_reasoning: object = None,
     ) -> AssistantTurn:
         async with self._lock:
             self._calls += 1

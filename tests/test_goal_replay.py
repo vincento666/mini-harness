@@ -35,7 +35,12 @@ class _ThreeRounds:
         self.calls = 0
 
     async def generate(
-        self, messages: Any, tools: Any, signal: Any, on_delta: Any = None
+        self,
+        messages: Any,
+        tools: Any,
+        signal: Any,
+        on_delta: Any = None,
+        on_reasoning: Any = None,
     ) -> AssistantTurn | ProviderFailure:
         self.calls += 1
         if self.calls == 1:

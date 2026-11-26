@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from mini_harness.events.record import EventRecord
 
 SYSTEM_PROMPT = (
-    "你是 mini-harness 的 agent。在回合里先装配上下文，再调用工具或回答；"
+    "你是 mini-harness 的 agent。在一轮里先装配上下文，再调用工具或回答；"
     "工具失败也是结果，不是异常。"
 )
 
@@ -100,12 +100,13 @@ def _environment_block(os_name: str, shell: str) -> str:
 
 
 class Message(BaseModel):
-    """进入模型的一条消息。"""
+    """进入模型的一条消息。`blocks` 是可选的有序块；旧日志没有它。"""
 
     role: str
     content: str
     tool_call_id: str | None = None
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
+    blocks: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class AssembledContext(BaseModel):
@@ -191,10 +192,13 @@ def _body_message(event: EventRecord) -> Message | None:
         if event.payload.get("purpose") == PURPOSE_COMPACTION:
             # 摘要那次调用的记账，不是对话：它的内容已经作为 `system` 摘要在表层里了。
             return None
+        raw_blocks = event.payload.get("blocks")
+        blocks = raw_blocks if isinstance(raw_blocks, list) else []
         return Message(
             role="assistant",
             content=str(event.payload.get("content", "")),
             tool_calls=list(event.payload.get("tool_calls", [])),
+            blocks=blocks,
         )
     if event.type == "tool/result":
         content = event.payload.get("content") or str(event.payload.get("outcome", ""))
