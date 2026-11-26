@@ -298,3 +298,10 @@
 - 晋升进 AGENTS.md 的唯一形态是**一句话规则**；细节留在本文件或 `docs/verification/`。
 - 每次晋升同时删/压 AGENTS.md 的一条旧内容（一进一出）。
 - 每个里程碑归档后跑一次 `agents-md-slim`；AGENTS.md 超过 **150 行**时跑一次 `agents-md-refactor` 做拆分。
+
+### L-104 平台相关判据按环境实测行为分支，不按平台名字猜
+- Seen: 1
+- Status: inbox
+- Date: 2026-11-26
+- Context: `fix-case-insensitive-path-keys`——旧判据按 `os.name` 分支（Windows 折、POSIX 不折），在 macOS APFS（POSIX + 大小写不敏感）上错，只能 skip 整条测试。改成测试内先探测文件系统行为（建文件后用另一种写法 `exists()`）再分支，macOS/Windows/Linux CI 三端同一条测试各自成立；实现侧同理（`path_key` 按磁盘写法折叠，不按 `os.name`）。
+- Lesson: 判据或实现依赖「平台是否做了某事」时，用一次廉价探测拿环境实测行为，而不是拿平台名字推断——同一 OS 名下存在多种文件系统/环境配置。skipif 掉的测试是这条的信号。
