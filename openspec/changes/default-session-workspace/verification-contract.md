@@ -8,8 +8,10 @@
    - 判据：文件在 `<dir>`；`session/start.workspace == <dir>` 绝对路径；行为与变更前逐点一致。
 3. **发现根锚启动目录**：启动目录放 `mini.config.toml`（如 `max_steps=2`）、`AGENTS.md`、`.minihns/skills/demo/SKILL.md`，不传 `--workspace`。
    - 判据：`session/start.max_steps == 2`；`context/assembled` 前有 `workspace-instructions` 注入；技能清单含 `demo`；会话工作区下的同名文件不被读取。
-4. **围栏不变**：默认模式下 `write ../escape.txt` 与 `bash "touch ../x"`。
-   - 判据：`SANDBOX_DENIES_WRITE` 的 `tool/result` + `error/fence`，无文件产生。
+4. **围栏不变**：默认模式下 `write ../escape.txt`（路径解析越界）与 `bash` 在 `--sandbox read-only` 下。
+   - 判据：write 越界是 `OUTSIDE_WORKSPACE`（实测码；`SANDBOX_DENIES_WRITE` 是档位拒绝），无文件产生；
+     read-only 下 bash 被 `SANDBOX_DENIES_WRITE` 拒绝、命令一次都没跑。**不**断言 bash 会静态拦 `../`：
+     bash 的围栏只看档位与 cwd，是既有语义（本 change 不动围栏实现）。
 5. **resume 四条**：恢复日志工作区；显式优先；`WORKSPACE_MISSING`（退出码 1）；旧日志缺字段 `INVALID_ARGUMENT`（退出码 2）。
 6. **创建失败**：`MINIHNS_HOME` 指只读路径。
    - 判据：退出码 2、`INVALID_ARGUMENT`、无日志文件。
@@ -22,6 +24,7 @@
 - M3 resume 静默落到 cwd 或新建默认工作区 → 判据 5 杀。
 - M4 显式 `--workspace` 被默认逻辑覆盖 → 判据 2 杀。
 - M5 创建失败被吞（降级成 cwd）→ 判据 6 杀。
+- M6 工作区路径写上 stdout → 判据 1 杀。
 - M6 工作区路径写上 stdout → 判据 1 杀。
 
 ## 门禁与真端点

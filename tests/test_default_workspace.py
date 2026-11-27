@@ -260,6 +260,8 @@ def test_default_mode_keeps_products_out_of_the_startup_directory(tmp_path: Path
     ) == "print(1)\n"
     assert list(project.iterdir()) == []
     assert f"工作区 {home / 'workspaces' / session_id}" in result.stderr
+    # stdout 契约不变：只有 session id，工作区路径不许混进去（design D4 / M6）。
+    assert str(home / "workspaces" / session_id) not in result.stdout
 
 
 def test_default_mode_still_refuses_escapes(tmp_path: Path) -> None:
@@ -424,3 +426,179 @@ def test_chat_resume_reports_workspace_missing(tmp_path: Path) -> None:
     assert resumed.returncode == 1
     assert "WORKSPACE_MISSING" in resumed.stderr
     assert not workspace.exists()
+
+
+def test_resume_restores_an_explicit_workspace_from_the_log(tmp_path: Path) -> None:
+    """首场用显式 workspace，resume 不给：恢复的是日志里那个目录，不是默认路径。
+
+    默认目录与 `<sid>` 推导出的路径恰好相同，会掩盖「真的读了日志」这一步——所以必须
+    用与默认路径不同的工作区钉住它（变异 M3「resume 静默落到默认目录」的杀手）。
+    """
+    environ = {"MINIHNS_HOME": str(tmp_path / "home")}
+    fixture = _fixture(tmp_path, {"content": "好", "finish_reason": "stop"})
+    explicit = tmp_path / "explicit-workspace"
+    explicit.mkdir()
+    first = assemble(
+        AssemblyRequest(
+            workspace=str(explicit),
+            provider="mock",
+            fixture=fixture,
+            session_dir=str(tmp_path / "sessions"),
+        ),
+        environ,
+    )
+    assert isinstance(first, Prepared)
+    first.log.append("session/start", {"workspace": str(explicit)})
+
+    resumed = assemble(
+        AssemblyRequest(
+            provider="mock",
+            fixture=fixture,
+            session_dir=str(tmp_path / "sessions"),
+            resume=first.log.session_id,
+        ),
+        environ,
+    )
+
+    assert isinstance(resumed, Prepared)
+    assert resumed.settings.workspace == explicit
+    assert not (tmp_path / "home" / "workspaces" / first.log.session_id).exists()
+
+
+def _log_records(session_dir: Path) -> list[dict[str, object]]:
+    files = sorted(session_dir.glob("*.jsonl"))
+    assert len(files) == 1
+    return [json.loads(line) for line in files[0].read_text(encoding="utf-8").splitlines()]
+
+
+def test_creation_failure_is_an_argument_error_without_a_log(tmp_path: Path) -> None:
+    """`MINIHNS_HOME` 下没法建目录：退出码 2、`INVALID_ARGUMENT`、不建日志。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "workspaces").write_text("这是文件不是目录", encoding="utf-8")
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--yes",
+        "--provider",
+        "mock",
+        "--fixture",
+        _fixture(tmp_path, {"content": "好", "finish_reason": "stop"}),
+        "--session-dir",
+        str(tmp_path / "sessions"),
+        cwd=project,
+        workspace=None,
+        env={"MINIHNS_HOME": str(home)},
+    )
+
+    assert result.returncode == 2
+    assert "INVALID_ARGUMENT" in result.stderr
+    assert not (tmp_path / "sessions").exists()
+
+
+def test_session_start_workspace_is_named_after_the_session(tmp_path: Path) -> None:
+    """`session/start.workspace` 的目录名 == 会话 id（id 先于工作区生成）。"""
+    project = tmp_path / "project"
+    project.mkdir()
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--yes",
+        "--provider",
+        "mock",
+        "--fixture",
+        _fixture(tmp_path, {"content": "好", "finish_reason": "stop"}),
+        "--session-dir",
+        str(tmp_path / "sessions"),
+        cwd=project,
+        workspace=None,
+        env={"MINIHNS_HOME": str(tmp_path / "home")},
+    )
+
+    assert result.returncode == 0, result.stderr
+    records = _log_records(tmp_path / "sessions")
+    start = next(record for record in records if record["type"] == "session/start")
+    payload = start["payload"]
+    assert Path(str(payload["workspace"])).name == start["session_id"]
+
+
+def test_config_and_contracts_still_anchor_the_startup_directory(tmp_path: Path) -> None:
+    """默认模式下 `mini.config.toml` 的 max_steps 与 `AGENTS.md` 契约都从启动目录生效。"""
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "mini.config.toml").write_text("max_steps = 2\n", encoding="utf-8")
+    (project / "AGENTS.md").write_text("项目契约：只写结论。\n", encoding="utf-8")
+
+    result = _cli(
+        "run",
+        "-p",
+        "任务",
+        "--yes",
+        "--provider",
+        "mock",
+        "--fixture",
+        _fixture(tmp_path, {"content": "好", "finish_reason": "stop"}),
+        "--session-dir",
+        str(tmp_path / "sessions"),
+        cwd=project,
+        workspace=None,
+        env={"MINIHNS_HOME": str(tmp_path / "home")},
+    )
+
+    assert result.returncode == 0, result.stderr
+    records = _log_records(tmp_path / "sessions")
+    start = next(record for record in records if record["type"] == "session/start")
+    assert start["payload"]["max_steps"] == 2
+    assembled = next(record for record in records if record["type"] == "context/assembled")
+    joined = "\n".join(
+        str(message.get("content") or "") for message in assembled["payload"]["messages"]
+    )
+    assert "项目契约：只写结论" in joined
+
+
+def test_default_mode_still_applies_the_bash_sandbox_level(tmp_path: Path) -> None:
+    """默认模式下 bash 仍按沙箱档位判：read-only 直接拒绝，命令一次都没跑。
+
+    （bash 的围栏不静态分析 `../`——那是既有语义，本 change 不动围栏实现；这里钉的是
+    「围栏根换了位置，档位判定不受影响」。）
+    """
+    project = tmp_path / "project"
+    project.mkdir()
+    turn = {
+        "content": "",
+        "finish_reason": "tool_calls",
+        "tool_calls": [
+            {
+                "id": "c1",
+                "name": "bash",
+                "arguments": {"command": "touch ../escaped-by-bash.txt"},
+            }
+        ],
+    }
+    result = _cli(
+        "run",
+        "-p",
+        "跑命令",
+        "--yes",
+        "--sandbox",
+        "read-only",
+        "--provider",
+        "mock",
+        "--fixture",
+        _fixture(tmp_path, turn, {"content": "好", "finish_reason": "stop"}),
+        "--session-dir",
+        str(tmp_path / "sessions"),
+        cwd=project,
+        workspace=None,
+        env={"MINIHNS_HOME": str(tmp_path / "home")},
+    )
+
+    assert result.returncode != 0
+    assert "SANDBOX_DENIES_WRITE" in result.stderr
+    assert not list((tmp_path / "home" / "workspaces").rglob("escaped-by-bash.txt"))
+    assert not (project / "escaped-by-bash.txt").exists()
