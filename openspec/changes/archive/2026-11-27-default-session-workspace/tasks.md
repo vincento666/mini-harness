@@ -20,6 +20,6 @@
 
 ## 3. 验证与文档
 
-- [x] 3.1 门禁全绿：`scripts/gates.sh`（pytest、ruff、mypy --strict、openspec validate --all --strict）
-- [x] 3.2 真端点一场验证（管道即可，无 tty 手感场次）：不传 `--workspace` 让模型写一个小文件，产物落会话目录、stderr 报路径、启动目录干净
+- [x] 3.1 门禁全绿（2026-11-27）：`scripts/gates.sh` —— **986 passed / 6 skipped**、ruff format/check 绿、`mypy --strict` 绿；覆盖率单次口径 **98.61%**（`scripts/coverage-report.sh`）；`openspec validate --all --strict` 29 项
+- [x] 3.2 真端点一场验证（管道）：`3a1b7f2d…`（OpenRouter）不传 `--workspace` 写 `hello.txt`，产物落会话目录、stderr 报绝对路径、启动目录干净；见 `docs/verification/default-session-workspace-real-endpoint.md`（首跑 `b6206b19…` 第二步超时不计通过）
 - [x] 3.3 文档：`docs/CURRENT.md`、`docs/roadmap.md`；`restore-chat-streaming-uat.md` 的产物清点说明在归档时顺带改（design D6，不提前动）
