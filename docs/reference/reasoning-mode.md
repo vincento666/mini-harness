@@ -4,6 +4,10 @@
 
 **依据**：`re/verified/dsh` 的实际实现，不是只看摘要。关键出处见文末。
 
+**现状（2026-11-27）**：本 memo 的目标形状已落成并合入 `main`（change `merge-reasoning-stream`）；落地字段名是 `step_id`，本 memo 正文与示例仍写作改名前的 `turn_id`。
+
+**图索引**：图 1 落地时机（§6）。
+
 ## 1. DSH 的事实
 
 ### 1.1 模型侧
@@ -56,7 +60,7 @@ DSH 不把每个 delta 写成一条日志事件。一次成功 attempt 只追加
 
 ## 2. mini 的决策
 
-### 采用（“应该参考：做”）
+### 2.1 采用（“应该参考：做”）
 
 1. **一条 durable `model/response` 仍是唯一真相**；reasoning 合进这条记录，不按 delta 写日志。
 2. **实时 reasoning 独立成 `reasoning/delta`**：无 `id`、不落日志、不参与游标，和 H2 的 `model/delta` 并列。
@@ -66,12 +70,12 @@ DSH 不把每个 delta 写成一条日志事件。一次成功 attempt 只追加
 6. **UI 形态参考 DSH**：流式时思考区显示最新段落预览；结束后可展开完整 Markdown；回答区独立。
 7. **采用 DSH 的有序 content blocks**：`model/response` 的 assistant message 用 `blocks` 表达 `reasoning` / `text` / `tool-call` 的顺序；`fold` 保留顺序；provider 按协议回传。只加 `reasoning` 字段不足以对齐 DSH，不列为目标形状。
 
-### 固定取舍
+### 2.2 固定取舍
 
 - **日志体积与敏感内容：先参考 DSH**——durable 里保存完整 reasoning；接受日志变大、思考内容进入日志；UI 默认折叠。MVP 不做自动脱敏/摘要。
 - **预算语义：reasoning tokens 是 output 的一部分，不重复计**。`usage.reasoning_tokens` 是 `output_tokens` 的子集；token meter/成本视图不得再加一遍。上下文预算另算：回传的 reasoning 文本进入后续请求，就按普通上下文计入。
 
-### 暂缓（“先记着”，不照抄）
+### 2.3 暂缓（“先记着”，不照抄）
 
 - 紧凑带时间 stream（DSH 的 `assistant/message.stream` 时间线）。
 - 单独的 `assistant/attempt` 事件；mini 先复用 `error/model` + `model/retry`。
@@ -141,17 +145,15 @@ provider 请求按协议把 blocks 回传（DSH 的 DeepSeek 适配器用 thinki
 
 ## 6. 时机
 
-```text
-M10（工具管线 / 并发 / 上下文经济）
-  ↓
-reasoning-mode-and-budget（本 memo）
-  ↓
-M11 / M12 / M13
-  ↓
-M14 / M14c（plan/todo UX）
-  ↓
-接壳前冻结 reasoning 协议
+```mermaid
+flowchart TB
+    M10["M10：工具管线 / 并发 / 上下文经济"] --> R["reasoning-mode-and-budget（本 memo）"]
+    R --> M["M11 / M12 / M13"]
+    M --> U["M14 / M14c（plan/todo UX）"]
+    U --> F["接壳前冻结 reasoning 协议"]
 ```
+
+**图 1**：顺序是 M10 完成后、M11/M12 之前做——这样 M12 子代理能继承思考档位；M14c 的 `todo` / `plan` 另算。
 
 **顺序**：M10 完成后、M11/M12 前做。这样 M12 子代理能继承思考档位；M14c 的 `todo` / `plan` 仍另算。
 

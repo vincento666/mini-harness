@@ -2,6 +2,10 @@
 
 **立档：2026-11-23。** 触发：Coze 企业版下线公告（2026-10-29），以及「harness 是不是 workflow 的替代品」这个问题。
 
+**图索引**：图 1 标准栈的四层与两个底座（§三）。
+
+**一句话**：workflow 没有被取代，它下沉成 harness 的底座；主导权按路径确定性分，不按新旧分。
+
 ## 一、事实：Coze 企业版下线
 
 火山引擎官方公告（`docs.volcengine.com/docs/coze/coze-enterprise-offline-announcement`）：
@@ -40,14 +44,22 @@ AI Engineer World's Fair 2026 的共识被概括成一句话：**「The Harness 
 
 正在成型的标准栈是四层 + 两个底座：
 
+```mermaid
+flowchart TB
+    A["Coding Agent<br/>外层循环：接目标、计划、委派、验证"]
+    M["MCP 工具<br/>结构化访问外部系统"]
+    S["Sub-agents<br/>受作用域约束的子任务"]
+    K["Skills<br/>过程知识：怎么做，含边界与验收"]
+    C["Context layer<br/>系统指令、工具 schema、记忆、检索"]
+    W["Workflow layer<br/>确定性编排：Specify → Design → Break down → Implement → Verify"]
+    A --> M
+    A --> S
+    A --> K
+    A --> C
+    C --> W
 ```
-Coding Agent（外层循环：接目标、计划、委派、验证）
-   ├── MCP 工具（结构化访问外部系统）
-   ├── Sub-agents（受作用域约束的子任务）
-   └── Skills（过程知识：怎么做，含边界与验收）
-Context layer（系统指令、工具 schema、记忆、检索）
-Workflow layer（确定性编排：Specify → Design → Break down → Implement → Verify）
-```
+
+**图 1**：标准栈的分层（原本节 ASCII 图，内容不变）。
 
 关键点：**Workflow layer 没有被取代，它下沉成了 harness 的一个底座**。上面那层 agent 负责「下一步做什么」，下面这层 workflow 负责「哪些步骤必须按顺序、哪些门必须过、什么算验收通过」。
 

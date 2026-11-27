@@ -4,6 +4,8 @@
 
 **一句话**：委派只做一次性 `spawn`；父会话给任务与上限，子会话有独立日志与独立工具面，结果以最终文本回到父的工具结果里。
 
+**图索引**：图 1 三层职责（§2.1）· 图 2 一次 spawn 的时序（§2.2）。
+
 ## 1. 形状
 
 `subagent` 是普通工具，入参是任务文本与可选的 preset/persona；结果是一个 `ToolResult`：
@@ -19,34 +21,40 @@
 
 ### 2.1 三层职责
 
+```mermaid
+flowchart TB
+    T["工具面 subagent<br/>给模型 schema；校验深度 / 容量；收结果"]
+    R["会话运行时 SessionEnv + EventLog<br/>建子日志、子环境、preset 工具面、技能层"]
+    C["子会话 run_session_env<br/>独立步循环；失败也是结果；取消自收尾"]
+    T --> R --> C
 ```
-┌────────────────────────────────────────────┐
-│ 工具面  subagent                           │
-│   给模型 schema；校验深度/容量；收结果      │
-├────────────────────────────────────────────┤
-│ 会话运行时  SessionEnv + EventLog          │
-│   建子日志、子环境、preset 工具面、技能层   │
-├────────────────────────────────────────────┤
-│ 子会话  run_session_env                    │
-│   独立步循环；失败也是结果；取消自收尾    │
-└────────────────────────────────────────────┘
-```
+
+**图 1**：三层职责。子会话在磁盘上是同目录的另一个日志文件，不是父日志的嵌套段。
 
 ### 2.2 一次 spawn 的时序
 
+```mermaid
+sequenceDiagram
+    participant P as 父轮
+    participant T as subagent 工具
+    participant C as 子会话
+    P->>T: 调用
+    T->>T: 深度 / 容量校验
+    T->>T: 组工具面 + 技能层
+    T->>C: 建子日志
+    C->>C: session/start
+    T->>C: create_task
+    C->>C: 步循环
+    C-->>T: 最终文本
+    C->>C: session/end
+    T-->>P: tool/result
+    P->>T: 取消
+    T->>C: child_cancel.set()
+    C-->>T: ABORTED
+    T-->>P: TOOL_CANCELLED（shield 等收尾）
 ```
-父段                subagent 工具               子会话
- │  调用 ──────────▶│                             │
- │                  │ 深度/容量校验                │
- │                  │ 组工具面 + 技能层            │
- │                  │ 建子日志 ──────────────────▶│ session/start
- │                  │ create_task ───────────────▶│ 步循环
- │                  │◀────────── 最终文本 ────────│ session/end
- │◀── tool/result ──│                             │
- │                  │                             │
- │ 取消 ───────────▶│ child_cancel.set() ────────▶│ ABORTED
- │◀ TOOL_CANCELLED ─│◀──── shield 等收尾 ─────────│
-```
+
+**图 2**：一次 spawn 的时序；取消时先置子取消位，再用 `shield` 等它按 `ABORTED` 收尾。
 
 ### 2.3 七个动作
 

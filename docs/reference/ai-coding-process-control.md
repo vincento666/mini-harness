@@ -4,6 +4,8 @@
 
 **一句话**：能被脚本判定的，交给 git hook 与 CI；需要判断的，留给契约、两轴复核与人；两者之间用「停点」连接。
 
+**图索引**：图 1 三层控制的触发点（§1）· 图 2 一个 change 的控制点（§3）。
+
 ## 1. 三层控制的形状
 
 | 层 | 触发 | 执行者 | 管什么 | 绕得过吗 |
@@ -15,12 +17,17 @@
 
 三层不是互相替代，而是**触发点不同**：git hook 在「改动进入版本库」时拦，harness hook 在「模型动手之前」拦，CI 在「代码离开本机」时兜底。
 
+```mermaid
+flowchart LR
+    A["改动"] --> C["git commit"]
+    C --> PC["pre-commit<br/>秒级：格式 / 风格 / 类型"]
+    C --> HP["harness PreToolUse<br/>写前：主规格 / ADR / 高危删除"]
+    A --> P["git push"]
+    P --> CI["CI<br/>全量测试 + 覆盖率 + 双平台"]
+    F["流程"] --> S["scripts<br/>gates / new-change / check-change / bootstrap"]
 ```
-改动 ─▶ git commit ─▶ pre-commit（秒级：格式 / 风格 / 类型）
-                    └▶ harness PreToolUse（写前：主规格 / ADR / 高危删除）
-改动 ─▶ git push ───▶ CI（全量测试 + 覆盖率 + 双平台）
-流程 ─▶ scripts ────▶ gates / new-change / check-change / bootstrap
-```
+
+**图 1**：三层不是互相替代，而是触发点不同——git hook 在「改动进入版本库」时拦，harness hook 在「模型动手之前」拦，CI 在「代码离开本机」时兜底。
 
 ## 2. 五个停点
 
@@ -30,12 +37,13 @@
 
 ## 3. 一个 change 的控制点
 
+```mermaid
+flowchart LR
+    A["契约"] --> B["propose"] --> C["apply（切片）"] --> D["四道门禁"] --> E["两轴复核"]
+    E --> F["变异"] --> G["UAT"] --> H["归档"] --> I["merge"]
 ```
-契约 ─▶ propose ─▶ apply（切片）─▶ 四道门禁 ─▶ 两轴复核
-                                              │
-                                              ▼
-        merge ◀─ 归档 ◀─ UAT ◀─ 变异 ◀────────┘
-```
+
+**图 2**：一个 change 的控制点顺序；归档在 change 分支上做，`merge` 与推 `main` 是人闸。
 
 1. **验证契约**：先写目标、可观察行为、判据、坏法清单、不验什么；人审后才 propose；
 2. **切片实现**：按 tasks 顺序，判据先行；一个红绿循环一次提交；

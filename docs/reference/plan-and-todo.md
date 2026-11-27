@@ -4,6 +4,8 @@
 
 **一句话**：计划和待办都不写工作区文件；它们是日志事件，模型靠自己的工具调用历史看到，UI 与恢复靠投影重算。
 
+**图索引**：图 1 计划模式状态机（§2.1）· 图 2 从事件到投影（§2.2）。
+
 ## 1. 形状
 
 | 事件 | 载荷 | 用途 |
@@ -18,28 +20,33 @@
 
 ### 2.1 计划模式的状态机
 
+```mermaid
+stateDiagram-v2
+    state "普通" as Normal
+    state "计划中" as Planning
+    state "待审批" as Pending
+    [*] --> Normal
+    Normal --> Planning: /plan
+    Planning --> Pending: exit_plan_mode(plan)
+    Planning --> Planning: write / edit / bash / subagent → DENIED_BY_PLAN
+    Pending --> Normal: APPROVED
+    Pending --> Planning: DENIED / UNAVAILABLE
 ```
-              /plan                  exit_plan_mode(plan)
-   普通 ───────────────▶ 计划中 ───────────────────▶ 待审批
-    ▲                     │                            │
-    │                     │ write/edit/bash/subagent    │ APPROVED
-    │                     │ → DENIED_BY_PLAN            ▼
-    └─────────────────────┴────────────────────────── 普通
-                          DENIED / UNAVAILABLE
-                          → 保持计划中
-```
+
+**图 1**：只有 `APPROVED` 才翻转回普通；`DENIED` 与 `UNAVAILABLE` 都留在计划中，后者不能被当成默许。
 
 ### 2.2 从事件到投影
 
+```mermaid
+flowchart LR
+    L["日志（唯一真源）<br/>todo/updated · turn/start · turn/end"] --> P["project(records, todos)"]
+    P --> U["{name, state_version, value}"]
+    U --> C["CLI /todo"]
+    U --> H["GET /projections/todos"]
+    U --> S["SSE session/projection"]
 ```
-日志（唯一真源）
-  todo/updated ──┐
-  turn/start ────┼─▶ project(records, "todos") ──▶ {name, state_version, value}
-  turn/end ──────┘                                      │
-                                                        ├─▶ CLI /todo
-                                                        ├─▶ GET /projections/todos
-                                                        └─▶ SSE session/projection
-```
+
+**图 2**：投影是纯函数 + 单元；快照与 CLI 共用一份规则，可丢弃、可重建。
 
 ### 2.3 三条路径
 
