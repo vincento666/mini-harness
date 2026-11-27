@@ -6,6 +6,8 @@
 
 **适用范围**：`main@4b08386` 之后（`merge/reasoning` 已合入）；政策版本 **v3**。
 
+**图索引**：图 1 时间层级（§1.1）· 图 2 相位状态机（§3.1）· 图 3 轮后驱动判定（§5.1）· 图 4 打印时序（§7.3）。四张图都用 Mermaid 写在正文里，随文档一起版本化。
+
 ---
 
 ## 0. 一句话与四层结构
@@ -34,6 +36,17 @@ loop/turn_loop.py ──┘  （turn_loop） ├→ goals.fold_goal          读
 | 轮 | turn | `turn/start` / `turn/end` | 一条输入展开的那串步 | 一件事从头做到交差 |
 | 步 | step | `step/start` / `step/end` | 一次模型往返 + 这批工具 | 打一个电话、查一次资料 |
 | 目标轮 | goal round | 没有独立事件，数 `source.round` | goal 消息被准入的次数 | 同一件事的第 N 天 |
+
+```mermaid
+flowchart TB
+    S["会话 session（日志边界）"]
+    S --> T1["轮 turn · 人类来源<br/>rounds_started 不变"]
+    S --> T2["轮 turn · goal 来源 = 目标轮 round 2<br/>准入后 rounds_started +1"]
+    T1 --> A1["步 s1"] --> A2["步 s2"]
+    T2 --> B1["步 s3"] --> B2["步 s4"]
+```
+
+**图 1**：目标轮与人类轮都各是一次 turn，区别只在 `user/message.source`；它不是第四层嵌套。
 
 **关键语义**：目标轮**不是**第四层嵌套，而是「轮」的一种。goal 来源的轮就是目标轮，人类来源的
 轮不是。所以「goal 轮恰是一次目标轮」成立；`rounds_started` 数的是这种轮，人类轮不计数。
@@ -114,19 +127,27 @@ class GoalRuntime:
 | 任意非 complete | `clear` | （无目标） | 人（`/goal clear` / CLI） | 解武装 |
 | `complete` | `resume` | 拒绝 | 任何人 | `GOAL_INVALID_TRANSITION` |
 
-一张图：
+```mermaid
+stateDiagram-v2
+    state "无目标" as Empty
+    state "active" as Active
+    state "paused" as Paused
+    state "blocked" as Blocked
+    state "complete" as Complete
 
+    [*] --> Empty
+    Empty --> Active: create（模型，人类轮）
+    Active --> Paused: pause（模型 / 命令）
+    Paused --> Active: /goal resume（人）
+    Active --> Complete: complete（模型 / 人）
+    Active --> Blocked: blocked（≥门槛轮数）/ round-limit
+    Blocked --> Active: resume（人 / 工具）
+    Active --> Empty: /goal clear
+    Paused --> Empty: /goal clear
+    Blocked --> Empty: /goal clear
 ```
-        create                 pause                resume(/goal, 人)
-  ∅ ──────────▶ active ──────────────▶ paused ──────────────▶ active
-                  │  ▲                    │
-     complete     │  └──── resume(工具) 拒 ┘
-                  ▼
-              complete
-                  │  blocked(模型,≥门槛) / round-limit(系统)
-                  ▼
-              blocked ─── resume(/goal 或工具) ──▶ active（清 blocked_reason）
-```
+
+**图 2**：相位转移。`paused` 只有人能恢复；`blocked` 人与工具都能恢复；`complete` 是终点（只能 clear 回到无目标）。
 
 ### 3.2 武装位（armed）转移
 
@@ -213,6 +234,24 @@ v3 同时保留 v2 的停滞闸门表述与 v1 的「人输入开的轮不推进
 | 4 | 轮尾有未决问题 | `awaiting_input` | 不开轮，保持 `active/armed`，交回控制权 |
 | 5 | `stall_rounds > 0` 且是 goal 轮且 `idle_rounds >= stall_rounds` | `stalled` | 解武装、相位不动、计数清零 |
 | 6 | 其余 | `continue` | 开下一轮，`rounds_started + 1` |
+
+**图 3**（判定顺序即优先级，先命中先返回）：
+
+```mermaid
+flowchart TD
+    A["轮结束 turn/end"] --> B{"有目标 · active · 已武装？"}
+    B -- 否 --> STOP["stop：不开轮"]
+    B -- 是 --> C{"失败收尾？<br/>ABORTED / FENCE_DENIED /<br/>PROVIDER_ERROR / CONTEXT_WINDOW_EXCEEDED"}
+    C -- 是 --> STOP
+    C -- 否 --> D{"rounds_started ≥ max_rounds？"}
+    D -- 是 --> EX["exhausted：落 blocked(round-limit)"]
+    D -- 否 --> E{"轮尾有未答问题？"}
+    E -- 是 --> AW["awaiting_input：交回人"]
+    E -- 否 --> F{"连续零动作 ≥ stall_rounds？"}
+    F -- 是 --> ST["stalled：解武装"]
+    F -- 否 --> GO["continue：开下一轮"]
+    A -. MAX_STEPS 只是轮边界，继续往下判 .-> B
+```
 
 **顺序本身就是语义**：额度用尽比未决问题更硬（最后一轮里问了问题也先落 blocker）；问题比空转更硬
 （先告诉人「等你回答」，而不是判死循环）。
@@ -338,6 +377,25 @@ chat 没有轮中队列（同步 `readline`），提示符上的下一条输入�
 
 - 只有「回到等待状态」时才打 `> `：人类轮结束、`stop`/`exhausted`/`awaiting_input`/`stalled` 之后；
 - 自动轮之间**不打**提示符——打了会让屏幕看起来像在等人输入。
+
+**图 4**（打印时序：横幅只给自动轮，提示符只在真正回到等待时出现）：
+
+```mermaid
+sequenceDiagram
+    participant U as 人
+    participant C as chat
+    participant L as 日志
+    U->>C: 一句话任务（人类轮，无 [轮] 横幅）
+    C->>L: turn/start + user/message(kind=user)
+    L-->>C: 模型 create_goal（本轮只做计划）
+    C->>C: 收尾 MODEL_COMPLETED —— 不打 [轮] 收尾
+    Note over C: 驱动判定 continue，自动开目标轮 1
+    C->>C: 打印 [轮] 1/3
+    C->>L: user/message(kind=goal, round=1)
+    Note over C: 自动轮之间不打印提示符
+    C->>C: 打印 [轮] 2/3 …（直到 stop / exhausted / stalled / awaiting_input）
+    C->>U: 回到提示符 >
+```
 
 ### 7.3 屏幕上的一个完整片段（语义示例）
 
