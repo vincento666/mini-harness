@@ -126,7 +126,15 @@ def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
         default=None,
         help="配置文件路径。没给时找 workspace 根的那份 mini.config.toml。",
     )
-    parser.add_argument("--workspace", default=None, help="工作区根。没给时是当前目录。")
+    parser.add_argument(
+        "--workspace",
+        default=None,
+        help=(
+            "工作区根（围栏边界）。没给时是 $MINIHNS_HOME/workspaces/<session_id>/，"
+            "会话专属目录，启动时创建；发现根（mini.config.toml / 技能 / AGENTS.md）"
+            "仍锚启动目录。"
+        ),
+    )
     parser.add_argument(
         "--session-dir",
         default=None,
@@ -342,6 +350,7 @@ def _run(args: argparse.Namespace) -> int:
     if isinstance(prepared, Failure):
         return _report_failure(prepared.code, prepared.detail, prepared.exit_code)
 
+    print(f"工作区 {prepared.settings.workspace}", file=sys.stderr)
     outcome = asyncio.run(
         _await_session(
             prompt=prompt,
@@ -810,6 +819,8 @@ async def _chat_session(prepared: Prepared, signals: _ChatSignals, *, stream: bo
     # 会话 id 走 stderr（design D5）：stdout 那个投影只有模型回复正文与提示符。
     # 这一行同时是「这次会话的日志在哪」的入口——拿它跑 `minihns replay <id>` 找得到这次会话。
     print(f"会话 {prepared.log.session_id}", file=sys.stderr)
+    # 工作区走 stderr（design D4）：默认模式下产物落在会话专属目录，人要知道在哪找。
+    print(f"工作区 {prepared.settings.workspace}", file=sys.stderr)
     prepared.log.subscribe(_tool_observer())
 
     turns = 0

@@ -1250,7 +1250,10 @@ def _adopt_contracts(env: SessionEnv, events: Sequence[EventRecord]) -> None:
 
 def _maybe_emit_contracts(env: SessionEnv, turn_id: str) -> LogWriteFailure | None:
     """装配前观察工作区契约：首轮注入、指纹变了替换、两份都没了退休。"""
-    render = load_contracts(env.settings.workspace, env.contracts_home)
+    # 项目契约锚发现根（默认模式是启动目录），不是会话工作区——否则默认模式下契约静默失效。
+    render = load_contracts(
+        env.settings.discovery_workspace or env.settings.workspace, env.contracts_home
+    )
     events = read_events(env.log.path)
     if isinstance(events, LogReadFailure):
         return None

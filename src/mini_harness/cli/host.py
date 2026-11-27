@@ -234,6 +234,8 @@ class HostServer:
         created = create_session(self._state, parsed, os.environ)
         if isinstance(created, Failure):
             return _failure_response(created)
+        # 工作区走服务器 stderr（design D4）：默认模式下它是会话专属目录，宿主日志里要看得到。
+        print(f"工作区 {created.settings.workspace}", file=sys.stderr)
         return web.json_response(
             {"session_id": created.log.session_id, "cursor": created.last_seq},
             status=201,

@@ -27,10 +27,15 @@ def test_assemble_returns_a_prepared_for_a_mock_request(tmp_path: Path) -> None:
             fixture=str(fixture),
             session_dir=str(session_dir),
         ),
-        {},
+        {"MINIHNS_HOME": str(tmp_path / "home")},
     )
 
     assert isinstance(prepared, Prepared)
+    # 没给 `--workspace`：工作区是用户目录下的会话专属目录（default-session-workspace）。
+    assert prepared.settings.workspace == (
+        tmp_path / "home" / "workspaces" / prepared.log.session_id
+    )
+    assert prepared.settings.workspace.is_dir()
     assert prepared.settings.provider_name == "mock"
     assert prepared.log.path.parent == session_dir
     assert prepared.log.path.is_file()

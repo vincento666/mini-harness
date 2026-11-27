@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import os
+import uuid
 from argparse import Namespace
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
@@ -23,7 +24,7 @@ from mini_harness.config import (
     load_config,
 )
 from mini_harness.context.budget import pressure_budget
-from mini_harness.events import EventLog, LogWriteFailure
+from mini_harness.events import EventLog, LogReadFailure, LogWriteFailure, read_events
 from mini_harness.loop import (
     APPROVAL_MODES,
     PROVIDER_NAMES,
@@ -133,6 +134,67 @@ def _session_dir(value: str | None) -> Path:
     return Path.cwd() / "sessions"
 
 
+# 用户目录：`MINIHNS_HOME` 未设时与契约/技能同一处默认（`~/.mini-harness`）。
+HOME_ENV = "MINIHNS_HOME"
+HOME_DIR = ".mini-harness"
+
+
+def default_workspace(session_id: str, environ: Mapping[str, str]) -> Path:
+    """默认工作区：用户目录下的会话专属子目录（本 change 的核心默认值）。"""
+    raw = environ.get(HOME_ENV)
+    home = Path(raw) if raw else Path.home() / HOME_DIR
+    return home / "workspaces" / session_id
+
+
+def _workspace_from_log(session_dir: Path, session_id: str) -> Path | Failure:
+    """resume：从 `session/start.workspace` 读回工作区（显式 `--workspace` 优先，不走到这里）。
+
+    缺字段按「没给工作区」处理（不做 schema 迁移）；目录被人删掉时报 `WORKSPACE_MISSING`，
+    不静默重建——否则人会以为产物还在。
+    """
+    records = read_events(session_dir / f"{session_id}.jsonl")
+    if isinstance(records, LogReadFailure):
+        # 日志本身的问题沿用既有码与退出码（`LOG_NOT_FOUND` 等），不在这里改口径。
+        return Failure(records.code, records.detail, EXIT_INTERNAL_ERROR)
+    start = next((record for record in records if record.type == "session/start"), None)
+    raw = start.payload.get("workspace") if start is not None else None
+    if not isinstance(raw, str) or not raw:
+        return Failure(
+            "INVALID_ARGUMENT",
+            "日志里没有 session/start.workspace，无法恢复默认工作区：请显式给 --workspace",
+            EXIT_INVALID_ARGUMENT,
+        )
+    workspace = Path(raw)
+    if not workspace.is_dir():
+        return Failure(
+            "WORKSPACE_MISSING",
+            f"恢复的工作区不存在：{workspace}（目录被删时不静默重建，请显式给 --workspace）",
+            EXIT_INTERNAL_ERROR,
+        )
+    return workspace
+
+
+def _resolve_workspace(
+    request: AssemblyRequest, layered: Any, session_id: str, environ: Mapping[str, str]
+) -> Path | Failure:
+    """围栏根：显式 workspace 走旧逻辑；resume 读日志；否则落到会话专属目录并创建。"""
+    if layered.workspace is not None:
+        # 显式给时逐点同旧：绝对化，不自动创建。
+        return Path(os.path.abspath(layered.workspace))
+    if request.resume is not None:
+        return _workspace_from_log(_session_dir(layered.session_dir), request.resume)
+    workspace = default_workspace(session_id, environ)
+    try:
+        workspace.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        return Failure(
+            "INVALID_ARGUMENT",
+            f"默认工作区无法创建：{workspace}: {exc}",
+            EXIT_INVALID_ARGUMENT,
+        )
+    return workspace
+
+
 def assemble(
     request: AssemblyRequest,
     environ: Mapping[str, str],
@@ -240,14 +302,20 @@ def assemble(
             EXIT_INVALID_ARGUMENT,
         )
 
-    # 工作区在任何发现之前定下来：技能的四级根都相对它（用户级根相对 MINIHNS_HOME）。
-    # 绝对化（`abspath` 不解析符号链接）：工具回执与 bash 的 cwd 用同一条路径，模型不会
-    # 看到「写了 .tmp/uat/m13/notes.md」却在工作区里 `tail` 不到的矛盾。
-    workspace = Path(
-        os.path.abspath(layered.workspace if layered.workspace is not None else Path.cwd())
+    # 会话 id 先于工作区生成：默认工作区的路径里含它（design D1）。resume 沿用日志里的 id。
+    session_id = request.resume or uuid.uuid4().hex
+    # 围栏根：显式 workspace 逐点同旧；resume 读回日志值；否则是会话专属目录（本 change）。
+    resolved = _resolve_workspace(request, layered, session_id, environ)
+    if isinstance(resolved, Failure):
+        return resolved
+    workspace = resolved
+    # 发现根：`mini.config.toml` / 技能项目两级根 / `AGENTS.md` 项目契约锚**启动目录**
+    # （显式 workspace 时为它），与围栏根分离——默认模式下从项目根启动仍带着项目的技能与契约。
+    discovery_workspace = (
+        Path(os.path.abspath(layered.workspace)) if layered.workspace is not None else Path.cwd()
     )
     # 全局 provider + 分层注册表：目录消息与命令面都从注册表快照取（skill-providers）。
-    skills_registry = SkillRegistry(FilesystemProvider.global_roots(workspace, environ))
+    skills_registry = SkillRegistry(FilesystemProvider.global_roots(discovery_workspace, environ))
     discovery = skills_registry.snapshot()
     skills = discovery.skills
     # 工具表从装配来：内置定义按配置的白名单筛，未知名与别的配置失败同形。
@@ -318,15 +386,16 @@ def assemble(
         provider = loaded
 
     log = (
-        EventLog.open(_session_dir(layered.session_dir), request.resume)
+        EventLog.open(_session_dir(layered.session_dir), session_id)
         if request.resume is not None
-        else EventLog.start(_session_dir(layered.session_dir))
+        else EventLog.create(_session_dir(layered.session_dir), session_id)
     )
     if isinstance(log, LogWriteFailure):
         return Failure(log.code, log.detail, EXIT_INTERNAL_ERROR)
 
     settings = SessionSettings(
         workspace=workspace,
+        discovery_workspace=discovery_workspace,
         provider_name=provider_name,
         max_steps=max_steps,
         sandbox=layered.sandbox,

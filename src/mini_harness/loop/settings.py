@@ -87,6 +87,9 @@ class SessionSettings:
     max_steps: int
     sandbox: SandboxLevel = "workspace-write"
     approval: ApprovalMode = "ask"
+    # 发现根（default-session-workspace）：技能项目两级根与 `AGENTS.md` 项目契约锚这里，
+    # 与围栏根 `workspace` 分离；`None` 表示与 `workspace` 重合（显式 workspace 时逐点同旧）。
+    discovery_workspace: Path | None = None
     append_system_prompt: str = ""
     reasoning_effort: ReasoningEffort = DEFAULT_REASONING_EFFORT
     # 窗口预算的两个参数（不变量 D）：`--window` 与 `--reserve`。

@@ -83,7 +83,32 @@ class _FakeEndpoint:
         return f"http://{host}:{port}/v1"
 
 
-def _command(*args: str) -> list[str]:
+# 接受 `--workspace` 的子命令；其余子命令（replay/usage/goal）不能带这个 flag。
+_WORKSPACE_COMMANDS = frozenset({"run", "serve", "host", "chat"})
+
+# 「没指定」的哨兵：默认注入 cwd（逐点同旧），`None` 是显式不注入（默认工作区判据用）。
+_CWD = object()
+
+
+def _target(cwd: Path, workspace: Path | object | None) -> Path | None:
+    """哨兵 → 具体路径：默认注入调用方给的 cwd，`None` 是不注入。"""
+    return cwd if workspace is _CWD else workspace  # type: ignore[return-value]
+
+
+def _command(*args: str, workspace: Path | None = None) -> list[str]:
+    """命令前缀 + 参数；带 `--workspace` 的子命令在给了 `workspace` 时注入它。
+
+    默认模式下工作区不再等于 cwd（default-session-workspace），所以黑盒统一把旧的默认值
+    显式写出来——逐测试不用改。要测默认模式的用例传 `workspace=None` 关掉注入。
+    """
+    extra: list[str] = []
+    if (
+        workspace is not None
+        and args
+        and args[0] in _WORKSPACE_COMMANDS
+        and "--workspace" not in args
+    ):
+        extra = ["--workspace", str(workspace)]
     return [
         sys.executable,
         "-m",
@@ -95,11 +120,14 @@ def _command(*args: str) -> list[str]:
         "-m",
         "mini_harness.cli.main",
         *args,
+        *extra,
     ]
 
 
-def _child_env(env: dict[str, str] | None) -> dict[str, str]:
+def _child_env(env: dict[str, str] | None, home: Path) -> dict[str, str]:
     child_env = dict(os.environ if env is None else env)
+    # 用户目录落到测试自己的临时目录：默认工作区/技能根/契约都不碰真实家目录。
+    child_env.setdefault("MINIHNS_HOME", str(home))
     # 外层可以用 `COVERAGE_FILE=<dir>/.coverage` 把一次运行的所有 partial 收在同一个目录里，
     # 这样 `coverage combine` 只合并本次的数据，不会把仓库根的历史 partial 一起算进来。
     child_env["COVERAGE_FILE"] = os.environ.get("COVERAGE_FILE", str(REPO_ROOT / ".coverage"))
@@ -111,6 +139,7 @@ def _cli(
     cwd: Path,
     env: dict[str, str] | None = None,
     stdin_text: str | None = None,
+    workspace: Path | object | None = _CWD,
 ) -> subprocess.CompletedProcess[str]:
     """跑一次 `python -m mini_harness.cli.main`，返回 CompletedProcess（UTF-8 文本）。
 
@@ -124,12 +153,12 @@ def _cli(
     不看运行环境脸色。
     """
     return subprocess.run(
-        _command(*args),
+        _command(*args, workspace=_target(cwd, workspace)),
         cwd=str(cwd),
         capture_output=True,
         text=True,
         encoding="utf-8",
-        env=_child_env(env),
+        env=_child_env(env, cwd / ".minihns-home"),
         stdin=None if stdin_text is not None else subprocess.DEVNULL,
         input=stdin_text,
     )
@@ -141,6 +170,7 @@ def _cli_process(
     keep_stdin_open: bool = False,
     env: dict[str, str] | None = None,
     creationflags: int = 0,
+    workspace: Path | object | None = _CWD,
 ) -> subprocess.Popen[str]:
     """同一条命令，但以 `Popen` 起：用来在 session 进行中给它发信号。
 
@@ -149,13 +179,13 @@ def _cli_process(
     `creationflags` 给 host 用：Windows 上要 `CREATE_NEW_PROCESS_GROUP` 才能发 Ctrl-Break。
     """
     return subprocess.Popen(
-        _command(*args),
+        _command(*args, workspace=_target(cwd, workspace)),
         cwd=str(cwd),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
         encoding="utf-8",
-        env=_child_env(env),
+        env=_child_env(env, cwd / ".minihns-home"),
         stdin=subprocess.PIPE if keep_stdin_open else subprocess.DEVNULL,
         creationflags=creationflags,
     )
@@ -172,13 +202,13 @@ def _cli_console_process(
     控制台是新开的，std 三条句柄仍是管道，所以 tty 检测与别的黑盒一致。
     """
     return subprocess.Popen(
-        _command(*args),
+        _command(*args, workspace=_target(cwd, _CWD)),
         cwd=str(cwd),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
         encoding="utf-8",
-        env=_child_env(None),
+        env=_child_env(None, cwd / ".minihns-home"),
         stdin=subprocess.PIPE if keep_stdin_open else subprocess.DEVNULL,
         creationflags=CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP,
     )
