@@ -26,6 +26,8 @@
 - **WHEN** provider 只发空字符串 delta，最终 `content` 非空
 - **THEN** stderr 里没有 `[answer]`，正文在轮末按回退规则打印
 
+## ADDED Requirements
+
 ### Requirement: 流式投影裁掉回复正文的首尾空白
 
 `--stream` 下 stdout 的正文投影 SHALL 裁掉**本轮**回复正文的首尾空白：本轮第一个可见正文增量（流式或步末回退）写出前 MUST 先去掉前导空白；正文开始后的纯空白增量 MUST 先攒住，等下一个可见增量到达时写出，轮末仍未被接上的按尾随空白丢弃——段与段之间的空行因此保留，只裁首尾。日志里的 `model/response.content` 与 `blocks` MUST 保持 provider 原文：裁剪只发生在渲染投影，MUST NOT 写回日志，也 MUST NOT 改动去重、回退与「空 delta 不触发标记」的既有判据。`--no-stream` 是旧行为投影，MUST NOT 裁剪。`[thinking]` 头行下的第一段思考同理裁前导空白；思考的尾随空白不裁（思考段以收行结束）。这是 2026-11-27 UAT 后的人裁，依据主流终端/网页助手「裁显示、留原文」的通行做法（它们的输出经 Markdown 渲染层，首尾空白天然不可见）。

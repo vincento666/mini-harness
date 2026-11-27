@@ -1,0 +1,165 @@
+# reasoning Specification
+
+## Purpose
+TBD - created by archiving change merge-reasoning-stream. Update Purpose after archive.
+## Requirements
+### Requirement: assistant message 是有序 content blocks
+
+`AssistantTurn` SHALL 提供 `blocks: list[Block]`，块类型至少 `reasoning` / `text` / `tool-call`；顺序 SHALL 保留模型返回顺序。`content` 与 `tool_calls` MAY 保留为 blocks 的派生投影，但 MUST NOT 成为第二真源。没有 reasoning 的 provider MUST 继续产出等价的 text/tool-call blocks，旧日志读法不变。
+
+#### Scenario: reasoning 与 text 交错保序
+
+- **WHEN** provider 返回 reasoning → tool-call → reasoning → text
+- **THEN** `model/response.blocks` 按同一顺序保存四块
+
+#### Scenario: 旧 provider 只有正文
+
+- **WHEN** provider 只返回 `content="你好"`
+- **THEN** `blocks` 是单个 text 块，`content` 投影仍是 `你好`
+
+### Requirement: reasoning 只以 ephemeral delta 实时输出
+
+系统 SHALL 提供 `reasoning/delta` SSE 事件：`step_id`、`index`、`text`；MUST NOT 写日志、MUST NOT 带 durable `id`、MUST NOT 参与 `Last-Event-ID` 游标。正文 `model/delta` 保持不变；reasoning MUST NOT 混进 `model/delta`。
+
+#### Scenario: 思考与正文分开
+
+- **WHEN** provider 先发 reasoning delta、再发正文 delta
+- **THEN** SSE 依次出现 `reasoning/delta` 与 `model/delta`，两者都无 durable id
+
+#### Scenario: delta 不进日志
+
+- **WHEN** 一次带 reasoning 的模型调用结束
+- **THEN** 日志里没有 `reasoning/delta` 记录，只有最终 `model/response`
+
+### Requirement: 成功 attempt 与失败 attempt 分开落账
+
+一次成功 attempt SHALL 只追加一条 `model/response`，payload 带 `blocks`、`usage`、`finish_reason`；完整 reasoning 文本 SHALL 保存在 blocks 里，不按 delta 逐条落账。失败 MUST NOT 写半条 `model/response`；若流中已收到部分内容（包括坏标签导致的 schema 失败），SHALL 追加一条 log-only 的 `model/attempt`，带 `status`、`error_code` 与已收到的 `partial_blocks`（或等价紧凑 stream），供审计/回放诊断。`fold` MUST 忽略 `model/attempt`，它 MUST NOT 进入模型历史，也 MUST NOT 进入下一次请求。
+
+#### Scenario: 完整 reasoning 可重放
+
+- **WHEN** 一次响应含 reasoning 与 text
+- **THEN** 日志只有一条 `model/response`，`blocks` 里能读出完整 reasoning
+
+#### Scenario: 坏标签保留证据
+
+- **WHEN** 开标签直到 EOF 未闭合
+- **THEN** 没有 `model/response`；有 `model/attempt` 记录部分 blocks 与 `PROVIDER_SCHEMA_INVALID`，`fold` 不把它当消息
+
+#### Scenario: 证据可审计
+
+- **WHEN** 事后查看一次 schema 失败的日志
+- **THEN** 能看到 provider 发来的已收前缀与 `PROVIDER_SCHEMA_INVALID`，而不是只有一行错误
+
+### Requirement: 用户取消写 interrupted assistant 锚点
+
+用户取消流式生成时，系统 SHALL 追加一条 `model/response`，带 `interrupted: true` 与已经交付给用户的 `blocks`；该记录 SHALL 进入 `fold`/模型历史，下一次请求 SHALL 包含用户已经看到的前缀。`interrupted` 是消息级字段，MUST NOT 表示成正文里的标签或伪 block。**有已交付内容的取消只写这一条 interrupted message，不再写 `model/attempt`**；没有交付内容时只写 `model/attempt` 与 ABORTED，不写空 interrupted 锚点。二者互斥。非用户取消的失败 MUST NOT 使用 interrupted 锚点。
+
+#### Scenario: 取消保留已交付前缀
+
+- **WHEN** 用户在看到 reasoning/text 后取消
+- **THEN** 一条 `model/response` 带 `interrupted: true` 与已交付 blocks；`fold` 把它们当 assistant 消息，下一次请求包含它们
+
+#### Scenario: 没有交付内容
+
+- **WHEN** 取消发生在首个 delta 之前
+- **THEN** 不写空 interrupted 锚点，按现有 ABORTED 收尾；只写 `model/attempt`
+
+#### Scenario: 失败不使用 interrupted
+
+- **WHEN** provider 返回 schema 错误或坏标签
+- **THEN** 不写 `interrupted: true` 的 `model/response`；只写 `model/attempt`，不进历史/下一次请求
+
+### Requirement: Provider sink 分流
+
+Provider SHALL 接受独立的 `ReasoningSink`；正文 `on_delta` 只收 `text` 块，reasoning 只走 `ReasoningSink`。适配器 MUST NOT 把 reasoning 拼进正文，也不得把正文拼进 reasoning。
+
+#### Scenario: 正文 sink 不含 reasoning
+
+- **WHEN** 适配器收到 reasoning 与正文片段
+- **THEN** 正文 sink 只收到正文片段，reasoning sink 只收到 reasoning 片段
+
+### Requirement: reasoning 标签只在成对时识别
+
+核心层 MUST NOT 解析 reasoning 标签；它只认结构化 `reasoning_content` / thinking chunk / block channel。若某个 adapter 选择解析标签，开标签确认后 SHALL 立即进入 reasoning 模式并**乐观 emit** 后续内容，只保留检测闭标签所需的小缓冲；闭标签确认后才算这段完整。只有闭标签、嵌套标签、标签外无法归属的内容、或流结束仍未闭合时，SHALL 以 `PROVIDER_SCHEMA_INVALID` 失败，MUST NOT 写 `model/response`。失败时已经发出的 `reasoning/delta` 无法撤回，壳 MUST 清掉/折叠这段 live 内容并显示错误；MUST NOT 留下半条 durable reasoning 或把半截内容同时算进 reasoning 与正文。
+
+#### Scenario: 开标签后立即流式
+
+- **WHEN** 开标签在 chunk 1 确认，reasoning 文本在 chunk 2 到达
+- **THEN** chunk 2 的文本立即作为 `reasoning/delta` 发出，不等待闭标签
+
+#### Scenario: 闭标签跨 chunk
+
+- **WHEN** 闭标签被拆到两个 chunk
+- **THEN** adapter 只缓冲可能是闭标签的尾部，不把标签字符 emit 给 reasoning 或正文
+
+#### Scenario: 开标签没有闭标签
+
+- **WHEN** adapter 在流结束前只看到开标签
+- **THEN** 返回 `PROVIDER_SCHEMA_INVALID`，没有 `model/response`；有 `model/attempt` 保留已收前缀与错误码，壳清掉 live reasoning
+
+#### Scenario: 只有闭标签
+
+- **WHEN** adapter 看到闭标签但没有配对的开标签
+- **THEN** 同样 `PROVIDER_SCHEMA_INVALID`，不把标签内容当正文
+
+#### Scenario: 没有标签
+
+- **WHEN** adapter 收到普通正文且没有 reasoning 标签
+- **THEN** 全部按 text 处理，行为与今天相同
+
+### Requirement: 空 reasoning 丢弃、仅 reasoning 不冒充正文
+
+空的 reasoning 文本 SHALL 被丢弃，不产生空 block、空 delta 或空 SSE 帧。一次响应只有 reasoning、没有 text/tool-call 时 SHALL 保留 reasoning blocks，`content` 投影为空串；壳 SHALL 能显示“无正文”，MUST NOT 把 reasoning 自动升级为可见回答。
+
+#### Scenario: 空 delta 被丢弃
+
+- **WHEN** provider 发来空 reasoning delta
+- **THEN** 不产生 `reasoning/delta`，也没有空 reasoning block
+
+#### Scenario: 只有 reasoning
+
+- **WHEN** 响应 blocks 只有 reasoning，finish_reason 是 stop
+- **THEN** blocks 保留 reasoning，content 投影为空；壳显示“无正文”，不把 reasoning 当答案
+
+### Requirement: 思考强度是请求配置
+
+系统 SHALL 支持 `reasoning_effort = off|low|high|max`；不支持的档位 SHALL 在发起网络 I/O 之前失败，错误码 `UNSUPPORTED_REASONING_EFFORT`。`off` MUST 把 reasoning 关掉；其余档位按 provider 协议映射。
+
+#### Scenario: 不支持的档位在 I/O 前失败
+
+- **WHEN** 配置 `reasoning_effort=ultra`
+- **THEN** 不发出 HTTP 请求，session 以参数错误结束
+
+#### Scenario: off 不产生 reasoning
+
+- **WHEN** `reasoning_effort=off`
+- **THEN** 响应没有 reasoning 块或 reasoning delta
+
+### Requirement: reasoning tokens 是 output 的子集
+
+`usage.reasoning_tokens` SHALL 是 `output_tokens` 的子集；成本/计量 MUST NOT 把 reasoning tokens 再加一遍。回传的 reasoning 文本进入后续上下文时，按普通文本计入上下文预算。
+
+#### Scenario: 不重复计
+
+- **WHEN** usage 为 `output_tokens=50`、`reasoning_tokens=30`
+- **THEN** 计量总额按 50 计，不按 80
+
+#### Scenario: 回传计入上下文
+
+- **WHEN** 后续请求带上一轮的 reasoning 块
+- **THEN** 预算估算把它当普通文本计入
+
+### Requirement: fold 与 replay 保序
+
+`fold` SHALL 从 `model/response.blocks` 重建有序 `Message`；旧日志没有 blocks 时 SHALL 退化为现有 content/tool_calls 行为，逐点重放不变。Provider 历史回传 MUST 保留 reasoning/text/tool-call 的顺序；不支持块级回传的适配器 SHALL 显式降级并记录，MUST NOT 把 reasoning 当普通 content 静默塞回。
+
+#### Scenario: 两种日志都逐点重放
+
+- **WHEN** 旧日志（无 blocks）与新日志（有 reasoning blocks）各自 replay
+- **THEN** 两次 `context/assembled` 与各自原 run 逐点相等
+
+#### Scenario: 无 reasoning 模型行为不变
+
+- **WHEN** provider 不返回 reasoning
+- **THEN** 日志、fold、SSE 除新空字段外与今天逐点相同
+
