@@ -43,6 +43,7 @@
 
 ## 开放缺口
 
+- **host-stream-hardening 只差 UAT 人跑（2026-11-27）**：三条防御性条款已全部落地——`stream/end` 实现缺口两侧收口（host.py 随 merge 补入、serve.py 本轮补入，帧编码器与 `sse_frame` 同住 serve.py）；snapshot「是模型上下文不是完整 UI」与「不提供原始日志下载」为追认判据。真端点一场（`19c0c50f…`，durable 重放 0 命中 ephemeral/stream/end）、变异 M1/M2 全杀。剩 3.2 人跑三场（手册 `docs/verification/host-stream-hardening-uat.md`）后归档。全量 **969 passed / 6 skipped**。
 - **L4 轮内工作量预算（待办，2026-11-25）**：`goal-round-pacing` 只解决「写满一轮不杀死长任务」；如果 L3 之后仍出现「一轮里写太多、轮次粒度不够用」，再开 `goal-round-budget`（按工具调用数/写入数给轮内预算），不要塞进 L3。L1（工具描述条件句）与 L2（`create_goal` 后硬停）经与 DSH 对照不做。
 
 - **思考帧已落地并归档（2026-11-26 合入 → 2026-11-27 归档）**：`change/reasoning-mode-and-budget`（及其祖先 `chat-streaming-shell`）已由 `merge-reasoning-stream` 合并迁移到当前主线（14 文件 45 处冲突按「当前线骨架优先、分支能力补入」处置；词表迁移 turn→step / segment→turn；政策仍 v3），**该 change 与原 change 均已归档**（`archive/2026-11-27-merge-reasoning-stream`、`archive/2026-11-27-reasoning-mode-and-budget`），主规格新增 `spec/reasoning` 能力（10 条）+ provider/event-log/chat-repl/chat-streaming 四处增改。能力：`model/response.blocks` 保序、live `reasoning/delta` ephemeral 帧、chat 的 `[thinking]`/`[answer]` 头行同构（独占一行、内容另起）、流式投影裁正文首尾空白（日志留原文）、取消写 interrupted message、失败带前缀写 `model/attempt`、`usage.reasoning_tokens` 不重复计。验收：真端点三场（chat 管道 + host SSE + trim 冒烟，见 `docs/verification/merge-reasoning-stream-real-endpoint.md`）、tty 三轮人跑（`711af091…`）、变异 M1/M2 全杀（`merge-reasoning-stream-mutation.md`）、全量 **967 passed / 6 skipped**、覆盖率 98.50%。过程中修掉两个真缺陷：① 流式只认 `reasoning_content` 不认 OpenRouter 归一 `reasoning`（换端点流式思考全丢）；② 标记格式不一致（UAT 人裁）。
