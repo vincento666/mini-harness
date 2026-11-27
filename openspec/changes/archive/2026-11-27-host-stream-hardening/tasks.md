@@ -13,6 +13,6 @@
 ## 3. 收尾四项
 
 - [x] 3.1 同左。会话 `19c0c50f…`（OpenRouter `qwen/qwen3.8-27b`），帧序正常，durable 重放 0 命中 stream/end / reasoning/delta / model/delta；见 `docs/verification/host-stream-hardening-real-endpoint.md`
-- [ ] 3.2 UAT 验收（人跑）：手册已立 `docs/verification/host-stream-hardening-uat.md`（远端壳视角三场：正常收尾 / DELETE 的 session_ended / 坏行的 LOG_UNREADABLE）
+- [x] 3.2 UAT 验收（人跑，2026-11-27）：四场全过（正常收尾含 ephemeral、DELETE 的 session_ended、坏行杀死会话的 session_ended、重连的 LOG_UNREADABLE）；手册连带修订（订阅时序、场 3 拆 3a/3b），观察记录已回填
 - [x] 3.3 变异测试一轮：M1（serve 读失败不发帧）与 M2（snapshot 混进控制面记录）各被对应判据杀死；见 `docs/verification/host-stream-hardening-mutation.md`。流程教训：先提交再变异——第一轮回滚用 `git checkout --` 把未提交的实现一并冲掉了
 - [x] 3.4 Learning Gate：**NO-PROMOTION**——本 change 是防御性收口，实现与判据无新的可复用信号；「先提交再变异」并入 merge-reasoning-stream 场次的既有教训（变异必须死在断言上）同族，不单独立条
