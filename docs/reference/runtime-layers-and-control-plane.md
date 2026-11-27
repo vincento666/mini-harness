@@ -10,35 +10,29 @@
 
 这不是新架构，也不是 DSH 的 L0–L13 层号表；它是 mini 在 H1 这个时间点上的**运行时教学模型**。DSH 的 K/R/S 术语见 `GLOSSARY.md`。
 
+**图索引**：图 1 四层总图（§0）· 图 2 轮与步的时间层级（§5）· 图 3 审批的跨层时序（§6）· 图 4 每次工具调用的 dispatch 管线（§7）· 图 5 snapshot 的前缀折叠与后缀续读（§8）。五张图用 Mermaid 写在正文；事件序列与数据形状仍保留代码块（替换会丢精度）。
+
+**一句话**：日志是唯一真源，表层是它的前缀折叠，状态层是壳的投影；四层职责是「Shell 给选择、Host 做会话与传输、Kernel 做判断执行记账、Log 记住一切」。
+
 ---
 
 ## 0. 先看总图
 
-```text
-┌────────────────────────── Shell / UI（S） ──────────────────────────┐
-│ 人看得见的部分：会话列表、消息、审批提示、事件回显                   │
-│ 读：GET /sessions、GET /sessions/{id}/events                        │
-│ 写：POST messages / cancel / approvals                               │
-└───────────────────────────────▲──────────────────┬───────────────────┘
-                                │ 状态投影          │ 人的选择
-┌───────────────────────────────┴──────────────────▼───────────────────┐
-│ Host（H1，外壳侧的运行时）                                             │
-│ 会话生命周期 / 装配 / 队列 / 取消 / approval future / SSE / 鉴权       │
-│ 它是适配层与生命周期层，不是决策层                                     │
-└───────────────────────────────▲──────────────────┬───────────────────┘
-                                │ 事件 / 状态       │ 轮、工具、审批
-┌───────────────────────────────┴──────────────────▼───────────────────┐
-│ Kernel（K）                                                            │
-│ turn_loop / dispatch / fences / tools                                 │
-│ 决定「要不要问人」、解释「批准/拒绝/不可用」、执行/拒绝、落账           │
-└───────────────────────────────┬──────────────────┬───────────────────┘
-                                │ append            │ fold
-                                ▼                   ▼
-                    ┌───────────────────┐   ┌───────────────────────────┐
-                    │ 日志 JSONL         │   │ 表层 messages             │
-                    │ 唯一真源，只追加   │──►│ 模型当前唯一能感知的上下文 │
-                    └───────────────────┘   └───────────────────────────┘
+```mermaid
+flowchart TB
+    S["Shell / UI（S）<br/>会话列表 · 消息 · 审批提示 · 事件回显<br/>读 GET /sessions、GET /sessions/{id}/events<br/>写 POST messages / cancel / approvals"]
+    H["Host（H1，外壳侧运行时）<br/>会话生命周期 · 装配 · 队列 · 取消<br/>approval future · SSE · 鉴权<br/>适配层与生命周期层，不是决策层"]
+    K["Kernel（K）<br/>turn_loop · dispatch · fences · tools<br/>决定要不要问人 · 解释批准/拒绝/不可用<br/>执行或拒绝 · 落账"]
+    L[("日志 JSONL<br/>唯一真源，只追加")]
+    M["表层 messages<br/>模型当前唯一能感知的上下文"]
+    S <-->|"状态投影 / 人的选择"| H
+    H <-->|"事件与状态 / 轮、工具、审批"| K
+    K -->|"append"| L
+    K -->|"fold"| M
+    L -->|"fold 的输入"| M
 ```
+
+**图 1**：四层职责与两份投影——日志是事实，表层是 `fold(日志前缀)`，状态层是壳的投影；Shell / Host / Kernel / Log 是处理这些投影与决策的四层。
 
 从下往上看：
 
@@ -205,6 +199,19 @@ fold：
 
 ## 5. 轮与步：两个时间单位
 
+**图 2**：轮由步组成，步是一次模型往返加这批工具；`max_steps` 数的是模型往返次数，不是工具调用数。目标轮只是轮的一种来源（§5.3），时间单位没有多一层。
+
+```mermaid
+flowchart TB
+    E["一条输入：host POST /messages 或 chat 读一行"] --> T["轮 turn<br/>turn/start → user/message"]
+    T --> S1["步 t1：一次 model 往返 + 这批工具"]
+    S1 --> D{"模型还要调工具？"}
+    D -->|"是"| S2["步 t2 …（max_steps 封顶）"]
+    S2 --> D
+    D -->|"否"| Z["turn/end（stop_reason）"]
+    Z -.->|"下一条输入"| E
+```
+
 ### 5.1 轮：一条输入展开的那串步
 
 ```text
@@ -253,24 +260,29 @@ turn/end       (stop_reason)
 
 控制面不是单独一层，而是一条**跨 Shell / Host / Kernel / Log** 的端到端路径。以审批为例：
 
-```text
-Shell/UI            Host                         Kernel                      Log
-   │                  │                            │                         │
-   │                  │                            │ tool/call c1 ──────────►│
-   │                  │                            │ judge_fence → NEEDS_APPROVAL
-   │                  │                            │ approval/request c1 ───►│
-   │                  │ ◄── gate.request(c1) ──────┤                         │
-   │                  │ future(c1)                 │                         │
-   │ ◄── SSE approval/request ──────────────────────┤                         │
-   │ 人点 approve      │                            │                         │
-   │ ── POST /approvals/c1 ──►│                    │                         │
-   │                  │ future.set_result(True)    │                         │
-   │                  │ ── APPROVED ──────────────►│                         │
-   │                  │                            │ 执行工具                 │
-   │                  │                            │ approval/response ─────►│
-   │                  │                            │ tool/result ───────────►│
-   │ ◄── SSE/状态 ──────────────────────────────────┤                         │
+```mermaid
+sequenceDiagram
+    participant S as Shell / UI
+    participant H as Host
+    participant K as Kernel
+    participant L as Log
+    K->>L: tool/call c1
+    K->>K: judge_fence → NEEDS_APPROVAL
+    K->>L: approval/request c1
+    K->>H: gate.request(c1)
+    H->>H: future(c1) 登记
+    H-->>S: SSE approval/request
+    S->>S: 人点 approve
+    S->>H: POST /approvals/c1
+    H->>H: future.set_result(True)
+    H->>K: APPROVED
+    K->>K: 执行工具
+    K->>L: approval/response
+    K->>L: tool/result
+    H-->>S: SSE / 状态
 ```
+
+**图 3**：审批是一条跨 Shell / Host / Kernel / Log 的端到端路径。Host 只翻译与同步，Kernel 解释枚举并执行或拒绝，四条 durable 记录（`tool/call`、`approval/request`、`approval/response`、`tool/result`）都落在日志里。
 
 ### 6.1 谁解释枚举
 
@@ -281,7 +293,7 @@ approval_gate.request(c1) 返回：
                 error/fence.code = APPROVAL_DENIED
   UNAVAILABLE → 不执行 → tool/result = DENIED_BY_APPROVAL
                 error/fence.code = APPROVAL_UNAVAILABLE
-三者都让轮以 FENCE_DENIED 收尾（只停轮，不结束会话）
+拒绝的两路（DENIED / UNAVAILABLE）让轮以 FENCE_DENIED 收尾（只停轮，不结束会话）；APPROVED 继续执行
 ```
 
 - **Kernel 拥有运行时解释权**：它决定是否需要审批、每个枚举值对应执行还是拒绝；
@@ -316,18 +328,24 @@ future.set_result(None)                # 超时/取消/关停 → UNAVAILABLE
 
 ## 7. 工具与 dispatch：每次调用的管线
 
-```text
-dispatch_tool_call(call)
-├─ 查注册表
-├─ 校验参数
-├─ judge_fence：档位 / 边界 / 要不要问人
-├─ 需要时 await approval_gate
-├─ 执行 definition.run：
-│     ├─ read/write/edit/glob/grep → 本地文件
-│     ├─ bash                     → 本地 shell/子进程
-│     └─ 未来的工具               → 可以包一次 HTTP API
-└─ 返回 ToolResult
+```mermaid
+flowchart TB
+    C["dispatch_tool_call(call)"] --> R["查注册表"]
+    R --> V["校验参数"]
+    V --> J["judge_fence：档位 / 边界 / 要不要问人"]
+    J --> A{"需要审批？"}
+    A -->|"是"| G["await approval_gate"]
+    A -->|"否"| X["执行 definition.run"]
+    G --> X
+    X --> K1["read / write / edit / glob / grep<br/>→ 本地文件"]
+    X --> K2["bash<br/>→ 本地 shell / 子进程"]
+    X --> K3["未来的工具<br/>→ 可以包一次 HTTP API"]
+    K1 --> T["返回 ToolResult"]
+    K2 --> T
+    K3 --> T
 ```
+
+**图 4**：`dispatch` 是每次工具调用的管线（校验 → 围栏 → 审批 → 执行 → 结果），并发不在这一层——同一批多个调用怎么并行是 `turn_loop` 的批处理策略。
 
 - `dispatch` 是**每次工具调用的管线**：校验 → 围栏 → 审批 → 执行 → 结果；
 - 具体是本地 shell 还是外部 API，由工具实现决定；`dispatch` 的形状不变；
@@ -338,16 +356,17 @@ dispatch_tool_call(call)
 
 ## 8. 快照：前缀折叠 + 后缀续读
 
-```text
-日志：0 ... 93 94 95 | 96 97 ...（新记录）
-                 ▲
-                 snapshot 读到的前缀 0..95，last_seq = 95
-                 messages = fold(0..95)
-
-SSE ?snapshot=1：
-  第 1 帧       event: snapshot（无 id；含 last_seq=95 + messages）
-  之后 durable  id=96, 97, ...（原始日志行，不是 fold 结果）
+```mermaid
+flowchart LR
+    L["日志：0 … 93 94 95 | 96 97 …"]
+    P["快照前缀 0..95<br/>last_seq = 95<br/>messages = fold(0..95)"]
+    F["第 1 帧：event: snapshot<br/>无 id，含 last_seq + messages"]
+    D["之后 durable：id = 96, 97 …<br/>原始日志行，不是 fold 结果"]
+    L --> P --> F
+    P --> D
 ```
+
+**图 5**：snapshot 是前缀折叠，不是「最后一步的结果」。`last_seq` 是前缀终点而非起点；快照之后 durable 必须从 `last_seq + 1` 连续，缺一条才是 bug。
 
 - snapshot 是**前缀折叠**：覆盖当时日志的 `0..last_seq`，不是「从 last_seq 到 EOF」的尾段；
 - `last_seq` 是前缀终点，不是起点；之后从 `last_seq + 1` 送 durable 帧；

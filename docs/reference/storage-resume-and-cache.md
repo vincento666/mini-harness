@@ -2,6 +2,10 @@
 
 **定位**：M11 的设计说明，不是规格。对外行为以 `m11-storage-resume-and-projection-cache` 的 delta spec 为准。
 
+**图索引**：图 1 上迁管线（§2.1）· 图 2 fold 缓存的位置（§3）。两张图用 Mermaid 写在正文。
+
+**一句话**：日志是唯一真源；上迁在读取入口一次性把旧记录翻译成当前形状，磁盘字节不动；fold 缓存只是「同一前缀」的便签，省的是重复折叠，不是磁盘读。
+
 ## 1. 真相与恢复
 
 ```text
@@ -27,12 +31,17 @@ JSONL 日志 = 唯一真源
 
 **上迁 = 读的时候把旧版本的记录翻译成当前形状，磁盘上的字节一个都不动。** 它是 append-only 日志的标配：日志是证据，重写历史会让「回放」和「审计」失去可信度；翻译放在读取入口（`read_events` / `LogTail` 共用的 `_records_from_lines`），一次翻译，下游只看见一种形状。
 
-```text
-磁盘（v1 行保持原样）
-  └─ read_events → EventRecord(v1) → migrate_schema → _upcast_v1 → EventRecord(v2)
-                                                                    │
-                                              fold / 投影 / replay / SSE 只看见 v2
+```mermaid
+flowchart LR
+    D["磁盘：v1 行保持原样"] --> R["read_events / LogTail<br/>共用的 _records_from_lines"]
+    R --> E1["EventRecord(v1)"]
+    E1 --> M["migrate_schema"]
+    M --> U["_upcast_v1<br/>按映射表逐条翻译"]
+    U --> E2["EventRecord(v2)"]
+    E2 --> C["fold / 投影 / replay / SSE<br/>只看见 v2"]
 ```
+
+**图 1**：上迁 = 读的时候翻译，磁盘上一个字节都不动。跳版（不是相邻 `N-1 → N`）返回 `SCHEMA_UNSUPPORTED`，日志不改。
 
 ### 2.2 为什么 C 方案必须升到 `SCHEMA_VERSION = 2`
 
@@ -67,11 +76,16 @@ JSONL 日志 = 唯一真源
 
 ## 3. fold 缓存到底是什么
 
-```text
-JSONL --read_events()--> EventRecord[] --fold(cache?)--> AssembledContext
-                                              ↑
-                          同一前缀才命中；读文件仍要做
+```mermaid
+flowchart LR
+    L["JSONL"] --> RE["read_events()"]
+    RE --> R["EventRecord[]"]
+    R --> F["fold(cache?)"]
+    F --> A["AssembledContext"]
+    C[("fold 缓存<br/>session_id + 首 seq + 末 seq + 条数 + 内容指纹")] -->|"同一前缀才命中"| F
 ```
+
+**图 2**：缓存的是日志前缀的 fold 便签（模型 messages + header fingerprint）；它不缓存会话现场（running/队列/取消/approval future）、active attempt、delta 与 UI 行。命中不等于不读日志：key 仍由事件内容计算。
 
 key：
 
@@ -91,7 +105,7 @@ session_id + 首 seq + 末 seq + 条数 + 内容指纹
 - tool/error/thinking 的 UI 行；
 - 远端壳的 projection。
 
-### 什么场景受益
+### 3.1 什么场景受益
 
 | 场景 | 是否命中 | 说明 |
 |---|---|---|

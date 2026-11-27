@@ -11,6 +11,8 @@
 
 术语以 mini 为主；mini 没有的概念用 DSH 原名。
 
+**图索引**：图 1 五层与两份投影（§0）· 图 2 三层 sink 链（§3.2）· 图 3 合流循环（§4.1）· 图 4 重连的 snapshot 与后缀 durable（§4.3）· 图 5 DSH 思考流（§6.3）。五张图用 Mermaid 写在正文；帧格式、请求体与数据形状仍保留代码块。
+
 ## 0.0 术语表
 
 | 术语 | 含义 | 大白话 | 不是 |
@@ -44,53 +46,25 @@
 
 ## 0. 总图：Client / Web、Host、Kernel、Provider、Log
 
-```text
-┌────────────────────────── Client / Web ───────────────────────────────┐
-│ 浏览器 / 壳：fetch + ReadableStream 读 SSE                              │
-│ 展示：正文区、思考折叠区（未来）、事件回显、审批提示、会话列表           │
-│ 发出：POST messages / cancel / approvals；GET events                    │
-└───────────────────────────────▲──────────────────┬────────────────────┘
-                                │ HTTP / SSE        │ 人的选择
-                                │ durable + delta   │
-┌───────────────────────────────┴──────────────────▼────────────────────┐
-│ Host（宿主服务层）                                                     │
-│ 鉴权 / 来源 / 会话表 / 轮队列 / 取消 / approval future / 退出收尾       │
-│ SSE 合流：LogTail（durable）+ 每连接 delta 队列（ephemeral）            │
-│ 不解释围栏枚举、不执行工具、不写日志                                     │
-└───────────────────────────────▲──────────────────┬────────────────────┘
-                                │ StepDeltaSink     │ 轮 / 步 / 工具
-                                │                   │ append
-┌───────────────────────────────┴──────────────────▼────────────────────┐
-│ Kernel（内核层）                                                       │
-│ turn_loop：装配 → provider.generate(..., on_delta) → tool batch → 停止  │
-│ 把最终 model/request / model/response / tool/* / step/* 写成 durable    │
-└───────────────────────────────▲──────────────────┬────────────────────┘
-                                │ final turn        │ chunks
-                                │                   │
-┌───────────────────────────────┴──────────────────▼────────────────────┐
-│ Provider 适配器（模型层）                                              │
-│ OpenAI 兼容 SSE / DeepSeek / mock；正文 delta、tool_calls、usage       │
-│ 只把正文交给 DeltaSink；最终返回 AssistantTurn                         │
-└───────────────────────────────▲───────────────────────────────────────┘
-                                │ HTTPS + SSE
-                     ┌──────────┴──────────┐
-                     │ 外部模型 API        │
-                     │ /chat/completions   │
-                     └─────────────────────┘
-
-           ┌──────────────────────── Log（durable 层）──────────────────────┐
-           │ JSONL，append-only，seq 单点分配；会话/步/工具/审批/错误事实   │
-           │ 不是 SSE 的第二份拷贝；SSE 的 durable 帧是它的逐行镜像          │
-           └───────────────▲──────────────────────────────┬───────────────┘
-                           │ append（Kernel）              │ LogTail（Host）
-                           │                              │ fold（Kernel 装配）
-                           │                              ▼
-                           │                    ┌──────────────────────┐
-                           └────────────────────│ Surface / messages   │
-                                                │ fold(日志前缀)       │
-                                                │ 模型唯一能感知的上下文│
-                                                └──────────────────────┘
+```mermaid
+flowchart TB
+    C["Client / Web<br/>fetch + ReadableStream 读 SSE<br/>展示正文 · 思考折叠（未来）· 事件回显 · 审批<br/>发 POST messages / cancel / approvals；GET events"]
+    H["Host（宿主服务层）<br/>鉴权 · 来源 · 会话表 · 轮队列 · 取消<br/>approval future · 退出收尾<br/>SSE 合流：LogTail（durable）+ 每连接 delta 队列"]
+    K["Kernel（内核层）<br/>turn_loop：装配 → provider.generate(on_delta) → tool batch → 停止<br/>把 model/request · model/response · tool/* · step/* 写成 durable"]
+    P["Provider 适配器（模型层）<br/>OpenAI 兼容 SSE / DeepSeek / mock<br/>正文 delta、tool_calls、usage"]
+    A["外部模型 API<br/>/chat/completions"]
+    L[("Log（durable 层）<br/>JSONL append-only，seq 单点分配")]
+    M["Surface / messages<br/>fold(日志前缀)<br/>模型唯一能感知的上下文"]
+    C <-->|"HTTP / SSE<br/>durable + delta"| H
+    H <-->|"StepDeltaSink / 轮、步、工具"| K
+    K <-->|"final turn / chunks"| P
+    P <-->|"HTTPS + SSE"| A
+    K -->|"append"| L
+    L -->|"LogTail"| H
+    L -->|"fold"| M
 ```
+
+**图 1**：五层与两份投影。分层不是单向调用：SSE 是「日志镜像 + 当前 ephemeral 增量」的合流点，不是第二份日志；Surface 是 `fold(日志前缀)`，也不是独立真源。
 
 **分层不是“从上到下单向调用”**，而是：
 
@@ -221,21 +195,16 @@ async def forward(text: str) -> None:
     await env.on_delta(step_id, text)
 ```
 
-```text
-provider.generate(..., on_delta=forward)
-        │ await forward("你")
-        ▼
-env.on_delta(t1, "你")
-        │
-        ▼
-HostSession.publish_delta(t1, "你")
-        │ put_nowait({step_id, index, text})
-        ▼
-每个 SSE 连接的 asyncio.Queue
-        │
-        ▼
-event: model/delta（无 id）
+```mermaid
+flowchart TB
+    P["provider.generate(..., on_delta=forward)"] -->|"await forward(你)"| F["forward(text)<br/>给片段加步归属"]
+    F -->|"env.on_delta(t1, 你)"| E["SessionEnv.on_delta"]
+    E -->|"publish_delta(t1, 你)"| Q["HostSession.publish_delta<br/>put_nowait({step_id, index, text})"]
+    Q --> R["每个 SSE 连接的 asyncio.Queue<br/>上限 256，满则丢最旧"]
+    R --> S["event: model/delta（无 id）"]
 ```
+
+**图 2**：一条回调链与它的四段归属（逐条见下）。
 
 - provider 不知道 turn；
 - kernel 不消费 delta，只负责归属；
@@ -274,6 +243,20 @@ loop:
 1. **不能先把所有 delta 写完再写 durable backlog**：backlog 里可能有 `session/start`、`turn/start`，delta 会排到它们前面。
 2. **不能只在 `model/response` 时排空**：没有 response 前 delta 会被憋到整段结束，首帧延迟变成“整段生成时间”。
 
+**图 3**：合流循环的两条出口——每条 durable 记录都写；`model/response` 之前先补完 delta，其余时刻每轮也排空一次。
+
+```mermaid
+flowchart TB
+    A["subscribe delta queue<br/>tail = LogTail(after=cursor)"] --> B["loop：records = tail.read_new()"]
+    B --> C{"record.type == model/response？"}
+    C -->|"是"| D["先 drain delta queue<br/>再写 durable record"]
+    C -->|"否"| E["写 durable record"]
+    D --> F["drain delta queue（无 response 时也实时送）"]
+    E --> F
+    F --> G["sleep(poll)"]
+    G --> B
+```
+
 ### 4.2 一次调用的帧顺序
 
 ```text
@@ -288,13 +271,23 @@ model/response (durable)
 
 ### 4.3 重连
 
-```text
-连接 A：看到 model/request → delta #0..#5 → 断开
-连接 B：?snapshot=1
-  第一帧 snapshot（last_seq=当前 durable 高水位）
-  之后的 durable 从 last_seq+1 开始
-  delta 不补；最终 model/response 到达后整段替换
+```mermaid
+sequenceDiagram
+    participant A as 连接 A
+    participant H as Host
+    participant L as 日志
+    A->>H: GET /events
+    H->>A: model/request（durable）
+    H->>A: model/delta #0..#5（ephemeral）
+    Note over A: 断开
+    A->>H: GET /events?snapshot=1
+    H->>L: 读 0..last_seq
+    H->>A: snapshot（无 id；last_seq + messages）
+    H->>A: durable 从 last_seq + 1 开始
+    Note over H: delta 不补；最终 model/response 到达后整段替换
 ```
+
+**图 4**：重连不是丢帧——delta 不是 durable 事实；正确性以 `model/response` 为准。
 
 这不是丢帧：delta 不是 durable 事实；重连的正确性以 `model/response` 为准。
 
@@ -405,26 +398,17 @@ durable：
 
 ### 6.3 DSH 的完整流程
 
-```text
-外部 DeepSeek API（Messages / thinking）
-        │ content_block_delta: thinking_delta
-        ▼
-StreamChunk: reasoning-delta { index, text }
-        │
-        ├─ BlockAssembler → content block {type:"reasoning", text}
-        ├─ AssistantStreamAccumulator → 紧凑带时间 stream
-        └─ agent/assistant-stream 帧（进程内、ephemeral）
-                │
-                ├─ 实时：session/follow 的 assistant-stream 帧 → UI
-                │
-                └─ 结束：一条 assistant/message（durable）
-                        message.content = [
-                          {type:"reasoning", text},
-                          {type:"text", text},
-                          {type:"tool-call", ...}
-                        ]
-                        stream = [...]
+```mermaid
+flowchart TB
+    A["外部 DeepSeek API（Messages / thinking）<br/>content_block_delta: thinking_delta"] --> B["StreamChunk：reasoning-delta {index, text}"]
+    B --> C["BlockAssembler<br/>→ content block {type: reasoning, text}"]
+    B --> D["AssistantStreamAccumulator<br/>→ 紧凑带时间 stream"]
+    B --> E["agent/assistant-stream 帧<br/>（进程内、ephemeral）"]
+    E --> F["实时：session/follow 的 assistant-stream 帧 → UI"]
+    E --> G["结束：一条 assistant/message（durable）<br/>content = [reasoning, text, tool-call]"]
 ```
+
+**图 5**：DSH 不按 delta 写日志，一条成功 attempt 只有一条 `assistant/message`；实时帧是 typed 的（`reasoning-delta` 与 `text-delta` 分开），durable 的 `message.content` 也保留块类型，重放能恢复「哪段是思考、哪段是回答」。
 
 关键点：
 
