@@ -1141,8 +1141,8 @@ def test_streaming_is_the_default_and_writes_deltas_in_order(tmp_path: Path) -> 
     assert result.returncode == 0
     assert result.stdout.count("你好") == 1
     assert result.stdout.index("你") < result.stdout.index("好")
-    # `[answer] ` 走 stderr，正文走 stdout（design D4）
-    assert "[answer]" in result.stderr
+    # `[answer]` 头行走 stderr、独占一行，正文走 stdout（design D4；正文不带前导换行也不粘连）
+    assert result.stderr.endswith("[answer]\n")
     assert "[answer]" not in result.stdout
 
 
@@ -1327,7 +1327,10 @@ def test_the_first_delta_is_visible_before_the_turn_ends(tmp_path: Path) -> None
     try:
         assert process.stderr is not None
         assert process.stdout is not None
-        assert "FIRST" in process.stderr.readline()
+        # stderr 头两行内必须见到 FIRST：第一行可能是 `[answer]` 头行（标记自带换行），
+        # FIRST 必须在轮末之前可达（tasks 2.2 的实时性判据）。
+        head = [process.stderr.readline(), process.stderr.readline()]
+        assert any("FIRST" in line for line in head)
 
         seen: dict[str, str] = {}
 
@@ -1513,8 +1516,8 @@ def test_chat_stream_sends_reasoning_to_stderr_only(tmp_path: Path) -> None:
     result = _chat("--stream", "--fixture", str(fixture), cwd=tmp_path, stdin_text="任务\n")
 
     assert result.returncode == 0
-    assert "[thinking] 先想" in result.stderr
-    assert "[answer]" in result.stderr
+    assert "[thinking]\n先想" in result.stderr
+    assert result.stderr.endswith("[answer]\n")
     assert "先想" not in result.stdout
 
 

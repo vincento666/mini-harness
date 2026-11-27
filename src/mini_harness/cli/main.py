@@ -538,16 +538,23 @@ class _ChatStreamRenderer:
             self._thinking = False
 
     def _mark(self) -> None:
-        """每一轮第一次输出正文之前打一次 `[answer] `，走 stderr（design D4）。"""
+        """每一轮第一次输出正文之前打一次 `[answer]` 头行，走 stderr（design D4）。
+
+        头行自带换行：正文从头行下一行开始，不再依赖模型正文恰好以前导换行开头。
+        """
         if self._marked:
             return
         self._close_thinking()
-        sys.stderr.write("[answer] ")
+        sys.stderr.write("[answer]\n")
         sys.stderr.flush()
         self._marked = True
 
     async def reasoning(self, step_id: str, index: int, text: str) -> None:
-        """思考增量走 stderr，每步第一次打 `[thinking] `；正文开始前的思考先收行。"""
+        """思考增量走 stderr，每步第一次打 `[thinking]` 头行；正文开始前的思考先收行。
+
+        标记统一为「独占一行的头，内容另起」（2026-11-26 UAT 人裁）：`[thinking]` 与
+        `[answer]` 同构，思考文本从头行下一行开始流式追加。
+        """
         if not text:
             return
         if self._marked:
@@ -556,7 +563,7 @@ class _ChatStreamRenderer:
             sys.stderr.flush()
             self._marked = False
         if not self._thinking:
-            sys.stderr.write("[thinking] ")
+            sys.stderr.write("[thinking]\n")
             self._thinking = True
             self._thought = True
         sys.stderr.write(text)
@@ -593,14 +600,15 @@ class _ChatStreamRenderer:
     def finish_turn(self) -> None:
         """一轮结束：写过正文才换行，并重置 `[answer]`/`[thinking]` 标记——目标连续多轮各占一行。
 
-        只有思考流、正文走步末回退的那一轮补一个 `[answer] `：屏幕上要分得清思考与回答
-        （纯无增量的步仍不打标记，spec「空 delta 不触发标记」不变）。
+        只有思考流、正文走步末回退的那一轮补一个 `[answer]` 头行：屏幕上要分得清思考与回答
+        （纯无增量的步仍不打标记，spec「空 delta 不触发标记」不变）。先封住思考行再补标记，
+        不让正文标记插进还没收行的思考流中间。
         """
+        self._close_thinking()
         if self._wrote and not self._marked and self._thought:
-            sys.stderr.write("[answer] ")
+            sys.stderr.write("[answer]\n")
             sys.stderr.flush()
             self._marked = True
-        self._close_thinking()
         if self._wrote:
             sys.stdout.write("\n")
             sys.stdout.flush()

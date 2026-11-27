@@ -11,7 +11,7 @@
 3. **思考与正文分离**：真实 reasoner 一场，SSE 里 `reasoning/delta` 与 `model/delta` 各自出现、不混流；stdout 只有正文，思考走 stderr。
 4. **日志形状**：`model/response.blocks` 保序（reasoning/text/tool-call）；`fold` 重放与实时一致；`reasoning_tokens` 不重复计入 usage。
 5. **interrupted 锚点**：有已交付内容的取消写一条 `interrupted: true` 的 `model/response`；无内容只写 `model/attempt`，二者互斥。
-6. **tty（人跑，ADR-0025）**：`[thinking]` 恰一次、思考实时滚出、`[answer]` 恰一次且位于正文前、轮边界分行正确。
+6. **tty（人跑，ADR-0025）**：`[thinking]` 恰一次、思考实时滚出、`[answer]` 恰一次且位于正文前、轮边界分行正确。2026-11-27 人跑三轮通过后追加人裁：两个标记统一为「独占一行的头、内容另起」，`[answer]` 头行自带换行（`chat-streaming` delta MODIFIED 了主规格那一处形状——这是 UAT 反馈，不是「不改正文流式判据」边界的破坏：被改的只是标记行的形状，增量写 stdout、每轮恰一次、空 delta 不触发、去重回退全部不动）。
 
 ## 不验
 
