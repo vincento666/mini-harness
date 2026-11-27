@@ -53,6 +53,15 @@ def sse_frame(record: EventRecord) -> bytes:
     ).encode()
 
 
+def stream_end_frame(payload: dict[str, object]) -> bytes:
+    """Host 主动终止标记：无 `id`、不落日志；物理断线不发。
+
+    `stream/end` 与 durable 帧（`sse_frame`）同住这里：serve 与 host 两端的编码
+    必须逐字节同形，放一处就不会长出两种形状。
+    """
+    return f"event: stream/end\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
+
+
 def _cursor(request: web.Request) -> int:
     """读出续读游标：`?from=<seq>` 覆盖 `Last-Event-ID`，两者都没有时从第一条记录开始。
 
@@ -115,7 +124,12 @@ class ServeServer:
         while True:
             records = tail.read_new()
             if isinstance(records, LogReadFailure):
-                # 日志读不动是会话自己的失败，不在事件流里编一帧出来。
+                # 读日志失败是 Host 侧的主动终止：先发 `stream/end` 再关流（seam ⑥），
+                # 客户端分得清「会话正常收尾」与「Host 主动断」。帧无 `id`、不落日志；
+                # 物理断线仍然不发帧。
+                await response.write(
+                    stream_end_frame({"reason": "error", "code": "LOG_UNREADABLE"})
+                )
                 return response
             try:
                 for record in records:

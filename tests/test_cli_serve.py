@@ -17,6 +17,7 @@ import httpx
 import pytest
 
 from cli_blackbox import _cli, _cli_console_process, _cli_process, _send_ctrl_c
+from mini_harness.cli.serve import ServeServer
 from mini_harness.events.vocabulary import is_known_type
 from paths import HELLO_SCENARIO
 
@@ -302,6 +303,38 @@ def test_serve_window_budget_failure_is_the_same_shape_as_run(tmp_path: Path) ->
     assert "INVALID_ARGUMENT" in result.stderr
     assert all(number in result.stderr for number in ("8192", "8192"))
     assert _log_files(tmp_path) == []
+
+
+async def test_a_corrupt_log_line_ends_the_stream_with_stream_end(tmp_path: Path) -> None:
+    """seam ⑥：serve 读日志遇到坏行，先发 `stream/end`（LOG_UNREADABLE）再关流。
+
+    进程内直测 `ServeServer`：坏行进真会话会把下一次装配也带走（装配同样整读日志），
+    那是「坏行终止会话」的既有语义；这里只判传输层——日志读不动时流以 `stream/end`
+    收尾，客户端分得清「会话正常收尾」与「Host 主动断」。物理断线不发帧。
+    """
+    log = tmp_path / "sessions" / "broken.jsonl"
+    log.parent.mkdir()
+    log.write_text("{这不是 JSON\n", encoding="utf-8")
+    server = ServeServer(port=_free_port())
+    server.attach(log)
+    server.session_finished.set()
+    assert await server.bind() is None
+    try:
+        async with (
+            httpx.AsyncClient(
+                base_url=f"http://127.0.0.1:{server.port}", trust_env=False
+            ) as client,
+            client.stream("GET", "/events", timeout=10) as response,
+        ):
+            assert response.status_code == 200
+            frames = _parse_sse([line async for line in response.aiter_lines()])
+        assert frames == [
+            {"event": "stream/end", "data": '{"reason": "error", "code": "LOG_UNREADABLE"}'}
+        ]
+        # ephemeral 帧不落日志。
+        assert "stream/end" not in log.read_text(encoding="utf-8")
+    finally:
+        await server.close()
 
 
 async def test_one_frame_per_log_record(tmp_path: Path) -> None:

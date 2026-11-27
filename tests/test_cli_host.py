@@ -20,7 +20,8 @@ import httpx
 import pytest
 
 from cli_blackbox import _cli, _cli_process
-from mini_harness.events import EventLog
+from mini_harness.events import EventLog, read_events
+from mini_harness.events.fold import fold
 
 HOST_TOKEN = "h1-test-token-" + "x" * 32
 
@@ -430,6 +431,79 @@ def _next_frame(lines: Iterable[str]) -> dict[str, str]:
         elif text.startswith("data: "):
             fields["data"] = text[len("data: ") :]
     raise AssertionError("事件流提前结束")
+
+
+def test_snapshot_messages_are_the_model_context_not_the_control_plane(
+    tmp_path: Path,
+) -> None:
+    """seam ⑥ 追认：snapshot 的 `messages` 就是 fold 出的模型上下文。
+
+    会话里有工具调用与审批，snapshot 也只给模型视角的消息（system/user/assistant/tool），
+    与最后一次 `context/assembled` 逐字段相等——远端壳要完整 UI 必须自己从 seq 0 读 durable 帧。
+    """
+    session_dir = tmp_path / "sessions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "a.md").write_text("文件内容", encoding="utf-8")
+    fixture = tmp_path / "tool.json"
+    fixture.write_text(
+        json.dumps(
+            [
+                {
+                    "content": "读一个文件",
+                    "finish_reason": "tool_calls",
+                    "tool_calls": [
+                        {"id": "c1", "name": "read", "arguments": {"file_path": "a.md"}}
+                    ],
+                },
+                {"content": "读到了", "finish_reason": "stop"},
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    port = _free_port()
+    process = _start_host(tmp_path, port, HOST_TOKEN, "--session-dir", str(session_dir))
+    try:
+        _wait_for_health(port)
+        with httpx.Client(
+            trust_env=False, base_url=f"http://127.0.0.1:{port}", timeout=10.0
+        ) as client:
+            session_id = _create_session(client, workspace, fixture)
+            client.post(
+                f"/sessions/{session_id}/messages",
+                headers=_headers(),
+                json={"content": "任务"},
+            )
+            _wait_until_idle(client, session_id)
+
+            log = session_dir / f"{session_id}.jsonl"
+            records = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+            # 控制面记录确实存在（工具调用被记录），追认才有意义。
+            assert any(record["type"].startswith("tool/") for record in records)
+            durable = read_events(log)
+
+            with client.stream(
+                "GET",
+                f"/sessions/{session_id}/events?snapshot=1",
+                headers=_headers(),
+            ) as response:
+                first = _next_frame(response.iter_lines())
+                assert first["event"] == "snapshot"
+                snapshot = json.loads(first["data"])
+        # snapshot 就是同前缀 fold 出的模型上下文（含折叠进上下文的工具结果），
+        # 不是完整 UI：approval/取消这类控制面记录不在其中。
+        assert snapshot["messages"] == [
+            message.model_dump(mode="json") for message in fold(durable).messages
+        ]
+        assert {message["role"] for message in snapshot["messages"]} <= {
+            "system",
+            "user",
+            "assistant",
+            "tool",
+        }
+    finally:
+        _stop(process)
 
 
 def test_snapshot_precedes_only_new_frames(tmp_path: Path) -> None:
