@@ -5,6 +5,8 @@
 
 **一句话**：目标只活在日志的 `goal/updated` 里；`goals.py` 管「什么转移合法」，`goal_driver.py` 管「该不该再开一轮」，`turn_loop.py` 管「跑」，`settle_turn` 是三者唯一的接线处。
 
+**图索引**：图 1 时间层级（§1.1）· 图 2 相位状态机（§1.3）· 图 3 轮后驱动判定（§2.2）。三张图与综合笔记 `docs/analysis-goal-core-mechanics-2026-11-27.md` 同源；那里的图 4（打印时序）不在本文重复。
+
 **术语**：本文用 2026-11 改名后的词——一个**轮**（turn）是一条输入展开的那串步，一个**步**（step）是一次模型往返。2026-11 之前它们分别写作「段」与「回合」，旧文档与归档 change 保持原词。
 
 ---
@@ -21,6 +23,17 @@
 | 目标轮 | round | goal round | 没有独立事件，数 `goal/updated` 的 `source.round` | goal 消息被准入的次数 |
 
 **目标轮不是第四层嵌套，而是轮的一种**：goal 来源的轮就是一次目标轮，人类的轮不是。所以「goal 轮恰是一次目标轮」成立；`rounds_started` 数的是这种轮，人类轮不计数。
+
+**图 1**：目标轮与人类轮都各是一次 turn，区别只在 `user/message.source`；它不是第四层嵌套。
+
+```mermaid
+flowchart TB
+    S["会话 session（日志边界）"]
+    S --> T1["轮 turn · 人类来源<br/>rounds_started 不变"]
+    S --> T2["轮 turn · goal 来源 = 目标轮 round 2<br/>准入后 rounds_started +1"]
+    T1 --> A1["步 s1"] --> A2["步 s2"]
+    T2 --> B1["步 s3"] --> B2["步 s4"]
+```
 
 改名（`openspec/changes/align-turn-step-naming/`）已 apply：`segment → turn`、`turn → step`，日志 schema 升到 v2，v1 兼容层在合并前删除。读本文与读代码是同一套词。
 
@@ -67,6 +80,28 @@ turn/start
 | `idle_rounds` | 连续多少个 goal 轮次零工具调用 | goal 轮无动作 +1，有动作清零；人类轮清零 |
 
 `armed` 不落盘是刻意的：落盘会导致 `--resume` 之后意外自动跑。它是入口的进程内开关，不是目标的状态。
+
+**图 2**：相位转移。`paused` 只有人能恢复；`blocked` 人与工具都能恢复；`complete` 是终点（只能 clear 回到无目标）。每次转移都伴随 `revision + 1`。
+
+```mermaid
+stateDiagram-v2
+    state "无目标" as Empty
+    state "active" as Active
+    state "paused" as Paused
+    state "blocked" as Blocked
+    state "complete" as Complete
+
+    [*] --> Empty
+    Empty --> Active: create（模型，人类轮）
+    Active --> Paused: pause（模型 / 命令）
+    Paused --> Active: /goal resume（人）
+    Active --> Complete: complete（模型 / 人）
+    Active --> Blocked: blocked（≥门槛轮数）/ round-limit
+    Blocked --> Active: resume（人 / 工具）
+    Active --> Empty: /goal clear
+    Paused --> Empty: /goal clear
+    Blocked --> Empty: /goal clear
+```
 
 ### 1.4 命令面
 
@@ -126,6 +161,24 @@ run_turn 返回 TurnOutcome
 | 6 | 其余 | `continue` | 开下一轮，`rounds_started + 1` |
 
 顺序本身就是语义：额度用尽比未决问题更硬（最后一轮里问了问题也先落 blocker）；问题比空转更硬（先告诉人「等你回答」）。
+
+**图 3**（判定顺序即优先级，先命中先返回；`MAX_STEPS` 不在这条判定里）：
+
+```mermaid
+flowchart TD
+    A["轮结束 turn/end"] --> B{"有目标 · active · 已武装？"}
+    B -- 否 --> STOP["stop：不开轮"]
+    B -- 是 --> C{"失败收尾？<br/>ABORTED / FENCE_DENIED /<br/>PROVIDER_ERROR / CONTEXT_WINDOW_EXCEEDED"}
+    C -- 是 --> STOP
+    C -- 否 --> D{"rounds_started ≥ max_rounds？"}
+    D -- 是 --> EX["exhausted：落 blocked(round-limit)"]
+    D -- 否 --> E{"轮尾有未答问题？"}
+    E -- 是 --> AW["awaiting_input：交回人"]
+    E -- 否 --> F{"连续零动作 ≥ stall_rounds？"}
+    F -- 是 --> ST["stalled：解武装"]
+    F -- 否 --> GO["continue：开下一轮"]
+    A -. MAX_STEPS 只是轮边界，继续往下判 .-> B
+```
 
 ### 2.3 人话、提问、恢复
 
