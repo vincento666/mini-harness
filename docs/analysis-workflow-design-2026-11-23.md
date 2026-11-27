@@ -3,7 +3,11 @@
 **日期**：2026-11-23 · **性质**：分析与设计建议文档（不是 OpenSpec 规格，不产生 change）
 **触发**：如何为 mini-harness 设计 workflow 能力（最简 + 完整实现）、多套 workflow 插件式共存、以及民航客服场景的 workflow 落地
 **续篇**：`docs/analysis-workflow-paradigm-shift-2026-11-23.md`（范式更迭核心认知、harness workflow 能否取代传统 workflow、客服 SOP 最佳实践十条）
-**读者**：项目维护者（人）。本文严格分区「可验证事实」与「个人推测/设计建议」，见 §8。
+**读者**：项目维护者（人）。本文严格分区「可验证事实」与「个人推测/设计建议」，见 §9。
+
+**图索引**：图 1 主导权判据（§2.2）· 图 2 六层分解（§3.1）· 图 3 phase 与 gate 推进（§5.2）· 图 4 两层分离（§7.2）。四张图用 Mermaid 写在正文，随文档版本化。
+
+**一句话**：workflow 能力拆成六层，载体是 skill 包、执行靠既有回合循环，真正新增的只有 gate 与三个 workflow 事件——不引入图引擎，也不引入语言运行时。
 
 ---
 
@@ -107,6 +111,17 @@
 
 **推断二：谁为主由「路径确定性」决定，不由新旧决定。** 路径画得出来（客服 SOP、审批、退改签办理）→ workflow 为主，agent 填节点；路径画不出来（开放式研究、排障）→ agent 为主，workflow 退成护栏（验收条件、预算、禁区）。这个判据在 `docs/reference/workflow-paradigms.md` 已立档，本节用 1.6 的民航证据再确认一次：民航办理类任务恰好是「路径画得出来」的一侧。
 
+**图 1**：主导权由路径确定性决定；两条分支最后收敛到同一条分层原则。
+
+```mermaid
+flowchart TB
+    Q{"路径画得出来吗？"}
+    Q -->|画得出：SOP / 审批 / 退改签| W["workflow 为主<br/>agent 填节点"]
+    Q -->|画不出：排障 / 开放研究| A["agent 为主<br/>workflow 退成护栏"]
+    W --> C["确定性编排在下<br/>模型决策在上"]
+    A --> C
+```
+
 ### 2.3 与项目红线的对照（必须遵守）
 
 | 约束 | 来源 | 对 workflow 设计的含义 |
@@ -124,18 +139,26 @@
 
 （本节起为**设计建议**，全部标注为推断/建议，待人裁决。）
 
+### 3.1 六层分解
+
 把「workflow 能力」拆成六层。注意：**下面没有一行要求新语言运行时**——载体是 skill 包 + 现有内核原语。
 
-```
-载体层  skill 包（SKILL.md = SOP；workflow.yaml = 固定 schema 清单，可选）
-记账层  goal（完成契约）+ todo（步骤）+ plan（计划形状）      ← M13/M14c 已有
-执行层  回合循环 + 工具管线 + subagent（fan-out 底座）          ← M2/M10/M12 已有
-门禁层  approval（人工断点）+ 围栏 + gate（确定性判据检查）      ← 前两者已有，gate 是新增
-观测层  事件日志（workflow/phase 等）+ replay                   ← 日志已有，事件名新增
-接入层  host API（H1）→ 将来 G1 Bot API（客服平台）             ← H1 已有，G1 在 G 轨
+```mermaid
+flowchart TB
+    L1["载体层：skill 包<br/>SKILL.md = SOP · workflow.yaml = 固定 schema 清单（可选）<br/>M14 已有；workflow.yaml 新增"]
+    L2["记账层：goal（完成契约）+ todo（步骤）+ plan（计划形状）<br/>M13 / M14c 已有"]
+    L3["执行层：回合循环 + 工具管线 + subagent（fan-out 底座）<br/>M2 / M10 / M12 已有"]
+    L4["门禁层：approval（人工断点）+ 围栏 + gate（确定性判据检查）<br/>前两者已有；gate 新增"]
+    L5["观测层：事件日志（workflow/phase 等）+ replay<br/>日志已有；事件名新增"]
+    L6["接入层：host API（H1）→ 将来 G1 Bot API（客服平台）<br/>H1 已有；G1 在 G 轨"]
+    L1 --- L2 --- L3 --- L4 --- L5 --- L6
 ```
 
-**与 goal 的分工**（概念澄清）：goal 是「什么算完」的验收单，workflow 是「按什么路线走」的路径契约。一次民航办理 = 一个 goal（例如「MU5101 改签完成并出票」）+ 一个 skill 提供的路径（SOP）+ todo 记账推进。goal 轮次就是 workflow 的执行载体，不需要第二个循环。
+**图 2**：六层分解，自上而下是「声明 → 记账 → 执行 → 门禁 → 观测 → 接入」，**不是调用链**；每层标注的是当前落地状态。
+
+### 3.2 与 goal 的分工
+
+goal 是「什么算完」的验收单，workflow 是「按什么路线走」的路径契约。一次民航办理 = 一个 goal（例如「MU5101 改签完成并出票」）+ 一个 skill 提供的路径（SOP）+ todo 记账推进。goal 轮次就是 workflow 的执行载体，不需要第二个循环。
 
 ---
 
@@ -210,6 +233,20 @@ limits:
 - **观测**：新增三个事件名 `workflow/start`、`workflow/phase`、`workflow/end`（含 `gate` 结果），落 JSONL、可 replay——照 DSH 的 `workflow/phase` 命名风格。事件类型扩展走插件声明合并的既有路径或 core 事件表，需一个 ADR 记录形状。
 - **失败语义**（照 DSH 错误分类学裁剪）：gate 不过 = 结果（不是异常）；`max_rounds` 耗尽 = goal 收尾交人；schema 非法 = 该 skill 不加载、日志记警告。
 
+**图 3**：phase 推进只有一个准入点——gate 判定；gate 不过则该轮不推进 phase，连续停滞交给 M13 的停滞闸门。
+
+```mermaid
+flowchart LR
+    S["skill 加载<br/>校验 workflow.yaml"] --> P1["phase 1 locate"]
+    P1 --> G1{"gate：pnr 已确认"}
+    G1 -->|pass| P2["phase 2 assess"]
+    G1 -->|fail| F["本轮不推进 phase<br/>落 gate/failed 事件"]
+    F --> R["连续停滞<br/>走 M13 停滞闸门"]
+    P2 --> G2{"gate：档位已判定"}
+    G2 -->|pass| P3["后续 phase …"]
+    G2 -->|fail| F
+```
+
 ### 5.3 明确不做（与红线一致）
 
 图引擎/DAG 解释器、用户自定义表达式语言、脚本 guest 运行时、工具面塌缩、热更新插件市场、多模型路由、workflow 版本热切换（换版本 = 下一会话生效，照 M14 技能快照语义）。
@@ -262,11 +299,21 @@ skills = ["ca-irrops-rebooking", "ca-refund", "ca-checkin", "ca-baggage", "ca-fa
 
 ### 7.2 两层分离（行业共识的落地）
 
+```mermaid
+flowchart LR
+    subgraph Dlg["对话层：模型 + skill"]
+        M["听懂诉求 · 收集 PNR · 解释选项 · 安抚话术 · 转人工判定"]
+    end
+    subgraph Dec["决策层：确定性脚本 + 业务工具"]
+        D1["政策档位"]
+        D2["补偿资格"]
+        D3["可改航班 / 金额"]
+    end
+    M -->|只通过工具接口调用| Dec
+    Dec -->|结构化字段（不是自然语言）| M
 ```
-对话层（模型 + skill）：听懂诉求、收集 PNR、解释选项、安抚话术、转人工判定
-决策层（确定性脚本 + 业务工具）：政策档位、补偿资格、可改航班、金额
-     ↑ 只通过工具接口进出，模型不直接产生「金额/资格」结论
-```
+
+**图 4**：两层只通过工具接口进出；模型不直接产生「金额 / 资格」结论。
 
 ### 7.3 一次办理的流程（最简版 skill SOP → 完整版 phases）
 
@@ -292,6 +339,8 @@ skills = ["ca-irrops-rebooking", "ca-refund", "ca-checkin", "ca-baggage", "ca-fa
 
 ## 8. 实现方法论：四阶段，循序渐进
 
+### 8.1 四阶段路线
+
 | 阶段 | 做什么 | 依赖 | 完成判据 | 估计体量 |
 |---|---|---|---|---|
 | **P0 手工编排**（现在） | 民航 SOP 写成 2–3 个 skill，纯文本；用 goal/todo/ask_user/subagent 跑通一次真实办理 | M13/M14c 已完成 | UAT：一次改签从咨询到出票走通，人跑 | 零代码 |
@@ -299,7 +348,8 @@ skills = ["ca-irrops-rebooking", "ca-refund", "ca-checkin", "ca-baggage", "ca-fa
 | **P2 manifest + gate** | `workflow.yaml` schema + 最小 runner + 三个 workflow 事件（change 一个） | P1 | gate 判据 §5.4；普通 skill 行为不变 | 中 |
 | **P3 场景包上线** | G1 对接客服平台 + 业务工具连接器（PSS/航班动态）+ preset 场景包 | G 轨启动（personal-baseline-v1 之后） | G1 完成判据 + 一组真实 FAQ/业务问题达标 | 大，属 G 轨 |
 
-三条纪律（沿用项目文化）：
+### 8.2 三条纪律
+
 
 1. **每个阶段一个 OpenSpec change**，propose 前先对照 DSH 一手实现（尤其 `dsh-workflow` 的接缝与错误分类学）。
 2. **判据钉值不钉形状**；每个 Scenario 先列坏法清单（例：gate 被模型「口头满足」——所以 gate 必须由脚本判，不进提示词）。
