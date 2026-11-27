@@ -1,6 +1,7 @@
 # 目标轮：状态、判定与收尾（M13 实现笔记）
 
-**定位**：M13 的实现笔记，不是规格。规格见 `openspec/changes/m13-goal-rounds/`（archive 后进 `openspec/specs/goal|turn-loop|event-stream|cli|host-api|config-layering`），验收证据见 `docs/verification/m13-goal-rounds-*.md`。本文回答三件事：**目标怎么活过多个轮**、**为什么拆成纯函数 / 判定器 / 执行器三层**、**哪些边界是故意留的**。
+**定位**：M13 的实现笔记，不是规格。**现状综合笔记**（政策 v3、打印规则、完整状态机）见
+`docs/analysis-goal-core-mechanics-2026-11-27.md`。规格见 `openspec/changes/m13-goal-rounds/`（archive 后进 `openspec/specs/goal|turn-loop|event-stream|cli|host-api|config-layering`），验收证据见 `docs/verification/m13-goal-rounds-*.md`。本文回答三件事：**目标怎么活过多个轮**、**为什么拆成纯函数 / 判定器 / 执行器三层**、**哪些边界是故意留的**。
 
 **一句话**：目标只活在日志的 `goal/updated` 里；`goals.py` 管「什么转移合法」，`goal_driver.py` 管「该不该再开一轮」，`turn_loop.py` 管「跑」，`settle_turn` 是三者唯一的接线处。
 
