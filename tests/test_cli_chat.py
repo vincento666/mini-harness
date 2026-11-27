@@ -1521,6 +1521,86 @@ def test_chat_stream_sends_reasoning_to_stderr_only(tmp_path: Path) -> None:
     assert "先想" not in result.stdout
 
 
+def test_stream_projection_trims_leading_and_trailing_whitespace(tmp_path: Path) -> None:
+    """投影裁首尾空白，日志留 provider 原文（2026-11-27 人裁 trim；主流做法是裁显示留原文）。"""
+    fixture = _fixture(
+        tmp_path,
+        "trim.json",
+        [{"content": "\n\n你好\n\n", "deltas": ["\n\n", "你好", "\n\n"], "finish_reason": "stop"}],
+    )
+
+    result = _chat("--fixture", fixture, cwd=tmp_path, stdin_text="任务\n")
+
+    assert result.returncode == 0
+    # `[answer]` 头行下一行直接是正文，没有前导空行；轮尾的空白被裁，只剩轮末换行。
+    assert result.stdout == "> 你好\n> "
+    # 日志是真相：`model/response.content` 保持 provider 原文，没有被裁。
+    log = next((tmp_path / "sessions").glob("*.jsonl"))
+    records = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+    content = next(
+        record["payload"]["content"] for record in records if record["type"] == "model/response"
+    )
+    assert content == "\n\n你好\n\n"
+
+
+def test_mid_content_blank_lines_are_kept(tmp_path: Path) -> None:
+    """只裁首尾：正文中间的段落空行照写。"""
+    fixture = _fixture(
+        tmp_path,
+        "mid.json",
+        [
+            {
+                "content": "第一段\n\n第二段",
+                "deltas": ["第一段", "\n\n", "第二段"],
+                "finish_reason": "stop",
+            }
+        ],
+    )
+
+    result = _chat("--fixture", fixture, cwd=tmp_path, stdin_text="任务\n")
+
+    assert result.returncode == 0
+    assert "第一段\n\n第二段" in result.stdout
+
+
+def test_step_end_fallback_trims_leading_whitespace(tmp_path: Path) -> None:
+    """步末回退是本轮第一段可见正文时，同样裁前导空白；日志仍留原文。"""
+    fixture = _fixture(
+        tmp_path, "fallback.json", [{"content": "\n\n完整答案", "finish_reason": "stop"}]
+    )
+
+    result = _chat("--fixture", fixture, cwd=tmp_path, stdin_text="任务\n")
+
+    assert result.returncode == 0
+    assert result.stdout == "> 完整答案\n> "
+    log = next((tmp_path / "sessions").glob("*.jsonl"))
+    records = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+    content = next(
+        record["payload"]["content"] for record in records if record["type"] == "model/response"
+    )
+    assert content == "\n\n完整答案"
+
+
+def test_thinking_header_line_is_not_followed_by_a_blank_line(tmp_path: Path) -> None:
+    """思考的第一段增量带前导空白：裁掉，`[thinking]` 头行下一行直接是思考文字。"""
+    fixture = _fixture(
+        tmp_path,
+        "think-trim.json",
+        [
+            {
+                "content": "答案",
+                "reasoning_deltas": ["\n\n想", "一下"],
+                "finish_reason": "stop",
+            }
+        ],
+    )
+
+    result = _chat("--stream", "--fixture", fixture, cwd=tmp_path, stdin_text="任务\n")
+
+    assert result.returncode == 0
+    assert "[thinking]\n想一下" in result.stderr
+
+
 def test_chat_stream_falls_back_when_provider_sends_no_delta(tmp_path: Path) -> None:
     fixture = tmp_path / "no-delta.json"
     fixture.write_text(

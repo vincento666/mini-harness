@@ -57,3 +57,11 @@ reasoning/delta × 36, model/delta × 45, model/response, step/end, turn/end
 - 单次两场样本，只覆盖「单步、思考→正文」形状；「同一 response 内 reasoning → tool-call → reasoning → text」的长形状这次没构造出来，不冒充统计保证。
 - 流式解析对 `reasoning` 字段的兼容是本次真端点暴露的缺陷，已连带修掉并加测试；不修则本场验收根本不可能通过。
 - tty 手感（`[thinking]` 恰一次、实时刷新、不进 stdout 的观感）不在本场判据内，留给 1.9 人跑（ADR-0025）。
+
+## 4. 冒烟补场（2026-11-27，trim 落地后）
+
+会话 `f8635f7aa6504628b5b8aae185c4dbe1`（`.tmp/uat-reasoning5`，同端点同模型，chat 管道）：
+
+- stderr：`[thinking]` 头行下一行直接是思考文字；`[answer]` 头行下一行直接是正文——头行下无空行。
+- stdout：`> 1. 太阳光…` 正文紧贴提示符开始，轮尾无多余空行，只剩轮末换行。
+- 日志：`model/response.content` 开头仍是 `'\n\n1. 太阳光其实包含'`——**投影裁了、日志没裁**，判据成立。

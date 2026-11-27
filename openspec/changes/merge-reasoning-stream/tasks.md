@@ -11,5 +11,6 @@
 - [x] 1.7 门禁：全量 **963 passed / 6 skipped**、ruff、mypy --strict、`openspec validate --all --strict` 31 项、覆盖率 **98.50%**（`scripts/gates.sh` + `scripts/coverage-report.sh`）；契约要求的变异 M1/M2 均被杀死，记在 `docs/verification/merge-reasoning-stream-mutation.md`
 - [x] 1.8 真实端点一场（reasoner）：`model/response.blocks` 保序、SSE `reasoning/delta` 与 `model/delta` 分离、usage 不重复计；记录到 `docs/verification/merge-reasoning-stream-real-endpoint.md`（顺带修掉流式只认 `reasoning_content`、不认 OpenRouter 归一 `reasoning` 的缺陷，见该文第 0 节）
 - [ ] 1.9 tty 人跑一场：`[thinking]` 恰一次、思考实时、正文不进 stderr 混流、`[answer]` 位置正确（ADR-0025）；手册 `docs/verification/merge-reasoning-stream-uat.md`
+- [x] 1.12 人裁 trim（2026-11-27）：流式投影裁本轮正文首尾空白（前导直接裁、中段攒住随下个可见增量写出、轮末未接上的丢弃），日志留 provider 原文；`[thinking]` 头行下第一段思考同理裁前导。chat-streaming delta 加 ADDED requirement，测试 4 条
 - [x] 1.11 UAT 三轮人跑通过（2026-11-27 记录，会话 `711af091…`）后的反馈落地：`[thinking]` 与 `[answer]` 统一为「独占一行的头、内容另起」——thinking 对齐 answer，且 answer 头行自带换行、不再依赖正文前导换行；`chat-repl` delta 重写、新增 `chat-streaming` delta，`test_cli_chat.py` 三处判据更新
 - [ ] 1.10 归档本 change；`docs/CURRENT.md` 把「思考帧未合入」从开放缺口移除

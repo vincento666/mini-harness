@@ -529,6 +529,8 @@ class _ChatStreamRenderer:
         self._wrote = False
         self._thinking = False
         self._thought = False
+        # 正文开始后攒住的纯空白增量；下一个可见增量到达时写出，轮末没接上的按尾随空白丢弃。
+        self._pending_ws = ""
 
     def _close_thinking(self) -> None:
         """思考段收尾：换行，把 stderr 上那一行封住。"""
@@ -553,7 +555,8 @@ class _ChatStreamRenderer:
         """思考增量走 stderr，每步第一次打 `[thinking]` 头行；正文开始前的思考先收行。
 
         标记统一为「独占一行的头，内容另起」（2026-11-26 UAT 人裁）：`[thinking]` 与
-        `[answer]` 同构，思考文本从头行下一行开始流式追加。
+        `[answer]` 同构，思考文本从头行下一行开始流式追加。本轮第一段思考裁前导空白，
+        不让头行下面挂一个空行；尾随空白不裁（思考段以收行结束，形状由 `_close_thinking` 定）。
         """
         if not text:
             return
@@ -563,6 +566,10 @@ class _ChatStreamRenderer:
             sys.stderr.flush()
             self._marked = False
         if not self._thinking:
+            if not self._thought:
+                text = text.lstrip()
+                if not text:
+                    return
             sys.stderr.write("[thinking]\n")
             self._thinking = True
             self._thought = True
@@ -570,15 +577,24 @@ class _ChatStreamRenderer:
         sys.stderr.flush()
 
     async def text(self, step_id: str, text: str) -> None:
+        """正文增量写 stdout。首尾空白只在**渲染投影**裁掉，日志保持 provider 原文。
+
+        本轮第一个可见增量裁前导空白；正文开始后的纯空白增量先攒住（`_pending_ws`），
+        等下一个可见增量到达时写出——段与段之间的空行因此保留，轮尾没接上的空白丢弃。
+        """
         if not text:
             return
         if not text.strip():
-            # 纯空白增量（换行、缩进）照写，但不当作「有正文」：不打标记、不算已显示，
-            # 步末仍能回退完整正文——否则一段以空行开头的回复可能整段不显示。
-            sys.stdout.write(text)
-            sys.stdout.flush()
+            # 纯空白增量不当作「有正文」：前导的（还没显示过任何内容）直接丢，中段的攒住。
+            if self._wrote:
+                self._pending_ws += text
             return
+        if not self._wrote:
+            text = text.lstrip()
         self._mark()
+        if self._pending_ws:
+            sys.stdout.write(self._pending_ws)
+            self._pending_ws = ""
         sys.stdout.write(text)
         sys.stdout.flush()
         self._wrote = True
@@ -592,6 +608,10 @@ class _ChatStreamRenderer:
         if step_id in self.already_shown or not content.strip():
             return
         self._close_thinking()
+        if not self._wrote:
+            # 回退是本轮第一段可见正文：与流式同口径裁前导空白（尾随不裁——它可能不是
+            # 本轮最后一段，裁了会把后续步粘上来）。
+            content = content.lstrip()
         sys.stdout.write(content)
         sys.stdout.flush()
         self._wrote = True
@@ -605,6 +625,7 @@ class _ChatStreamRenderer:
         不让正文标记插进还没收行的思考流中间。
         """
         self._close_thinking()
+        self._pending_ws = ""  # 轮末还没接上可见增量的空白按尾随空白丢弃（trim）。
         if self._wrote and not self._marked and self._thought:
             sys.stderr.write("[answer]\n")
             sys.stderr.flush()
